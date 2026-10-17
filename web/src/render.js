@@ -251,7 +251,7 @@ export class Renderer {
 
   drawSoldier(game, s, alpha, viewer) {
     const ctx = this.ctx;
-    const x = lerp(s.prevX, s.x, alpha), y = lerp(s.prevY, s.y, alpha);
+    const x = lerp(s.prevX, s.x, alpha) + (s.drawDX || 0), y = lerp(s.prevY, s.y, alpha) + (s.drawDY || 0);
     const pose = buildPose(s);
     if (s.body.rope) {
       ctx.strokeStyle = '#8a6a3a';
@@ -310,7 +310,7 @@ export class Renderer {
 
   drawName(game, s, alpha, viewer) {
     const ctx = this.ctx;
-    const x = lerp(s.prevX, s.x, alpha), y = lerp(s.prevY, s.y, alpha);
+    const x = lerp(s.prevX, s.x, alpha) + (s.drawDX || 0), y = lerp(s.prevY, s.y, alpha) + (s.drawDY || 0);
     ctx.font = `${s === viewer ? 'bold ' : ''}8px Arial, sans-serif`;
     ctx.textAlign = 'center';
     ctx.fillStyle = game.rules.teams ? TEAM_COLORS[s.team] : s === viewer ? '#333' : '#999';

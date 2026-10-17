@@ -75,14 +75,23 @@ export class Game {
   /** Queue a sound at (x, y). `to` = a soldier id when only that player should hear it. */
   sound(name, x, y, to = null) {
     if (this.sounds.length < 96) this.sounds.push({ name, x, y, to });
+    this.recorder?.sound(name, x, y, to);
   }
 
   notify(s, text) {
-    if (s && !s.isBot) this.notes.push({ text, tick: this.tick, to: s.id });
+    if (!s || s.isBot) return;
+    this.notes.push({ text, tick: this.tick, to: s.id });
+    this.recorder?.note(text, s.id);
   }
 
   shake(x, y, amount) {
     this.shakes.push({ x, y, amount });
+    this.recorder?.shake(x, y, amount);
+  }
+
+  addFeed(entry) {
+    this.feed.push(entry);
+    this.recorder?.feed(entry);
   }
 
   onDamage(target, attacker, amount) {
@@ -198,7 +207,7 @@ export class Game {
   updateQuake() {
     const q = this.quake, c = q.cfg;
     if (--q.ticks <= 0) { this.quake = null; return; }
-    if (this.tick % 10 === 0) this.shakes.push({ x: null, y: null, amount: 7 });
+    if (this.tick % 10 === 0) this.shake(null, null, 7);
     if (this.tick % 45 === 0) this.sound('rumble', null, null);
     for (const s of this.soldiers) {
       if (!s.alive || s === q.owner || !s.body.onGround) continue;
@@ -273,7 +282,7 @@ export class Game {
       else if (weapon === 'Kamikaze') text = `${victim.name} went out with a bang`;
       else { this.stats.suicides++; text = `${victim.name} blew themselves up`; }
     }
-    this.feed.push({ text, tick: this.tick, killer, victim, weapon: name });
+    this.addFeed({ text, tick: this.tick, killer, victim, weapon: name });
     this.rules.onKill(this, victim, killer, weapon, opts);
 
     // Drop the weapon in hand.

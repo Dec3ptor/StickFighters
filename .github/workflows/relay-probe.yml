@@ -8,8 +8,8 @@ on:
   push:
     paths:
       - tools/probe-relays.mjs
-      - web/src/net/relays.js
-      - web/src/net/nostr.js
+      - web/src/net/**
+      - tests/browser/online.mjs
       - .github/workflows/relay-probe.yml
 
 permissions:
@@ -25,3 +25,26 @@ jobs:
         with:
           node-version: 22
       - run: node tools/probe-relays.mjs
+
+  # The same two-browser online test the main workflow runs, but through the
+  # real public relays: proves finding and joining games works on the internet.
+  online-public:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Online play through public relays
+        env:
+          PUBLIC_RELAYS: '1'
+        run: node tests/browser/online.mjs test-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: online-public-screenshots
+          path: test-results/

@@ -1,4 +1,4 @@
-// Page wiring: menu, match setup, the game loop, pause and results.
+// Page wiring: menus, match setup, online play, the game loop, pause and results.
 
 import { SPEEDS, DEFAULT_SPEED, SHOW_SPEED_MENU } from './config.js';
 import { Game } from './game.js';
@@ -12,33 +12,59 @@ import { setLegAnimations } from './stickman.js';
 import { makeRng, lerp } from './util.js';
 import { Editor } from './editor.js';
 import { listMaps, getMap, saveMap } from './mapstore.js';
-import { decodeShare } from './custommaps.js';
+import { decodeShare, encodeShare, normalizeMap } from './custommaps.js';
+import { MODES } from './modes.js';
+import { Lobby, inviteCode, parseInvite } from './net/lobby.js';
+import { NetHost } from './net/host.js';
+import { NetClient } from './net/client.js';
+import { Community } from './net/community.js';
+import { PROTOCOL } from './net/protocol.js';
 
 const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const canvas = $('game');
 const renderer = new Renderer(canvas);
 const input = new Input(canvas);
 const audio = new SoundSystem();
 
-const maps = { index: [], data: new Map(), nav: new Map() };
-const state = { game: null, me: null, settings: null, paused: false, last: 0, acc: 0, overShown: false, returnTo: 'menu' };
+const maps = { index: [], data: new Map(), nav: new Map(), community: new Map() };
+const state = {
+  game: null, me: null, settings: null, paused: false, last: 0, acc: 0, step: 1000 / 60,
+  overShown: false, returnTo: 'menu',
+  mode: 'offline',     // 'offline' | 'host' | 'client'
+  net: null,           // online session: { role, host?, handle?, client?, target? }
+  chat: [], chatOpen: false, setupFor: 'offline', nextMatchAt: 0,
+};
 let editor = null;
+let lobby = null;
+let community = null;
+let watcher = null;
 
 // ---- Settings (remembered between visits) ------------------------------------
 
-const DEFAULTS = { name: 'Player', map: 'ssdm1.json', mode: 'ffa', bots: 5, difficulty: 'normal', fragLimit: 20, speed: DEFAULT_SPEED, muted: false };
+const DEFAULTS = {
+  name: 'Player', map: 'ssdm1.json', mode: 'ffa', bots: 5, difficulty: 'normal', fragLimit: 20, speed: DEFAULT_SPEED, muted: false,
+  lives: 3, gunKills: 1, crates: 'normal', maxPlayers: 8, visibility: 'public', gameName: '', tab: 'online', mapSource: 'originals',
+};
 
 function loadSettings() {
   let s;
   try { s = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('stick-soldiers') || '{}') }; }
   catch { s = { ...DEFAULTS }; }
   if (!SHOW_SPEED_MENU) s.speed = DEFAULT_SPEED; // ignore speeds saved before the picker was hidden
+  if (!MODES[s.mode]) s.mode = 'ffa';
   return s;
 }
 function saveSettings(s) {
   try { localStorage.setItem('stick-soldiers', JSON.stringify(s)); } catch { /* private mode */ }
 }
+function rememberMenu() {
+  const s = { ...loadSettings(), ...readMenu(), tab: state.tab, mapSource: mapSource() };
+  saveSettings(s);
+}
+
+const playerName = () => ($('name').value.trim() || 'Player').slice(0, 14);
 
 // ---- Menu ---------------------------------------------------------------------
 
@@ -48,78 +74,196 @@ function buildMenu(settings) {
   $('botsOut').textContent = settings.bots;
   $('difficulty').value = settings.difficulty;
   $('fragLimit').value = String(settings.fragLimit);
+  $('lives').value = String(settings.lives);
+  $('gunKills').value = String(settings.gunKills);
+  $('crates').value = settings.crates;
+  $('maxPlayers').value = String(settings.maxPlayers);
+  $('visibility').value = settings.visibility;
+  $('gameName').value = settings.gameName;
   $('speed').value = String(SPEEDS.includes(settings.speed) ? settings.speed : DEFAULT_SPEED);
   $('speedField').classList.toggle('hidden', !SHOW_SPEED_MENU);
-  for (const r of document.querySelectorAll('input[name=mode]')) r.checked = r.value === settings.mode;
+  $('mode').value = settings.mode;
   $('mute').checked = settings.muted;
   audio.setMuted(settings.muted);
   $('bots').addEventListener('input', () => { $('botsOut').textContent = $('bots').value; });
-
-  buildMapCards(settings.map);
+  $('mode').addEventListener('change', () => { modeFields(); rememberMenu(); });
+  for (const r of document.querySelectorAll('input[name=mapSource]')) {
+    r.checked = r.value === settings.mapSource;
+    r.addEventListener('change', () => { buildMapCards(selectedMap()); rememberMenu(); });
+  }
+  for (const id of ['difficulty', 'fragLimit', 'lives', 'gunKills', 'crates', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
+  $('bots').addEventListener('change', rememberMenu);
+  modeFields();
+  buildMapCards(settings.map, { follow: true });
   if (window.matchMedia('(hover: none) and (pointer: coarse)').matches) $('pointer-note').classList.remove('hidden');
 }
 
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+/** Show the options that matter for the chosen mode. */
+function modeFields() {
+  const mode = $('mode').value, m = MODES[mode];
+  $('modeBlurb').textContent = m.blurb;
+  show('fragField', m.limit === 'frags');
+  show('livesField', mode === 'oitc');
+  show('gunField', mode === 'gungame');
+  show('crateField', m.crates);
+}
 
-/** Map cards: the 8 originals, then the player's own maps, then "New map". Keys are file names or "custom:<id>". */
-function buildMapCards(selected) {
+function showTab(tab) {
+  state.tab = tab;
+  $('tabOnline').setAttribute('aria-pressed', String(tab === 'online'));
+  $('tabOffline').setAttribute('aria-pressed', String(tab !== 'online'));
+  show('online', tab === 'online');
+  show('setup', tab !== 'online');
+  if (tab === 'online') { startWatching(); setupFor('offline', false); }
+  else { stopWatching(); setupFor(tab === 'host' ? 'host' : 'offline'); }
+}
+
+/** The setup screen is used for both offline games and hosting online. */
+function setupFor(kind, visible = true) {
+  state.setupFor = kind;
+  const host = kind === 'host';
+  show('hostHead', host);
+  show('hostFields', host);
+  $('play').textContent = host ? 'Host game' : 'Play';
+  $('gameName').placeholder = `${playerName()}'s game`;
+  if (visible) { show('online', false); show('setup', true); }
+}
+
+const mapSource = () => document.querySelector('input[name=mapSource]:checked')?.value || 'originals';
+const sourceOf = key => (key?.startsWith('custom:') ? 'mine' : key?.startsWith('community:') ? 'community' : 'originals');
+const selectedMap = () => $('maps').querySelector('.map-card[aria-checked="true"]')?.dataset.key || state.selectedMap;
+
+/**
+ * Map cards for the chosen source: the 8 originals, your maps (+ "new map"), or community uploads.
+ * follow: switch to the source the selected map is in (otherwise keep the source the player picked).
+ */
+function buildMapCards(selected, { follow = false } = {}) {
+  if (follow && selected && sourceOf(selected) !== mapSource()) {
+    for (const r of document.querySelectorAll('input[name=mapSource]')) r.checked = r.value === sourceOf(selected);
+  }
+  const source = mapSource();
   const box = $('maps');
   box.innerHTML = '';
-  const cards = [
-    ...maps.index.map(m => ({ key: m.file, name: m.name, label: m.mode === 'team' ? 'Team map' : 'Deathmatch', mode: m.mode, data: maps.data.get(m.file) })),
-    ...listMaps().map(m => ({ key: `custom:${m.id}`, id: m.id, name: m.name, label: 'Your map', data: m.data })),
-  ];
-  if (!cards.some(c => c.key === selected)) selected = cards[0].key;
+  show('mapsNote', false);
+  let cards = [];
+  if (source === 'originals') {
+    cards = maps.index.map(m => ({ key: m.file, name: m.name, label: m.mode === 'team' ? 'Team map' : 'Deathmatch', mode: m.mode, data: maps.data.get(m.file) }));
+  } else if (source === 'mine') {
+    cards = listMaps().map(m => ({ key: `custom:${m.id}`, id: m.id, name: m.name, label: 'Your map', data: m.data }));
+  } else {
+    if (!state.communityLoaded) { loadCommunity(); note('Loading community maps…'); }
+    cards = [...maps.community.values()].map(e => ({ key: `community:${e.key}`, entry: e, name: e.name, label: `by ${e.author}`, data: e.data }));
+    if (state.communityLoaded && !cards.length) note('No community maps yet. Make one in the map maker and upload it!');
+  }
+  if (selected && cards.some(c => c.key === selected)) state.selectedMap = selected;
+  else if (!cards.some(c => c.key === state.selectedMap)) state.selectedMap = cards[0]?.key || state.selectedMap;
   for (const c of cards) {
     const card = document.createElement('div');
     card.className = 'map-card';
     card.tabIndex = 0;
     card.setAttribute('role', 'radio');
     card.dataset.key = c.key;
-    card.setAttribute('aria-checked', String(c.key === selected));
-    card.innerHTML = `<canvas width="300" height="116"></canvas><span>${esc(c.name)}</span><small>${c.label}</small>${c.id ? '<button type="button" class="edit">Edit</button>' : ''}`;
+    card.setAttribute('aria-checked', String(c.key === state.selectedMap));
+    const extra = c.id ? '<button type="button" class="edit">Edit</button>'
+      : c.entry ? `<button type="button" class="save" title="${c.entry.mine ? 'Remove your upload' : 'Save a copy to your maps'}">${c.entry.mine ? 'Remove' : 'Save'}</button>` : '';
+    card.innerHTML = `<canvas width="300" height="116"></canvas><span>${esc(c.name)}</span><small class="by">${esc(c.label)}</small>${extra}`;
     const pick = () => {
       for (const el of box.querySelectorAll('.map-card')) el.setAttribute('aria-checked', String(el === card));
+      state.selectedMap = c.key;
       // Team maps default to team mode.
-      if (c.mode) for (const r of document.querySelectorAll('input[name=mode]')) r.checked = r.value === c.mode;
+      if (c.mode === 'team' && $('mode').value === 'ffa') { $('mode').value = 'team'; modeFields(); }
       audio.unlock();
       audio.play('menuMove');
+      rememberMenu();
     };
     card.addEventListener('click', pick);
     card.addEventListener('keydown', e => { if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); pick(); } });
     card.querySelector('.edit')?.addEventListener('click', e => { e.stopPropagation(); openEditor(getMap(c.id)); });
+    card.querySelector('.save')?.addEventListener('click', e => { e.stopPropagation(); communityAction(c.entry); });
     box.appendChild(card);
-    drawPreview(card.querySelector('canvas'), c.data);
+    const cv = card.querySelector('canvas');
+    if (c.data) drawPreview(cv, c.data);
+    else if (c.entry) decodeCommunity(c.entry).then(d => { if (d) drawPreview(cv, d); }).catch(() => {});
   }
-  const add = document.createElement('button');
-  add.type = 'button';
-  add.className = 'map-card new-map';
-  add.textContent = '+ Make a new map';
-  add.addEventListener('click', () => openEditor(null));
-  box.appendChild(add);
+  if (source === 'mine') {
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'map-card new-map';
+    add.textContent = '+ Make a new map';
+    add.addEventListener('click', () => openEditor(null));
+    box.appendChild(add);
+  }
+  function note(text) { $('mapsNote').textContent = text; show('mapsNote', true); }
 }
 
-/** The map data for a menu key, falling back to the first original map. */
-function mapDataFor(key) {
+async function loadCommunity() {
+  if (state.communityLoading) return;
+  state.communityLoading = true;
+  try {
+    community ||= new Community();
+    const list = await community.list();
+    maps.community.clear();
+    for (const e of list) maps.community.set(e.key, e);
+  } catch (e) {
+    toast(`Couldn't load community maps: ${e.message}`);
+  } finally {
+    state.communityLoaded = true;
+    state.communityLoading = false;
+    if (mapSource() === 'community') buildMapCards(selectedMap());
+  }
+}
+
+async function decodeCommunity(entry) {
+  if (entry.data) return entry.data;
+  if (!entry.decoding) entry.decoding = decodeShare(entry.code).then(d => (entry.data = d)).catch(() => null);
+  return entry.decoding;
+}
+
+async function communityAction(entry) {
+  if (entry.mine) {
+    if (!confirm(`Take "${entry.name}" down from the community maps?`)) return;
+    try { await community.remove(entry); maps.community.delete(entry.key); buildMapCards(selectedMap()); toast('Removed'); }
+    catch (e) { toast(`Couldn't remove it: ${e.message}`); }
+    return;
+  }
+  const data = await decodeCommunity(entry);
+  if (!data) { toast("That map couldn't be loaded"); return; }
+  const rec = saveMap({ name: data.name, data });
+  toast(rec ? `Saved "${data.name}" to your maps` : "Couldn't save: this browser's storage is full");
+}
+
+/** The map data for a menu key: { data, navKey, name, ref } where ref tells online players how to get it. */
+async function mapDataFor(key) {
   if (key?.startsWith('custom:')) {
     const rec = getMap(key.slice(7));
-    if (rec) return { data: rec.data, navKey: `${key}@${rec.updated}` };
+    if (rec) return { data: rec.data, navKey: `${key}@${rec.updated}`, name: rec.name, custom: true };
+  }
+  if (key?.startsWith('community:')) {
+    const e = maps.community.get(key.slice(10));
+    const data = e && await decodeCommunity(e);
+    if (data) return { data, navKey: key, name: data.name, custom: true };
   }
   const file = maps.data.has(key) ? key : maps.index[0].file;
-  return { data: maps.data.get(file), navKey: file };
+  return { data: maps.data.get(file), navKey: file, name: maps.index.find(m => m.file === file)?.name || file, builtin: file };
 }
 
 function readMenu() {
-  const card = $('maps').querySelector('.map-card[aria-checked="true"]') || $('maps').querySelector('.map-card');
+  const mode = $('mode').value;
   return {
-    name: ($('name').value.trim() || 'Player').slice(0, 14),
-    map: card.dataset.key,
-    mode: document.querySelector('input[name=mode]:checked').value,
+    name: playerName(),
+    map: selectedMap() || maps.index[0]?.file,
+    mode,
     bots: +$('bots').value,
     difficulty: $('difficulty').value,
     fragLimit: +$('fragLimit').value,
+    lives: +$('lives').value,
+    gunKills: +$('gunKills').value,
+    crates: $('crates').value,
     speed: SHOW_SPEED_MENU && SPEEDS.includes(+$('speed').value) ? +$('speed').value : DEFAULT_SPEED,
     muted: $('mute').checked,
+    maxPlayers: +$('maxPlayers').value,
+    visibility: $('visibility').value,
+    gameName: $('gameName').value.trim(),
   };
 }
 
@@ -128,6 +272,7 @@ function drawPreview(cv, data) {
   const ctx = cv.getContext('2d');
   const b = data.bounds;
   const s = Math.min((cv.width - 16) / (b.right - b.left), (cv.height - 16) / (b.bottom - b.top));
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.setTransform(s, 0, 0, s, cv.width / 2 - ((b.left + b.right) / 2) * s, cv.height / 2 - ((b.top + b.bottom) / 2) * s);
@@ -142,66 +287,91 @@ function drawPreview(cv, data) {
 
 function show(id, on) { $(id).classList.toggle('hidden', !on); }
 
-// ---- Matches --------------------------------------------------------------------
+// ---- Matches (offline, and hosting) ----------------------------------------------
 
-function startMatch(settings, { returnTo = 'menu' } = {}) {
+function addBot(game, nav, settings, rng) {
+  const used = new Set(game.soldiers.map(s => s.name.toLowerCase()));
+  const p = BOT_PROFILES.find(b => !used.has(b.name.toLowerCase())) || BOT_PROFILES[game.soldiers.length % BOT_PROFILES.length];
+  let team = 0;
+  if (game.rules.teams) {
+    const n = t => game.soldiers.filter(s => s.team === t).length;
+    team = n(1) <= n(2) ? 1 : 2;
+  }
+  game.addSoldier({ name: used.has(p.name.toLowerCase()) ? `${p.name}${game.soldiers.length}` : p.name, isBot: true, team, profile: p },
+    new BotController(nav, settings.difficulty, p, rng));
+}
+
+/** Start a match. online: host it (other players can join). */
+async function startMatch(settings, { returnTo = 'menu', online = false } = {}) {
   state.settings = settings;
   state.returnTo = returnTo;
-  if (returnTo === 'menu') saveSettings(settings);
-  show('menu', false); show('pause', false); show('over', false);
+  if (returnTo === 'menu') saveSettings({ ...loadSettings(), ...settings, tab: state.tab, mapSource: mapSource() });
+  show('menu', false); show('pause', false); show('over', false); show('connecting', false);
   $('toEditor').classList.toggle('hidden', returnTo !== 'editor');
   $('toMenu').textContent = returnTo === 'editor' ? 'Back to map maker' : 'Menu';
   show('loading', true);
+  const map = await mapDataFor(settings.map);
   // Let the loading message paint before building the bots' route map.
-  setTimeout(() => {
-    const { data: mapData, navKey: mapKey } = mapDataFor(settings.map);
-    const game = new Game({ mapData, mode: settings.mode, fragLimit: settings.fragLimit, speed: settings.speed, seed: (Math.random() * 2 ** 31) | 0 });
-    state.step = 1000 / game.tickRate;
-    // Route maps depend on the map version and the speed's move timings.
-    const navKey = `${mapKey}@${settings.speed}`;
-    if (!maps.nav.has(navKey)) maps.nav.set(navKey, new NavGraph(game.map));
-    const nav = maps.nav.get(navKey);
-    const rng = makeRng((Math.random() * 2 ** 31) | 0);
+  await new Promise(r => setTimeout(r, 30));
+  const options = { lives: settings.lives, gunGameKills: settings.gunKills, crates: settings.crates };
+  const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: settings.fragLimit, speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
+  state.step = 1000 / game.tickRate;
+  // Route maps depend on the map version and the speed's move timings.
+  const navKey = `${map.navKey}@${settings.speed}`;
+  if (!maps.nav.has(navKey)) maps.nav.set(navKey, new NavGraph(game.map));
+  const nav = maps.nav.get(navKey);
+  const rng = makeRng((Math.random() * 2 ** 31) | 0);
 
-    const team = settings.mode === 'team';
-    state.me = game.addSoldier({ name: settings.name, isBot: false, team: team ? 1 : 0 }, new PlayerController(input, renderer));
-    const profiles = [...BOT_PROFILES].sort(() => rng() - 0.5).filter(p => p.name.toLowerCase() !== settings.name.toLowerCase());
-    for (let i = 0; i < settings.bots; i++) {
-      const p = profiles[i % profiles.length];
-      game.addSoldier({ name: p.name, isBot: true, team: team ? (i % 2 === 0 ? 2 : 1) : 0, profile: p },
-        new BotController(nav, settings.difficulty, p, rng));
-    }
+  const team = game.rules.teams ? 1 : 0;
+  state.me = game.addSoldier({ name: settings.name, isBot: false, team }, new PlayerController(input, renderer));
 
-    const b = game.map.bounds;
-    renderer.snapCamera((b.left + b.right) / 2, (b.top + b.bottom) / 2);
-    state.game = game;
-    state.paused = false;
-    state.overShown = false;
-    state.acc = 0;
-    state.last = performance.now();
-    input.clear();
-    input.enabled = true;
-    document.body.classList.add('playing');
-    show('loading', false);
-    canvas.focus?.();
-  }, 30);
+  if (online) {
+    state.mode = 'host';
+    await hostMatch(game, settings, map, nav, rng);
+  } else {
+    state.mode = 'offline';
+    for (let i = 0; i < settings.bots; i++) addBot(game, nav, settings, rng);
+  }
+  enterMatch(game, state.me);
+  show('loading', false);
+}
+
+function enterMatch(game, me) {
+  const b = game.map.bounds;
+  renderer.snapCamera((b.left + b.right) / 2, (b.top + b.bottom) / 2);
+  state.game = game;
+  state.me = me;
+  state.paused = false;
+  state.overShown = false;
+  state.nextMatchAt = 0;
+  state.acc = 0;
+  state.last = performance.now();
+  input.clear();
+  input.enabled = true;
+  document.body.classList.add('playing');
+  show('pause', false); show('over', false); show('menu', false); show('connecting', false); show('loading', false);
+  canvas.focus?.();
 }
 
 function endMatch(to = state.returnTo) {
   state.game = null;
+  state.mode = 'offline';
   input.enabled = false;
+  closeChat();
   document.body.classList.remove('playing');
-  show('pause', false); show('over', false);
+  show('pause', false); show('over', false); show('loading', false);
   if (to === 'editor') editor.resume();
   else showMenu();
 }
 
 function showMenu() {
-  buildMapCards(readMenu().map);
   show('menu', true);
+  buildMapCards(selectedMap(), { follow: true });
+  if (state.tab === 'online') startWatching();
 }
 
 function openEditor(record) {
+  stopWatching();
   show('menu', false);
   editor.open(record);
 }
@@ -211,83 +381,393 @@ function toast(text) {
   el.textContent = text;
   el.classList.remove('hidden');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => el.classList.add('hidden'), 4000);
+  toast.timer = setTimeout(() => el.classList.add('hidden'), 5000);
 }
 
 function setPaused(p) {
-  if (!state.game || state.game.over) return;
-  state.paused = p;
+  if (!state.game || (state.game.over && p)) return;
+  const online = state.mode !== 'offline';
+  state.paused = online ? false : p;
   input.enabled = !p;
   if (p) input.clear();
   document.body.classList.toggle('playing', !p);
+  $('pauseTitle').textContent = online ? 'Menu' : 'Paused';
+  show('pauseNote', online);
+  show('invite', state.mode === 'host');
+  show('restart', state.mode !== 'client');
+  $('quit').textContent = state.mode === 'host' ? 'End game for everyone' : state.mode === 'client' ? 'Leave game' : 'Quit to menu';
+  state.menuOpen = p;
   show('pause', p);
   state.last = performance.now();
 }
 
-// ---- Loop -----------------------------------------------------------------------
+// ---- Online ------------------------------------------------------------------------
+
+function getLobby() {
+  if (!lobby) {
+    lobby = new Lobby({ log: m => console.debug('[lobby]', m) });
+    lobby.pool.onStatus(() => relayStatus());
+  }
+  return lobby;
+}
+
+function relayStatus() {
+  if (!lobby) return;
+  const { connected, total } = lobby.status();
+  $('relayStatus').textContent = connected ? `Connected to ${connected} of ${total} game servers` : 'Connecting to the game servers…';
+}
+
+function startWatching() {
+  if (watcher || $('menu').classList.contains('hidden')) return;
+  renderGameList(null);
+  watcher = getLobby().watch(renderGameList);
+  relayStatus();
+}
+
+function stopWatching() { watcher?.stop(); watcher = null; }
+
+const MODE_SHORT = { ffa: 'Free-for-all', team: 'Team', gungame: 'Gun game', oitc: 'One in the chamber' };
+
+function renderGameList(list) {
+  const box = $('gameList');
+  if (!list || !list.length) {
+    box.innerHTML = `<div class="empty">${list ? 'No open games right now. Host one, or try Quick match: it starts a game for others to join.' : 'Looking for games…'}</div>`;
+    return;
+  }
+  box.innerHTML = '';
+  for (const g of list) {
+    const row = document.createElement('div');
+    const old = g.version !== PROTOCOL, full = g.players >= g.max;
+    row.className = `game-row${full ? ' full' : ''}${old ? ' old' : ''}`;
+    row.innerHTML = `<div><b>${esc(g.name)}</b><small>hosted by ${esc(g.hostName)}</small></div>
+      <div class="hide-small">${esc(g.mapName)}</div>
+      <div class="hide-small">${MODE_SHORT[g.mode]}</div>
+      <div class="players">${g.players}/${g.max}<small>${g.bots ? ` +${g.bots} bots` : ''}</small></div>
+      <button type="button"${old || full ? ' disabled' : ''}>${old ? 'Old version' : full ? 'Full' : 'Join'}</button>`;
+    row.querySelector('button').addEventListener('click', () => joinGame(g));
+    box.appendChild(row);
+  }
+}
+
+function connecting(title, text = '', onCancel = null) {
+  $('connTitle').textContent = title;
+  $('connText').textContent = text;
+  state.cancelConnect = onCancel;
+  show('connecting', true);
+}
+
+async function hostMatch(game, settings, map, nav, rng) {
+  const net = state.net?.role === 'host' ? state.net : (state.net = { role: 'host' });
+  net.settings = settings;
+  net.matchInfo = {
+    mode: settings.mode, fragLimit: settings.fragLimit, speed: settings.speed, mapName: map.name,
+    options: game.options,
+    map: map.builtin ? { builtin: map.builtin } : { code: await encodeShare(map.data) },
+  };
+  net.addBot = g => addBot(g, nav, settings, rng);
+  if (!net.host) {
+    net.host = new NetHost({
+      maxPlayers: settings.maxPlayers, botCount: settings.bots,
+      matchInfo: () => net.matchInfo,
+      addBot: g => net.addBot(g),
+      onChange: () => net.handle?.update(),
+      onChat: m => addChat(m),
+    });
+  }
+  net.host.opts.maxPlayers = settings.maxPlayers;
+  net.host.opts.botCount = settings.bots;
+  net.host.setGame(game);
+  if (!net.handle) {
+    const l = getLobby();
+    net.handle = l.host({
+      info: () => ({
+        name: settings.gameName || `${settings.name}'s game`, hostName: settings.name, mapName: net.matchInfo.mapName,
+        mode: settings.mode, players: net.host.humans, max: settings.maxPlayers, bots: game.soldiers.filter(s => s.isBot).length,
+        private: settings.visibility === 'private',
+      }),
+      accept: () => (net.host.humans >= net.host.opts.maxPlayers ? 'That game is full' : null),
+      onPlayer: (link, name) => net.host.addPlayer(link, name),
+    });
+    l.pool.ready(1, 6000).then(ok => { if (!ok && state.net === net) toast("Couldn't reach the game servers yet, so nobody can find your game. Still trying…"); });
+    addChat({ system: true, text: settings.visibility === 'private' ? 'Your game is invite-only: press Esc to copy the invite link.' : 'Your game is listed. Press Esc to copy an invite link.' });
+  } else {
+    net.handle.update();
+  }
+}
+
+function inviteLink() {
+  const h = state.net?.handle;
+  return h ? `${location.origin}${location.pathname}#join=${inviteCode(h.invite)}` : '';
+}
+
+async function joinGame(target) {
+  audio.unlock();
+  stopWatching();
+  let cancelled = false;
+  connecting(`Joining ${target.name || 'game'}`, 'Connecting to the host…', () => { cancelled = true; });
+  try {
+    const link = await getLobby().join(target, playerName());
+    if (cancelled) { link.close('cancelled'); return; }
+    startClient(link);
+  } catch (e) {
+    if (cancelled) return;
+    show('connecting', false);
+    showMenu();
+    toast(e.message);
+  }
+}
+
+async function quickMatch() {
+  audio.unlock();
+  stopWatching();
+  let cancelled = false;
+  connecting('Quick match', 'Looking for games…', () => { cancelled = true; });
+  try {
+    const res = await getLobby().quickMatch(playerName(), text => { $('connText').textContent = text; });
+    if (cancelled) { res?.link.close('cancelled'); return; }
+    if (res) { startClient(res.link); return; }
+    $('connText').textContent = 'No open games, so starting one for others to join…';
+    const s = { ...readMenu(), visibility: 'public', gameName: '' };
+    if (sourceOf(s.map) !== 'originals') s.map = maps.index[Math.floor(Math.random() * maps.index.length)].file;
+    await startMatch(s, { online: true });
+  } catch (e) {
+    if (cancelled) return;
+    show('connecting', false);
+    showMenu();
+    toast(e.message);
+  }
+}
+
+function startClient(link) {
+  const net = state.net = { role: 'client' };
+  net.client = new NetClient({
+    link,
+    controller: new PlayerController(input, renderer),
+    loadMap: async m => {
+      if (m.map?.builtin && maps.data.has(m.map.builtin)) return maps.data.get(m.map.builtin);
+      if (m.map?.code) return decodeShare(m.map.code);
+      throw new Error('unknown map');
+    },
+    onStart: (game, me) => {
+      state.mode = 'client';
+      state.returnTo = 'menu';
+      state.step = 1000 / game.tickRate;
+      enterMatch(game, me);
+    },
+    onEnd: reason => {
+      if (state.net !== net) return;
+      state.net = null;
+      show('connecting', false);
+      endMatch('menu');
+      if (reason) toast(reason);
+    },
+    onChat: m => addChat(m),
+  });
+  $('connText').textContent = 'Connected. Loading the match…';
+}
+
+/** Leave whatever online game we're in. */
+function leaveOnline() {
+  const net = state.net;
+  state.net = null;
+  if (!net) return;
+  if (net.role === 'host') { net.handle?.close(); net.host?.close(); }
+  if (net.role === 'client') net.client?.leave();
+}
+
+// ---- Chat ----------------------------------------------------------------------------
+
+function addChat(m) {
+  state.chat.push({ name: m.name || '', text: m.text, system: !!m.system, time: performance.now() });
+  if (state.chat.length > 30) state.chat.shift();
+  if (!m.system) audio.play('chat');
+}
+
+function openChat() {
+  if (state.mode === 'offline' || state.chatOpen) return;
+  state.chatOpen = true;
+  input.enabled = false;
+  input.clear();
+  show('chatForm', true);
+  $('chatInput').value = '';
+  $('chatInput').focus();
+}
+
+function closeChat() {
+  if (!state.chatOpen) return;
+  state.chatOpen = false;
+  show('chatForm', false);
+  $('chatInput').blur();
+  if (state.game && !state.menuOpen) input.enabled = true;
+}
+
+function sendChat(text) {
+  text = text.trim();
+  if (!text) return;
+  if (state.net?.role === 'host') state.net.host.chat(state.settings.name, text);
+  else if (state.net?.role === 'client') state.net.client.sendChat(text);
+}
+
+// ---- Loop ------------------------------------------------------------------------------
+
+/** Run the game forward to `now` in fixed steps (60 a second). */
+function simulate(now) {
+  const g = state.game;
+  if (!g) { state.last = now; return; }
+  let dt = now - state.last;
+  state.last = now;
+  if (dt > 1000) dt = 1000;
+  if (state.paused) return;
+  state.acc += dt;
+  let n = 0;
+  while (state.acc >= state.step && n++ < 90) {
+    if (state.mode === 'client') state.net?.client?.tick();
+    else { g.update(); state.net?.host?.afterTick(); }
+    state.acc -= state.step;
+  }
+  if (n >= 90) state.acc = 0;
+}
 
 function frame(now) {
   requestAnimationFrame(frame);
+  simulate(now);
   const g = state.game;
-  if (!g) { renderer.ctx.setTransform(1, 0, 0, 1, 0, 0); return; }
-  let dt = now - state.last;
-  state.last = now;
-  if (dt > 250) dt = 250;
-  if (!state.paused) {
-    state.acc += dt;
-    while (state.acc >= state.step) { g.update(); state.acc -= state.step; }
+  if (!g) {
+    // Nothing playing: keep the canvas blank behind the menus.
+    const ctx = renderer.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, renderer.canvas.width, renderer.canvas.height);
+    return;
   }
-  const alpha = state.paused ? 1 : state.acc / state.step;
+  const client = state.mode === 'client' ? state.net?.client : null;
+  if (client) client.updateView(now);
+  const alpha = state.paused ? 1 : Math.min(1, state.acc / state.step);
   const me = state.me;
 
-  audio.playQueue(g.sounds, me.x, me.y, me.id);
+  // Out of lives: watch the leader instead.
+  let view = me, watching = null;
+  if (!me.alive && !g.rules.canRespawn(g, me)) {
+    watching = g.standings().find(s => s.alive && s !== me) || null;
+    if (watching) view = watching;
+  }
+
+  audio.playQueue(g.sounds, view.x, view.y, me.id);
   g.sounds.length = 0;
 
-  const sniping = me.alive && me.current === 'SR' && input.mouse.right && !state.paused;
-  renderer.updateCamera(g, lerp(me.prevX, me.x, alpha), lerp(me.prevY, me.y, alpha), state.paused ? null : input.mouse, sniping);
+  const sniping = me.alive && me.current === 'SR' && input.mouse.right && !state.menuOpen && !state.chatOpen;
+  const ax = view === me ? lerp(me.prevX, me.x, alpha) + (me.drawDX || 0) : view.x;
+  const ay = view === me ? lerp(me.prevY, me.y, alpha) + (me.drawDY || 0) : view.y;
+  renderer.updateCamera(g, ax, ay, state.menuOpen ? null : input.mouse, sniping);
   renderer.render(g, alpha, me);
-  drawHud(renderer, g, me, { showScores: input.down('Tab') });
-  if (!state.paused && !g.over) renderer.drawCrosshair(input.mouse.x, input.mouse.y, sniping);
+  drawHud(renderer, g, me, {
+    showScores: input.down('Tab') && !state.chatOpen, watching, chat: state.chat,
+    ping: client ? client.ping : null,
+  });
+  if (!state.menuOpen && !g.over && !state.chatOpen) renderer.drawCrosshair(input.mouse.x, input.mouse.y, sniping);
+  if (g.over) matchOver(g);
+}
 
-  if (g.over && !state.overShown) {
+function matchOver(g) {
+  const now = performance.now();
+  if (!state.overShown) {
     state.overShown = true;
     input.enabled = false;
     document.body.classList.remove('playing');
-    setTimeout(() => { if (state.game === g) show('over', true); }, 1500);
+    state.overAt = now;
+    if (state.mode === 'host') state.nextMatchAt = now + 12000;
+    show('pause', false);
+    state.menuOpen = false;
+    show('again', state.mode !== 'client');
+    $('again').textContent = state.mode === 'host' ? 'Next match now' : 'Play again';
+    $('toMenu').textContent = state.mode === 'host' ? 'End game' : state.mode === 'client' ? 'Leave' : state.returnTo === 'editor' ? 'Back to map maker' : 'Menu';
   }
+  if (now - state.overAt > 1500) show('over', true);
+  const noteEl = $('overNote');
+  if (state.mode === 'host') {
+    const left = Math.max(0, Math.ceil((state.nextMatchAt - now) / 1000));
+    noteEl.textContent = `Next match in ${left}…`;
+    show('overNote', true);
+    if (now >= state.nextMatchAt && state.nextMatchAt) { state.nextMatchAt = 0; nextMatch(); }
+  } else if (state.mode === 'client') {
+    noteEl.textContent = 'The next match starts soon…';
+    show('overNote', true);
+  } else show('overNote', false);
+}
+
+function nextMatch() {
+  const s = state.settings;
+  startMatch(s, { returnTo: state.returnTo, online: state.mode === 'host' });
+}
+
+// Keep online games running in a background tab (browsers pause animation frames there).
+function startBackgroundTicker() {
+  try {
+    const src = 'setInterval(() => postMessage(0), 16);';
+    const worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    worker.onmessage = () => { if (document.hidden && state.game && state.mode !== 'offline') simulate(performance.now()); };
+  } catch { /* no workers: online games pause in background tabs */ }
 }
 
 // ---- Events ---------------------------------------------------------------------
 
 function wire() {
-  $('play').addEventListener('click', () => { audio.unlock(); audio.play('menuSelect'); startMatch(readMenu()); });
-  $('resume').addEventListener('click', () => setPaused(false));
-  $('restart').addEventListener('click', () => startMatch(state.settings, { returnTo: state.returnTo }));
-  $('quit').addEventListener('click', () => endMatch('menu'));
-  $('toEditor').addEventListener('click', () => endMatch('editor'));
-  $('again').addEventListener('click', () => startMatch(state.settings, { returnTo: state.returnTo }));
-  $('toMenu').addEventListener('click', () => endMatch());
+  $('tabOnline').addEventListener('click', () => { showTab('online'); rememberMenu(); });
+  $('tabOffline').addEventListener('click', () => { showTab('offline'); rememberMenu(); });
   $('openEditor').addEventListener('click', () => openEditor(listMaps()[0] || null));
+  $('quickMatch').addEventListener('click', quickMatch);
+  $('hostGame').addEventListener('click', () => { stopWatching(); setupFor('host'); });
+  $('setupBack').addEventListener('click', () => showTab('online'));
+  $('refreshGames').addEventListener('click', () => { watcher?.refresh(); renderGameList(null); setTimeout(() => watcher && renderGameList([...watcher.games.values()]), 2500); });
+  $('play').addEventListener('click', () => {
+    audio.unlock(); audio.play('menuSelect');
+    startMatch(readMenu(), { online: state.setupFor === 'host' });
+  });
+  $('connCancel').addEventListener('click', () => {
+    state.cancelConnect?.();
+    leaveOnline();
+    show('connecting', false);
+    showMenu();
+  });
+  $('resume').addEventListener('click', () => setPaused(false));
+  $('restart').addEventListener('click', () => nextMatch());
+  $('quit').addEventListener('click', () => { leaveOnline(); endMatch('menu'); });
+  $('invite').addEventListener('click', async () => {
+    const link = inviteLink();
+    try { await navigator.clipboard.writeText(link); toast('Invite link copied: send it to a friend'); }
+    catch { prompt('Send this link to a friend:', link); }
+  });
+  $('toEditor').addEventListener('click', () => endMatch('editor'));
+  $('again').addEventListener('click', () => { state.nextMatchAt = 0; nextMatch(); });
+  $('toMenu').addEventListener('click', () => { if (state.mode !== 'offline') { leaveOnline(); endMatch('menu'); } else endMatch(); });
   $('mute').addEventListener('change', () => {
     audio.setMuted($('mute').checked);
-    if (state.settings) { state.settings.muted = $('mute').checked; saveSettings(state.settings); }
+    if (state.settings) { state.settings.muted = $('mute').checked; saveSettings({ ...loadSettings(), muted: $('mute').checked }); }
   });
+  $('chatForm').addEventListener('submit', e => { e.preventDefault(); sendChat($('chatInput').value); closeChat(); });
+  $('chatInput').addEventListener('keydown', e => { if (e.code === 'Escape') { e.preventDefault(); e.stopPropagation(); closeChat(); } });
+
   window.addEventListener('keydown', e => {
     audio.unlock();
+    if (state.chatOpen) return;
     if (!state.game) {
-      if (e.code === 'Enter' && !$('menu').classList.contains('hidden') && document.activeElement?.tagName !== 'BUTTON') startMatch(readMenu());
+      if (e.code === 'Enter' && !$('menu').classList.contains('hidden') && !$('setup').classList.contains('hidden') && !/^(BUTTON|INPUT|SELECT)$/.test(document.activeElement?.tagName)) {
+        startMatch(readMenu(), { online: state.setupFor === 'host' });
+      }
       return;
     }
-    if (e.code === 'Escape') { e.preventDefault(); setPaused(!state.paused); }
-    if (e.code === 'KeyM' && !e.repeat) {
+    if (e.code === 'Escape') { e.preventDefault(); setPaused(!state.menuOpen); }
+    if ((e.code === 'Enter' || e.code === 'KeyT') && state.mode !== 'offline' && !state.menuOpen && !e.repeat) { e.preventDefault(); openChat(); return; }
+    if (e.code === 'KeyM' && !e.repeat && !state.menuOpen) {
       const m = !audio.muted;
       audio.setMuted(m);
       $('mute').checked = m;
-      if (state.settings) { state.settings.muted = m; saveSettings(state.settings); }
     }
   });
   canvas.addEventListener('mousedown', () => audio.unlock());
-  window.addEventListener('blur', () => { if (state.game && !state.game.over) setPaused(true); });
+  // Offline games pause when you switch away; online ones can't.
+  window.addEventListener('blur', () => { if (state.game && !state.game.over && state.mode === 'offline') setPaused(true); });
+  window.addEventListener('beforeunload', () => leaveOnline());
 }
 
 /**
@@ -316,6 +796,14 @@ function revealSelectedMap() {
   $('maps').querySelector('.map-card[aria-checked="true"]')?.scrollIntoView({ block: 'nearest' });
 }
 
+/** An invite link (#join=...): join that game. */
+function takeInvite() {
+  if (!location.hash.startsWith('#join=')) return null;
+  const inv = parseInvite(location.hash.slice(6));
+  history.replaceState(null, '', location.pathname + location.search);
+  return inv;
+}
+
 async function boot() {
   const [index, legs] = await Promise.all([
     fetch('data/maps/index.json').then(r => r.json()),
@@ -326,33 +814,52 @@ async function boot() {
   maps.index = index;
   await Promise.all(index.map(async m => maps.data.set(m.file, await fetch('data/maps/' + m.file).then(r => r.json()))));
   const settings = loadSettings();
+  state.tab = settings.tab === 'offline' ? 'offline' : 'online';
 
   editor = new Editor({
     root: $('editor'),
     originals: maps.index.map(m => ({ name: m.name, data: maps.data.get(m.file) })),
-    onExit: () => showMenu(),
-    onTestPlay: record => startMatch({ ...readMenu(), map: `custom:${record.id}` }, { returnTo: 'editor' }),
+    onExit: record => {
+      const key = record?.id ? `custom:${record.id}` : selectedMap();
+      show('menu', true);
+      showTab('offline');
+      buildMapCards(key, { follow: true });
+    },
+    onTestPlay: record => startMatch({ ...readMenu(), map: `custom:${record.id}`, name: playerName() }, { returnTo: 'editor' }),
+    onUpload: async record => {
+      community ||= new Community();
+      const res = await community.publish(normalizeMap(record.data), playerName(), record.communitySlot);
+      saveMap({ id: record.id, name: record.name, data: record.data, communitySlot: res.slot });
+      state.communityLoaded = false;
+      return res;
+    },
   });
 
   const shared = await importSharedMap();
   if (shared?.key) settings.map = shared.key;
+  const invite = takeInvite();
 
   buildMenu(settings);
   wire();
+  showTab(shared?.key ? 'offline' : state.tab);
   requestAnimationFrame(frame);
+  startBackgroundTicker();
   if (shared) { toast(shared.text); revealSelectedMap(); }
+  if (invite) joinGame({ ...invite, name: 'your friend\'s game' });
   // A link pasted into a tab that already has the game open only changes the hash.
   window.addEventListener('hashchange', async () => {
+    const inv = takeInvite();
+    if (inv && !state.game) { joinGame({ ...inv, name: 'your friend\'s game' }); return; }
     const result = await importSharedMap();
     if (!result) return;
-    if (result.key && !$('menu').classList.contains('hidden')) { buildMapCards(result.key); revealSelectedMap(); }
+    if (result.key && !$('menu').classList.contains('hidden')) { showTab('offline'); buildMapCards(result.key, { follow: true }); revealSelectedMap(); }
     toast(result.text);
   });
   // For automated tests and debugging in the console.
-  window.stickSoldiers = { state, startMatch, readMenu, audio, editor, openEditor };
+  window.stickSoldiers = { state, startMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab };
 }
 
 boot().catch(err => {
   console.error(err);
-  document.body.insertAdjacentHTML('beforeend', `<p style="position:fixed;top:10px;left:10px;color:#b3261e">Couldn't load the game: ${err.message}</p>`);
+  document.body.insertAdjacentHTML('beforeend', `<p style="position:fixed;top:10px;left:10px;color:#b3261e">Couldn't load the game: ${esc(err.message)}</p>`);
 });

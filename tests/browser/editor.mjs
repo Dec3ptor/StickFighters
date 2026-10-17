@@ -4,12 +4,15 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import { serve } from '../../tools/serve.mjs';
+import { startRelay } from '../../tools/relay.mjs';
 
 const outDir = process.argv[2] || 'test-results';
 fs.mkdirSync(outDir, { recursive: true });
 
 const server = await serve(0);
-const url = `http://localhost:${server.address().port}/`;
+// Online features talk to a local relay instead of the public ones.
+const relay = await startRelay();
+const url = `http://localhost:${server.address().port}/?relay=${encodeURIComponent(relay.url)}`;
 const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const errors = [];
 const expect = (ok, what) => { if (!ok) errors.push(what); };
@@ -23,6 +26,7 @@ function watch(page) {
 
 const page = watch(await browser.newPage({ viewport: { width: 1400, height: 820 } }));
 await page.goto(url);
+await page.click('#tabOffline');
 await page.waitForSelector('.map-card');
 await page.click('#openEditor');
 await page.waitForSelector('#editor:not(.hidden)');
@@ -138,7 +142,58 @@ await friend.waitForFunction(() => document.querySelector('#toast').textContent.
 const broken = await friend.textContent('#toast');
 expect(broken.startsWith("Couldn't open the shared map"), `broken link: ${broken}`);
 
-console.log(JSON.stringify({ built, moves: { before, moved, undone, redone }, report, playing, shared, again, broken, errors }, null, 2));
+// Mirror editing and the spawn loadout, on a fresh map.
+await page.bringToFront();
+await page.click('#openEditor');
+await page.waitForSelector('#editor:not(.hidden)');
+await page.click('#edNew');
+await page.waitForTimeout(200);
+await page.click('#edCanvas');
+await page.keyboard.press('KeyM');
+await page.keyboard.press('KeyP');
+await drag([-300, 40], [-200, 64]);
+await page.keyboard.press('KeyH');
+await clickAt(-250, 150);
+const mirrored = await page.evaluate(() => {
+  const e = window.stickSoldiers.editor, m = e.map;
+  return { line: e.mirror.x, plats: m.platforms.map(p => [p.left, p.right]), items: m.items.map(i => [i.type, i.x]) };
+});
+expect(mirrored.line === 0, `mirror line in the middle (${mirrored.line})`);
+const left = mirrored.plats.find(([l, r]) => r <= 0 && l > -400);
+expect(left && mirrored.plats.some(([l, r]) => l === -left[1] && r === -left[0]), `platform mirrored: ${JSON.stringify(mirrored.plats)}`);
+expect(mirrored.items.length === 2 && mirrored.items[0][1] === -mirrored.items[1][1] && mirrored.items[0][1] < 0, `pickup mirrored: ${JSON.stringify(mirrored.items)}`);
+// Moving one side moves the other.
+await page.keyboard.press('KeyV');
+await drag([-250, 50], [-250, 10]);
+const moved2 = await page.evaluate(() => window.stickSoldiers.editor.map.platforms.filter(p => p.right - p.left < 200).map(p => p.top));
+expect(moved2.length === 2 && moved2[0] === moved2[1] && moved2[0] < 40, `both sides moved: ${moved2}`);
+await page.screenshot({ path: `${outDir}/editor-mirror.png` });
+// Everyone spawns with an Uzi and full armour.
+await page.keyboard.press('Escape');
+await page.click('#loDetails summary');
+await page.check('input[name=loWeapon][value=Uzi]');
+await page.selectOption('#loArmour', '100');
+await page.waitForTimeout(600);
+const loadout = await page.evaluate(() => window.stickSoldiers.editor.record.data.loadout);
+expect(loadout && loadout.weapons.includes('Uzi') && loadout.armour === 100, `loadout saved: ${JSON.stringify(loadout)}`);
+
+// Upload it to the community maps, then find it in the menu's Community tab.
+await page.fill('#edName', 'Mirror Test Arena');
+await page.waitForTimeout(500);
+await page.click('#edUpload');
+await page.waitForFunction(() => /Uploaded/.test(document.querySelector('#edStatus').textContent), null, { timeout: 15000 }).catch(() => {});
+const uploadStatus = await page.textContent('#edStatus');
+expect(/Uploaded/.test(uploadStatus), `upload status: ${uploadStatus}`);
+await page.click('#edBack');
+await page.waitForSelector('#menu:not(.hidden)');
+await page.click('#setup label:has(input[name=mapSource][value=community])');
+await page.waitForSelector('.map-card:has-text("Mirror Test Arena")', { timeout: 10000 }).catch(() => {});
+const communityCards = await page.$$eval('.map-card span', els => els.map(e => e.textContent));
+expect(communityCards.includes('Mirror Test Arena'), `community tab lists the upload (${communityCards})`);
+await page.screenshot({ path: `${outDir}/menu-community.png` });
+
+console.log(JSON.stringify({ uploadStatus, communityCards, mirrored, loadout, built, moves: { before, moved, undone, redone }, report, playing, shared, again, broken, errors }, null, 2));
 await browser.close();
 server.close();
+await relay.close();
 if (errors.length) process.exit(1);

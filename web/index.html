@@ -13,61 +13,122 @@
 
   <section id="menu" class="screen">
     <div class="panel">
-      <header>
-        <h1>Stick Soldiers</h1>
-        <p class="tag">The 2003 stick-figure shooter, remade for the browser.</p>
-      </header>
-      <div class="cols">
-        <div class="col">
-          <label class="field">Your name <input id="name" maxlength="14" autocomplete="off" spellcheck="false"></label>
-          <div class="field field-row">Map <button type="button" id="openEditor" class="small">Map maker</button></div>
-          <div id="maps" class="maps" role="radiogroup" aria-label="Map"></div>
+      <header class="menu-head">
+        <div>
+          <h1>Stick Soldiers</h1>
+          <p class="tag">The 2003 stick-figure shooter, remade for the browser.</p>
         </div>
-        <div class="col">
-          <div class="field">Mode</div>
-          <div class="seg" role="radiogroup" aria-label="Mode">
-            <label><input type="radio" name="mode" value="ffa" checked> Free-for-all</label>
-            <label><input type="radio" name="mode" value="team"> Team deathmatch</label>
+        <label class="field name-field">Your name <input id="name" maxlength="14" autocomplete="off" spellcheck="false"></label>
+      </header>
+      <nav class="tabs" aria-label="Play">
+        <button type="button" class="tab" id="tabOnline" data-tab="online" aria-pressed="true">Play online</button>
+        <button type="button" class="tab" id="tabOffline" data-tab="offline" aria-pressed="false">Play vs bots</button>
+        <button type="button" class="tab" id="openEditor">Map maker</button>
+      </nav>
+
+      <div id="online" class="tab-panel">
+        <div class="online-actions">
+          <button type="button" id="quickMatch" class="primary big">Quick match</button>
+          <button type="button" id="hostGame" class="big">Host a game</button>
+        </div>
+        <div class="list-head">
+          <h3>Open games</h3>
+          <span id="relayStatus" class="muted-note"></span>
+          <button type="button" id="refreshGames" class="small">Refresh</button>
+        </div>
+        <div id="gameList" class="game-list" aria-live="polite"></div>
+        <p class="muted-note">Games run in the host's browser, so they end when the host leaves. Got an invite link? Just open it.</p>
+      </div>
+
+      <div id="setup" class="tab-panel hidden">
+        <div id="hostHead" class="setup-head hidden">
+          <button type="button" id="setupBack" class="small">&larr; Back to games</button>
+          <h2>Host an online game</h2>
+        </div>
+        <div class="cols">
+          <div class="col">
+            <div class="field field-row">Map
+              <div class="seg seg-small" role="radiogroup" aria-label="Maps to show">
+                <label><input type="radio" name="mapSource" value="originals" checked> Originals</label>
+                <label><input type="radio" name="mapSource" value="mine"> Your maps</label>
+                <label><input type="radio" name="mapSource" value="community"> Community</label>
+              </div>
+            </div>
+            <div id="maps" class="maps" role="radiogroup" aria-label="Map"></div>
+            <p id="mapsNote" class="muted-note hidden"></p>
           </div>
-          <label class="field">Bots: <output id="botsOut">5</output>
-            <input type="range" id="bots" min="1" max="9" value="5">
-          </label>
-          <label class="field">Bot skill
-            <select id="difficulty">
-              <option value="easy">Easy</option>
-              <option value="normal" selected>Normal</option>
-              <option value="hard">Hard</option>
-            </select>
-          </label>
-          <label class="field">Frag limit
-            <select id="fragLimit">
-              <option>10</option><option selected>20</option><option>30</option><option>50</option>
-            </select>
-          </label>
-          <!-- Hidden unless SHOW_SPEED_MENU is true in src/config.js -->
-          <label class="field hidden" id="speedField">Game speed
-            <select id="speed">
-              <option value="0.6">60%</option>
-              <option value="0.75" selected>75% (default)</option>
-              <option value="0.9">90%</option>
-              <option value="1">100% (full speed)</option>
-            </select>
-          </label>
-          <button id="play" class="primary">Play</button>
-          <p id="pointer-note" class="note hidden">This game needs a keyboard and mouse.</p>
-          <details class="controls" open>
-            <summary>Controls</summary>
-            <table>
-              <tr><td>Move</td><td><kbd>A</kbd> <kbd>D</kbd></td></tr>
-              <tr><td>Jump (hold for higher)</td><td><kbd>W</kbd> or <kbd>Space</kbd></td></tr>
-              <tr><td>Jetpack</td><td>hold jump in the air, or <kbd>Shift</kbd></td></tr>
-              <tr><td>Crouch</td><td><kbd>S</kbd></td></tr>
-              <tr><td>Aim / fire</td><td>mouse / left click</td></tr>
-              <tr><td>Sniper zoom</td><td>right click</td></tr>
-              <tr><td>Weapons</td><td><kbd>1</kbd>&ndash;<kbd>8</kbd>, <kbd>Q</kbd> <kbd>E</kbd>, wheel</td></tr>
-              <tr><td>Scores / pause / mute</td><td><kbd>Tab</kbd> / <kbd>Esc</kbd> / <kbd>M</kbd></td></tr>
-            </table>
-          </details>
+          <div class="col">
+            <label class="field">Mode
+              <select id="mode">
+                <option value="ffa">Free-for-all</option>
+                <option value="team">Team deathmatch</option>
+                <option value="gungame">Gun game</option>
+                <option value="oitc">One in the chamber</option>
+              </select>
+            </label>
+            <p id="modeBlurb" class="muted-note"></p>
+            <div class="field-pair">
+              <label class="field" id="fragField">Frag limit
+                <select id="fragLimit"><option>10</option><option selected>20</option><option>30</option><option>50</option></select>
+              </label>
+              <label class="field hidden" id="livesField">Lives
+                <select id="lives"><option>1</option><option>2</option><option selected>3</option><option>5</option></select>
+              </label>
+              <label class="field hidden" id="gunField">Kills per weapon
+                <select id="gunKills"><option selected>1</option><option>2</option></select>
+              </label>
+              <label class="field" id="crateField">Supply crates
+                <select id="crates"><option value="off">Off</option><option value="normal" selected>Normal</option><option value="lots">Lots</option></select>
+              </label>
+            </div>
+            <label class="field">Bots: <output id="botsOut">5</output>
+              <input type="range" id="bots" min="0" max="9" value="5">
+            </label>
+            <label class="field">Bot skill
+              <select id="difficulty">
+                <option value="easy">Easy</option>
+                <option value="normal" selected>Normal</option>
+                <option value="hard">Hard</option>
+              </select>
+            </label>
+            <!-- Hidden unless SHOW_SPEED_MENU is true in src/config.js -->
+            <label class="field hidden" id="speedField">Game speed
+              <select id="speed">
+                <option value="0.6">60%</option>
+                <option value="0.75" selected>75% (default)</option>
+                <option value="0.9">90%</option>
+                <option value="1">100% (full speed)</option>
+              </select>
+            </label>
+            <div id="hostFields" class="hidden">
+              <label class="field">Game name <input id="gameName" maxlength="40" autocomplete="off" spellcheck="false"></label>
+              <div class="field-pair">
+                <label class="field">Max players
+                  <select id="maxPlayers"><option>2</option><option>4</option><option>6</option><option selected>8</option><option>10</option><option>12</option></select>
+                </label>
+                <label class="field">Who can join
+                  <select id="visibility"><option value="public" selected>Anyone</option><option value="private">Invite link only</option></select>
+                </label>
+              </div>
+            </div>
+            <button id="play" class="primary">Play</button>
+            <p id="pointer-note" class="note hidden">This game needs a keyboard and mouse.</p>
+            <details class="controls">
+              <summary>Controls</summary>
+              <table>
+                <tr><td>Move</td><td><kbd>A</kbd> <kbd>D</kbd></td></tr>
+                <tr><td>Jump (hold for higher)</td><td><kbd>W</kbd> or <kbd>Space</kbd></td></tr>
+                <tr><td>Jetpack</td><td>hold jump in the air, or <kbd>Shift</kbd></td></tr>
+                <tr><td>Crouch</td><td><kbd>S</kbd></td></tr>
+                <tr><td>Aim / fire</td><td>mouse / left click (mouse distance sets throw strength)</td></tr>
+                <tr><td>Sniper zoom</td><td>right click</td></tr>
+                <tr><td>Weapons</td><td><kbd>1</kbd>&ndash;<kbd>0</kbd>, melee <kbd>F</kbd>; press again to cycle; <kbd>Q</kbd> <kbd>E</kbd>, wheel</td></tr>
+                <tr><td>Sheep, rope</td><td>click again to explode / let go</td></tr>
+                <tr><td>Chat (online)</td><td><kbd>Enter</kbd> or <kbd>T</kbd></td></tr>
+                <tr><td>Scores / pause / mute</td><td><kbd>Tab</kbd> / <kbd>Esc</kbd> / <kbd>M</kbd></td></tr>
+              </table>
+            </details>
+          </div>
         </div>
       </div>
       <footer>
@@ -79,24 +140,36 @@
     </div>
   </section>
 
+  <section id="connecting" class="screen hidden">
+    <div class="panel small">
+      <h2 id="connTitle">Connecting&hellip;</h2>
+      <p id="connText" class="muted-note"></p>
+      <button id="connCancel">Cancel</button>
+    </div>
+  </section>
+
   <section id="pause" class="screen hidden">
     <div class="panel small">
-      <h2>Paused</h2>
+      <h2 id="pauseTitle">Paused</h2>
+      <p id="pauseNote" class="muted-note hidden">The game carries on while this menu is open.</p>
       <button id="resume" class="primary">Resume</button>
+      <button id="invite" class="hidden">Copy invite link</button>
       <button id="restart">Restart match</button>
       <button id="toEditor" class="hidden">Back to map maker</button>
       <button id="quit">Quit to menu</button>
       <label class="check"><input type="checkbox" id="mute"> Mute sound</label>
     </div>
   </section>
-
   <section id="over" class="screen hidden overlay-low">
     <div class="buttons">
+      <span id="overNote" class="over-note hidden"></span>
       <button id="again" class="primary">Play again</button>
       <button id="toMenu">Menu</button>
     </div>
   </section>
-
+  <form id="chatForm" class="chat hidden" autocomplete="off">
+    <input id="chatInput" maxlength="140" placeholder="Say something (Enter to send, Esc to cancel)" spellcheck="false">
+  </form>
   <section id="editor" class="hidden" aria-label="Map maker">
     <header class="ed-top">
       <button type="button" id="edBack">&larr; Menu</button>
@@ -123,6 +196,7 @@
         <button type="button" id="edOpen">Open&hellip;</button>
         <button type="button" id="edCopy">Duplicate</button>
         <button type="button" id="edShare">Copy share link</button>
+        <button type="button" id="edUpload" title="Let everyone play it: it shows up in the Community maps">Upload to community</button>
         <button type="button" id="edImport">Import&hellip;</button>
         <button type="button" id="edExport">Export .json</button>
         <button type="button" id="edExportSSM" title="The original Stick Soldiers II map format">Export .ssm</button>

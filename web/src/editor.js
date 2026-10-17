@@ -38,7 +38,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 
 export class Editor {
   /**
-   * opts: { root, originals: [{ name, data }], onExit(), onTestPlay(record), onChanged() }
+   * opts: { root, originals: [{ name, data }], onExit(), onTestPlay(record), onChanged(), onUpload(record) -> { relays } }
    */
   constructor(opts) {
     this.opts = opts;
@@ -570,7 +570,7 @@ export class Editor {
       this.map.name = this.$('#edName').value.slice(0, LIMITS.nameLength);
       this.changed();
     });
-    this.$('#edBack').addEventListener('click', () => { this.close(); this.opts.onExit(); });
+    this.$('#edBack').addEventListener('click', () => { this.close(); this.opts.onExit(this.record); });
     this.$('#edUndo').addEventListener('click', () => this.undo());
     this.$('#edRedo').addEventListener('click', () => this.redo());
     this.$('#edFit').addEventListener('click', () => this.fit());
@@ -594,6 +594,7 @@ export class Editor {
     this.$('#edImport').addEventListener('click', () => this.$('#edFile').click());
     this.$('#edFile').addEventListener('change', () => this.importFile(this.$('#edFile').files[0]));
     this.$('#edShare').addEventListener('click', () => this.shareLink());
+    this.$('#edUpload').addEventListener('click', () => this.upload());
     this.$('#edOpenDialog').addEventListener('close', () => this.canvas.focus());
   }
 
@@ -827,6 +828,30 @@ export class Editor {
       catch { prompt('Copy this link to share your map:', url); }
     } catch (e) {
       alert(`Couldn't make a link: ${e.message}`);
+    }
+  }
+
+  /** Put the map in the community maps, for everyone to play. */
+  async upload() {
+    if (!this.opts.onUpload || !this.record?.id) return;
+    let result;
+    try { result = checkMap(this.map); } catch (e) { alert(e.message); return; }
+    const errors = result.problems.filter(p => p.level === 'error');
+    if (errors.length) {
+      this.check = result;
+      this.renderReport();
+      alert(`Fix these before uploading:\n\n${errors.map(p => '• ' + p.text).join('\n')}`);
+      return;
+    }
+    if (!confirm(`Upload "${this.map.name}" for everyone to play? It's public, and your name will be shown with it.${this.record.communitySlot ? ' (This replaces your earlier upload.)' : ''}`)) return;
+    this.saveNow();
+    this.setStatus('Uploading…');
+    try {
+      const res = await this.opts.onUpload(this.record);
+      this.record = getMap(this.record.id) || this.record;
+      this.setStatus(`Uploaded (${res.relays} server${res.relays === 1 ? '' : 's'})`);
+    } catch (e) {
+      this.setStatus(`Upload failed: ${e.message}`, true);
     }
   }
 

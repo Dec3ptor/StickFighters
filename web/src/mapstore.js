@@ -25,10 +25,15 @@ export function getMap(id) {
   return readAll().find(m => m.id === id) || null;
 }
 
-/** Save (or update, if it has an id) a map. Returns the stored record, or null if storage is full. */
-export function saveMap({ id, name, data }) {
-  const list = readAll().filter(m => m.id !== id);
-  const rec = { id: id || `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name, updated: Date.now(), data };
+/**
+ * Save (or update, if it has an id) a map. Extra fields (like `communitySlot`) are kept between saves.
+ * Returns the stored record, or null if storage is full.
+ */
+export function saveMap({ id, name, data, ...extra }) {
+  const all = readAll();
+  const old = id ? all.find(m => m.id === id) : null;
+  const list = all.filter(m => m.id !== id);
+  const rec = { ...old, ...extra, id: id || `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name, updated: Date.now(), data };
   list.push(rec);
   return writeAll(list) || memory.includes(rec) ? rec : null;
 }

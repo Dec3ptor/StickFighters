@@ -252,3 +252,40 @@ button.danger { color: #b3261e; border-color: #b3261e; }
   #editor { grid-template-columns: 96px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) 40vh; }
   .ed-side { grid-column: 1 / -1; border-left: none; border-top: 2px solid var(--line); }
 }
+
+/* ---- Menu: tabs, online play ---- */
+.menu-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+.menu-head .tag { margin-bottom: 0; }
+.name-field { margin: 0; width: min(240px, 100%); }
+.tabs { display: flex; gap: 0; margin: 16px 0 14px; border-bottom: 2px solid var(--line); }
+.tab { border: 2px solid var(--line); border-bottom: none; margin-right: -2px; padding: 9px 18px; background: var(--soft); }
+.tab[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+#openEditor { margin-left: auto; margin-right: 0; background: var(--paper); }
+.muted-note { color: var(--muted); font-size: 13px; margin: 6px 0; }
+.online-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+button.big { font-size: 18px; padding: 13px 24px; letter-spacing: 0.04em; }
+.list-head { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+.list-head h3 { margin: 0; font-size: 16px; }
+.list-head .muted-note { flex: 1; margin: 0; }
+.game-list { border: 1.5px solid var(--line); margin-top: 8px; min-height: 120px; max-height: 340px; overflow-y: auto; }
+.game-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1.2fr) 70px auto; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid #ddd; }
+.game-row:last-child { border-bottom: none; }
+.game-row b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game-row small { color: var(--muted); }
+.game-row .players { text-align: right; font-variant-numeric: tabular-nums; }
+.game-row.full, .game-row.old { opacity: 0.55; }
+.game-row button { padding: 6px 14px; }
+.game-list .empty { padding: 26px 12px; text-align: center; color: var(--muted); }
+@media (max-width: 720px) { .game-row { grid-template-columns: minmax(0, 1fr) auto; } .game-row .hide-small { display: none; } }
+.setup-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.setup-head h2 { margin: 0; font-size: 20px; }
+.seg-small { font-weight: normal; }
+.seg-small label { padding: 3px 9px; font-size: 12px; white-space: nowrap; }
+.field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.field-pair .field { margin-top: 8px; }
+.map-card small.by { display: block; }
+.map-card .save { position: absolute; top: 5px; right: 5px; font-size: 11px; padding: 2px 7px; border-width: 1.5px; }
+.over-note { align-self: center; background: var(--paper); border: 1.5px solid var(--line); padding: 8px 12px; font-weight: bold; }
+.chat { position: fixed; left: 12px; bottom: 80px; width: min(420px, calc(100% - 24px)); z-index: 30; }
+.chat input { border: 2px solid var(--line); box-shadow: 4px 4px 0 rgba(0,0,0,0.12); }
+#connText { min-height: 1.4em; }

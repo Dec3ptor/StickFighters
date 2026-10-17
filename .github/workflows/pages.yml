@@ -22,11 +22,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Game logic tests (physics, bots on every map, weapons)
+      - name: Game logic tests (physics, bots, weapons, modes, netcode, lobby)
         run: npm test
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - name: Browser test (loads the page and plays two matches)
+      - name: Browser tests (matches, map maker, online play between browsers)
         run: npm run test:browser
       - name: Keep screenshots from the browser test
         if: always()

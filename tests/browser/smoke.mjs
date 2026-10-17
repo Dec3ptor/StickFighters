@@ -3,12 +3,15 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import { serve } from '../../tools/serve.mjs';
+import { startRelay } from '../../tools/relay.mjs';
 
 const outDir = process.argv[2] || 'test-results';
 fs.mkdirSync(outDir, { recursive: true });
 
 const server = await serve(0);
-const url = `http://localhost:${server.address().port}/`;
+// Online features talk to a local relay instead of the public ones.
+const relay = await startRelay();
+const url = `http://localhost:${server.address().port}/?relay=${encodeURIComponent(relay.url)}`;
 
 const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
@@ -17,6 +20,7 @@ page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 
 await page.goto(url);
+await page.click('#tabOffline');
 await page.waitForSelector('.map-card');
 await page.screenshot({ path: `${outDir}/menu.png` });
 
@@ -67,4 +71,5 @@ await page.screenshot({ path: `${outDir}/pause.png` });
 console.log(JSON.stringify({ results, errors }, null, 2));
 await browser.close();
 server.close();
+await relay.close();
 if (errors.length) process.exit(1);
