@@ -101,6 +101,8 @@ export class NetClient {
     this.pending = [];
     this.recent = [];
     this.offsets = [];
+    this.fixed = null;       // the new match's pickups
+    this.switchSeq = 0;
     this.applyRoster(w.roster);
     this.me = game.soldiers.find(s => s.id === w.you) || null;
     for (const c of w.chat || []) this.addChat(c);
@@ -185,6 +187,11 @@ export class NetClient {
     this.offset = Math.min(...this.offsets);
 
     const g = this.game;
+    // Someone in the snapshot we don't know about: ask for the player list again.
+    if (snap.soldiers.some(s => !g.soldiers.some(x => x.id === s.id)) && snap.arrival - (this.rosterAsked || -1e9) > 1000) {
+      this.rosterAsked = snap.arrival;
+      this.link.send({ t: 'roster?' }, true);
+    }
     g.teamScore = snap.teamScore;
     g.over = snap.over;
     if (snap.winner) g.winner = snap.winner >= 100 ? { team: snap.winner - 100 } : { soldier: g.soldiers.find(s => s.id === snap.winner - 1) || this.me };

@@ -72,9 +72,10 @@ export class NetHost {
       p.soldier = this.soldierFor(p);
       p.ctl.queue.length = 0;
       p.ready = false;
-      this.welcome(p);
     }
+    // Bots first, so the welcome's roster includes them.
     this.balanceBots();
+    for (const p of this.players) this.welcome(p, { fresh: false });
   }
 
   /** A player has connected: give them a soldier and everything they need to join. */
@@ -139,10 +140,11 @@ export class NetHost {
     return this.game.soldiers.map(s => ({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, remote: !!s.remote }));
   }
 
-  welcome(p) {
+  /** Everything a player needs to set up the match. (The chat so far only goes to players who just joined.) */
+  welcome(p, { fresh = true } = {}) {
     p.link.send({
       t: 'welcome', v: PROTOCOL, you: p.soldier.id, tick: this.game.tick,
-      match: this.opts.matchInfo(), roster: this.roster(), chat: this.chatLog.slice(-8),
+      match: this.opts.matchInfo(), roster: this.roster(), chat: fresh ? this.chatLog.slice(-8) : [],
     });
   }
 
@@ -156,6 +158,10 @@ export class NetHost {
     if (!data || typeof data !== 'object') return;
     switch (data.t) {
       case 'ready': p.ready = true; break;
+      case 'roster?':
+        // The player saw a soldier it doesn't know: send the list again (at most once a second).
+        if (Date.now() - (p.rosterAt || 0) > 1000) { p.rosterAt = Date.now(); p.link.send({ t: 'roster', roster: this.roster() }, true); }
+        break;
       case 'ping': p.link.send({ t: 'pong', at: data.at }, false); break;
       case 'chat': {
         // At most 5 messages in 5 seconds each.

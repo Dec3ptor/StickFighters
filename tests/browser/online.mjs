@@ -97,7 +97,19 @@ expect((await S(host)).chat.includes('gg no re'), 'host got the chat message');
 await host.screenshot({ path: `${outDir}/online-host.png` });
 await joiner.screenshot({ path: `${outDir}/online-joiner.png` });
 
-// 5. Quick match finds the same game.
+// 5. The host starts the next match: the joiner sees everyone again, bots included.
+const firstTick = (await S(host)).tick;
+await host.keyboard.press('Escape');
+await host.click('#restart');
+await host.waitForFunction(t => window.stickSoldiers.state.game && window.stickSoldiers.state.game.tick < t, firstTick, { timeout: 20000 });
+await joiner.waitForTimeout(2500);
+const h2 = await S(host), j2 = await S(joiner);
+expect(h2.soldiers.filter(s => s.bot).length === 2, `host has its bots in the new match (${h2.soldiers.length})`);
+expect(j2.soldiers.length === h2.soldiers.length, `joiner sees everyone in the new match (${j2.soldiers.map(s => s.name)} vs ${h2.soldiers.map(s => s.name)})`);
+expect(j2.soldiers.filter(s => s.bot).length === 2, 'joiner sees the bots');
+await joiner.screenshot({ path: `${outDir}/online-next-match.png` });
+
+// 6. Quick match finds the same game.
 const third = await player('Quicky');
 await third.click('#quickMatch');
 await third.waitForFunction(() => window.stickSoldiers.state.mode === 'client' && window.stickSoldiers.state.game, null, { timeout: 30000 }).catch(() => {});
@@ -107,7 +119,7 @@ await third.waitForTimeout(1500);
 // (On the public relays quick match may pick someone else's game, so only check this locally.)
 if (!publicRelays) expect((await S(host)).soldiers.some(s => s.name === 'Quicky'), 'host sees the quick-match player');
 
-// 6. The host ends the game: everyone is told and goes back to the menu.
+// 7. The host ends the game: everyone is told and goes back to the menu.
 await host.keyboard.press('Escape');
 await host.click('#quit');
 await joiner.waitForSelector('#menu:not(.hidden)', { timeout: 10000 }).catch(() => {});

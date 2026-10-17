@@ -342,6 +342,7 @@ function enterMatch(game, me) {
   state.game = game;
   state.me = me;
   state.paused = false;
+  state.menuOpen = false;
   state.overShown = false;
   state.nextMatchAt = 0;
   state.acc = 0;
@@ -356,6 +357,7 @@ function enterMatch(game, me) {
 function endMatch(to = state.returnTo) {
   state.game = null;
   state.mode = 'offline';
+  state.menuOpen = false;
   input.enabled = false;
   closeChat();
   document.body.classList.remove('playing');

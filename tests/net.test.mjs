@@ -69,7 +69,9 @@ test('snapshots carry every soldier, projectile and pickup', () => {
 
 /** A host with bots, and `players` remote players joined over in-memory links on a simulated clock. */
 async function onlineMatch({ players = 1, latency = 0, loss = 0, mode = 'ffa', file = 'ssdm1.json', controllers = [] } = {}) {
-  const { game, mapData, addBot } = botGame(file, mode);
+  const first = botGame(file, mode);
+  const { mapData, addBot } = first;
+  let game = first.game;
   let now = 0;
   const queue = [];
   const schedule = (fn, ms) => queue.push({ at: now + ms, fn });
@@ -106,7 +108,17 @@ async function onlineMatch({ players = 1, latency = 0, loss = 0, mode = 'ffa', f
       for (const c of clients) c.updateView(now);
     }
   };
-  return { game, host, clients, step, mapData };
+  /** The host starts the next match (as after a match ends). */
+  const newMatch = async () => {
+    const next = botGame(file, mode, 21);
+    game = next.game;
+    game.addSoldier({ name: 'Host', isBot: false }, { input: () => ({ move: 0 }) });
+    host.opts.addBot = next.addBot;
+    host.setGame(game);
+    await pump();
+    return game;
+  };
+  return { get game() { return game; }, host, clients, step, mapData, newMatch };
 }
 
 test('a player joins: same soldiers on both sides, bots make room, prediction matches the host', async () => {
@@ -191,6 +203,38 @@ test('gun game online: levels show on the player\'s screen', async () => {
   await step(10);
   assert.equal(clients[0].me.level, 5);
   assert.equal(clients[0].game.mode, 'gungame');
+});
+
+test('after the host starts a new match, players see everyone, bots included', async () => {
+  const m = await onlineMatch({ players: 2 });
+  m.host.chat('Host', 'first match');
+  await m.step(300);
+  const chatBefore = m.clients[0].chat.length;
+  const game = await m.newMatch();
+  await m.step(300);
+  for (const c of m.clients) {
+    assert.equal(c.game.soldiers.length, game.soldiers.length, 'same number of soldiers');
+    for (const s of game.soldiers) {
+      const mine = c.game.soldiers.find(x => x.id === s.id);
+      assert.ok(mine, `${s.name} missing on a player's screen`);
+      assert.equal(mine.name, s.name);
+      if (s.alive && s !== m.clients.find(x => x === c)?.me) assert.ok(Math.hypot(mine.x - s.x, mine.y - s.y) < 150, `${s.name} is in the wrong place`);
+    }
+    assert.equal(c.game.soldiers.filter(s => s.isBot).length, 3, 'bots are there');
+  }
+  assert.equal(m.clients[0].chat.length, chatBefore, 'chat history is not repeated each match');
+  assert.ok(m.clients[0].game.pickups.items.every(it => it.dropped || m.clients[0].game.map.items.some(mi => mi.x === it.x && mi.y === it.y)), 'pickups belong to the new match');
+});
+
+test('a player who somehow misses a roster update asks for it again', async () => {
+  const m = await onlineMatch({ players: 1 });
+  await m.step(60);
+  // Simulate the player losing track of a bot.
+  const c = m.clients[0];
+  const bot = c.game.soldiers.find(s => s.isBot);
+  c.game.removeSoldier(bot);
+  await m.step(120);
+  assert.ok(c.game.soldiers.some(s => s.id === bot.id), 'bot came back');
 });
 
 test('the host ending the game tells everyone why', async () => {
