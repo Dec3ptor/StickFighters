@@ -6,7 +6,10 @@ export const TICK_RATE = 60;
 // slows the mechanics instead (movement, jumps, bullets, fire rates), keeping
 // every jump arc the same shape. See speed.js.
 export const SPEEDS = [0.6, 0.75, 0.9, 1];
-export const DEFAULT_SPEED = 0.75;
+export const DEFAULT_SPEED = 0.75;     // the game's speed
+// The speed picker is hidden and everyone plays at DEFAULT_SPEED.
+// Set this to true to show the "Game speed" menu again (its code is all still there).
+export const SHOW_SPEED_MENU = false;
 
 // The original game ran at 800x600 and showed the map at 1:1.
 export const VIEW_W = 800;

@@ -44,7 +44,8 @@
               <option>10</option><option selected>20</option><option>30</option><option>50</option>
             </select>
           </label>
-          <label class="field">Game speed
+          <!-- Hidden unless SHOW_SPEED_MENU is true in src/config.js -->
+          <label class="field hidden" id="speedField">Game speed
             <select id="speed">
               <option value="0.6">60%</option>
               <option value="0.75" selected>75% (default)</option>

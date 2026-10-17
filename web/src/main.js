@@ -1,6 +1,6 @@
 // Page wiring: menu, match setup, the game loop, pause and results.
 
-import { SPEEDS, DEFAULT_SPEED } from './config.js';
+import { SPEEDS, DEFAULT_SPEED, SHOW_SPEED_MENU } from './config.js';
 import { Game } from './game.js';
 import { NavGraph } from './nav.js';
 import { BotController, BOT_PROFILES } from './bot.js';
@@ -26,8 +26,11 @@ const state = { game: null, me: null, settings: null, paused: false, last: 0, ac
 const DEFAULTS = { name: 'Player', map: 'ssdm1.json', mode: 'ffa', bots: 5, difficulty: 'normal', fragLimit: 20, speed: DEFAULT_SPEED, muted: false };
 
 function loadSettings() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('stick-soldiers') || '{}') }; }
-  catch { return { ...DEFAULTS }; }
+  let s;
+  try { s = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('stick-soldiers') || '{}') }; }
+  catch { s = { ...DEFAULTS }; }
+  if (!SHOW_SPEED_MENU) s.speed = DEFAULT_SPEED; // ignore speeds saved before the picker was hidden
+  return s;
 }
 function saveSettings(s) {
   try { localStorage.setItem('stick-soldiers', JSON.stringify(s)); } catch { /* private mode */ }
@@ -42,6 +45,7 @@ function buildMenu(settings) {
   $('difficulty').value = settings.difficulty;
   $('fragLimit').value = String(settings.fragLimit);
   $('speed').value = String(SPEEDS.includes(settings.speed) ? settings.speed : DEFAULT_SPEED);
+  $('speedField').classList.toggle('hidden', !SHOW_SPEED_MENU);
   for (const r of document.querySelectorAll('input[name=mode]')) r.checked = r.value === settings.mode;
   $('mute').checked = settings.muted;
   audio.setMuted(settings.muted);
@@ -79,7 +83,7 @@ function readMenu() {
     bots: +$('bots').value,
     difficulty: $('difficulty').value,
     fragLimit: +$('fragLimit').value,
-    speed: SPEEDS.includes(+$('speed').value) ? +$('speed').value : DEFAULT_SPEED,
+    speed: SHOW_SPEED_MENU && SPEEDS.includes(+$('speed').value) ? +$('speed').value : DEFAULT_SPEED,
     muted: $('mute').checked,
   };
 }

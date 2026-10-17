@@ -7,7 +7,7 @@ import { makeBody, stepBody } from '../web/src/physics.js';
 import { NavGraph } from '../web/src/nav.js';
 import { Game } from '../web/src/game.js';
 import { WEAPONS } from '../web/src/weapons.js';
-import { BODY, PHYS, SPEEDS, DEFAULT_SPEED } from '../web/src/config.js';
+import { BODY, PHYS, SPEEDS, DEFAULT_SPEED, SHOW_SPEED_MENU } from '../web/src/config.js';
 import { setGameSpeed } from '../web/src/speed.js';
 import fs from 'node:fs';
 
@@ -89,10 +89,10 @@ for (const speed of SPEEDS) test(`bots can get everywhere they can reach and bac
 });
 
 /** Two soldiers on a flat floor, `gap` apart; the first fires `weapon` until the second dies. */
-function duel(weapon, gap = 160) {
+function duel(weapon, gap = 160, speed = DEFAULT_SPEED) {
   const map = { name: 'range', bounds: { left: -600, top: -300, right: 600, bottom: 200 }, spawns: [], items: [],
     platforms: [{ left: -600, top: 0, right: 600, bottom: 40 }] };
-  const game = new Game({ mapData: map, effects: false, seed: 3 });
+  const game = new Game({ mapData: map, effects: false, seed: 3, speed });
   const shooter = game.addSoldier({ name: 'A', isBot: true }, { input: () => ({ move: 0, aim: 0, fire: true }) });
   const target = game.addSoldier({ name: 'B', isBot: true }, { input: () => ({ move: 0 }) });
   shooter.spawnAt({ x: 0, y: -12 }, 0);
@@ -174,12 +174,28 @@ test('lower game speeds keep jumps the same height but slower, at 60 updates a s
   assert.equal(WEAPONS.M4.rof, 16, 'fire delay doubles at half speed');
   assert.equal(WEAPONS.M4.speed, 17, 'bullets fly half as fast');
 });
+test('the pistol keeps reloading and firing at the real game speed', () => {
+  const map = { name: 'range', bounds: { left: -600, top: -300, right: 600, bottom: 200 }, spawns: [], items: [],
+    platforms: [{ left: -600, top: 0, right: 600, bottom: 40 }] };
+  const game = new Game({ mapData: map, effects: false, seed: 3, speed: DEFAULT_SPEED });
+  const s = game.addSoldier({ name: 'A', isBot: false }, { input: () => ({ move: 0, aim: -1, fire: true }) });
+  s.spawnAt({ x: 0, y: -12 }, 0);
+  let shots = 0;
+  for (let i = 0; i < 2000; i++) {
+    game.update();
+    shots += game.sounds.filter(x => x.name === 'pistol').length;
+    game.sounds.length = 0;
+  }
+  assert.ok(shots > 3 * WEAPONS.Platinum.mag, `only ${shots} shots: the pistol stopped reloading`);
+  assert.ok(s.reloadTimer >= 0);
+});
+
 test('armour soaks up damage', () => {
   const plain = duel('M4');
   const armoured = (() => {
     const map = { name: 'range', bounds: { left: -600, top: -300, right: 600, bottom: 200 }, spawns: [], items: [],
       platforms: [{ left: -600, top: 0, right: 600, bottom: 40 }] };
-    const game = new Game({ mapData: map, effects: false, seed: 3 });
+    const game = new Game({ mapData: map, effects: false, seed: 3, speed: DEFAULT_SPEED });
     const a = game.addSoldier({ name: 'A', isBot: true }, { input: () => ({ move: 0, aim: 0, fire: true }) });
     const b = game.addSoldier({ name: 'B', isBot: true }, { input: () => ({ move: 0 }) });
     a.spawnAt({ x: 0, y: -12 }, 0); b.spawnAt({ x: 160, y: -12 }, 0);
@@ -265,6 +281,10 @@ test('the menu offers exactly the game speeds the game supports', () => {
   const values = [...select.matchAll(/value="([\d.]+)"/g)].map(m => +m[1]);
   assert.deepEqual(values, SPEEDS);
   assert.match(select, new RegExp(`value="${DEFAULT_SPEED}" selected`));
+  // The picker ships hidden; everyone plays at DEFAULT_SPEED.
+  assert.equal(SHOW_SPEED_MENU, false);
+  assert.equal(DEFAULT_SPEED, 0.75);
+  assert.match(html, /class="field hidden" id="speedField"/);
 });
 
 test('physics constants still match the tuned values the route planner was tested with', () => {

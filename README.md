@@ -14,7 +14,7 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
 - **Free-for-all and team deathmatch**, with 1–9 bots.
 - **The original game's sound effects**, from the Stick Soldiers Python fan project (see [`web/sounds/CREDITS.md`](web/sounds/CREDITS.md)). The headshot hitmarker and a few others are generated in code. The original game had no music.
 - **Headshots** do double damage (2.5× with the sniper rifle), and you hear a hitmarker tick when you land one.
-- **Adjustable game speed**: 75% by default, from 60% up to the full 100%. It slows movement, jumps, bullets, grenades and fire rates, while the game keeps updating 60 times a second. Jumps keep their height, so every map stays climbable.
+- **Game speed fixed at 75%** of the original tuning: movement, jumps, bullets, grenades and fire rates are slowed, while the game keeps updating 60 times a second. Jumps keep their height, so every map stays climbable. A hidden speed picker can be switched back on with `SHOW_SPEED_MENU` in `web/src/config.js`.
 
 ## Controls
 

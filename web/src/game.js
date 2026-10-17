@@ -98,7 +98,9 @@ export class Game {
     }
 
     if (s.cooldown > 0) s.cooldown--;
-    if (s.reloadTimer > 0 && --s.reloadTimer === 0) {
+    // Timers aren't whole numbers at reduced game speed, so count down to <= 0.
+    if (s.reloadTimer > 0 && (s.reloadTimer -= 1) <= 0) {
+      s.reloadTimer = 0;
       s.weapons.Platinum.mag = WEAPONS.Platinum.mag;
       if (s.current === 'Platinum') this.sound('reload', s.x, s.y);
     }
