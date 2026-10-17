@@ -36,8 +36,8 @@ jobs:
           path: test-results/
 
   publish:
-    # Only main goes live.
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Only the repo's default branch goes live (GitHub Pages only accepts deploys from it).
+    if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
     needs: test
     runs-on: ubuntu-latest
     permissions:
