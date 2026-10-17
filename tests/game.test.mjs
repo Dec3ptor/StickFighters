@@ -104,7 +104,11 @@ function duel(weapon, gap = 160, speed = DEFAULT_SPEED) {
   return { game, shooter, target, ticks: t };
 }
 
-for (const id of Object.keys(WEAPONS)) {
+// Guns that fire straight ahead; the special weapons have their own tests in weapons.test.mjs.
+const DIRECT = Object.keys(WEAPONS).filter(id => !WEAPONS[id].hidden &&
+  (['bullet', 'rail', 'rocket', 'flame', 'seeker', 'arrow'].includes(WEAPONS[id].kind) || id === 'GrenadeLauncher'));
+
+for (const id of DIRECT) {
   test(`${WEAPONS[id].name} can frag someone`, () => {
     const gap = id === 'Flamer' ? 70 : id === 'Shotgun' ? 90 : 160;
     const { shooter, target, ticks } = duel(id, gap);

@@ -1,13 +1,21 @@
-// Health, armour, jetpacks and weapons lying on the map, plus weapons dropped by the dead.
+// Health, armour, jetpacks and weapons lying on the map, weapons dropped by
+// the dead, and supply crates that parachute in with a random weapon.
 
-import { BODY, ITEM_RESPAWN, ITEM_SIZE, RULES, MOTION } from './config.js';
-import { WEAPONS } from './weapons.js';
+import { BODY, ITEM_RESPAWN, ITEM_SIZE, RULES, MOTION, CRATES } from './config.js';
+import { WEAPONS, CRATE_WEIGHTS } from './weapons.js';
+
+const CRATE_LIFE = 2400; // ticks a landed crate waits to be picked up
 
 export class Pickups {
-  constructor(map) {
-    this.items = map.items
-      .filter(it => it.type !== 'weapon' || WEAPONS[it.weapon])
+  constructor(map, game) {
+    const rules = game?.rules;
+    this.items = rules && !rules.pickups ? [] : map.items
+      .filter(it => it.type !== 'weapon' || (WEAPONS[it.weapon] && !WEAPONS[it.weapon].hidden))
       .map(it => ({ ...it, active: true, timer: 0, dropped: false, bob: Math.random() * 6 }));
+    const crates = game && rules?.crates ? CRATES[game.options.crates] : null;
+    this.crates = crates || null;
+    this.crateTimer = crates ? crates.every * 0.5 : 0;
+    this.spots = crates ? crateSpots(map) : [];
   }
 
   /** Drop a weapon where a soldier died. */
@@ -20,9 +28,15 @@ export class Pickups {
       if (it.dropped) {
         it.life--;
         if (it.vy !== null) {
-          it.vy = Math.min(it.vy + MOTION.itemGravity, MOTION.itemMaxFall);
-          const hit = game.map.raycast(it.x, it.y, it.x + it.vx, it.y + it.vy + 4);
-          if (hit) { it.x = hit.x; it.y = hit.y - 4; it.vx = 0; it.vy = null; }
+          const fall = it.type === 'crate' ? MOTION.crateFall : null;
+          if (fall) it.vy = fall;
+          else it.vy = Math.min(it.vy + MOTION.itemGravity, MOTION.itemMaxFall);
+          const hit = game.map.raycast(it.x, it.y, it.x + it.vx, it.y + it.vy + (it.type === 'crate' ? 8 : 4));
+          if (hit && hit.ny < 0) {
+            it.x = hit.x; it.y = hit.y - (it.type === 'crate' ? 8 : 4);
+            it.vx = 0; it.vy = null;
+            if (it.type === 'crate') { it.landed = true; it.life = CRATE_LIFE / (game.speed || 1); game.sound('land', it.x, it.y); }
+          } else if (hit) { it.vx = 0; }
           else { it.x += it.vx; it.y += it.vy; it.vx *= 0.98; }
           if (it.y > game.map.bounds.bottom + RULES.fallDeathMargin) it.life = 0;
         }
@@ -32,6 +46,23 @@ export class Pickups {
       }
     }
     this.items = this.items.filter(it => !it.dropped || it.life > 0);
+
+    if (this.crates && this.spots.length && --this.crateTimer <= 0) {
+      this.crateTimer = this.crates.every / (game.speed || 1) * (0.7 + game.rng() * 0.6);
+      if (this.items.filter(it => it.type === 'crate').length < this.crates.max) this.dropCrate(game);
+    }
+  }
+
+  /** A crate parachutes in over a random spot on the map. */
+  dropCrate(game) {
+    const spot = this.spots[Math.floor(game.rng() * this.spots.length)];
+    const health = game.rng() < 0.18;
+    this.items.push({
+      type: 'crate', weapon: health ? null : pickCrateWeapon(game.rng), health,
+      x: spot.x, y: game.map.bounds.top - 40, vx: 0, vy: MOTION.crateFall,
+      active: true, dropped: true, landed: false, life: 99999, bob: 0,
+    });
+    game.sound('crate', spot.x, game.map.bounds.top);
   }
 
   /** Give the soldier anything they're touching. */
@@ -39,13 +70,37 @@ export class Pickups {
     const top = s.y + (s.body.crouching ? BODY.crouchTop : BODY.top);
     for (const it of this.items) {
       if (!it.active) continue;
-      if (Math.abs(it.x - s.x) > BODY.halfW + ITEM_SIZE) continue;
-      if (it.y < top - ITEM_SIZE || it.y > s.y + BODY.bottom + ITEM_SIZE) continue;
+      const size = it.type === 'crate' ? ITEM_SIZE + 4 : ITEM_SIZE;
+      if (Math.abs(it.x - s.x) > BODY.halfW + size) continue;
+      if (it.y < top - size || it.y > s.y + BODY.bottom + size) continue;
       if (!give(game, s, it)) continue;
       if (it.dropped) it.life = 0;
       else { it.active = false; it.timer = ITEM_RESPAWN[it.type] || 600; }
     }
   }
+}
+
+function pickCrateWeapon(rng) {
+  const ids = Object.keys(CRATE_WEIGHTS);
+  let total = 0;
+  for (const id of ids) total += CRATE_WEIGHTS[id];
+  let r = rng() * total;
+  for (const id of ids) { r -= CRATE_WEIGHTS[id]; if (r <= 0) return id; }
+  return ids[0];
+}
+
+/** Places a crate can land: the tops of platforms with room to stand. */
+function crateSpots(map) {
+  const spots = [];
+  for (const s of map.solids) {
+    if (s.bounce || s.r - s.l < 20) continue;
+    for (let x = s.l + 12; x <= s.r - 12; x += 48) {
+      const y = s.t - BODY.bottom;
+      if (!map.overlap(x - BODY.halfW, y + BODY.top, x + BODY.halfW, y + BODY.bottom) &&
+          !map.overlap(x - 8, map.bounds.top - 40, x + 8, s.t - 1)) spots.push({ x, y: s.t });
+    }
+  }
+  return spots;
 }
 
 function give(game, s, it) {
@@ -70,22 +125,39 @@ function give(game, s, it) {
       game.sound('pickup', it.x, it.y);
       game.notify(s, 'You got the Jetpack — hold jump in the air to fly');
       return true;
-    case 'weapon': {
-      const def = WEAPONS[it.weapon];
-      const inv = s.weapons[it.weapon];
-      const amount = it.ammo ?? def.ammo;
-      if (!inv) {
-        s.weapons[it.weapon] = { ammo: amount };
-        s.select(it.weapon);
-        game.notify(s, `You got the ${def.name}`);
-      } else {
-        if (inv.ammo >= def.maxAmmo) return false;
-        inv.ammo = Math.min(def.maxAmmo, inv.ammo + amount);
-        game.notify(s, `${def.name} ammo`);
+    case 'crate':
+      if (!it.landed && it.y < s.y - 40) return false;
+      if (it.health) {
+        s.health = RULES.maxHealth;
+        s.burnTicks = 0;
+        game.sound('health', it.x, it.y);
+        game.notify(s, 'Health crate!');
+        return true;
       }
-      game.sound('pickup', it.x, it.y);
-      return true;
-    }
+      return giveWeapon(game, s, it.weapon, null, it, true);
+    case 'weapon':
+      return giveWeapon(game, s, it.weapon, it.ammo, it, false);
   }
   return false;
 }
+
+function giveWeapon(game, s, id, ammo, it, crate) {
+  const def = WEAPONS[id];
+  if (!def) return false;
+  const inv = s.weapons[id];
+  const amount = ammo ?? def.ammo;
+  if (!inv) {
+    s.weapons[id] = def.mag ? { ammo: Infinity, mag: def.mag } : { ammo: amount };
+    if (!NO_SWITCH_KINDS.has(def.kind)) s.select(id);
+    game.notify(s, `${crate ? 'Crate: ' : 'You got the '}${def.name}${NO_SWITCH_KINDS.has(def.kind) ? ` (key ${KEY[def.slot]})` : ''}`);
+  } else {
+    if (inv.ammo >= (def.maxAmmo ?? def.ammo ?? 1) && !crate) return false;
+    inv.ammo = Math.min(def.maxAmmo ?? Infinity, inv.ammo + amount);
+    game.notify(s, `${def.name} ammo`);
+  }
+  game.sound('pickup', it.x, it.y);
+  return true;
+}
+
+const NO_SWITCH_KINDS = new Set(['teleport', 'rope', 'kamikaze', 'placed', 'quake']);
+const KEY = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'F'];

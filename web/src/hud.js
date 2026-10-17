@@ -1,10 +1,13 @@
 // Heads-up display, drawn in screen pixels on top of the world.
 
-import { WEAPONS, WEAPON_ORDER } from './weapons.js';
+import { WEAPONS, SLOTS } from './weapons.js';
 import { RULES } from './config.js';
+import { GUN_GAME_LADDER } from './modes.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
+const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
 
+/** opts: { showScores, watching (soldier the camera follows when you're out), chat: [{ text, tick }], ping } */
 export function drawHud(r, game, me, opts = {}) {
   const ctx = r.ctx, d = r.dpr, W = r.w, H = r.h;
   ctx.setTransform(d, 0, 0, d, 0, 0);
@@ -16,14 +19,19 @@ export function drawHud(r, game, me, opts = {}) {
     y += 19;
     if (me.armour > 0) { bar(ctx, 12, y, 150, 15, me.armour / RULES.maxArmour, 'armour', `Armour: ${Math.ceil(me.armour)}%`); y += 19; }
     const def = WEAPONS[me.current], inv = me.weapons[me.current];
-    if (def.mag) {
-      const label = me.reloadTimer > 0 ? `${def.name}: reloading` : `${def.name}: ${inv.mag}/${def.mag}`;
-      bar(ctx, 12, y, 150, 15, me.reloadTimer > 0 ? 1 - me.reloadTimer / def.reload : inv.mag / def.mag, 'ammo', label);
-    } else {
-      bar(ctx, 12, y, 150, 15, inv.ammo / def.maxAmmo, 'ammo', `${def.name}: ${inv.ammo}`);
+    if (def && inv) {
+      if (def.mag) {
+        const label = me.reloadTimer > 0 ? `${def.name}: reloading` : `${def.name}: ${inv.mag}/${def.mag}`;
+        bar(ctx, 12, y, 150, 15, me.reloadTimer > 0 ? 1 - me.reloadTimer / def.reload : inv.mag / def.mag, 'ammo', label);
+      } else if (inv.ammo === Infinity || game.rules.infiniteAmmo) {
+        bar(ctx, 12, y, 150, 15, 1, 'ammo', def.name);
+      } else {
+        bar(ctx, 12, y, 150, 15, inv.ammo / (def.maxAmmo || def.ammo || 1), 'ammo', `${def.name}: ${inv.ammo}`);
+      }
+      y += 19;
     }
-    y += 19;
     if (me.body.hasJetpack) { bar(ctx, 12, y, 150, 15, me.body.fuel / 100, 'fuel', `Jet fuel: ${Math.round(me.body.fuel)}%`); y += 19; }
+    if (def?.spinup && me.spin > 0 && me.spin < def.spinup) { bar(ctx, 12, y, 150, 15, me.spin / def.spinup, 'fuel', 'Spinning up…'); y += 19; }
     if (me.burnTicks > 0) {
       ctx.font = `bold 13px ${FONT}`;
       ctx.fillStyle = '#e5641a';
@@ -34,11 +42,11 @@ export function drawHud(r, game, me, opts = {}) {
   }
 
   drawScores(ctx, game, me, H);
-  drawFeed(ctx, game, W);
+  drawFeed(ctx, game, W, opts.chat);
   drawTop(ctx, game, me, W);
 
   // Messages for the player ("You got the Sniper Rifle").
-  const notes = game.over ? [] : game.notes.filter(n => game.tick - n.tick < 150).slice(-3);
+  const notes = game.over ? [] : game.notes.filter(n => (n.to == null || n.to === me.id) && game.tick - n.tick < 150).slice(-3);
   ctx.textAlign = 'center';
   notes.forEach((n, i) => {
     const age = game.tick - n.tick;
@@ -53,10 +61,25 @@ export function drawHud(r, game, me, opts = {}) {
     ctx.textAlign = 'center';
     ctx.font = `bold 20px ${FONT}`;
     ctx.fillStyle = '#222';
-    ctx.fillText(`Respawning in ${Math.max(1, Math.ceil(me.respawnTimer / game.tickRate))}...`, W / 2, H / 2 - 60);
+    if (game.rules.canRespawn(game, me)) {
+      ctx.fillText(`Respawning in ${Math.max(1, Math.ceil(me.respawnTimer / game.tickRate))}...`, W / 2, H / 2 - 60);
+    } else {
+      ctx.fillText("You're out", W / 2, H / 2 - 70);
+      if (opts.watching) {
+        ctx.font = `14px ${FONT}`;
+        ctx.fillText(`Watching ${opts.watching.name}`, W / 2, H / 2 - 46);
+      }
+    }
   }
 
-  if (opts.showScores || game.over) drawScoreboard(ctx, game, me, W, H);
+  if (opts.ping != null) {
+    ctx.textAlign = 'right';
+    ctx.font = `10px ${FONT}`;
+    ctx.fillStyle = opts.ping > 200 ? '#c22' : '#999';
+    ctx.fillText(`${Math.round(opts.ping)} ms`, W - 12, H - 12);
+  }
+
+  if (opts.showScores || game.over) drawScoreboard(ctx, game, me, W, H, opts);
 }
 
 const BAR_COLORS = {
@@ -79,45 +102,62 @@ function bar(ctx, x, y, w, h, frac, kind, label) {
   ctx.fillText(label, x + 6, y + h / 2 + 1);
 }
 
+/** One box per slot (1-9, 0, F): what you hold from it, and how many weapons you have there. */
 function drawWeaponBar(ctx, me, W, H) {
-  const size = 42, gap = 4, n = WEAPON_ORDER.length;
-  const x0 = W / 2 - (n * size + (n - 1) * gap) / 2, y = H - size - 10;
-  WEAPON_ORDER.forEach((id, i) => {
-    const def = WEAPONS[id], x = x0 + i * (size + gap);
-    const owned = me.has(id), current = me.current === id;
-    ctx.fillStyle = current ? 'rgba(30,30,30,0.88)' : owned ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.35)';
-    ctx.fillRect(x, y, size, size);
-    ctx.strokeStyle = owned ? '#333' : 'rgba(0,0,0,0.12)';
+  const size = 46, gap = 4, n = SLOTS.length;
+  const total = n * size + (n - 1) * gap;
+  const scale = Math.min(1, (W - 24) / total);
+  ctx.save();
+  ctx.translate(W / 2 - (total * scale) / 2, H - (size + 10) * scale);
+  ctx.scale(scale, scale);
+  const owned = Object.keys(me.weapons).filter(id => WEAPONS[id] && me.has(id));
+  SLOTS.forEach((slot, i) => {
+    const x = i * (size + gap);
+    const mine = owned.filter(id => WEAPONS[id].slot === i);
+    const current = WEAPONS[me.current]?.slot === i;
+    const show = current ? me.current : mine.includes(me.lastInSlot[i]) ? me.lastInSlot[i] : mine[0];
+    ctx.fillStyle = current ? 'rgba(30,30,30,0.88)' : mine.length ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.35)';
+    ctx.fillRect(x, 0, size, size);
+    ctx.strokeStyle = mine.length ? '#333' : 'rgba(0,0,0,0.12)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+    ctx.strokeRect(x + 0.5, 0.5, size - 1, size - 1);
     ctx.textAlign = 'left';
     ctx.font = `bold 10px ${FONT}`;
-    ctx.fillStyle = current ? '#fff' : owned ? '#333' : 'rgba(0,0,0,0.25)';
-    ctx.fillText(String(i + 1), x + 4, y + 9);
-    ctx.textAlign = 'center';
-    ctx.font = `10px ${FONT}`;
-    ctx.fillText(SHORT[id], x + size / 2, y + 22);
-    if (owned) {
-      const inv = me.weapons[id];
+    ctx.fillStyle = current ? '#fff' : mine.length ? '#333' : 'rgba(0,0,0,0.25)';
+    ctx.fillText(slot.key, x + 4, 9);
+    if (mine.length > 1) {
+      ctx.textAlign = 'right';
       ctx.font = `9px ${FONT}`;
-      ctx.fillText(def.mag ? '∞' : String(inv.ammo), x + size / 2, y + 34);
+      ctx.fillText(`${mine.length}`, x + size - 4, 9);
+    }
+    ctx.textAlign = 'center';
+    if (show) {
+      const def = WEAPONS[show], inv = me.weapons[show];
+      ctx.font = `${def.short.length > 8 ? 8 : 10}px ${FONT}`;
+      ctx.fillText(def.short, x + size / 2, 24);
+      ctx.font = `9px ${FONT}`;
+      ctx.fillText(def.mag ? '∞' : inv.ammo === Infinity ? '' : String(inv.ammo), x + size / 2, 37);
+    } else {
+      ctx.font = `9px ${FONT}`;
+      ctx.fillText(slot.name.split(' ')[0], x + size / 2, 26);
     }
   });
+  ctx.restore();
 }
-
-const SHORT = { Platinum: 'Pistol', Uzi: 'Uzi', M4: 'M4', Shotgun: 'Shotgun', SR: 'Sniper', GrenadeLauncher: 'Grenades', Bazooka: 'Bazooka', Flamer: 'Flamer' };
 
 function drawScores(ctx, game, me, H) {
   const list = game.standings().slice(0, 8);
+  const rules = game.rules;
   ctx.textAlign = 'left';
   list.forEach((s, i) => {
     ctx.font = `${s === me ? 'bold ' : ''}12px ${FONT}`;
-    ctx.fillStyle = game.mode === 'team' ? (s.team === 1 ? '#2f6fdb' : '#d33b2f') : '#333';
-    ctx.fillText(`${s.name}: ${s.frags}`, 12, H - 16 - (list.length - 1 - i) * 15);
+    ctx.fillStyle = rules.teams ? TEAM[s.team] : '#333';
+    const extra = rules.scoreLabel === 'Frags' ? s.frags : `${rules.scoreLabel.toLowerCase()} ${rules.score(s)}`;
+    ctx.fillText(`${s.name}: ${extra}`, 12, H - 70 - (list.length - 1 - i) * 15);
   });
 }
 
-function drawFeed(ctx, game, W) {
+function drawFeed(ctx, game, W, chat = []) {
   const items = game.feed.filter(f => game.tick - f.tick < 360).slice(-5);
   ctx.textAlign = 'right';
   ctx.font = `12px ${FONT}`;
@@ -128,28 +168,53 @@ function drawFeed(ctx, game, W) {
     ctx.fillText(f.text + (f.weapon ? ` (${f.weapon})` : ''), W - 12, 16 + i * 16);
   });
   ctx.globalAlpha = 1;
+  const now = performance.now();
+  const lines = chat.filter(c => now - c.time < 12000).slice(-6);
+  ctx.textAlign = 'left';
+  lines.forEach((c, i) => {
+    ctx.globalAlpha = Math.min(1, (12000 - (now - c.time)) / 1500);
+    ctx.font = `12px ${FONT}`;
+    ctx.fillStyle = c.system ? '#777' : '#1a1a1a';
+    ctx.fillText(c.system ? c.text : `${c.name}: ${c.text}`, 180, 20 + i * 16);
+  });
+  ctx.globalAlpha = 1;
 }
 
 function drawTop(ctx, game, me, W) {
   ctx.textAlign = 'center';
   ctx.font = `bold 14px ${FONT}`;
-  if (game.mode === 'team') {
-    ctx.fillStyle = '#2f6fdb';
+  const rules = game.rules;
+  if (rules.teams) {
+    ctx.fillStyle = TEAM[1];
     ctx.fillText(`Blue ${game.teamScore[1]}`, W / 2 - 50, 16);
     ctx.fillStyle = '#999';
     ctx.fillText(`/ ${game.fragLimit}`, W / 2, 16);
-    ctx.fillStyle = '#d33b2f';
+    ctx.fillStyle = TEAM[2];
     ctx.fillText(`Red ${game.teamScore[2]}`, W / 2 + 50, 16);
+    return;
+  }
+  const rank = game.standings().indexOf(me) + 1;
+  ctx.fillStyle = '#333';
+  if (game.mode === 'gungame') {
+    const lvl = Math.min(me.level || 0, GUN_GAME_LADDER.length - 1);
+    const next = GUN_GAME_LADDER[lvl + 1];
+    ctx.fillText(`Weapon ${lvl + 1} of ${GUN_GAME_LADDER.length}: ${WEAPONS[GUN_GAME_LADDER[lvl]].name}  ·  ${ordinal(rank)} place`, W / 2, 16);
+    ctx.font = `12px ${FONT}`;
+    ctx.fillStyle = '#777';
+    ctx.fillText(next ? `Next: ${WEAPONS[next].name}` : 'Get a kill to win!', W / 2, 34);
+  } else if (game.mode === 'oitc') {
+    const left = game.soldiers.filter(s => (s.lives ?? 1) > 0).length;
+    const bullets = me.weapons.Chamber?.ammo ?? 0;
+    ctx.fillText(`Lives: ${me.lives ?? 0}  ·  Bullets: ${me.alive ? bullets : '-'}  ·  ${left} still in`, W / 2, 16);
   } else {
-    const rank = game.standings().indexOf(me) + 1;
-    ctx.fillStyle = '#333';
     ctx.fillText(`${me.frags} / ${game.fragLimit} frags  ·  ${ordinal(rank)} place`, W / 2, 16);
   }
 }
 
-function drawScoreboard(ctx, game, me, W, H) {
+function drawScoreboard(ctx, game, me, W, H, opts) {
   const list = game.standings();
-  const w = 360, rowH = 22, h = 70 + list.length * rowH;
+  const rules = game.rules;
+  const w = 400, rowH = 22, h = 70 + list.length * rowH;
   const x = W / 2 - w / 2, y = Math.max(40, H / 2 - h / 2 - 40);
   ctx.fillStyle = 'rgba(255,255,255,0.94)';
   ctx.fillRect(x, y, w, h);
@@ -159,8 +224,8 @@ function drawScoreboard(ctx, game, me, W, H) {
   ctx.textAlign = 'center';
   ctx.font = `bold 16px ${FONT}`;
   ctx.fillStyle = '#111';
-  let title = 'Scores';
-  if (game.over) {
+  let title = opts.title || 'Scores';
+  if (game.over && game.winner) {
     title = game.winner.team ? `${game.winner.team === 1 ? 'Blue' : 'Red'} team wins!` : `${game.winner.soldier === me ? 'You win!' : game.winner.soldier.name + ' wins!'}`;
   }
   ctx.fillText(title, W / 2, y + 22);
@@ -169,17 +234,22 @@ function drawScoreboard(ctx, game, me, W, H) {
   ctx.textAlign = 'left';
   ctx.fillText('Name', x + 20, y + 48);
   ctx.textAlign = 'right';
-  ctx.fillText('Frags', x + w - 90, y + 48);
+  const extra = rules.scoreLabel !== 'Frags';
+  if (extra) ctx.fillText(rules.scoreLabel, x + w - 150, y + 48);
+  ctx.fillText('Frags', x + w - 85, y + 48);
   ctx.fillText('Deaths', x + w - 20, y + 48);
   list.forEach((s, i) => {
     const ry = y + 70 + i * rowH;
     ctx.font = `${s === me ? 'bold ' : ''}13px ${FONT}`;
-    ctx.fillStyle = game.mode === 'team' ? (s.team === 1 ? '#2f6fdb' : '#d33b2f') : '#222';
+    ctx.fillStyle = rules.teams ? TEAM[s.team] : '#222';
     ctx.textAlign = 'left';
     ctx.fillText(s.name, x + 20, ry);
+    const nameW = ctx.measureText(s.name).width;
     ctx.textAlign = 'right';
-    ctx.fillText(String(s.frags), x + w - 90, ry);
+    if (extra) ctx.fillText(String(rules.score(s)), x + w - 150, ry);
+    ctx.fillText(String(s.frags), x + w - 85, ry);
     ctx.fillText(String(s.deaths), x + w - 20, ry);
+    if (s.isBot) { ctx.fillStyle = '#aaa'; ctx.font = `10px ${FONT}`; ctx.textAlign = 'left'; ctx.fillText('bot', x + 26 + nameW, ry); }
   });
 }
 

@@ -12,6 +12,7 @@ const ANIM = { stance: 0, run: 1, crouch: 2, flip: 3, land: 4, crouchWalk: 5, ai
 const UPPER_ARM = 7.5;
 const FOREARM = 7;
 const HEAD_R = 4.2;
+const TWO_HANDED = new Set(['smg', 'rifle', 'shotgun', 'sniper', 'launcher', 'tube', 'flamer', 'minigun', 'bat', 'axe', 'prod']);
 
 export function setLegAnimations(data) {
   LEGS = data.map(a => a.poses.map(p => ({
@@ -98,7 +99,7 @@ export function buildPose(s) {
   const def = WEAPONS[s.current] || WEAPONS.Platinum;
   const dx = Math.cos(s.aim), dy = Math.sin(s.aim);
   const kick = s.anim.recoil;
-  const twoHanded = def.look.grip > 0;
+  const twoHanded = TWO_HANDED.has(def.look.type);
   const backDist = twoHanded ? 5 - kick : 11 - kick;
   const frontDist = twoHanded ? 12 - kick : 12.5 - kick;
   // Bend elbows downward, and backward when aiming straight up or down.

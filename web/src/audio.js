@@ -29,7 +29,7 @@ export const SAMPLES = {
 };
 
 // Sounds that aren't placed in the world (always full volume, centred).
-const UI_SOUNDS = new Set(['hitmarker', 'gameover', 'click', 'menuMove', 'menuSelect']);
+const UI_SOUNDS = new Set(['hitmarker', 'gameover', 'click', 'menuMove', 'menuSelect', 'levelUp', 'chat']);
 
 export class SoundSystem {
   constructor(base = 'sounds/') {
@@ -80,15 +80,16 @@ export class SoundSystem {
     if (this.master) this.master.gain.value = m ? 0 : this.volume;
   }
 
-  /** Play the game's queued sounds, louder when close to the listener. */
-  playQueue(queue, lx, ly) {
+  /** Play the game's queued sounds, louder when close to the listener. `me` = the listener's soldier id. */
+  playQueue(queue, lx, ly, me = null) {
     if (!this.ctx || this.muted) return;
     const seen = new Set();
     for (const s of queue) {
-      const key = s.name + Math.round(s.x / 64);
+      if (s.to != null && s.to !== me) continue;
+      const key = s.name + Math.round((s.x ?? 0) / 64);
       if (seen.has(key)) continue;
       seen.add(key);
-      const ui = UI_SOUNDS.has(s.name);
+      const ui = UI_SOUNDS.has(s.name) || s.x == null;
       const d = ui ? 0 : Math.hypot(s.x - lx, s.y - ly);
       const vol = Math.pow(Math.max(0, 1 - d / 1300), 1.6);
       if (vol < 0.03) continue;
@@ -197,4 +198,48 @@ const SOUNDS = {
   respawnItem: (a, o, t) => { a.tone(o, t, { dur: 0.15, from: 1200, to: 1600, type: 'sine', gain: 0.05 }); return 0.15; },
   gameover: (a, o, t) => { [392, 523, 659, 784].forEach((f, i) => a.tone(o, t + i * 0.15, { dur: 0.3, from: f, type: 'triangle', gain: 0.3 })); return 0.9; },
   click: (a, o, t) => { a.tone(o, t, { dur: 0.04, from: 1000, type: 'square', gain: 0.08 }); return 0.05; },
+  chat: (a, o, t) => { a.tone(o, t, { dur: 0.06, from: 1300, type: 'sine', gain: 0.08 }); a.tone(o, t + 0.07, { dur: 0.08, from: 1700, type: 'sine', gain: 0.08 }); return 0.16; },
+
+  // ---- New weapons (all synthesized) ----
+  magnum: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.2, freq: 1300, q: 0.5, gain: 1.1 }); a.tone(o, t, { dur: 0.14, from: 150, to: 45, gain: 0.7 }); return 0.22; },
+  minigun: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.045, freq: 2900, gain: 0.45 }); a.tone(o, t, { dur: 0.03, from: 90, to: 60, gain: 0.25 }); return 0.05; },
+  spin: (a, o, t) => { a.tone(o, t, { dur: 0.14, from: 180, to: 520, type: 'triangle', gain: 0.07 }); return 0.14; },
+  bow: (a, o, t) => { a.tone(o, t, { dur: 0.16, from: 230, to: 150, type: 'triangle', gain: 0.3 }); a.noiseBurst(o, t, { dur: 0.06, freq: 4000, gain: 0.15 }); return 0.17; },
+  thunk: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.06, freq: 450, type: 'lowpass', gain: 0.5 }); a.tone(o, t, { dur: 0.08, from: 260, to: 180, type: 'triangle', gain: 0.12 }); return 0.09; },
+  magic: (a, o, t) => { a.tone(o, t, { dur: 0.45, from: 500, to: 1500, gain: 0.13 }); a.tone(o, t + 0.05, { dur: 0.4, from: 900, to: 2200, gain: 0.08 }); return 0.5; },
+  throw: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.16, freq: 900, sweepTo: 300, q: 1.2, gain: 0.3, attack: 0.02 }); return 0.17; },
+  boing: (a, o, t) => { a.tone(o, t, { dur: 0.13, from: 280, to: 900, gain: 0.14 }); return 0.14; },
+  hallelujah: (a, o, t) => {
+    const chords = [[440, 554, 659], [494, 622, 740], [554, 698, 831], [659, 831, 988]];
+    chords.forEach((c, i) => c.forEach(f => {
+      a.tone(o, t + i * 0.32, { dur: i === 3 ? 0.7 : 0.34, from: f, type: 'triangle', gain: 0.1, attack: 0.08 });
+      a.tone(o, t + i * 0.32, { dur: i === 3 ? 0.7 : 0.34, from: f * 1.003, type: 'sine', gain: 0.06, attack: 0.08 });
+    }));
+    return 1.7;
+  },
+  smash: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.25, freq: 4000, type: 'highpass', gain: 0.6 }); [2600, 3300, 2900].forEach((f, i) => a.tone(o, t + 0.03 * i, { dur: 0.08, from: f, type: 'triangle', gain: 0.06 })); return 0.3; },
+  gas: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.7, freq: 600, type: 'lowpass', gain: 0.35, attack: 0.08 }); return 0.7; },
+  cough: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.1, freq: 500, gain: 0.35 }); a.noiseBurst(o, t + 0.16, { dur: 0.09, freq: 450, gain: 0.3 }); return 0.28; },
+  baa: (a, o, t) => {
+    a.tone(o, t, { dur: 0.09, from: 300, to: 420, type: 'sawtooth', gain: 0.06 });
+    for (let i = 0; i < 5; i++) a.tone(o, t + 0.08 + i * 0.06, { dur: 0.07, from: 420 - i * 8, to: 400 - i * 8, type: 'sawtooth', gain: 0.07 });
+    return 0.42;
+  },
+  mumble: (a, o, t) => { for (let i = 0; i < 5; i++) a.tone(o, t + i * 0.09, { dur: 0.08, from: 200 + Math.random() * 120, type: 'triangle', gain: 0.08 }); return 0.5; },
+  moo: (a, o, t) => { a.tone(o, t, { dur: 0.7, from: 150, to: 110, type: 'sawtooth', gain: 0.09, attack: 0.08 }); return 0.7; },
+  fuse: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.6, freq: 5000, type: 'highpass', gain: 0.1 }); return 0.6; },
+  beep: (a, o, t) => { a.tone(o, t, { dur: 0.06, from: 1900, type: 'square', gain: 0.07 }); a.tone(o, t + 0.1, { dur: 0.06, from: 1900, type: 'square', gain: 0.07 }); return 0.17; },
+  plane: (a, o, t) => { a.noiseBurst(o, t, { dur: 1.6, freq: 300, sweepTo: 900, type: 'lowpass', gain: 0.5, attack: 0.5 }); a.tone(o, t, { dur: 1.5, from: 90, to: 110, type: 'sawtooth', gain: 0.03, attack: 0.4 }); return 1.6; },
+  heehaw: (a, o, t) => { a.tone(o, t, { dur: 0.28, from: 650, to: 950, type: 'sawtooth', gain: 0.07 }); a.tone(o, t + 0.3, { dur: 0.35, from: 330, to: 250, type: 'sawtooth', gain: 0.08 }); return 0.7; },
+  rumble: (a, o, t) => { a.noiseBurst(o, t, { dur: 1.0, freq: 140, type: 'lowpass', gain: 1.1, attack: 0.1 }); a.tone(o, t, { dur: 0.9, from: 45, to: 35, gain: 0.5 }); return 1.0; },
+  teleport: (a, o, t) => { a.tone(o, t, { dur: 0.3, from: 300, to: 1800, gain: 0.13 }); a.tone(o, t + 0.12, { dur: 0.3, from: 1800, to: 400, gain: 0.1 }); return 0.45; },
+  banzai: (a, o, t) => { a.tone(o, t, { dur: 0.6, from: 480, to: 720, type: 'sawtooth', gain: 0.07, attack: 0.05 }); return 0.6; },
+  rope: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.12, freq: 2400, sweepTo: 600, q: 2, gain: 0.3 }); return 0.13; },
+  prod: (a, o, t) => { a.tone(o, t, { dur: 0.09, from: 520, to: 260, type: 'square', gain: 0.07 }); return 0.1; },
+  bat: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.08, freq: 1400, type: 'lowpass', gain: 1.1 }); a.tone(o, t, { dur: 0.14, from: 950, to: 620, type: 'triangle', gain: 0.25 }); return 0.15; },
+  axe: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.12, freq: 3200, q: 1.5, gain: 0.6 }); a.tone(o, t, { dur: 0.12, from: 220, to: 80, gain: 0.5 }); return 0.13; },
+  punch: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.12, freq: 700, type: 'lowpass', gain: 1 }); a.tone(o, t, { dur: 0.15, from: 170, to: 55, gain: 0.6 }); a.noiseBurst(o, t + 0.05, { dur: 0.3, freq: 900, sweepTo: 2500, q: 0.6, gain: 0.25 }); return 0.35; },
+  swing: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.12, freq: 1600, sweepTo: 500, q: 1.4, gain: 0.15 }); return 0.13; },
+  crate: (a, o, t) => { a.tone(o, t, { dur: 0.1, from: 523, type: 'square', gain: 0.05 }); a.tone(o, t + 0.12, { dur: 0.16, from: 659, type: 'square', gain: 0.05 }); return 0.3; },
+  levelUp: (a, o, t) => { [523, 784, 1046].forEach((f, i) => a.tone(o, t + i * 0.07, { dur: 0.12, from: f, type: 'square', gain: 0.07 })); return 0.3; },
 };

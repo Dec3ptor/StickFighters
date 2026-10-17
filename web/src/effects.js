@@ -81,6 +81,26 @@ export class Effects {
     this.add({ kind: 'ring', x, y, color, life: 30, max: 30 });
   }
 
+  /** A cartoon "whack" star where a melee hit lands. */
+  whack(x, y) {
+    this.add({ kind: 'whack', x, y, life: 12, max: 12, angle: Math.random() });
+  }
+
+  /** The magic bullet's trail. */
+  sparkle(x, y) {
+    this.add({ kind: 'sparkle', x: x + (Math.random() - 0.5) * 3, y: y + (Math.random() - 0.5) * 3, vx: 0, vy: -0.2, life: 22, max: 22 });
+  }
+
+  /** One spark (a lit fuse). */
+  spark(x, y) {
+    this.add({ kind: 'ember', x, y, vx: (Math.random() - 0.5) * 1.2, vy: -0.6 - Math.random(), life: 10 + Math.random() * 6 });
+  }
+
+  /** The plane that drops an air strike, flying across above the map. */
+  plane(x, y, dir = 1) {
+    this.add({ kind: 'plane', x: x - dir * 700, y, vx: dir * 10, life: 140, max: 140 });
+  }
+
   /** Throw the pieces of a dead stick figure around. segs are [x0,y0,x1,y1] in world space. */
   gibs(segs, head, vx, vy, force) {
     for (const [x0, y0, x1, y1] of segs) {
@@ -141,6 +161,12 @@ export class Effects {
           break;
         case 'puff':
           p.r += 0.4 * dt;
+          break;
+        case 'plane':
+          p.x += p.vx * dt;
+          break;
+        case 'sparkle':
+          p.y += p.vy * dt;
           break;
       }
       keep.push(p);

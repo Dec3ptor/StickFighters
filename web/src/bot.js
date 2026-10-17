@@ -26,22 +26,20 @@ export const BOT_PROFILES = [
 ];
 
 
-/** How much a bot wants to use a weapon at distance d. */
-function weaponScore(id, d) {
-  switch (id) {
-    case 'Platinum': return 2;
-    case 'Uzi': return d < 450 ? 6 : 3;
-    case 'M4': return d < 800 ? 7 : 4;
-    case 'Shotgun': return d < 160 ? 10 : d < 280 ? 6 : 1;
-    case 'SR': return d > 300 ? 9 : 3;
-    case 'GrenadeLauncher': return d > 110 && d < 450 ? 7 : 1;
-    case 'Bazooka': return d > 130 && d < 800 ? 9 : 0.5;
-    case 'Flamer': return d < 170 ? 11 : 0.5;
-  }
-  return 0;
+/** How much a bot wants to use a weapon at distance d (from the weapon table's `bot` numbers). */
+function weaponScore(id, d, s) {
+  const def = WEAPONS[id];
+  const b = def?.bot;
+  if (!b) return 0;
+  if (b.lastResort) return s && s.health < 30 && d < b.far ? 12 : 0;
+  if (!b.score) return 0;
+  if (def.kind === 'melee') return d <= b.far + 10 ? b.score : 0.2;
+  const near = b.near ?? 0, far = b.far ?? 600;
+  if (d >= near && d <= far) return b.score;
+  return d < near ? b.score * 0.2 : b.score * 0.35;
 }
 
-const WEAPON_VALUE = { Platinum: 0, Uzi: 3, M4: 4, Shotgun: 4, SR: 4, GrenadeLauncher: 4, Bazooka: 6, Flamer: 4 };
+const weaponValue = id => WEAPONS[id]?.bot?.value ?? 2;
 
 export class BotController {
   constructor(nav, difficulty, profile, rng) {
@@ -52,6 +50,7 @@ export class BotController {
     this.aimMult = 0.6 + profile.acc / 25;
     this.reaction = Math.round(this.d.reaction * (1.2 - profile.skill * 0.1));
     this.phase = [rng() * 10, rng() * 10];
+    this.prevFire = false;
     this.reset();
   }
 
@@ -88,18 +87,36 @@ export class BotController {
   }
 
   input(game, s) {
-    const inp = { move: 0, jump: false, jumpPressed: false, aim: this.aim ?? s.aim, fire: false };
+    const inp = { move: 0, jump: false, jumpPressed: false, aim: this.aim ?? s.aim, fire: false, aimDist: 200 };
     if (!s.alive) return inp;
     if (game.tick % 3 === s.id % 3) this.perceive(game, s);
     if (game.tick % 15 === s.id % 15) this.pickWeapon(game, s, inp);
     if (--this.thinkIn <= 0 && !this.exec && s.body.onGround) this.think(game, s);
     this.steer(game, s, inp);
     this.fight(game, s, inp);
+    this.detonate(game, s, inp);
+    inp.firePressed = inp.fire && !this.prevFire;
+    this.prevFire = inp.fire;
     return inp;
   }
 
+  /** The bot's sheep (or other remote-controlled thing) still out there, if any. */
+  remoteOut(game, s) {
+    return game.projectiles.find(p => p.owner === s && p.remote && !p.dead) || null;
+  }
+
+  /** Set off our sheep when it's next to an enemy. */
+  detonate(game, s, inp) {
+    const p = this.remoteOut(game, s);
+    if (!p || p.weapon !== s.current || p.age < 10) return;
+    const r = (p.cfg.blast?.radius || 60) * 0.55;
+    if (this.enemies(game, s).some(o => Math.hypot(o.x - p.x, o.y - 8 - p.y) < r)) {
+      inp.fire = !this.prevFire;
+    }
+  }
+
   enemies(game, s) {
-    return game.soldiers.filter(o => o !== s && o.alive && !(game.mode === 'team' && o.team === s.team));
+    return game.soldiers.filter(o => o !== s && o.alive && !(game.rules.teams && o.team === s.team));
   }
 
   canSee(game, s, o) {
@@ -125,11 +142,12 @@ export class BotController {
   }
 
   pickWeapon(game, s, inp) {
+    if (this.remoteOut(game, s)) return; // keep hold of the sheep's controls
     const d = this.target ? Math.hypot(this.target.x - s.x, this.target.y - s.y) : 450;
-    let best = s.current, bestScore = s.has(s.current) ? weaponScore(s.current, d) + 0.5 : -1;
+    let best = s.current, bestScore = s.has(s.current) ? weaponScore(s.current, d, s) + 0.5 : -1;
     for (const id in s.weapons) {
       if (!s.has(id)) continue;
-      const sc = weaponScore(id, d);
+      const sc = weaponScore(id, d, s);
       if (sc > bestScore) { bestScore = sc; best = id; }
     }
     if (best !== s.current) inp.switchTo = best;
@@ -173,22 +191,24 @@ export class BotController {
     };
 
     if (s.health < 55) {
-      goal = best(it => it.type === 'health', () => (70 - s.health) / 6);
+      goal = best(it => it.type === 'health' || (it.type === 'crate' && it.landed && it.health), () => (70 - s.health) / 6);
       kind = 'health';
     }
     if (!goal) {
       const owned = Object.keys(s.weapons).filter(id => s.has(id));
-      const topValue = Math.max(...owned.map(id => WEAPON_VALUE[id] || 0));
+      const topValue = Math.max(...owned.map(id => weaponValue(id)));
+      const isWeapon = it => (it.type === 'weapon' || (it.type === 'crate' && it.landed && !it.health)) && WEAPONS[it.weapon];
       goal = best(
-        it => it.type === 'weapon' && (!s.weapons[it.weapon] || s.weapons[it.weapon].ammo < WEAPONS[it.weapon].ammo),
-        it => (s.weapons[it.weapon] ? 1.5 : WEAPON_VALUE[it.weapon] + 2) + (topValue < 3 ? 6 : 0) - (this.target ? 3 : 0),
+        it => isWeapon(it) && (!s.weapons[it.weapon] || s.weapons[it.weapon].ammo < (WEAPONS[it.weapon].ammo ?? 1)),
+        it => (s.weapons[it.weapon] ? 1.5 : weaponValue(it.weapon) + 2) + (topValue < 3 ? 6 : 0) - (this.target ? 3 : 0) + (it.type === 'crate' ? 1.5 : 0),
       );
       kind = 'weapon';
     }
     if (!goal && s.armour < 50) { goal = best(it => it.type === 'armour', () => 3); kind = 'armour'; }
 
     const def = WEAPONS[s.current];
-    const reach = def.kind === 'rail' ? 1400 : Math.min(def.range * 0.85, 650);
+    const far = def.bot?.far ?? def.range ?? 400;
+    const reach = def.kind === 'melee' ? far + 4 : ['rail', 'seeker', 'strike'].includes(def.kind) ? 1400 : Math.min(far * 0.9, 650);
     const inRange = this.target && Math.hypot(this.target.x - s.x, this.target.y - s.y) < reach;
     if (!goal && this.target && !inRange) {
       goal = costTo(this.target.x, this.target.y + 4).n;
@@ -221,6 +241,8 @@ export class BotController {
       }
     }
 
+    // In melee range of the target, get right up close.
+    if (kind === 'chase' && def.kind === 'melee' && this.target) goal = costTo(this.target.x, this.target.y + 4).n || goal;
     this.goalKind = kind;
     this.goalItem = ['health', 'weapon', 'armour'].includes(kind) ? goalItem : null;
     this.path = this.nav.pathTo(search, goal) || [];
@@ -339,13 +361,19 @@ export class BotController {
     }
     this.seen++;
     const def = WEAPONS[s.current];
+    const b = def.bot || {};
     let tx = t.x, ty = t.y - (def.kind === 'rail' && this.profile.skill >= 2 ? 15 : 7);
     const dist = Math.hypot(tx - sx, ty - sy);
+    inp.aimDist = dist;
     let desired;
-    if (def.kind === 'grenade') {
-      desired = lobAngle(tx - sx, ty - sy, def.speed, MOTION.grenadeGravity) ?? Math.atan2(ty - sy, tx - sx);
+    if (b.lob) {
+      const g = def.gravity ?? MOTION.grenadeGravity;
+      inp.aimDist = 9999; // throw as hard as possible, so the arc matches the maths
+      desired = lobAngle(tx - sx, ty - sy, def.speed, g) ?? Math.atan2(ty - sy - dist * 0.3, tx - sx);
+    } else if (b.walker) {
+      desired = tx < sx ? Math.PI : 0;
     } else {
-      if (def.speed && def.kind !== 'rail') {
+      if (def.speed && !['rail', 'seeker', 'flyer', 'strike'].includes(def.kind)) {
         const lead = (dist / def.speed) * (0.5 + this.profile.skill * 0.15);
         tx += t.body.vx * lead;
         ty += t.body.vy * lead * 0.4;
@@ -361,16 +389,28 @@ export class BotController {
     inp.aim = this.aim;
 
     if (this.seen < this.reaction) return;
+    if (this.remoteOut(game, s)) return; // one at a time; the sheep is steered by our aim
     const off = Math.abs(angleDiff(this.aim, desired));
-    const cone = def.kind === 'rail' ? this.d.fireCone * 0.35 : def.kind === 'pellets' || def.kind === 'flame' ? this.d.fireCone * 1.6 : this.d.fireCone;
-    if (off > cone || dist > def.range * 1.05) return;
-    if ((def.kind === 'rocket' || def.kind === 'grenade') && dist < 75) return;
-    if (def.kind === 'rocket' || def.kind === 'grenade') {
+    const cone = def.kind === 'rail' ? this.d.fireCone * 0.35
+      : def.kind === 'flame' || (def.pellets || 0) > 1 ? this.d.fireCone * 1.6
+      : def.kind === 'melee' || b.walker || def.kind === 'quake' || def.kind === 'strike' ? 3
+      : this.d.fireCone;
+    if (off > cone) return;
+    const maxRange = def.kind === 'melee' ? (b.far ?? 22) + 8 : (b.far ?? def.range ?? 600) * 1.05;
+    if (dist > maxRange) return;
+    if (b.walker && Math.abs(ty - sy) > 70) return;
+    if (b.mine && (this.lastMine && game.tick - this.lastMine < 600)) return;
+    const explosive = def.kind === 'rocket' || def.kind === 'thrown' || def.kind === 'flyer' || def.kind === 'kamikaze';
+    if (explosive && dist < 75 && def.kind !== 'kamikaze') return;
+    if (explosive && def.kind !== 'kamikaze' && !b.lob) {
       // Don't blow ourselves up on a wall right in front of us.
       const dx = Math.cos(this.aim), dy = Math.sin(this.aim);
       if (game.map.raycast(sx, sy, sx + dx * 70, sy + dy * 70)) return;
     }
-    if (this.rng() < this.d.trigger) inp.fire = true;
+    if (this.rng() < this.d.trigger) {
+      inp.fire = true;
+      if (b.mine) this.lastMine = game.tick;
+    }
   }
 }
 

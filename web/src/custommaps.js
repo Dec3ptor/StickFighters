@@ -6,17 +6,18 @@
 //   { name, bounds: {left, top, right, bottom},
 //     platforms: [{ left, top, right, bottom, bounce? }],   bounce < 0 makes a jump pad
 //     spawns: [{ x, y, team }],                              team 1 = blue, 2 = red
-//     items: [{ type: 'health'|'armour'|'jetpack'|'weapon', x, y, weapon? }] }
+//     items: [{ type: 'health'|'armour'|'jetpack'|'weapon', x, y, weapon? }],
+//     loadout?: { weapons: [ids], armour: 0-100, jetpack: bool } }      what everyone spawns with
 
 import { GameMap } from './map.js';
 import { NavGraph } from './nav.js';
 import { makeBody, stepBody } from './physics.js';
 import { BODY, RULES, DEFAULT_SPEED } from './config.js';
-import { WEAPONS } from './weapons.js';
+import { WEAPONS, PICKUP_WEAPONS } from './weapons.js';
 import { setGameSpeed } from './speed.js';
 
 export const ITEM_TYPES = ['health', 'armour', 'jetpack', 'weapon'];
-export const LIMITS = { maxSize: 8000, maxPlatforms: 400, maxSpawns: 64, maxItems: 160, minSize: 4, nameLength: 32 };
+export const LIMITS = { maxSize: 8000, maxPlatforms: 400, maxSpawns: 64, maxItems: 160, minSize: 4, nameLength: 32, loadoutWeapons: 12 };
 export const BOUNCE = { min: 2, max: 12, standard: 7 }; // jump pad strength (stored as a negative bounce)
 const MARGIN = 40;
 
@@ -74,7 +75,20 @@ export function normalizeMap(raw) {
   if (bounds.right - bounds.left > LIMITS.maxSize || bounds.bottom - bounds.top > LIMITS.maxSize) {
     throw new Error(`The map is too big (over ${LIMITS.maxSize} px across)`);
   }
-  return { name, bounds, platforms, spawns, items };
+  const out = { name, bounds, platforms, spawns, items };
+  const loadout = normalizeLoadout(raw.loadout);
+  if (loadout) out.loadout = loadout;
+  return out;
+}
+
+/** What everyone spawns with: known weapons only, armour 0-100. Null if it adds nothing. */
+export function normalizeLoadout(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const weapons = [...new Set(Array.isArray(raw.weapons) ? raw.weapons : [])].filter(id => PICKUP_WEAPONS.includes(id)).slice(0, LIMITS.loadoutWeapons);
+  const armour = Math.max(0, Math.min(100, Math.round(Number(raw.armour) || 0)));
+  const jetpack = !!raw.jetpack;
+  if (!weapons.length && !armour && !jetpack) return null;
+  return { weapons, armour, jetpack };
 }
 
 // ---- Share links ---------------------------------------------------------------
@@ -87,6 +101,7 @@ function pack(map) {
     p: map.platforms.map(p => (p.bounce ? [p.left, p.top, p.right, p.bottom, p.bounce] : [p.left, p.top, p.right, p.bottom])),
     s: map.spawns.map(s => [s.x, s.y, s.team]),
     i: map.items.map(it => (it.type === 'weapon' ? [it.type, it.x, it.y, it.weapon] : [it.type, it.x, it.y])),
+    ...(map.loadout ? { l: [map.loadout.weapons, map.loadout.armour, map.loadout.jetpack ? 1 : 0] } : {}),
   };
 }
 
@@ -97,6 +112,7 @@ function unpack(o) {
     platforms: (o.p || []).map(([left, top, right, bottom, bounce]) => ({ left, top, right, bottom, bounce })),
     spawns: (o.s || []).map(([x, y, team]) => ({ x, y, team })),
     items: (o.i || []).map(([type, x, y, weapon]) => ({ type, x, y, weapon })),
+    loadout: Array.isArray(o.l) ? { weapons: o.l[0], armour: o.l[1], jetpack: !!o.l[2] } : null,
   });
 }
 
@@ -222,7 +238,7 @@ export function checkMap(raw) {
   else if (data.spawns.length < 4) add('warning', `Only ${data.spawns.length} spawn point${data.spawns.length === 1 ? '' : 's'}: 4 or more keep fights fair.`);
   const blue = data.spawns.filter(s => s.team === 1).length, red = data.spawns.length - blue;
   if (data.spawns.length && (!blue || !red)) add('warning', `Team games need both blue and red spawn points (this map has ${blue} blue, ${red} red).`);
-  if (!data.items.some(i => i.type === 'weapon')) add('warning', 'No weapons on the map: everyone only has the pistol.');
+  if (!data.items.some(i => i.type === 'weapon') && !data.loadout?.weapons.length) add('warning', 'No weapons on the map: everyone starts with just the pistol (supply crates still drop in).');
   if (!data.platforms.length || !data.spawns.length) return { data, problems, spots: [] };
 
   setGameSpeed(DEFAULT_SPEED);

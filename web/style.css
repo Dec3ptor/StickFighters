@@ -218,6 +218,16 @@ button.small { font-size: 12px; padding: 4px 9px; border-width: 1.5px; }
 .ed-files { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 button.danger { color: #b3261e; border-color: #b3261e; }
 .ed-note { color: var(--muted); font-size: 12px; margin: 6px 0; }
+.ed-row button { flex: 1; }
+.ed-wide input { width: 100%; }
+.ed-jet { margin-top: 22px; }
+#edProps details { margin: 6px 0; font-size: 12px; }
+#edProps summary { cursor: pointer; font-weight: bold; color: var(--ink); }
+.ed-loadout { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); padding: 4px 6px; margin-top: 4px; }
+.ed-lo-group { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 3px 0; border-bottom: 1px dotted var(--line); }
+.ed-lo-group:last-child { border-bottom: 0; }
+.ed-lo-group > span { width: 100%; font-size: 10px; color: var(--muted); }
+.ed-lo-group label { display: flex; gap: 3px; align-items: center; white-space: nowrap; }
 .ed-stats { margin: 4px 0; line-height: 1.5; }
 .ed-problem {
   display: block; width: 100%; text-align: left; font-weight: normal; font-size: 12px; padding: 6px 8px; margin: 4px 0;

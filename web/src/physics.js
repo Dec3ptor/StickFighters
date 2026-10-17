@@ -8,6 +8,8 @@ export function makeBody(x, y) {
     x, y, vx: 0, vy: 0,
     onGround: false, crouching: false, padLaunch: false,
     hasJetpack: false, fuel: 0,
+    rope: null,        // ninja rope: { x, y, len } while hanging from one
+    momentum: 0,       // ticks of keeping speed in the air (after a rope swing or a big hit)
     // Set during each step, for animation and sound:
     jetting: false, bounced: false, jumped: false, landed: 0,
   };
@@ -50,10 +52,17 @@ export function stepBody(body, input, map) {
   }
 
   // Horizontal: ease toward the wanted speed, so knockback fades out naturally.
-  const target = (input.move || 0) * (body.crouching ? PHYS.crouchSpeed : PHYS.runSpeed);
-  const accel = wasGround ? PHYS.groundAccel : PHYS.airAccel;
-  const dv = target - body.vx;
-  body.vx += dv > accel ? accel : dv < -accel ? -accel : dv;
+  if (body.momentum > 0) body.momentum--;
+  if (body.rope && !wasGround) {
+    // Swinging: left and right pump the swing instead of steering.
+    body.vx += (input.move || 0) * PHYS.airAccel * 0.25;
+  } else {
+    const target = (input.move || 0) * (body.crouching ? PHYS.crouchSpeed : PHYS.runSpeed);
+    let accel = wasGround ? PHYS.groundAccel : PHYS.airAccel;
+    if (!wasGround && body.momentum > 0 && Math.abs(body.vx) > Math.abs(target)) accel *= 0.12;
+    const dv = target - body.vx;
+    body.vx += dv > accel ? accel : dv < -accel ? -accel : dv;
+  }
 
   // Jumping.
   if (input.jumpPressed && wasGround && !body.crouching) {
@@ -61,7 +70,7 @@ export function stepBody(body, input, map) {
     body.onGround = false;
     body.jumped = true;
   }
-  if (!input.jump && !body.padLaunch && body.vy < -PHYS.jumpCut) body.vy = -PHYS.jumpCut;
+  if (!input.jump && !body.padLaunch && !body.rope && body.momentum <= 0 && body.vy < -PHYS.jumpCut) body.vy = -PHYS.jumpCut;
 
   // Jetpack.
   if (body.hasJetpack && input.jet && !body.onGround && body.fuel > 0) {
@@ -85,6 +94,29 @@ export function stepBody(body, input, map) {
     body.onGround = !!under && !(under.bounce && under.l <= body.x && body.x <= under.r);
     if (body.onGround) body.vy = 0;
   }
+  if (body.rope) holdRope(body, input, map);
+}
+
+const ROPE_MIN = 18, ROPE_MAX = 420;
+
+/** Keep a soldier on a ninja rope within its length; jump climbs up, crouch slides down. */
+function holdRope(body, input, map) {
+  const r = body.rope;
+  if (input.jump) r.len = Math.max(ROPE_MIN, r.len - PHYS.ropeClimb);
+  if (input.crouch) r.len = Math.min(ROPE_MAX, r.len + PHYS.ropeClimb);
+  const cy = body.y - 6;
+  const dx = body.x - r.x, dy = cy - r.y, d = Math.hypot(dx, dy);
+  if (d <= r.len || d === 0) return;
+  const ux = dx / d, uy = dy / d;
+  // Pull back onto the circle, as far as walls allow.
+  const tx = r.x + ux * r.len, ty = r.y + uy * r.len + 6;
+  if (!overlapAt(body, map, tx, ty)) { body.x = tx; body.y = ty; }
+  else if (!overlapAt(body, map, tx, body.y)) body.x = tx;
+  else if (!overlapAt(body, map, body.x, ty)) body.y = ty;
+  // Remove the speed pulling away from the anchor; the rest becomes the swing.
+  const out = body.vx * ux + body.vy * uy;
+  if (out > 0) { body.vx -= out * ux; body.vy -= out * uy; }
+  if (uy < 0.2 || !body.onGround) body.onGround = false;
 }
 
 function overlapAt(body, map, x, y) {

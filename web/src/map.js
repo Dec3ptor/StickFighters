@@ -12,6 +12,8 @@ export class GameMap {
     }));
     this.spawns = data.spawns.map(s => ({ x: s.x, y: s.y, team: s.team }));
     this.items = data.items.map(it => ({ type: it.type, weapon: it.weapon || null, x: it.x, y: it.y }));
+    // What everyone spawns with on this map (custom maps): { weapons: [ids], armour, jetpack }.
+    this.loadout = data.loadout || null;
     this._buildGrid();
   }
 

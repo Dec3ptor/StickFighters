@@ -13,23 +13,36 @@ export const TAG = {
   map: 'stick-soldiers-map-v1',
 };
 
-// Relays for finding games and connecting players (live events).
+// Relays for finding games and connecting players (live events). All passed
+// every check in the probe (run on GitHub Actions, October 2026), fastest first.
 export const RELAYS = [
   'wss://nos.lol',
-  'wss://relay.damus.io',
   'wss://relay.primal.net',
   'wss://nostr.mom',
   'wss://relay.snort.social',
   'wss://offchain.pub',
+  'wss://nostr-pub.wellorder.net',
+  'wss://nostr.oxtr.dev',
 ];
 
 // Relays that keep community maps (stored events).
 export const COMMUNITY_RELAYS = [
   'wss://nos.lol',
-  'wss://relay.damus.io',
   'wss://relay.primal.net',
   'wss://nostr.mom',
+  'wss://relay.snort.social',
+  'wss://offchain.pub',
+  'wss://nostr-pub.wellorder.net',
 ];
+
+/** Relays to use: `?relay=ws://...` in the page address overrides the list (for local play and tests). */
+export function relaysFor(list) {
+  try {
+    const custom = new URLSearchParams(globalThis.location?.search || '').getAll('relay');
+    if (custom.length) return custom;
+  } catch { /* not in a browser */ }
+  return list;
+}
 
 // Public STUN servers let two browsers find a direct route to each other.
 export const ICE_SERVERS = [

@@ -3,7 +3,7 @@
 
 import { normalizeMap, computeBounds, checkMap, encodeShare, encodeSSM, decodeSSM, BOUNCE, LIMITS } from './custommaps.js';
 import { listMaps, getMap, saveMap, deleteMap } from './mapstore.js';
-import { WEAPONS, WEAPON_ORDER } from './weapons.js';
+import { WEAPONS, PICKUP_WEAPONS, SLOTS } from './weapons.js';
 import { drawWeapon, drawHealth, drawArmour, drawJetpack } from './render.js';
 import { RULES } from './config.js';
 
@@ -62,6 +62,9 @@ export class Editor {
     this.flash = null;
     this.spaceDown = false;
     this.active = false;
+    // Mirror editing: changes on one side of the line are copied to the other.
+    this.mirror = { on: false, x: 0, swapTeams: true, placed: false };
+    this.loadoutOpen = false;
     this.buildToolbar();
     this.wire();
     new ResizeObserver(() => this.resize()).observe(this.canvas.parentElement);
@@ -72,7 +75,9 @@ export class Editor {
   open(record) {
     if (!record) record = this.createRecord(blankMap());
     this.record = record;
-    this.map = JSON.parse(JSON.stringify({ name: record.data.name, platforms: record.data.platforms, spawns: record.data.spawns, items: record.data.items }));
+    this.map = JSON.parse(JSON.stringify({ name: record.data.name, platforms: record.data.platforms, spawns: record.data.spawns, items: record.data.items, loadout: record.data.loadout || null }));
+    this.mirror.placed = false;
+    if (this.mirror.on) this.centreMirror();
     this.undoStack = [];
     this.redoStack = [];
     this.sel = null;
@@ -254,10 +259,11 @@ export class Editor {
   }
 
   deleteSelected() {
-    if (!this.sel) return;
+    if (!this.sel || !this.selected()) return;
     this.remember();
-    const list = { platform: this.map.platforms, spawn: this.map.spawns, item: this.map.items }[this.sel.kind];
-    list.splice(this.sel.i, 1);
+    const twin = this.selectedTwin();
+    const list = this.listOf(this.sel.kind);
+    for (const i of [this.sel.i, twin].filter(i => i >= 0).sort((a, b) => b - a).filter((v, k, a) => a.indexOf(v) === k)) list.splice(i, 1);
     this.sel = null;
     this.changed();
   }
@@ -270,9 +276,12 @@ export class Editor {
     const copy = JSON.parse(JSON.stringify(o));
     if (this.sel.kind === 'platform') { copy.left += step * 2; copy.right += step * 2; copy.top += step * 2; copy.bottom += step * 2; }
     else { copy.x += step * 2; }
-    const list = { platform: this.map.platforms, spawn: this.map.spawns, item: this.map.items }[this.sel.kind];
+    const list = this.listOf(this.sel.kind);
+    const twin = this.selectedTwin();
     list.push(copy);
-    this.sel = { kind: this.sel.kind, i: list.length - 1 };
+    const sel = { kind: this.sel.kind, i: list.length - 1 };
+    if (twin >= 0 && twin !== this.sel.i) list.push(this.mirrored(this.sel.kind, copy));
+    this.sel = sel;
     this.changed();
   }
 
@@ -280,8 +289,10 @@ export class Editor {
     const o = this.selected();
     if (!o) return;
     this.remember();
+    const twin = this.selectedTwin();
     if (this.sel.kind === 'platform') { o.left += dx; o.right += dx; o.top += dy; o.bottom += dy; }
     else { o.x += dx; o.y += dy; }
+    this.syncTwin(twin);
     this.changed();
   }
 
@@ -293,6 +304,7 @@ export class Editor {
       this.remember();
       this.map.spawns.push({ x, y, team: this.team });
       this.sel = { kind: 'spawn', i: this.map.spawns.length - 1 };
+      if (this.mirror.on && x !== this.mirror.x) this.map.spawns.push(this.mirrored('spawn', { x, y, team: this.team }));
     } else {
       if (this.map.items.length >= LIMITS.maxItems) return this.setStatus(`At most ${LIMITS.maxItems} items`, true);
       const [x, y] = this.placeAt(wx, wy, 'item');
@@ -301,8 +313,111 @@ export class Editor {
       if (tool === 'weapon') it.weapon = this.weapon;
       this.map.items.push(it);
       this.sel = { kind: 'item', i: this.map.items.length - 1 };
+      if (this.mirror.on && x !== this.mirror.x) this.map.items.push(this.mirrored('item', it));
     }
     this.changed();
+  }
+
+  // ---- Mirror editing --------------------------------------------------------------
+
+  listOf(kind) { return { platform: this.map.platforms, spawn: this.map.spawns, item: this.map.items }[kind]; }
+
+  mx(x) { return 2 * this.mirror.x - x; }
+
+  /** The object as it would be on the other side of the mirror line. */
+  mirrored(kind, o) {
+    if (kind === 'platform') return { ...o, left: this.mx(o.right), right: this.mx(o.left) };
+    if (kind === 'spawn') return { ...o, x: this.mx(o.x), team: this.mirror.swapTeams ? 3 - o.team : o.team };
+    return { ...o, x: this.mx(o.x) };
+  }
+
+  /** Index of the object mirroring list[i]: i itself if it sits across the line, -1 if it has no twin. */
+  twinIndex(kind, i) {
+    const list = this.listOf(kind), o = list[i];
+    if (!o) return -1;
+    const m = this.mirrored(kind, o);
+    const near = (a, b) => Math.abs(a - b) < 0.6;
+    const same = q => kind === 'platform'
+      ? near(q.left, m.left) && near(q.right, m.right) && near(q.top, m.top) && near(q.bottom, m.bottom) && !!q.bounce === !!o.bounce
+      : near(q.x, m.x) && near(q.y, m.y) && (kind === 'spawn' || (q.type === o.type && q.weapon === o.weapon));
+    if (same(o)) return i;
+    return list.findIndex((q, j) => j !== i && same(q));
+  }
+
+  /** The current selection's twin (only while mirror editing is on). */
+  selectedTwin() {
+    return this.mirror.on && this.sel ? this.twinIndex(this.sel.kind, this.sel.i) : -1;
+  }
+
+  /** Copy the selected object's changes to its twin (or keep a self-mirrored platform centred). */
+  syncTwin(twin, handle = null) {
+    if (!this.sel || twin < 0) return;
+    const kind = this.sel.kind, list = this.listOf(kind), o = list[this.sel.i];
+    if (twin === this.sel.i) {
+      if (kind === 'platform') {
+        if (handle?.includes('w')) o.right = this.mx(o.left);
+        else if (handle?.includes('e')) o.left = this.mx(o.right);
+        else { const w = o.right - o.left; o.left = this.mirror.x - w / 2; o.right = this.mirror.x + w / 2; }
+        if (o.left > o.right) [o.left, o.right] = [o.right, o.left];
+      } else o.x = this.mirror.x;
+      return;
+    }
+    list[twin] = this.mirrored(kind, o);
+  }
+
+  /** Put the mirror line in the middle of the map (on the grid). */
+  centreMirror() {
+    const b = computeBounds(this.map.platforms, this.map.spawns, this.map.items, 0);
+    this.mirror.x = this.map.platforms.length ? this.snap((b.left + b.right) / 2) : 0;
+    this.mirror.placed = true;
+  }
+
+  toggleMirror(on = !this.mirror.on) {
+    this.mirror.on = on;
+    if (on && !this.mirror.placed) this.centreMirror();
+    this.refreshPanel();
+  }
+
+  /** Copy the selected object to the other side of the mirror line. */
+  mirrorSelection() {
+    const o = this.selected();
+    if (!o) return;
+    if (!this.mirror.placed) this.centreMirror();
+    if (this.twinIndex(this.sel.kind, this.sel.i) >= 0) return this.setStatus('Already mirrored');
+    this.remember();
+    const list = this.listOf(this.sel.kind);
+    list.push(this.mirrored(this.sel.kind, o));
+    this.changed();
+  }
+
+  /** Rebuild one half of the map as a mirror image of the other ('right' copies left to right). */
+  copySide(to) {
+    if (!this.mirror.placed) this.centreMirror();
+    const m = this.mirror.x;
+    const fromLeft = to === 'right';
+    const keepSide = (a, b) => (fromLeft ? b <= m : a >= m);   // wholly on the source side
+    const otherSide = (a, b) => (fromLeft ? a >= m : b <= m);  // wholly on the copied-to side
+    this.remember();
+    const plats = [];
+    for (const p of this.map.platforms) {
+      if (otherSide(p.left, p.right) && !(p.left === m && p.right === m)) continue;
+      if (keepSide(p.left, p.right)) { plats.push(p, this.mirrored('platform', p)); continue; }
+      // Across the line: keep the source half and mirror it.
+      const half = fromLeft ? p.left : p.right;
+      plats.push({ ...p, left: Math.min(half, this.mx(half)), right: Math.max(half, this.mx(half)) });
+    }
+    this.map.platforms = plats;
+    for (const kind of ['spawn', 'item']) {
+      const list = this.listOf(kind), out = [];
+      for (const q of list) {
+        if (q.x === m) { out.push(q); continue; }
+        if (fromLeft ? q.x < m : q.x > m) out.push(q, this.mirrored(kind, q));
+      }
+      if (kind === 'spawn') this.map.spawns = out; else this.map.items = out;
+    }
+    this.sel = null;
+    this.changed();
+    this.setStatus(`Copied the ${fromLeft ? 'left' : 'right'} side to the ${fromLeft ? 'right' : 'left'}`);
   }
 
   // ---- Mouse and keyboard --------------------------------------------------------
@@ -332,14 +447,14 @@ export class Editor {
         const h = this.handleAt(sx, sy);
         if (h) {
           this.remember();
-          this.drag = { mode: 'resize', handle: h, orig: { ...this.selected() }, before: this.undoStack[this.undoStack.length - 1] };
+          this.drag = { mode: 'resize', handle: h, orig: { ...this.selected() }, before: this.undoStack[this.undoStack.length - 1], twin: this.selectedTwin() };
           return;
         }
         const hit = this.objectAt(wx, wy);
         if (hit) {
           this.select(hit);
           this.remember();
-          this.drag = { mode: 'move', wx, wy, orig: { ...this.selected() }, before: this.undoStack[this.undoStack.length - 1] };
+          this.drag = { mode: 'move', wx, wy, orig: { ...this.selected() }, before: this.undoStack[this.undoStack.length - 1], twin: this.selectedTwin() };
         } else {
           this.select(null);
           this.drag = { mode: 'pan', sx, sy, vx: this.view.x, vy: this.view.y };
@@ -378,6 +493,7 @@ export class Editor {
         } else {
           o.x = this.snap(d.orig.x + dx); o.y = this.snap(d.orig.y + dy);
         }
+        this.syncTwin(d.twin);
         this.refreshPanelValues();
       } else if (d.mode === 'resize') {
         const o = this.selected(), h = d.handle, min = 8;
@@ -386,6 +502,7 @@ export class Editor {
         if (h.includes('e')) o.right = Math.max(x, d.orig.left + min);
         if (h.includes('n')) o.top = Math.min(y, d.orig.bottom - min);
         if (h.includes('s')) o.bottom = Math.max(y, d.orig.top + min);
+        this.syncTwin(d.twin, h);
         this.refreshPanelValues();
       }
     });
@@ -400,8 +517,14 @@ export class Editor {
         this.remember();
         const p = { left: l, top: t, right: r, bottom: b };
         if (this.tool === 'pad') p.bounce = -(this.padStrength || BOUNCE.standard);
+        const m = this.mirror.x;
+        if (this.mirror.on && l < m && r > m) {
+          // Drawn across the mirror line: make it symmetric.
+          p.left = Math.min(l, this.mx(r)); p.right = Math.max(r, this.mx(l));
+        }
         this.map.platforms.push(p);
         this.sel = { kind: 'platform', i: this.map.platforms.length - 1 };
+        if (this.mirror.on && !(p.left < m && p.right > m) && !(p.left === this.mx(p.right))) this.map.platforms.push(this.mirrored('platform', p));
         this.changed();
       } else if (d.mode === 'move' || d.mode === 'resize') {
         // Nothing actually moved: forget the undo step.
@@ -429,6 +552,7 @@ export class Editor {
       if (e.code === 'Escape') { this.drag = null; this.select(null); this.setTool('select'); return; }
       if (e.code === 'KeyF') { this.fit(); return; }
       if (e.code === 'KeyG') { this.grid = GRIDS[(GRIDS.indexOf(this.grid) + 1) % GRIDS.length]; this.refreshPanel(); return; }
+      if (e.code === 'KeyM') { this.toggleMirror(); return; }
       const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       if (arrows[e.code] && this.sel) {
         e.preventDefault();
@@ -495,7 +619,10 @@ export class Editor {
     const o = this.selected();
     let html = '';
     const num = (id, label, value) => `<label class="ed-num">${label}<input type="number" id="${id}" value="${Math.round(value * 10) / 10}" step="${this.grid || 1}"></label>`;
-    const weaponOptions = sel => WEAPON_ORDER.filter(id => id !== 'Platinum').map(id => `<option value="${id}"${id === sel ? ' selected' : ''}>${WEAPONS[id].name}</option>`).join('');
+    const weaponOptions = sel => SLOTS.map((slot, i) => {
+      const ids = PICKUP_WEAPONS.filter(id => WEAPONS[id].slot === i);
+      return ids.length ? `<optgroup label="${slot.key}: ${slot.name}">${ids.map(id => `<option value="${id}"${id === sel ? ' selected' : ''}>${WEAPONS[id].name}</option>`).join('')}</optgroup>` : '';
+    }).join('');
     const teamButtons = (name, team) => `<div class="seg ed-team"><label><input type="radio" name="${name}" value="1"${team === 1 ? ' checked' : ''}> Blue team</label><label><input type="radio" name="${name}" value="2"${team === 2 ? ' checked' : ''}> Red team</label></div>`;
 
     if (o && this.sel.kind === 'platform') {
@@ -514,7 +641,8 @@ export class Editor {
         <div class="ed-grid">${num('iX', 'X', o.x)}${num('iY', 'Y', o.y)}</div>`;
     }
     if (o) {
-      html += `<div class="ed-row"><button type="button" id="selDup">Duplicate</button><button type="button" id="selDel">Delete</button></div>`;
+      html += `<div class="ed-row"><button type="button" id="selDup">Duplicate</button><button type="button" id="selDel">Delete</button></div>
+        <div class="ed-row"><button type="button" id="selMirror">Mirror to other side</button></div>`;
     } else {
       // Tool options and map summary.
       if (this.tool === 'spawn') html += `<h3>Placing spawn points</h3>${teamButtons('toolTeam', this.team)}`;
@@ -523,13 +651,38 @@ export class Editor {
       const m = this.map, b = computeBounds(m.platforms, m.spawns, m.items);
       const blue = m.spawns.filter(s => s.team === 1).length;
       html += `<h3>Map</h3><p class="ed-stats">${count(m.platforms.length, 'platform')} &middot; ${count(m.spawns.length, 'spawn')} (${blue} blue, ${m.spawns.length - blue} red) &middot; ${count(m.items.length, 'pickup')}<br>${Math.round(b.right - b.left)} &times; ${Math.round(b.bottom - b.top)} px</p>`;
+      html += this.loadoutPanel();
     }
+    const mir = this.mirror;
+    html += `<h3>Mirror</h3>
+      <label class="check"><input type="checkbox" id="mirOn"${mir.on ? ' checked' : ''}> Mirror editing <kbd>M</kbd></label>
+      ${mir.on ? `<p class="ed-note">Anything you add, move or delete is copied to the other side of the purple line.</p>
+        <label class="ed-num ed-wide">Mirror line X<input type="number" id="mirX" value="${mir.x}" step="${this.grid || 1}"></label>
+        <label class="check"><input type="checkbox" id="mirSwap"${mir.swapTeams ? ' checked' : ''}> Swap blue and red spawns on the other side</label>
+        <div class="ed-row"><button type="button" id="mirLR">Copy left &rarr; right</button><button type="button" id="mirRL">Copy right &rarr; left</button></div>` : ''}`;
     html += `<h3>Placing</h3>
       <label class="ed-field">Snap to grid<select id="gridSize">${GRIDS.map(g => `<option value="${g}"${g === this.grid ? ' selected' : ''}>${g ? g + ' px' : 'Off'}</option>`).join('')}</select></label>
       <label class="check"><input type="checkbox" id="sitFloor"${this.sitOnFloor ? ' checked' : ''}> Drop pickups and spawns onto the floor</label>`;
     box.innerHTML = html;
     this.wirePanel();
     this.renderReport();
+  }
+
+  /** "Everyone spawns with": weapons, armour and a jetpack for free-for-all and team games. */
+  loadoutPanel() {
+    const lo = this.map.loadout || { weapons: [], armour: 0, jetpack: false };
+    const groups = SLOTS.map((slot, i) => {
+      const ids = PICKUP_WEAPONS.filter(id => WEAPONS[id].slot === i);
+      if (!ids.length) return '';
+      return `<div class="ed-lo-group"><span>${slot.key}</span>${ids.map(id => `<label><input type="checkbox" name="loWeapon" value="${id}"${lo.weapons.includes(id) ? ' checked' : ''}> ${WEAPONS[id].short}</label>`).join('')}</div>`;
+    }).join('');
+    return `<h3>Everyone spawns with</h3>
+      <p class="ed-note">As well as the pistol and prod, in free-for-all and team games.</p>
+      <details id="loDetails"${this.loadoutOpen ? ' open' : ''}><summary>Weapons (${lo.weapons.length})</summary><div class="ed-loadout">${groups}</div></details>
+      <div class="ed-grid">
+        <label class="ed-field">Armour<select id="loArmour">${[[0, 'None'], [50, 'Half'], [100, 'Full']].map(([v, t]) => `<option value="${v}"${(lo.armour || 0) === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="check ed-jet"><input type="checkbox" id="loJet"${lo.jetpack ? ' checked' : ''}> Jetpack</label>
+      </div>`;
   }
 
   /** Update just the number boxes while dragging (rebuilding the panel would steal focus). */
@@ -544,7 +697,7 @@ export class Editor {
 
   wirePanel() {
     const on = (id, ev, fn) => { const el = this.$('#' + id); if (el) el.addEventListener(ev, () => fn(el)); };
-    const edit = fn => el => { this.remember(); fn(el); this.changed(); };
+    const edit = fn => el => { this.remember(); const twin = this.selectedTwin(); fn(el); this.syncTwin(twin); this.changed(); };
     const o = this.selected();
     on('pX', 'change', edit(el => { const w = o.right - o.left; o.left = +el.value || 0; o.right = o.left + w; }));
     on('pY', 'change', edit(el => { const h = o.bottom - o.top; o.top = +el.value || 0; o.bottom = o.top + h; }));
@@ -559,7 +712,7 @@ export class Editor {
     on('iY', 'change', edit(el => { o.y = +el.value || 0; }));
     on('iType', 'change', edit(el => { o.type = el.value; if (o.type === 'weapon') o.weapon = o.weapon || this.weapon; else delete o.weapon; }));
     on('iWeapon', 'change', edit(el => { o.weapon = el.value; this.weapon = el.value; }));
-    for (const r of this.root.querySelectorAll('input[name=sTeam]')) r.addEventListener('change', () => { this.remember(); o.team = +r.value; this.team = o.team; this.changed(); });
+    for (const r of this.root.querySelectorAll('input[name=sTeam]')) r.addEventListener('change', () => { this.remember(); const twin = this.selectedTwin(); o.team = +r.value; this.team = o.team; this.syncTwin(twin); this.changed(); });
     for (const r of this.root.querySelectorAll('input[name=toolTeam]')) r.addEventListener('change', () => { this.team = +r.value; });
     on('toolWeapon', 'change', el => { this.weapon = el.value; });
     on('toolBounce', 'input', el => { el.previousElementSibling.textContent = el.value; this.padStrength = +el.value; });
@@ -567,6 +720,24 @@ export class Editor {
     on('sitFloor', 'change', el => { this.sitOnFloor = el.checked; });
     on('selDup', 'click', () => this.duplicateSelected());
     on('selDel', 'click', () => this.deleteSelected());
+    on('selMirror', 'click', () => this.mirrorSelection());
+    on('mirOn', 'change', el => this.toggleMirror(el.checked));
+    on('mirX', 'change', el => { this.mirror.x = +el.value || 0; this.mirror.placed = true; });
+    on('mirSwap', 'change', el => { this.mirror.swapTeams = el.checked; });
+    on('mirLR', 'click', () => this.copySide('right'));
+    on('mirRL', 'click', () => this.copySide('left'));
+    const lo = () => this.map.loadout || (this.map.loadout = { weapons: [], armour: 0, jetpack: false });
+    for (const c of this.root.querySelectorAll('input[name=loWeapon]')) c.addEventListener('change', () => {
+      this.remember();
+      const l = lo();
+      l.weapons = l.weapons.filter(id => id !== c.value);
+      if (c.checked) l.weapons.push(c.value);
+      this.changed();
+    });
+    on('loArmour', 'change', edit(el => { lo().armour = +el.value; }));
+    on('loJet', 'change', edit(el => { lo().jetpack = el.checked; }));
+    const det = this.$('#loDetails');
+    if (det) det.addEventListener('toggle', () => { this.loadoutOpen = det.open; });
   }
 
   // ---- Map check -----------------------------------------------------------------
@@ -727,6 +898,16 @@ export class Editor {
       }
     }
 
+    // Mirror line.
+    if (this.mirror.on) {
+      ctx.setLineDash([8 * px, 5 * px]);
+      ctx.strokeStyle = 'rgba(122,79,208,0.8)';
+      ctx.lineWidth = 1.5 * px;
+      const [, top] = this.toWorld(0, 0), [, bottom] = this.toWorld(0, this.h);
+      ctx.beginPath(); ctx.moveTo(this.mirror.x, top); ctx.lineTo(this.mirror.x, bottom); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     // Check overlay: where soldiers can stand, coloured by whether they can get back.
     if (this.check?.spots) {
       for (const s of this.check.spots) {
@@ -783,22 +964,30 @@ export class Editor {
       ctx.strokeStyle = '#111';
       ctx.lineWidth = px;
       ctx.strokeRect(l, t, Math.abs(dr.x1 - dr.x0), Math.abs(dr.y1 - dr.y0));
+      if (this.mirror.on) {
+        ctx.strokeStyle = 'rgba(122,79,208,0.8)';
+        ctx.strokeRect(this.mx(l + Math.abs(dr.x1 - dr.x0)), t, Math.abs(dr.x1 - dr.x0), Math.abs(dr.y1 - dr.y0));
+      }
       ctx.setLineDash([]);
     }
 
     // Ghost of what a click would place.
     if (!dr && this.mouse.inside && (this.tool === 'spawn' || ITEM_TOOLS.has(this.tool))) {
       const [gx, gy] = this.placeAt(this.mouse.wx, this.mouse.wy, this.tool === 'spawn' ? 'spawn' : 'item');
-      ctx.globalAlpha = 0.45;
-      if (this.tool === 'spawn') drawSpawn(ctx, { x: gx, y: gy, team: this.team });
-      else {
-        ctx.save(); ctx.translate(gx, gy);
-        if (this.tool === 'health') drawHealth(ctx);
-        else if (this.tool === 'armour') drawArmour(ctx);
-        else if (this.tool === 'jetpack') drawJetpack(ctx);
-        else drawWeapon(ctx, WEAPONS[this.weapon], true);
-        ctx.restore();
-      }
+      const ghosts = [[gx, gy, this.team]];
+      if (this.mirror.on && gx !== this.mirror.x) ghosts.push([this.mx(gx), gy, this.mirror.swapTeams ? 3 - this.team : this.team]);
+      ghosts.forEach(([x, y, team], k) => {
+        ctx.globalAlpha = k ? 0.3 : 0.45;
+        if (this.tool === 'spawn') drawSpawn(ctx, { x, y, team });
+        else {
+          ctx.save(); ctx.translate(x, y);
+          if (this.tool === 'health') drawHealth(ctx);
+          else if (this.tool === 'armour') drawArmour(ctx);
+          else if (this.tool === 'jetpack') drawJetpack(ctx);
+          else drawWeapon(ctx, WEAPONS[this.weapon], true);
+          ctx.restore();
+        }
+      });
       ctx.globalAlpha = 1;
     }
 

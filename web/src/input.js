@@ -1,11 +1,14 @@
 // Keyboard and mouse, and turning them into a soldier's input each tick.
 
-import { WEAPON_ORDER } from './weapons.js';
 
 const GAME_KEYS = new Set([
   'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab',
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ShiftLeft', 'ShiftRight',
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyF', 'ShiftLeft', 'ShiftRight',
 ]);
+
+// Number keys 1-9 and 0 pick weapon slots 0-9; F picks melee (slot 10).
+const SLOT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'KeyF'];
+const QUEUED = new Set([...SLOT_KEYS, 'KeyQ', 'KeyE']);
 
 export class Input {
   constructor(canvas) {
@@ -18,9 +21,9 @@ export class Input {
 
     window.addEventListener('keydown', e => {
       if (!this.enabled) return;
-      if (GAME_KEYS.has(e.code) || /^Digit[1-8]$/.test(e.code)) e.preventDefault();
+      if (GAME_KEYS.has(e.code) || /^Digit\d$/.test(e.code)) e.preventDefault();
       // Only weapon keys are read as one-off presses; everything else is read as held.
-      if (!e.repeat && /^(Digit[1-8]|KeyQ|KeyE)$/.test(e.code) && this.queue.length < 8) this.queue.push(e.code);
+      if (!e.repeat && QUEUED.has(e.code) && this.queue.length < 8) this.queue.push(e.code);
       this.keys.add(e.code);
     });
     window.addEventListener('keyup', e => this.keys.delete(e.code));
@@ -67,6 +70,7 @@ export class PlayerController {
     this.in = input;
     this.renderer = renderer;
     this.prevJump = false;
+    this.prevFire = false;
     this.jetting = false;
   }
 
@@ -79,9 +83,11 @@ export class PlayerController {
       jumpPressed: jump && !this.prevJump,
       crouch: k.down('KeyS', 'ArrowDown'),
       fire: k.mouse.left,
+      firePressed: k.mouse.left && !this.prevFire,
       alt: k.mouse.right,
     };
     this.prevJump = jump;
+    this.prevFire = k.mouse.left;
 
     // Jetpack: hold jump in the air once you start falling (or hold Shift).
     const b = s.body;
@@ -91,9 +97,10 @@ export class PlayerController {
 
     const w = this.renderer.screenToWorld(k.mouse.x, k.mouse.y);
     inp.aim = Math.atan2(w.y - s.shoulderY, w.x - s.shoulderX);
+    inp.aimDist = Math.hypot(w.x - s.shoulderX, w.y - s.shoulderY);
 
-    for (let i = 0; i < WEAPON_ORDER.length; i++) {
-      if (k.took('Digit' + (i + 1))) inp.switchTo = WEAPON_ORDER[i];
+    for (let i = 0; i < SLOT_KEYS.length; i++) {
+      if (k.took(SLOT_KEYS[i])) { const id = s.slotChoice(i); if (id) inp.switchTo = id; }
     }
     if (k.took('KeyQ')) inp.cycle = -1;
     else if (k.took('KeyE')) inp.cycle = 1;

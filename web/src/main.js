@@ -240,7 +240,7 @@ function frame(now) {
   const alpha = state.paused ? 1 : state.acc / state.step;
   const me = state.me;
 
-  audio.playQueue(g.sounds, me.x, me.y);
+  audio.playQueue(g.sounds, me.x, me.y, me.id);
   g.sounds.length = 0;
 
   const sniping = me.alive && me.current === 'SR' && input.mouse.right && !state.paused;

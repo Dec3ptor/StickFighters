@@ -5,6 +5,9 @@ import { buildPose } from './stickman.js';
 import { laserEnd } from './combat.js';
 import { WEAPONS } from './weapons.js';
 import { clamp, lerp } from './util.js';
+import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate } from './sprites.js';
+
+export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate };
 
 const INK = '#111';
 const TEAM_COLORS = { 1: '#2f6fdb', 2: '#d33b2f' };
@@ -59,7 +62,7 @@ export class Renderer {
     this.cam.x = lerp(this.cam.x, tx, 0.14);
     this.cam.y = lerp(this.cam.y, ty, 0.14);
     for (const s of game.shakes) {
-      const d = Math.hypot(s.x - fx, s.y - fy);
+      const d = s.x == null ? 0 : Math.hypot(s.x - fx, s.y - fy);
       this.shake = Math.max(this.shake, s.amount * Math.max(0, 1 - d / 700));
     }
     game.shakes.length = 0;
@@ -128,9 +131,11 @@ export class Renderer {
       if (!it.active) continue;
       if (it.dropped && it.life < 120 && Math.floor(it.life / 6) % 2) continue;
       const bob = it.dropped ? 0 : Math.sin(t * 0.06 + it.bob) * 1.5;
+      if (it.type === 'crate' && it.landed && it.life < 120 && Math.floor(it.life / 6) % 2) continue;
       ctx.save();
       ctx.translate(it.x, it.y + bob);
       switch (it.type) {
+        case 'crate': drawCrate(ctx, it, t); break;
         case 'health': drawHealth(ctx); break;
         case 'armour': drawArmour(ctx); break;
         case 'jetpack': drawJetpack(ctx); break;
@@ -141,39 +146,104 @@ export class Renderer {
   }
 
   drawProjectiles(game, top) {
-    const ctx = this.ctx;
+    const ctx = this.ctx, t = game.tick;
     for (const p of game.projectiles) {
-      if (p.kind === 'flame') { if (top) drawFlame(ctx, p); continue; }
-      if (top) continue;
+      if (p.delay > 0) continue;
+      const front = p.kind === 'flame' || p.kind === 'gas' || p.kind === 'fire';
+      if (front !== top) continue;
       switch (p.kind) {
+        case 'flame': drawFlame(ctx, p); break;
+        case 'fire': drawFirePatch(ctx, p, t); break;
+        case 'gas': drawGas(ctx, p); break;
         case 'bullet':
           ctx.strokeStyle = 'rgba(40,40,40,0.75)';
-          ctx.lineWidth = 1;
+          ctx.lineWidth = p.sprite === 'slug' ? 1.6 : 1;
           ctx.beginPath();
           ctx.moveTo(p.x - p.vx * 0.7, p.y - p.vy * 0.7);
           ctx.lineTo(p.x, p.y);
           ctx.stroke();
           break;
+        case 'arrow': {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.angle ?? Math.atan2(p.vy, p.vx));
+          ctx.strokeStyle = '#5a3d1e'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(0, 0); ctx.stroke();
+          ctx.fillStyle = '#555';
+          ctx.beginPath(); ctx.moveTo(2, 0); ctx.lineTo(-1.5, -1.6); ctx.lineTo(-1.5, 1.6); ctx.fill();
+          ctx.strokeStyle = '#c33';
+          ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(-14, -2); ctx.moveTo(-12, 0); ctx.lineTo(-14, 2); ctx.stroke();
+          ctx.restore();
+          break;
+        }
+        case 'seeker': {
+          const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 5);
+          g.addColorStop(0, 'rgba(255,255,255,1)');
+          g.addColorStop(0.4, 'rgba(170,120,255,0.9)');
+          g.addColorStop(1, 'rgba(120,60,220,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
+          break;
+        }
         case 'rocket': {
           ctx.save();
           ctx.translate(p.x, p.y);
           ctx.rotate(Math.atan2(p.vy, p.vx));
-          ctx.fillStyle = '#ff9a1f';
-          ctx.beginPath(); ctx.moveTo(-5, -1.5); ctx.lineTo(-10 - Math.random() * 4, 0); ctx.lineTo(-5, 1.5); ctx.fill();
-          ctx.fillStyle = '#3d5a2a';
-          ctx.fillRect(-5, -1.8, 9, 3.6);
-          ctx.fillStyle = '#222';
-          ctx.beginPath(); ctx.moveTo(4, -1.8); ctx.lineTo(7, 0); ctx.lineTo(4, 1.8); ctx.fill();
+          if (p.sprite === 'bomb') {
+            ctx.fillStyle = '#333';
+            ctx.beginPath(); ctx.ellipse(0, 0, 5, 2.6, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillRect(-7, -2.5, 2, 5);
+          } else if (p.sprite === 'mortar') {
+            ctx.fillStyle = '#4d4d36';
+            ctx.beginPath(); ctx.ellipse(0, 0, 4, 2.2, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#222'; ctx.fillRect(-5, -1.5, 2, 3);
+          } else {
+            ctx.fillStyle = '#ff9a1f';
+            ctx.beginPath(); ctx.moveTo(-5, -1.5); ctx.lineTo(-10 - Math.random() * 4, 0); ctx.lineTo(-5, 1.5); ctx.fill();
+            ctx.fillStyle = p.sprite === 'homing' ? '#7a2222' : '#3d5a2a';
+            ctx.fillRect(-5, -1.8, 9, 3.6);
+            ctx.fillStyle = p.sprite === 'homing' ? '#e33' : '#222';
+            ctx.beginPath(); ctx.moveTo(4, -1.8); ctx.lineTo(7, 0); ctx.lineTo(4, 1.8); ctx.fill();
+          }
           ctx.restore();
           break;
         }
-        case 'grenade':
-          ctx.fillStyle = '#2b2b2b';
-          ctx.beginPath(); ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2); ctx.fill();
-          if (p.life < 60 && Math.floor(p.life / 5) % 2) {
-            ctx.fillStyle = '#ff3b2f';
-            ctx.beginPath(); ctx.arc(p.x, p.y - 2.5, 1.2, 0, Math.PI * 2); ctx.fill();
-          }
+        case 'thrown': {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          const round = p.sprite === 'grenade' || p.sprite === 'bomblet' || p.sprite === 'cluster' || p.sprite === 'holy';
+          if (p.sprite === 'napalm') ctx.rotate(Math.atan2(p.vy, p.vx) - Math.PI / 2);
+          else if (!round) ctx.rotate(p.angle || 0);
+          drawSprite(ctx, p.sprite, { t, lit: p.life < 60 && Math.floor(p.life / 5) % 2 === 1 });
+          ctx.restore();
+          break;
+        }
+        case 'walker':
+          ctx.save();
+          ctx.translate(p.x, p.y - (p.sprite === 'oldwoman' ? 8 : 6));
+          ctx.scale(p.dir || 1, 1);
+          drawSprite(ctx, p.sprite, { t: p.age });
+          ctx.restore();
+          break;
+        case 'flyer':
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.angle || 0);
+          if (Math.cos(p.angle || 0) < 0) ctx.scale(1, -1);
+          drawSprite(ctx, p.sprite, { t: p.age });
+          ctx.restore();
+          break;
+        case 'placed':
+          ctx.save();
+          ctx.translate(p.x, p.y - (p.sprite === 'mine' ? 1 : 4));
+          drawSprite(ctx, p.sprite, { t, armed: p.armed <= 0 });
+          ctx.restore();
+          break;
+        case 'donkey':
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          drawSprite(ctx, 'donkey', { t });
+          ctx.restore();
           break;
       }
     }
@@ -183,6 +253,13 @@ export class Renderer {
     const ctx = this.ctx;
     const x = lerp(s.prevX, s.x, alpha), y = lerp(s.prevY, s.y, alpha);
     const pose = buildPose(s);
+    if (s.body.rope) {
+      ctx.strokeStyle = '#8a6a3a';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath(); ctx.moveTo(x + pose.shoulder[0], y + pose.shoulder[1]); ctx.lineTo(s.body.rope.x, s.body.rope.y); ctx.stroke();
+      ctx.fillStyle = '#555';
+      ctx.fillRect(s.body.rope.x - 1.5, s.body.rope.y - 1.5, 3, 3);
+    }
     ctx.save();
     ctx.translate(x, y);
     if (s.spawnProtect > 0) ctx.globalAlpha = 0.35 + 0.35 * Math.abs(Math.sin(game.tick * 0.25));
@@ -197,7 +274,9 @@ export class Renderer {
     // Weapon first, so the front hand overlaps it.
     ctx.save();
     ctx.translate(pose.gun.x, pose.gun.y);
-    ctx.rotate(pose.gun.angle);
+    let angle = pose.gun.angle;
+    if (pose.gun.def.kind === 'melee' && s.anim.swing > 0) angle -= Math.sin(s.anim.swing * Math.PI) * 1.7 * (Math.cos(angle) < 0 ? -1 : 1);
+    ctx.rotate(angle);
     if (Math.cos(pose.gun.angle) < 0) ctx.scale(1, -1);
     drawWeapon(ctx, pose.gun.def, false);
     ctx.restore();
@@ -209,7 +288,7 @@ export class Renderer {
     ctx.beginPath();
     for (const [a, b, c, d] of pose.lines) { ctx.moveTo(a, b); ctx.lineTo(c, d); }
     ctx.stroke();
-    ctx.fillStyle = game.mode === 'team' ? TEAM_HEAD[s.team] : '#fff';
+    ctx.fillStyle = game.rules.teams ? TEAM_HEAD[s.team] : '#fff';
     ctx.beginPath();
     ctx.arc(pose.head.x, pose.head.y, pose.head.r, 0, Math.PI * 2);
     ctx.fill();
@@ -234,7 +313,7 @@ export class Renderer {
     const x = lerp(s.prevX, s.x, alpha), y = lerp(s.prevY, s.y, alpha);
     ctx.font = `${s === viewer ? 'bold ' : ''}8px Arial, sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillStyle = game.mode === 'team' ? TEAM_COLORS[s.team] : s === viewer ? '#333' : '#999';
+    ctx.fillStyle = game.rules.teams ? TEAM_COLORS[s.team] : s === viewer ? '#333' : '#999';
     ctx.fillText(s.name, x, y - 30);
     if (s !== viewer && s.health < 100) {
       ctx.fillStyle = '#ddd';
@@ -330,6 +409,35 @@ export class Renderer {
           ctx.globalAlpha = 1;
           break;
         }
+        case 'whack': {
+          const k = p.life / p.max;
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.angle);
+          ctx.fillStyle = `rgba(255,214,60,${k})`;
+          ctx.strokeStyle = `rgba(30,30,30,${k})`;
+          ctx.lineWidth = 0.7;
+          const r = 7 + (1 - k) * 4;
+          ctx.beginPath();
+          for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8, rr = i % 2 ? r * 0.45 : r; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+          ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.restore();
+          break;
+        }
+        case 'sparkle':
+          ctx.fillStyle = `rgba(170,120,255,${p.life / p.max})`;
+          ctx.fillRect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
+          break;
+        case 'plane':
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.scale(Math.sign(p.vx) || 1, 1);
+          ctx.fillStyle = '#555';
+          ctx.beginPath(); ctx.ellipse(0, 0, 22, 4, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(-10, 12); ctx.lineTo(-2, 12); ctx.lineTo(6, 0); ctx.fill();
+          ctx.beginPath(); ctx.moveTo(-18, 0); ctx.lineTo(-24, -9); ctx.lineTo(-19, -9); ctx.lineTo(-12, 0); ctx.fill();
+          ctx.restore();
+          break;
         case 'gib':
           ctx.globalAlpha = Math.min(1, p.life / 40);
           ctx.strokeStyle = INK;
@@ -372,90 +480,20 @@ export class Renderer {
 
 // ---- Shapes -----------------------------------------------------------------
 
-/** A weapon drawn along +x from the grip. `lying` = drawn as a pickup (centred). */
-export function drawWeapon(ctx, def, lying) {
-  const L = def.look.length, fat = def.look.fat ? 4 : 2.6;
-  if (lying) ctx.translate(-L / 2, 0);
-  ctx.fillStyle = def.look.color;
-  switch (def.kind) {
-    case 'rocket':
-      ctx.fillRect(-6, -fat / 2, L + 6, fat);
-      ctx.fillStyle = '#2b3d1d';
-      ctx.fillRect(-7, -fat / 2 - 0.8, 2, fat + 1.6);
-      ctx.fillRect(L - 2, -fat / 2 - 0.6, 2.5, fat + 1.2);
-      ctx.fillStyle = '#333';
-      ctx.fillRect(4, fat / 2, 1.6, 3);
-      break;
-    case 'flame':
-      ctx.fillRect(0, -1.6, L, 2.6);
-      ctx.fillStyle = '#b8321c';
-      ctx.fillRect(1, 1, 8, 3.6);
-      ctx.fillStyle = '#333';
-      ctx.fillRect(L - 2, -2, 2.5, 3.6);
-      break;
-    case 'grenade':
-      ctx.fillRect(0, -2, L, 4);
-      ctx.fillStyle = '#2a2a2a';
-      ctx.fillRect(4, -2.6, 6, 5.2);
-      ctx.fillRect(1, 2, 1.8, 3);
-      break;
-    case 'rail':
-      ctx.fillRect(-4, -1.2, L + 4, 2.4);
-      ctx.fillStyle = '#222';
-      ctx.fillRect(4, -3.6, 8, 2);
-      ctx.fillRect(-1, 1.2, 1.8, 3);
-      ctx.fillRect(-6, -1.4, 3, 3.6);
-      break;
-    case 'pellets':
-      ctx.fillRect(-3, -1.3, L + 3, 2.6);
-      ctx.fillStyle = '#3a2e22';
-      ctx.fillRect(7, 1.1, 6, 1.6);
-      ctx.fillRect(-1, 1.1, 1.8, 3);
-      break;
-    default:
-      if (def.look.grip === 0) {
-        // Pistol
-        ctx.fillRect(4, -1.6, L - 3, 2.8);
-        ctx.fillRect(4, 0, 2.2, 3.8);
-      } else {
-        ctx.fillRect(-2, -1.3, L + 2, 2.6);
-        ctx.fillRect(1, 1.1, 1.8, 3.2);
-        ctx.fillRect(def.look.grip === 1 ? 6 : 8, 1.1, 2, def.look.grip === 1 ? 4.5 : 3.5);
-        if (def.look.grip === 2) ctx.fillRect(-5, -1.3, 3, 3.4);
-      }
-  }
+function drawFirePatch(ctx, p, t) {
+  const flick = Math.sin(t * 0.7 + p.id) * 1.2;
+  ctx.fillStyle = 'rgba(255,120,30,0.85)';
+  ctx.beginPath(); ctx.moveTo(p.x - 4, p.y); ctx.quadraticCurveTo(p.x - 2, p.y - 6 - flick, p.x, p.y - 9 - flick); ctx.quadraticCurveTo(p.x + 2, p.y - 6, p.x + 4, p.y); ctx.fill();
+  ctx.fillStyle = 'rgba(255,225,110,0.9)';
+  ctx.beginPath(); ctx.moveTo(p.x - 2, p.y); ctx.quadraticCurveTo(p.x, p.y - 5 - flick, p.x + 2, p.y); ctx.fill();
 }
 
-export function drawHealth(ctx) {
-  ctx.fillStyle = '#fff';
-  ctx.strokeStyle = '#c22';
-  ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.rect(-6, -6, 12, 12); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#d21f1f';
-  ctx.fillRect(-1.6, -4.4, 3.2, 8.8);
-  ctx.fillRect(-4.4, -1.6, 8.8, 3.2);
-}
-
-export function drawArmour(ctx) {
-  ctx.fillStyle = '#7d7d7d';
-  ctx.strokeStyle = '#333';
-  ctx.lineWidth = 0.9;
-  ctx.beginPath();
-  ctx.moveTo(-6, -6); ctx.lineTo(-2.5, -6); ctx.lineTo(0, -3.5); ctx.lineTo(2.5, -6); ctx.lineTo(6, -6);
-  ctx.lineTo(6.5, 6); ctx.lineTo(-6.5, 6); ctx.closePath();
-  ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = '#555';
-  ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(4, 0); ctx.moveTo(-4, 3); ctx.lineTo(4, 3); ctx.stroke();
-}
-
-export function drawJetpack(ctx) {
-  ctx.fillStyle = '#5b5b5b';
-  ctx.strokeStyle = '#222';
-  ctx.lineWidth = 0.8;
-  for (const x of [-4, 1]) { ctx.beginPath(); ctx.rect(x, -7, 3.5, 11); ctx.fill(); ctx.stroke(); }
-  ctx.fillStyle = '#ff8a1f';
-  ctx.fillRect(-3.6, 4.5, 2.6, 1.6);
-  ctx.fillRect(1.4, 4.5, 2.6, 1.6);
+function drawGas(ctx, p) {
+  const k = Math.min(1, p.life / 60);
+  ctx.fillStyle = `rgba(120,170,40,${0.22 * k})`;
+  ctx.beginPath(); ctx.arc(p.x, p.y, p.r || 10, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `rgba(150,200,60,${0.18 * k})`;
+  ctx.beginPath(); ctx.arc(p.x + 3, p.y - 2, (p.r || 10) * 0.6, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawFlame(ctx, p) {

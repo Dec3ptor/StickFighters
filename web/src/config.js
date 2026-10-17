@@ -34,6 +34,7 @@ export const PHYS = {
   jetMaxUp: 5.0,
   jetDrain: 0.55,       // fuel per tick of thrust (fuel is 0-100)
   jetRegen: 0.25,       // fuel per tick while standing on the ground
+  ropeClimb: 2.5,       // ninja rope: how fast you climb up or slide down it
 };
 
 // Other motion values (at full speed), rescaled by speed.js.
@@ -49,6 +50,7 @@ export const MOTION = {
   flipRate: 1 / 36,      // jump-pad somersault progress per update
   landAnim: 3,           // landing speed that plays the landing squash
   landSound: 7,          // landing speed that plays the landing thud
+  crateFall: 1.6,        // supply crates drift down on a parachute this fast
 };
 
 export const RULES = {
@@ -66,4 +68,7 @@ export const RULES = {
 };
 
 export const ITEM_RESPAWN = { weapon: 600, health: 1200, armour: 1500, jetpack: 1800 };
+
+// Supply crates drop from the sky every so often (in ticks at full speed), each holding a random weapon.
+export const CRATES = { normal: { every: 1500, max: 3 }, lots: { every: 600, max: 6 } };
 export const ITEM_SIZE = 14;   // pickup reach around an item's position
