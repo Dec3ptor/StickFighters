@@ -1,0 +1,27 @@
+# Tests public Nostr relays for online play (finding games, connecting players,
+# community maps). Read the results in the run's summary, then update
+# web/src/net/relays.js.
+name: Probe Nostr relays
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - tools/probe-relays.mjs
+      - web/src/net/relays.js
+      - web/src/net/nostr.js
+      - .github/workflows/relay-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/probe-relays.mjs
