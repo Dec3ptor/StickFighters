@@ -108,6 +108,51 @@ for (const id of Object.keys(WEAPONS)) {
   });
 }
 
+/** One M4 shot from x=0 at a target 160 px away, aimed at height `aimY` (target stands at y=-12). */
+function singleShot(aimY, shooterIsBot) {
+  const map = { name: 'range', bounds: { left: -600, top: -300, right: 600, bottom: 200 }, spawns: [], items: [],
+    platforms: [{ left: -600, top: 0, right: 600, bottom: 40 }] };
+  const game = new Game({ mapData: map, effects: false, seed: 3 });
+  let fired = false;
+  const shooter = game.addSoldier({ name: 'A', isBot: shooterIsBot }, {
+    input: (g, s) => { const fire = !fired; fired = true; return { move: 0, aim: Math.atan2(aimY - s.shoulderY, 160 - s.shoulderX), fire }; },
+  });
+  const target = game.addSoldier({ name: 'B', isBot: true }, { input: () => ({ move: 0 }) });
+  shooter.spawnAt({ x: 0, y: -12 }, 0);
+  target.spawnAt({ x: 160, y: -12 }, 0);
+  shooter.weapons.M4 = { ammo: 10 };
+  shooter.current = 'M4';
+  for (let i = 0; i < 30; i++) game.update();
+  return { damage: 100 - target.health, sounds: game.sounds.map(s => s.name) };
+}
+
+test('headshots do double damage, and the player hears a hitmarker', () => {
+  const head = singleShot(-12 + BODY.top + 4, false);
+  assert.equal(head.damage, WEAPONS.M4.damage * 2);
+  assert.ok(head.sounds.includes('hitmarker'), 'player headshot plays the hitmarker');
+
+  const body = singleShot(-12, false);
+  assert.equal(body.damage, WEAPONS.M4.damage);
+  assert.ok(!body.sounds.includes('hitmarker'), 'no hitmarker for a body shot');
+
+  const botHead = singleShot(-12 + BODY.top + 4, true);
+  assert.equal(botHead.damage, WEAPONS.M4.damage * 2);
+  assert.ok(!botHead.sounds.includes('hitmarker'), 'bots landing headshots do not tick for the player');
+});
+
+test('rockets and grenades make different explosion sounds', () => {
+  const rocket = duel('Bazooka');
+  const grenade = duel('GrenadeLauncher');
+  assert.ok(rocket.game.sounds.some(s => s.name === 'explosion'));
+  assert.ok(grenade.game.sounds.some(s => s.name === 'explosionSmall'));
+});
+
+test('game speed only changes how many ticks run per second', () => {
+  const slow = new Game({ mapData: loadMap('ssdm1.json'), effects: false, speed: 0.75 });
+  assert.equal(slow.tickRate, 45);
+  assert.equal(new Game({ mapData: loadMap('ssdm1.json'), effects: false }).tickRate, 60);
+});
+
 test('armour soaks up damage', () => {
   const plain = duel('M4');
   const armoured = (() => {

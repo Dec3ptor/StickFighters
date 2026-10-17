@@ -2,6 +2,11 @@
 
 export const TICK_RATE = 60;
 
+// Game speed: the simulation runs at TICK_RATE x speed ticks per second, so
+// everything (movement, bullets, fire rates, timers) slows down together.
+export const SPEEDS = [0.6, 0.75, 0.9, 1];
+export const DEFAULT_SPEED = 0.75;
+
 // The original game ran at 800x600 and showed the map at 1:1.
 export const VIEW_W = 800;
 export const VIEW_H = 600;

@@ -1,6 +1,6 @@
 // Page wiring: menu, match setup, the game loop, pause and results.
 
-import { TICK_RATE } from './config.js';
+import { SPEEDS, DEFAULT_SPEED } from './config.js';
 import { Game } from './game.js';
 import { NavGraph } from './nav.js';
 import { BotController, BOT_PROFILES } from './bot.js';
@@ -12,7 +12,6 @@ import { setLegAnimations } from './stickman.js';
 import { makeRng, lerp } from './util.js';
 
 const $ = id => document.getElementById(id);
-const STEP = 1000 / TICK_RATE;
 
 const canvas = $('game');
 const renderer = new Renderer(canvas);
@@ -24,7 +23,7 @@ const state = { game: null, me: null, settings: null, paused: false, last: 0, ac
 
 // ---- Settings (remembered between visits) ------------------------------------
 
-const DEFAULTS = { name: 'Player', map: 'ssdm1.json', mode: 'ffa', bots: 5, difficulty: 'normal', fragLimit: 20, muted: false };
+const DEFAULTS = { name: 'Player', map: 'ssdm1.json', mode: 'ffa', bots: 5, difficulty: 'normal', fragLimit: 20, speed: DEFAULT_SPEED, muted: false };
 
 function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('stick-soldiers') || '{}') }; }
@@ -42,6 +41,8 @@ function buildMenu(settings) {
   $('botsOut').textContent = settings.bots;
   $('difficulty').value = settings.difficulty;
   $('fragLimit').value = String(settings.fragLimit);
+  $('speed').innerHTML = SPEEDS.map(v => `<option value="${v}">${Math.round(v * 100)}%${v === DEFAULT_SPEED ? ' (default)' : v === 1 ? ' (full speed)' : ''}</option>`).join('');
+  $('speed').value = String(SPEEDS.includes(settings.speed) ? settings.speed : DEFAULT_SPEED);
   for (const r of document.querySelectorAll('input[name=mode]')) r.checked = r.value === settings.mode;
   $('mute').checked = settings.muted;
   audio.setMuted(settings.muted);
@@ -62,7 +63,7 @@ function buildMenu(settings) {
       // Team maps default to team mode.
       for (const r of document.querySelectorAll('input[name=mode]')) r.checked = r.value === m.mode;
       audio.unlock();
-      audio.play('click', 0.6);
+      audio.play('menuMove');
     });
     box.appendChild(card);
     drawPreview(card.querySelector('canvas'), maps.data.get(m.file));
@@ -79,6 +80,7 @@ function readMenu() {
     bots: +$('bots').value,
     difficulty: $('difficulty').value,
     fragLimit: +$('fragLimit').value,
+    speed: +$('speed').value,
     muted: $('mute').checked,
   };
 }
@@ -112,7 +114,8 @@ function startMatch(settings) {
   // Let the loading message paint before building the bots' route map.
   setTimeout(() => {
     const mapData = maps.data.get(settings.map);
-    const game = new Game({ mapData, mode: settings.mode, fragLimit: settings.fragLimit, seed: (Math.random() * 2 ** 31) | 0 });
+    const game = new Game({ mapData, mode: settings.mode, fragLimit: settings.fragLimit, speed: settings.speed, seed: (Math.random() * 2 ** 31) | 0 });
+    state.step = 1000 / game.tickRate;
     if (!maps.nav.has(settings.map)) maps.nav.set(settings.map, new NavGraph(game.map));
     const nav = maps.nav.get(settings.map);
     const rng = makeRng((Math.random() * 2 ** 31) | 0);
@@ -170,9 +173,9 @@ function frame(now) {
   if (dt > 250) dt = 250;
   if (!state.paused) {
     state.acc += dt;
-    while (state.acc >= STEP) { g.update(); state.acc -= STEP; }
+    while (state.acc >= state.step) { g.update(); state.acc -= state.step; }
   }
-  const alpha = state.paused ? 1 : state.acc / STEP;
+  const alpha = state.paused ? 1 : state.acc / state.step;
   const me = state.me;
 
   audio.playQueue(g.sounds, me.x, me.y);
@@ -195,7 +198,7 @@ function frame(now) {
 // ---- Events ---------------------------------------------------------------------
 
 function wire() {
-  $('play').addEventListener('click', () => { audio.unlock(); startMatch(readMenu()); });
+  $('play').addEventListener('click', () => { audio.unlock(); audio.play('menuSelect'); startMatch(readMenu()); });
   $('resume').addEventListener('click', () => setPaused(false));
   $('restart').addEventListener('click', () => startMatch(state.settings));
   $('quit').addEventListener('click', endMatch);
@@ -229,6 +232,7 @@ async function boot() {
     fetch('data/animations/legs.json').then(r => r.json()),
   ]);
   setLegAnimations(legs);
+  audio.preload();
   maps.index = index;
   await Promise.all(index.map(async m => maps.data.set(m.file, await fetch('data/maps/' + m.file).then(r => r.json()))));
   const settings = loadSettings();
@@ -237,7 +241,7 @@ async function boot() {
   wire();
   requestAnimationFrame(frame);
   // For automated tests and debugging in the console.
-  window.stickSoldiers = { state, startMatch, readMenu };
+  window.stickSoldiers = { state, startMatch, readMenu, audio };
 }
 
 boot().catch(err => {

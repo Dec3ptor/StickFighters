@@ -7,17 +7,18 @@ import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
 import { fire, updateProjectiles, damage } from './combat.js';
 import { buildPose } from './stickman.js';
-import { RULES } from './config.js';
+import { RULES, TICK_RATE } from './config.js';
 import { WEAPONS } from './weapons.js';
 import { makeRng } from './util.js';
 
 const IDLE = { move: 0 };
 
 export class Game {
-  constructor({ mapData, mode = 'ffa', fragLimit = 20, seed = 1, effects = true }) {
+  constructor({ mapData, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1 }) {
     this.map = new GameMap(mapData);
     this.mode = mode;
     this.fragLimit = fragLimit;
+    this.tickRate = TICK_RATE * speed; // real ticks per second, for countdowns
     this.rng = makeRng(seed);
     this.tick = 0;
     this.soldiers = [];
@@ -80,15 +81,15 @@ export class Game {
     }
     if (s.spawnProtect > 0) s.spawnProtect--;
 
-    if (input.switchTo) s.select(input.switchTo);
-    else if (input.cycle) s.cycle(input.cycle);
+    const switched = input.switchTo ? s.select(input.switchTo) : input.cycle ? s.cycle(input.cycle) : false;
+    if (switched && !s.isBot) this.sound('click', s.x, s.y);
 
     s.move(input, this.map);
     const b = s.body;
     if (b.bounced) this.sound('bounce', s.x, s.y);
     if (b.landed > 7) this.sound('land', s.x, s.y);
     if (b.jetting) {
-      if (this.tick % 5 === 0) this.sound('jet', s.x, s.y);
+      if (this.tick % 30 === 0) this.sound('jet', s.x, s.y);
       if (this.tick % 2 === 0) this.fx?.fire(s.x + s.facing * 3, s.y - 4);
     }
 
@@ -184,7 +185,7 @@ export class Game {
       this.fx.gibs(segs, head, victim.body.vx, victim.body.vy, opts.explosive ? 6 : 1.5);
       this.fx.blood(victim.x, victim.y - 8, 0, -1, 40);
     }
-    this.sound(opts.fall ? 'fall' : 'death', victim.x, victim.y);
+    this.sound(opts.fall ? 'fall' : opts.explosive ? 'gib' : 'death', victim.x, victim.y);
     this.controllers.get(victim)?.onDeath?.(this, victim, killer);
 
     this.checkWin();

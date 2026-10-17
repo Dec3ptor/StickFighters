@@ -46,6 +46,19 @@ for (const [file, mode] of (process.env.MAPS || 'ssdm1.json:ffa,ssteam1.json:tea
     return { tick: g.tick, kills: g.stats.kills, soldiers: g.soldiers.length, shots: g.projectiles.length, me: { x: Math.round(g.soldiers[0].x), alive: g.soldiers[0].alive } };
   });
 }
+// Sounds: the original recordings load and decode once audio is unlocked by a click.
+await page.mouse.click(640, 360);
+await page.waitForFunction(() => window.stickSoldiers.audio.buffers.size >= 20, null, { timeout: 10000 });
+const audio = await page.evaluate(() => ({ decoded: window.stickSoldiers.audio.buffers.size }));
+// Game speed: default 75% means 45 game ticks per real second.
+const speed = await page.evaluate(() => new Promise(res => {
+  const g = window.stickSoldiers.state.game, t0 = g.tick, start = performance.now();
+  setTimeout(() => res({ ticksPerSecond: Math.round((g.tick - t0) / ((performance.now() - start) / 1000)) }), 2000);
+}));
+if (Math.abs(speed.ticksPerSecond - 45) > 4) errors.push(`expected ~45 ticks per second, got ${speed.ticksPerSecond}`);
+results.audio = audio;
+results.speed = speed;
+
 // Pause menu
 await page.keyboard.press('Escape');
 await page.waitForTimeout(200);

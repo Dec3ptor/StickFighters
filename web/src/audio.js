@@ -1,11 +1,62 @@
-// Sound effects, synthesized with the Web Audio API (no sound files needed).
+// Sound effects. Most use the original Stick Soldiers II sounds (web/sounds/);
+// anything without a recording is synthesized with the Web Audio API.
+
+// Game sound name -> [file in web/sounds/, volume]. Volumes even out the
+// original recordings, which vary a lot in loudness.
+export const SAMPLES = {
+  pistol: ['platinum', 1.0],
+  reload: ['platrld', 2.0],
+  rifle: ['m4', 0.5],
+  uzi: ['uzi', 0.6],
+  shotgun: ['shotgun', 0.7],
+  sniper: ['sr1', 0.95],
+  thump: ['grenfire', 1.0],
+  explosion: ['rlboom', 1.35],
+  explosionSmall: ['explode', 0.75],
+  flame: ['flamer', 0.6],
+  jet: ['jetpack', 0.5],
+  hit: ['hitman', 1.4],
+  death: ['die', 0.65],
+  gib: ['gib', 2.2],
+  ricochet: ['ricochet', 0.8],
+  pickup: ['pickup', 1.6],
+  armour: ['pickup', 1.6],
+  health: ['pwrhealth', 0.7],
+  spawn: ['pop', 0.8],
+  click: ['click', 1.2],
+  menuMove: ['menu1', 1.4],
+  menuSelect: ['menu3', 1.4],
+};
+
+// Sounds that aren't placed in the world (always full volume, centred).
+const UI_SOUNDS = new Set(['hitmarker', 'gameover', 'click', 'menuMove', 'menuSelect']);
 
 export class SoundSystem {
-  constructor() {
+  constructor(base = 'sounds/') {
+    this.base = base;
     this.ctx = null;
     this.muted = false;
     this.volume = 0.5;
     this.playing = new Map(); // name -> count playing right now
+    this.raw = new Map();     // file -> ArrayBuffer, waiting to be decoded
+    this.buffers = new Map(); // file -> decoded AudioBuffer
+  }
+
+  /** Download the recordings (they're decoded once audio is allowed to start). */
+  preload() {
+    const files = [...new Set(Object.values(SAMPLES).map(([f]) => f))];
+    return Promise.all(files.map(f => fetch(`${this.base}${f}.wav`)
+      .then(r => (r.ok ? r.arrayBuffer() : null))
+      .then(b => { if (b) { this.raw.set(f, b); this.decode(); } })
+      .catch(() => { /* fall back to the synthesized sound */ })));
+  }
+
+  decode() {
+    if (!this.ctx) return;
+    for (const [f, b] of this.raw) {
+      this.raw.delete(f);
+      this.ctx.decodeAudioData(b).then(buf => this.buffers.set(f, buf)).catch(() => {});
+    }
   }
 
   /** Browsers only allow audio after a click or key press. */
@@ -21,6 +72,7 @@ export class SoundSystem {
     this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const d = this.noise.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    this.decode();
   }
 
   setMuted(m) {
@@ -36,17 +88,20 @@ export class SoundSystem {
       const key = s.name + Math.round(s.x / 64);
       if (seen.has(key)) continue;
       seen.add(key);
-      const d = s.name === 'gameover' ? 0 : Math.hypot(s.x - lx, s.y - ly);
+      const ui = UI_SOUNDS.has(s.name);
+      const d = ui ? 0 : Math.hypot(s.x - lx, s.y - ly);
       const vol = Math.pow(Math.max(0, 1 - d / 1300), 1.6);
       if (vol < 0.03) continue;
-      const pan = s.name === 'gameover' ? 0 : Math.max(-1, Math.min(1, (s.x - lx) / 550));
+      const pan = ui ? 0 : Math.max(-1, Math.min(1, (s.x - lx) / 550));
       this.play(s.name, vol, pan);
     }
   }
 
   play(name, vol = 1, pan = 0) {
+    const sample = SAMPLES[name];
+    const buffer = sample && this.buffers.get(sample[0]);
     const fn = SOUNDS[name];
-    if (!fn || !this.ctx) return;
+    if ((!buffer && !fn) || !this.ctx || this.muted) return;
     if ((this.playing.get(name) || 0) >= 4) return;
     const out = this.ctx.createGain();
     out.gain.value = vol;
@@ -54,7 +109,18 @@ export class SoundSystem {
     if (panner) { panner.pan.value = pan; out.connect(panner).connect(this.master); }
     else out.connect(this.master);
     this.playing.set(name, (this.playing.get(name) || 0) + 1);
-    const dur = fn(this, out, this.ctx.currentTime) || 0.3;
+    let dur;
+    if (buffer) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = buffer;
+      src.playbackRate.value = 0.96 + Math.random() * 0.08; // slight variety
+      out.gain.value = vol * sample[1];
+      src.connect(out);
+      src.start();
+      dur = buffer.duration;
+    } else {
+      dur = fn(this, out, this.ctx.currentTime) || 0.3;
+    }
     setTimeout(() => this.playing.set(name, this.playing.get(name) - 1), dur * 1000);
   }
 
@@ -102,6 +168,17 @@ const SOUNDS = {
   rocket: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.5, freq: 400, sweepTo: 1600, q: 1.2, gain: 0.8, attack: 0.03 }); return 0.5; },
   thump: (a, o, t) => { a.tone(o, t, { dur: 0.16, from: 220, to: 70, gain: 0.8 }); a.noiseBurst(o, t, { dur: 0.08, freq: 600, gain: 0.4 }); return 0.2; },
   flame: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.16, freq: 700, q: 0.4, gain: 0.35, attack: 0.03 }); return 0.17; },
+  // A crisp, short "tick" like a shooter's hitmarker: played when you land a headshot.
+  hitmarker: (a, o, t) => {
+    a.noiseBurst(o, t, { dur: 0.035, freq: 5200, q: 1.2, gain: 0.9, attack: 0.001 });
+    a.tone(o, t, { dur: 0.05, from: 2600, to: 2300, type: 'triangle', gain: 0.35, attack: 0.001 });
+    a.tone(o, t, { dur: 0.04, from: 3900, to: 3600, gain: 0.2, attack: 0.001 });
+    return 0.08;
+  },
+  explosionSmall: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.6, freq: 900, type: 'lowpass', q: 0.3, gain: 1.2, sweepTo: 150 }); return 0.6; },
+  gib: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.3, freq: 350, type: 'lowpass', gain: 0.8 }); return 0.3; },
+  menuMove: (a, o, t) => { a.tone(o, t, { dur: 0.04, from: 900, type: 'square', gain: 0.06 }); return 0.05; },
+  menuSelect: (a, o, t) => { a.tone(o, t, { dur: 0.06, from: 1200, type: 'square', gain: 0.08 }); return 0.07; },
   explosion: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.9, freq: 700, type: 'lowpass', q: 0.3, gain: 1.5, sweepTo: 120 }); a.tone(o, t, { dur: 0.6, from: 90, to: 30, gain: 0.9 }); return 0.9; },
   ricochet: (a, o, t) => { a.tone(o, t, { dur: 0.18, from: 2400 + Math.random() * 800, to: 1300, type: 'triangle', gain: 0.12 }); return 0.2; },
   hit: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.07, freq: 500, type: 'lowpass', gain: 0.7 }); return 0.08; },

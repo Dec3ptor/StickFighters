@@ -31,7 +31,7 @@ export const WEAPONS = {
   },
   SR: {
     name: 'Sniper Rifle', slot: 5, kind: 'rail',
-    rof: 60, damage: 50, headMultiplier: 2, knock: 3, spread: 0, range: 2200,
+    rof: 60, damage: 50, headMultiplier: 2.5, knock: 3, spread: 0, range: 2200,
     ammo: 10, maxAmmo: 20, sound: 'sniper', laser: true, zoom: true,
     look: { length: 24, color: '#333', grip: 2 },
   },
@@ -59,5 +59,5 @@ export const WEAPONS = {
 
 export const WEAPON_ORDER = Object.keys(WEAPONS).sort((a, b) => WEAPONS[a].slot - WEAPONS[b].slot);
 
-/** Headshots on bullets (not just the sniper) do this much extra. */
-export const HEADSHOT_MULTIPLIER = 1.5;
+/** Headshots with bullets and shotgun pellets do double damage (the sniper rifle has its own). */
+export const HEADSHOT_MULTIPLIER = 2;

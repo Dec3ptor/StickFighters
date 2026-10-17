@@ -1,7 +1,7 @@
 // Heads-up display, drawn in screen pixels on top of the world.
 
 import { WEAPONS, WEAPON_ORDER } from './weapons.js';
-import { RULES, TICK_RATE } from './config.js';
+import { RULES } from './config.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 
@@ -53,7 +53,7 @@ export function drawHud(r, game, me, opts = {}) {
     ctx.textAlign = 'center';
     ctx.font = `bold 20px ${FONT}`;
     ctx.fillStyle = '#222';
-    ctx.fillText(`Respawning in ${Math.max(1, Math.ceil(me.respawnTimer / TICK_RATE))}...`, W / 2, H / 2 - 60);
+    ctx.fillText(`Respawning in ${Math.max(1, Math.ceil(me.respawnTimer / game.tickRate))}...`, W / 2, H / 2 - 60);
   }
 
   if (opts.showScores || game.over) drawScoreboard(ctx, game, me, W, H);

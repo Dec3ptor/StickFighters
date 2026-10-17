@@ -237,7 +237,7 @@ function stepFlame(game, p) {
 /** Blast damage with falloff, blocked by walls; also throws soldiers around. */
 export function explode(game, x, y, blast, owner, weapon, direct = null) {
   game.fx?.explosion(x, y, blast.radius * 0.5);
-  game.sound('explosion', x, y);
+  game.sound(weapon === 'Bazooka' ? 'explosion' : 'explosionSmall', x, y);
   game.shake(x, y, 9);
   const reach = blast.radius + 8;
   for (const s of game.soldiers) {
@@ -286,6 +286,8 @@ export function damage(game, target, amount, attacker, weapon, opts = {}) {
     game.fx?.blood(target.x, target.y - 8, opts.dirX || 0, opts.dirY || 0, amount);
     game.sound(opts.headshot ? 'headshot' : 'hit', target.x, target.y);
   }
+  // The player hears a hitmarker tick when they land a headshot.
+  if (opts.headshot && attacker && attacker !== target && !attacker.isBot) game.sound('hitmarker', attacker.x, attacker.y);
   game.onDamage?.(target, attacker, amount);
   if (target.health <= 0) game.kill(target, attacker, weapon, opts);
 }

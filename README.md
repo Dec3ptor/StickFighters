@@ -9,10 +9,12 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
 - **All 8 original maps**, decoded from the original game's files: Fire in the Hole, Habitat, King of the Hill, Fraghouse, Sniping Grounds, Fatality Zone, Hells Steeple and Two Towers.
 - **8 weapons** using the original's fire rates, damage, accuracy and ammo: Platinum pistol, Uzi, M4, shotgun, sniper rifle (laser sight and zoom), grenade launcher, bazooka and flamethrower.
 - **Health, armour, jetpacks and jump pads**, placed where the original had them. Dead soldiers drop their weapon.
-- **Stick figures animated with the original game's leg animations**. Arms follow your aim at any angle, and the dead fall apart.
+- **Stick figures animated with the original game's leg animations**. Arms follow your aim at any angle, and the dead fall apart. No original art is used: everything is drawn in code.
 - **Bots** that get around every map, go for weapons and health, and fight with human-like aim and reactions. There are 10 personalities and three skill levels.
 - **Free-for-all and team deathmatch**, with 1–9 bots.
-- **Sound effects generated in code.** No original art or sound files are used.
+- **The original game's sound effects**, from the Stick Soldiers Python fan project (see [`web/sounds/CREDITS.md`](web/sounds/CREDITS.md)). The headshot hitmarker and a few others are generated in code. The original game had no music.
+- **Headshots** do double damage (2.5× with the sniper rifle), and you hear a hitmarker tick when you land one.
+- **Adjustable game speed**: 75% by default, from 60% up to the full 100%.
 
 ## Controls
 
@@ -58,6 +60,7 @@ GitHub Pages has to be switched on once: **Settings → Pages → Build and depl
 | `web/src/stickman.js` | Builds each stick figure from the original animation poses |
 | `web/src/render.js`, `hud.js`, `audio.js`, `input.js`, `main.js` | Drawing, HUD, sound, controls and page wiring |
 | `web/data/` | The 8 maps and the leg animations, decoded from the original game |
+| `web/sounds/` | The original game's sound effects ([credits](web/sounds/CREDITS.md)) |
 | `tests/` | Headless tests (`npm test`) and the browser test |
 | [`reference/ss2/`](reference/ss2/README.md) | Everything decoded from the original game, with previews |
 | [`docs/ss2-file-formats.md`](docs/ss2-file-formats.md) | The original game's file formats |
@@ -78,4 +81,4 @@ GitHub Pages has to be switched on once: **Settings → Pages → Build and depl
 
 ## Credits
 
-The original Stick Soldiers and Stick Soldiers II were made by Tim Cowley, Dylan Allison and Andrew Vehlies (Whitespace Unlimited). This remake uses map layouts, weapon numbers and animation poses decoded from their game. All code, art and sound here are new.
+The original Stick Soldiers and Stick Soldiers II were made by Tim Cowley, Dylan Allison and Andrew Vehlies (Whitespace Unlimited). This remake uses map layouts, weapon numbers, animation poses and sound effects from their game. The sound effects came via the Stick Soldiers Python fan project. All code and art here are new.
