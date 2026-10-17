@@ -7,7 +7,8 @@ import { makeBody, stepBody } from '../web/src/physics.js';
 import { NavGraph } from '../web/src/nav.js';
 import { Game } from '../web/src/game.js';
 import { WEAPONS } from '../web/src/weapons.js';
-import { BODY, PHYS } from '../web/src/config.js';
+import { BODY, PHYS, SPEEDS, DEFAULT_SPEED } from '../web/src/config.js';
+import fs from 'node:fs';
 
 const MAPS = mapIndex();
 
@@ -236,6 +237,14 @@ test('team matches keep teams apart: no friendly fire', () => {
   for (let i = 0; i < 3600; i++) game.update();
   assert.equal(game.teamScore[1] + game.teamScore[2], game.soldiers.reduce((n, s) => n + s.frags, 0));
   for (const f of game.feed) if (f.killer && f.victim && f.killer !== f.victim) assert.notEqual(f.killer.team, f.victim.team);
+});
+
+test('the menu offers exactly the game speeds the game supports', () => {
+  const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
+  const select = html.match(/<select id="speed">([\s\S]*?)<\/select>/)[1];
+  const values = [...select.matchAll(/value="([\d.]+)"/g)].map(m => +m[1]);
+  assert.deepEqual(values, SPEEDS);
+  assert.match(select, new RegExp(`value="${DEFAULT_SPEED}" selected`));
 });
 
 test('physics constants still match the tuned values the route planner was tested with', () => {

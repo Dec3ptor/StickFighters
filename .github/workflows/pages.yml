@@ -53,6 +53,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      # Give every script and the stylesheet a per-release address, so a browser
+      # holding cached files from the last release never mixes old and new code.
+      - name: Stamp file addresses with this release
+        run: |
+          v="${GITHUB_SHA::8}"
+          sed -i -E "s#(from '\./[a-z]+\.js)'#\1?v=$v'#g" web/src/*.js
+          sed -i -E "s#src=\"src/main\.js\"#src=\"src/main.js?v=$v\"#; s#href=\"style\.css\"#href=\"style.css?v=$v\"#" web/index.html
+          grep -c "?v=$v" web/index.html web/src/main.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web

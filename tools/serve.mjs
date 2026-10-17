@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
+// WEB_ROOT lets tests serve a processed copy of the site (e.g. the one CI publishes).
+const ROOT = path.resolve(process.env.WEB_ROOT || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web'));
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
 export function serve(port = 0) {

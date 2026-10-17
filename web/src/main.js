@@ -41,7 +41,6 @@ function buildMenu(settings) {
   $('botsOut').textContent = settings.bots;
   $('difficulty').value = settings.difficulty;
   $('fragLimit').value = String(settings.fragLimit);
-  $('speed').innerHTML = SPEEDS.map(v => `<option value="${v}">${Math.round(v * 100)}%${v === DEFAULT_SPEED ? ' (default)' : v === 1 ? ' (full speed)' : ''}</option>`).join('');
   $('speed').value = String(SPEEDS.includes(settings.speed) ? settings.speed : DEFAULT_SPEED);
   for (const r of document.querySelectorAll('input[name=mode]')) r.checked = r.value === settings.mode;
   $('mute').checked = settings.muted;
@@ -80,7 +79,7 @@ function readMenu() {
     bots: +$('bots').value,
     difficulty: $('difficulty').value,
     fragLimit: +$('fragLimit').value,
-    speed: +$('speed').value,
+    speed: SPEEDS.includes(+$('speed').value) ? +$('speed').value : DEFAULT_SPEED,
     muted: $('mute').checked,
   };
 }
