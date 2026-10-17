@@ -1,7 +1,7 @@
 // A soldier: player or bot. Holds state only; the game decides what happens to it.
 
 import { makeBody, stepBody } from './physics.js';
-import { RULES } from './config.js';
+import { RULES, MOTION } from './config.js';
 import { WEAPONS, WEAPON_ORDER } from './weapons.js';
 
 const STRIDE = 46; // pixels travelled per full run cycle
@@ -106,10 +106,10 @@ export class Soldier {
       a.run = (a.run + forward * Math.abs(b.vx) / STRIDE + 1) % 1;
     }
     a.idle++;
-    if (b.landed > 3) a.land = 10;
+    if (b.landed > MOTION.landAnim) a.land = 10;
     else if (a.land > 0) a.land--;
     if (b.bounced) a.flip = 1;
-    else if (a.flip > 0) a.flip = b.onGround ? 0 : Math.max(0, a.flip - 1 / 36);
+    else if (a.flip > 0) a.flip = b.onGround ? 0 : Math.max(0, a.flip - MOTION.flipRate);
     if (a.recoil > 0) a.recoil = Math.max(0, a.recoil - 0.6);
   }
 }

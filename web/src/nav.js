@@ -5,7 +5,7 @@
 // different amounts of steering, step off ledges), so every link is a move
 // that actually works in the game, including jump-pad launches.
 
-import { BODY, PHYS } from './config.js';
+import { BODY, PHYS, MOTION } from './config.js';
 import { makeBody, stepBody } from './physics.js';
 
 const NODE_STEP = 12;
@@ -49,6 +49,13 @@ export class NavGraph {
   constructor(map) {
     this.map = map;
     this.nodes = [];
+    // At lower game speeds everything takes longer, so stretch the move timings
+    // to match: the moves (and so the routes) are then the same at every speed.
+    const t = 1 / MOTION.timeScale;
+    this.timeScale = MOTION.timeScale;
+    this.maxSim = MAX_SIM * t;
+    this.jumps = JUMPS.map(j => ({ ...j, delay: j.delay * t, hold: j.hold * t }));
+    this.drops = DROPS.map(d => ({ ...d, hold: d.hold * t }));
     this._buildNodes();
     this._buildLinks();
   }
@@ -109,7 +116,7 @@ export class NavGraph {
     body.onGround = true;
     let airborne = false;
     const bottom = this.map.bounds.bottom + 120;
-    for (let t = 0; t < MAX_SIM; t++) {
+    for (let t = 0; t < this.maxSim; t++) {
       stepBody(body, inputAt(t, body, airborne), this.map);
       if (!body.onGround) airborne = true;
       else if (airborne) {
@@ -117,7 +124,7 @@ export class NavGraph {
         return n && n !== start ? { node: n, ticks: t + 1 } : null;
       }
       if (body.y > bottom) return null;
-      if (!airborne && t > 40) return null; // never left the ground
+      if (!airborne && t > 40 / this.timeScale) return null; // never left the ground
     }
     return null;
   }
@@ -145,11 +152,11 @@ export class NavGraph {
     for (const a of this.nodes) {
       const walkL = a.links.some(l => l.type === 'walk' && l.dir < 0);
       const walkR = a.links.some(l => l.type === 'walk' && l.dir > 0);
-      for (const j of JUMPS) {
+      for (const j of this.jumps) {
         const r = this._simulate(a, t => ({ move: jumpSteer(j, t), jump: true, jumpPressed: t === 0 }));
         if (r) this._addLink(a, r.node, { type: 'jump', move: j, cost: r.ticks + 6 });
       }
-      for (const d of DROPS) {
+      for (const d of this.drops) {
         if ((d.dir < 0 && walkL) || (d.dir > 0 && walkR)) continue;
         let fellAt = -1;
         const r = this._simulate(a, (t, body, airborne) => {
@@ -165,7 +172,7 @@ export class NavGraph {
   _walkReaches(a, b, dir) {
     const body = makeBody(a.x, a.y);
     body.onGround = true;
-    for (let t = 0; t < 16; t++) {
+    for (let t = 0; t < 16 / this.timeScale; t++) {
       stepBody(body, { move: dir }, this.map);
       if (!body.onGround) return false;
       if ((body.x - b.x) * dir >= 0) return Math.abs(body.y - b.y) < 1;

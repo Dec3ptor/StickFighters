@@ -1,6 +1,6 @@
 // Drawing the world: white paper, black outlines, stick figures.
 
-import { VIEW_W, VIEW_H } from './config.js';
+import { VIEW_W, VIEW_H, MOTION } from './config.js';
 import { buildPose } from './stickman.js';
 import { laserEnd } from './combat.js';
 import { WEAPONS } from './weapons.js';
@@ -460,7 +460,7 @@ function drawJetpack(ctx) {
 
 function drawFlame(ctx, p) {
   const k = p.age / (p.age + p.life);
-  const r = 2.5 + p.age * 0.2;
+  const r = 2.5 + p.age * MOTION.flameGrow;
   ctx.fillStyle = k < 0.35 ? `rgba(255,225,110,0.9)` : k < 0.7 ? `rgba(255,130,30,${0.85 - k * 0.4})` : `rgba(150,60,30,${0.6 - k * 0.5})`;
   ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
 }

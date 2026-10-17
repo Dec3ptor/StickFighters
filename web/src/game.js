@@ -7,7 +7,8 @@ import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
 import { fire, updateProjectiles, damage } from './combat.js';
 import { buildPose } from './stickman.js';
-import { RULES, TICK_RATE } from './config.js';
+import { RULES, TICK_RATE, MOTION } from './config.js';
+import { setGameSpeed } from './speed.js';
 import { WEAPONS } from './weapons.js';
 import { makeRng } from './util.js';
 
@@ -15,10 +16,13 @@ const IDLE = { move: 0 };
 
 export class Game {
   constructor({ mapData, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1 }) {
+    // Speed rescales shared constants, so set it before anything reads them.
+    setGameSpeed(speed);
     this.map = new GameMap(mapData);
     this.mode = mode;
     this.fragLimit = fragLimit;
-    this.tickRate = TICK_RATE * speed; // real ticks per second, for countdowns
+    this.tickRate = TICK_RATE;
+    this.speed = speed;
     this.rng = makeRng(seed);
     this.tick = 0;
     this.soldiers = [];
@@ -61,7 +65,7 @@ export class Game {
   }
 
   update() {
-    if (this.over) { this.fx?.update(this.map); return; }
+    if (this.over) { this.fx?.update(this.map, MOTION.timeScale); return; }
     this.tick++;
     for (const s of this.soldiers) {
       const ctl = this.controllers.get(s);
@@ -69,7 +73,7 @@ export class Game {
     }
     updateProjectiles(this);
     this.pickups.update(this);
-    this.fx?.update(this.map);
+    this.fx?.update(this.map, MOTION.timeScale);
     if (this.feed.length > 6) this.feed.splice(0, this.feed.length - 6);
     if (this.notes.length > 10) this.notes.splice(0, this.notes.length - 10);
   }
@@ -87,7 +91,7 @@ export class Game {
     s.move(input, this.map);
     const b = s.body;
     if (b.bounced) this.sound('bounce', s.x, s.y);
-    if (b.landed > 7) this.sound('land', s.x, s.y);
+    if (b.landed > MOTION.landSound) this.sound('land', s.x, s.y);
     if (b.jetting) {
       if (this.tick % 30 === 0) this.sound('jet', s.x, s.y);
       if (this.tick % 2 === 0) this.fx?.fire(s.x + s.facing * 3, s.y - 4);

@@ -115,8 +115,10 @@ function startMatch(settings) {
     const mapData = maps.data.get(settings.map);
     const game = new Game({ mapData, mode: settings.mode, fragLimit: settings.fragLimit, speed: settings.speed, seed: (Math.random() * 2 ** 31) | 0 });
     state.step = 1000 / game.tickRate;
-    if (!maps.nav.has(settings.map)) maps.nav.set(settings.map, new NavGraph(game.map));
-    const nav = maps.nav.get(settings.map);
+    // Route maps depend on the speed's move timings, so keep one per map and speed.
+    const navKey = `${settings.map}@${settings.speed}`;
+    if (!maps.nav.has(navKey)) maps.nav.set(navKey, new NavGraph(game.map));
+    const nav = maps.nav.get(navKey);
     const rng = makeRng((Math.random() * 2 ** 31) | 0);
 
     const team = settings.mode === 'team';

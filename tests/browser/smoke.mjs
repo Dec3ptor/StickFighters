@@ -50,12 +50,12 @@ for (const [file, mode] of (process.env.MAPS || 'ssdm1.json:ffa,ssteam1.json:tea
 await page.mouse.click(640, 360);
 await page.waitForFunction(() => window.stickSoldiers.audio.buffers.size >= 20, null, { timeout: 10000 });
 const audio = await page.evaluate(() => ({ decoded: window.stickSoldiers.audio.buffers.size }));
-// Game speed: default 75% means 45 game ticks per real second.
+// The game always updates 60 times a second; game speed slows the mechanics instead.
 const speed = await page.evaluate(() => new Promise(res => {
   const g = window.stickSoldiers.state.game, t0 = g.tick, start = performance.now();
   setTimeout(() => res({ ticksPerSecond: Math.round((g.tick - t0) / ((performance.now() - start) / 1000)) }), 2000);
 }));
-if (Math.abs(speed.ticksPerSecond - 45) > 4) errors.push(`expected ~45 ticks per second, got ${speed.ticksPerSecond}`);
+if (Math.abs(speed.ticksPerSecond - 60) > 5) errors.push(`expected ~60 updates per second, got ${speed.ticksPerSecond}`);
 results.audio = audio;
 results.speed = speed;
 

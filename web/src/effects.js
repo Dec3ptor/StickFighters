@@ -101,15 +101,16 @@ export class Effects {
     }
   }
 
-  update(map) {
+  /** dt = game time per update (less than 1 when the game speed is turned down). */
+  update(map, dt = 1) {
     const keep = [], drips = [];
     for (const p of this.parts) {
-      p.life--;
+      p.life -= dt;
       if (p.life <= 0) continue;
       switch (p.kind) {
         case 'blood': {
-          p.vy += 0.25;
-          const nx = p.x + p.vx, ny = p.y + p.vy;
+          p.vy += 0.25 * dt;
+          const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt;
           const hit = map.raycast(p.x, p.y, nx, ny);
           if (hit) {
             if (this.stains.length >= MAX_STAINS) this.stains.shift();
@@ -120,26 +121,26 @@ export class Effects {
           break;
         }
         case 'spark': case 'ember':
-          p.vy += 0.15; p.x += p.vx; p.y += p.vy; p.vx *= 0.95;
+          p.vy += 0.15 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.95 ** dt;
           break;
         case 'shell': case 'gib': case 'head': {
-          p.vy += 0.3;
-          const nx = p.x + p.vx, ny = p.y + p.vy;
+          p.vy += 0.3 * dt;
+          const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt;
           const hit = map.raycast(p.x, p.y, nx, ny);
           if (hit) {
             p.x = hit.x + hit.nx * 0.5; p.y = hit.y + hit.ny * 0.5;
             if (hit.nx) p.vx = -p.vx * 0.4; else { p.vy = -p.vy * 0.35; p.vx *= 0.7; }
             if (p.va) p.va *= 0.6;
           } else { p.x = nx; p.y = ny; }
-          if (p.va) p.angle += p.va;
-          if (p.kind !== 'shell' && Math.random() < 0.05 && p.life > 150) drips.push({ kind: 'blood', x: p.x, y: p.y, vx: 0, vy: 0, life: 40, size: 1 });
+          if (p.va) p.angle += p.va * dt;
+          if (p.kind !== 'shell' && Math.random() < 0.05 * dt && p.life > 150) drips.push({ kind: 'blood', x: p.x, y: p.y, vx: 0, vy: 0, life: 40, size: 1 });
           break;
         }
         case 'smoke': case 'fire':
-          p.x += p.vx; p.y += p.vy; p.r += 0.12;
+          p.x += p.vx * dt; p.y += p.vy * dt; p.r += 0.12 * dt;
           break;
         case 'puff':
-          p.r += 0.4;
+          p.r += 0.4 * dt;
           break;
       }
       keep.push(p);

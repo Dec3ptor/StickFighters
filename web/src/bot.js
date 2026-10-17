@@ -1,5 +1,6 @@
 // Computer-controlled soldiers.
 
+import { MOTION } from './config.js';
 import { WEAPONS } from './weapons.js';
 import { jumpSteer, dropSteer } from './nav.js';
 import { angleDiff, clamp } from './util.js';
@@ -24,7 +25,6 @@ export const BOT_PROFILES = [
   { name: 'Ninja', acc: 10, camp: 8, skill: 2 },
 ];
 
-const GRENADE_GRAVITY = 0.25;
 
 /** How much a bot wants to use a weapon at distance d. */
 function weaponScore(id, d) {
@@ -249,7 +249,7 @@ export class BotController {
         const n = this.nav.nodeAt(s.x, s.y, 10);
         if (n === link.to) this.li++;
         else this.thinkIn = 0;
-      } else if (e.t > 400 || (!e.airborne && e.t > 30)) {
+      } else if (e.t > 400 / MOTION.timeScale || (!e.airborne && e.t > 30)) {
         this.exec = null;
         this.thinkIn = 0;
       }
@@ -270,7 +270,7 @@ export class BotController {
       const it = this.goalItem;
       if (it && it.active && Math.abs(it.x - s.x) < 100 && Math.abs(it.y - s.y) < 120) {
         this.grabTicks = (this.grabTicks || 0) + 1;
-        if (this.grabTicks > 150) {
+        if (this.grabTicks > 150 / MOTION.timeScale) {
           this.ignore.set(it, game.tick + 900);
           this.goalItem = null;
           this.grabTicks = 0;
@@ -343,7 +343,7 @@ export class BotController {
     const dist = Math.hypot(tx - sx, ty - sy);
     let desired;
     if (def.kind === 'grenade') {
-      desired = lobAngle(tx - sx, ty - sy, def.speed, GRENADE_GRAVITY) ?? Math.atan2(ty - sy, tx - sx);
+      desired = lobAngle(tx - sx, ty - sy, def.speed, MOTION.grenadeGravity) ?? Math.atan2(ty - sy, tx - sx);
     } else {
       if (def.speed && def.kind !== 'rail') {
         const lead = (dist / def.speed) * (0.5 + this.profile.skill * 0.15);

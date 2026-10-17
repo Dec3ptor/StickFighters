@@ -1,6 +1,6 @@
 // Health, armour, jetpacks and weapons lying on the map, plus weapons dropped by the dead.
 
-import { BODY, ITEM_RESPAWN, ITEM_SIZE, RULES } from './config.js';
+import { BODY, ITEM_RESPAWN, ITEM_SIZE, RULES, MOTION } from './config.js';
 import { WEAPONS } from './weapons.js';
 
 export class Pickups {
@@ -12,7 +12,7 @@ export class Pickups {
 
   /** Drop a weapon where a soldier died. */
   drop(id, ammo, x, y, vx) {
-    this.items.push({ type: 'weapon', weapon: id, ammo, x, y, vx, vy: -2, active: true, dropped: true, life: RULES.droppedWeaponTicks, bob: 0 });
+    this.items.push({ type: 'weapon', weapon: id, ammo, x, y, vx, vy: -MOTION.itemToss, active: true, dropped: true, life: RULES.droppedWeaponTicks, bob: 0 });
   }
 
   update(game) {
@@ -20,7 +20,7 @@ export class Pickups {
       if (it.dropped) {
         it.life--;
         if (it.vy !== null) {
-          it.vy = Math.min(it.vy + 0.3, 10);
+          it.vy = Math.min(it.vy + MOTION.itemGravity, MOTION.itemMaxFall);
           const hit = game.map.raycast(it.x, it.y, it.x + it.vx, it.y + it.vy + 4);
           if (hit) { it.x = hit.x; it.y = hit.y - 4; it.vx = 0; it.vy = null; }
           else { it.x += it.vx; it.y += it.vy; it.vx *= 0.98; }

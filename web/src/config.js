@@ -2,8 +2,9 @@
 
 export const TICK_RATE = 60;
 
-// Game speed: the simulation runs at TICK_RATE x speed ticks per second, so
-// everything (movement, bullets, fire rates, timers) slows down together.
+// Game speed. The game always updates TICK_RATE times a second; a lower speed
+// slows the mechanics instead (movement, jumps, bullets, fire rates), keeping
+// every jump arc the same shape. See speed.js.
 export const SPEEDS = [0.6, 0.75, 0.9, 1];
 export const DEFAULT_SPEED = 0.75;
 
@@ -30,6 +31,21 @@ export const PHYS = {
   jetMaxUp: 5.0,
   jetDrain: 0.55,       // fuel per tick of thrust (fuel is 0-100)
   jetRegen: 0.25,       // fuel per tick while standing on the ground
+};
+
+// Other motion values (at full speed), rescaled by speed.js.
+export const MOTION = {
+  timeScale: 1,          // game time per update: 1 at full speed, 0.75 at 75%
+  grenadeGravity: 0.25,
+  flameDrag: 0.95,       // flames keep this share of their speed each update
+  flameLift: 0.05,
+  flameGrow: 0.2,        // flame radius growth per update
+  itemGravity: 0.3,      // dropped weapons
+  itemMaxFall: 10,
+  itemToss: 2,
+  flipRate: 1 / 36,      // jump-pad somersault progress per update
+  landAnim: 3,           // landing speed that plays the landing squash
+  landSound: 7,          // landing speed that plays the landing thud
 };
 
 export const RULES = {

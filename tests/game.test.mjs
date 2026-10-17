@@ -1,5 +1,5 @@
 // Headless tests for the game logic. Run with: npm test
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mapIndex, loadMap, botMatch } from './helpers.mjs';
 import { GameMap } from '../web/src/map.js';
@@ -8,9 +8,13 @@ import { NavGraph } from '../web/src/nav.js';
 import { Game } from '../web/src/game.js';
 import { WEAPONS } from '../web/src/weapons.js';
 import { BODY, PHYS, SPEEDS, DEFAULT_SPEED } from '../web/src/config.js';
+import { setGameSpeed } from '../web/src/speed.js';
 import fs from 'node:fs';
 
 const MAPS = mapIndex();
+
+// Game speed rescales shared constants; start every test at full speed.
+beforeEach(() => setGameSpeed(1));
 
 /** Let a body fall until it lands. */
 function settle(body, map) {
@@ -63,7 +67,8 @@ test('walls stop soldiers', () => {
   assert.ok(Math.abs(body.x - (200 - BODY.halfW)) < 0.01, `stopped at ${body.x}`);
 });
 
-test('bots can get everywhere they can reach and back, on every map', () => {
+for (const speed of SPEEDS) test(`bots can get everywhere they can reach and back, on every map, at ${speed * 100}% speed`, () => {
+  setGameSpeed(speed);
   for (const m of MAPS) {
     const map = new GameMap(loadMap(m.file));
     const nav = new NavGraph(map);
@@ -148,12 +153,27 @@ test('rockets and grenades make different explosion sounds', () => {
   assert.ok(grenade.game.sounds.some(s => s.name === 'explosionSmall'));
 });
 
-test('game speed only changes how many ticks run per second', () => {
-  const slow = new Game({ mapData: loadMap('ssdm1.json'), effects: false, speed: 0.75 });
-  assert.equal(slow.tickRate, 45);
-  assert.equal(new Game({ mapData: loadMap('ssdm1.json'), effects: false }).tickRate, 60);
+test('lower game speeds keep jumps the same height but slower, at 60 updates a second', () => {
+  const jump = speed => {
+    const g = new Game({ mapData: loadMap('ssteam1.json'), effects: false, speed });
+    assert.equal(g.tickRate, 60);
+    const body = settle(makeBody(g.map.spawns[0].x, g.map.spawns[0].y), g.map);
+    const floorY = body.y;
+    stepBody(body, { move: 0, jump: true, jumpPressed: true }, g.map);
+    let top = body.y, ticks = 1;
+    for (; ticks < 400 && !body.onGround; ticks++) { stepBody(body, { move: 0, jump: true }, g.map); top = Math.min(top, body.y); }
+    return { height: floorY - top, ticks };
+  };
+  const full = jump(1);
+  for (const speed of SPEEDS) {
+    const r = jump(speed);
+    assert.ok(Math.abs(r.height - full.height) < 4, `jump height at ${speed}: ${r.height} vs ${full.height}`);
+    assert.ok(Math.abs(r.ticks - full.ticks / speed) < 3, `airtime at ${speed}: ${r.ticks} vs ${full.ticks / speed}`);
+  }
+  setGameSpeed(0.5);
+  assert.equal(WEAPONS.M4.rof, 16, 'fire delay doubles at half speed');
+  assert.equal(WEAPONS.M4.speed, 17, 'bullets fly half as fast');
 });
-
 test('armour soaks up damage', () => {
   const plain = duel('M4');
   const armoured = (() => {

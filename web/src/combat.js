@@ -1,10 +1,9 @@
 // Firing, projectiles, explosions and damage.
 
-import { BODY, RULES } from './config.js';
+import { BODY, RULES, MOTION } from './config.js';
 import { WEAPONS, HEADSHOT_MULTIPLIER } from './weapons.js';
 import { segmentBox } from './map.js';
 
-const GRENADE_GRAVITY = 0.25;
 const HEAD_ZONE = 9; // top pixels of the body box that count as a headshot
 
 export function soldierBox(s) {
@@ -187,7 +186,7 @@ function stepRocket(game, p) {
 }
 
 function stepGrenade(game, p) {
-  p.vy += GRENADE_GRAVITY;
+  p.vy += MOTION.grenadeGravity;
   const hit = hitSoldier(game, p.x, p.y, p.vx, p.vy, p.owner, p.owner);
   const wall = game.map.raycast(p.x, p.y, p.x + p.vx, p.y + p.vy);
   if (hit && (!wall || hit.t <= wall.t) && hit.soldier !== p.owner) {
@@ -198,7 +197,7 @@ function stepGrenade(game, p) {
   if (wall) {
     p.x = wall.x + wall.nx * 0.6; p.y = wall.y + wall.ny * 0.6;
     if (wall.nx) { p.vx = -p.vx * 0.45; p.vy *= 0.8; } else { p.vy = -p.vy * 0.45; p.vx *= 0.75; }
-    if (Math.abs(p.vx) + Math.abs(p.vy) > 2) game.sound('tink', p.x, p.y);
+    if (Math.abs(p.vx) + Math.abs(p.vy) > 2 * MOTION.timeScale) game.sound('tink', p.x, p.y);
   } else {
     p.x += p.vx; p.y += p.vy;
   }
@@ -212,16 +211,16 @@ function stepGrenade(game, p) {
 
 function stepFlame(game, p) {
   p.age++;
-  p.vx *= 0.95; p.vy = p.vy * 0.95 - 0.05;
+  p.vx *= MOTION.flameDrag; p.vy = p.vy * MOTION.flameDrag - MOTION.flameLift;
   const nx = p.x + p.vx, ny = p.y + p.vy;
   const wall = game.map.raycast(p.x, p.y, nx, ny);
   if (wall) {
     // Flames lick along walls instead of vanishing at once.
     p.x = wall.x + wall.nx; p.y = wall.y + wall.ny;
     if (wall.nx) p.vx = 0; else p.vy = Math.min(p.vy, 0) * 0.3;
-    p.life -= 4;
+    p.life -= 4 * MOTION.timeScale;
   } else { p.x = nx; p.y = ny; }
-  const r = 3 + p.age * 0.2;
+  const r = 3 + p.age * MOTION.flameGrow;
   for (const s of game.soldiers) {
     if (s === p.owner || p.hit.has(s) || !canHurt(game, p.owner, s)) continue;
     const b = soldierBox(s);
