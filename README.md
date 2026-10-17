@@ -14,6 +14,7 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
 - **Free-for-all and team deathmatch**, with 1–9 bots.
 - **The original game's sound effects**, from the Stick Soldiers Python fan project (see [`web/sounds/CREDITS.md`](web/sounds/CREDITS.md)). The headshot hitmarker and a few others are generated in code. The original game had no music.
 - **Headshots** do double damage (2.5× with the sniper rifle), and you hear a hitmarker tick when you land one.
+- **A map maker**: build your own maps in the browser, test-play them against bots, and share them with a link (see below).
 - **Game speed fixed at 75%** of the original tuning: movement, jumps, bullets, grenades and fire rates are slowed, while the game keeps updating 60 times a second. Jumps keep their height, so every map stays climbable. A hidden speed picker can be switched back on with `SHOW_SPEED_MENU` in `web/src/config.js`.
 
 ## Controls
@@ -29,6 +30,20 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
 | Switch weapon | `1`–`8`, `Q` / `E`, or mouse wheel |
 | Scores / pause / mute | `Tab` / `Esc` / `M` |
 
+## Map maker
+
+Click **Map maker** on the main menu, or **+ Make a new map** under the map list.
+
+- **Draw** platforms (`P`) and jump pads (`J`) by dragging. Click to place spawn points (`S`, blue or red team), weapons (`W`), health (`H`), armour (`A`) and jetpacks (`K`). Pickups and spawns drop onto the floor below where you click, unless you turn that off.
+- **Edit** with the select tool (`V`): drag things to move them, and drag the corner squares to resize. Right-click or `Del` deletes, `Ctrl+D` duplicates, arrow keys nudge, and `Ctrl+Z` / `Ctrl+Y` undo and redo. The mouse wheel zooms, dragging empty space moves the view, and `F` fits the whole map.
+- **Map check** runs the bots' route planner over your map. It flags pits you can't climb out of, areas you can't get to, spawns inside walls or over the void, and pickups nobody can reach. Click a problem to see where it is. Test play won't start while the map has errors.
+- **Test play** starts a match on your map with the menu's settings. The pause menu then has **Back to map maker**.
+- **Saving** is automatic, in your browser. Your maps appear in the menu's map list with an **Edit** button.
+- **Sharing:** **Copy share link** puts the whole map in the link itself, so there's no server involved. Opening the link adds the map to the other player's list and selects it.
+- **Files:** export and import maps as `.json`, or as the original game's `.ssm` format. **Open… → Copy & edit** starts a new map from one of the 8 originals.
+
+Falling below the dashed line at the bottom of the map kills you. The map's edges are worked out from what you place.
+
 ## Running it locally
 
 Needs [Node.js](https://nodejs.org/) 20 or newer.
@@ -37,7 +52,8 @@ Needs [Node.js](https://nodejs.org/) 20 or newer.
 npm start            # serves the game at http://localhost:8080
 npm test             # game logic tests: physics, weapons, pickups, bots on every map
 npm install && npx playwright install chromium
-npm run test:browser # loads the page in Chromium, plays two matches, saves screenshots to test-results/
+npm run test:browser # in Chromium: plays two matches, builds and test-plays a map in the map maker,
+                     # opens a share link; saves screenshots to test-results/
 ```
 
 There's no build step: the game is plain JavaScript modules in `web/`, and the browser loads them directly.
@@ -57,6 +73,8 @@ GitHub Pages has to be switched on once: **Settings → Pages → Build and depl
 | `web/src/physics.js` | Movement and collision, shared by players, bots and the bots' route planner |
 | `web/src/combat.js`, `weapons.js` | Firing, projectiles, explosions, damage; weapon stats |
 | `web/src/nav.js`, `bot.js` | Bot route planning and bot behaviour |
+| `web/src/editor.js` | The map maker |
+| `web/src/custommaps.js`, `mapstore.js` | Custom maps: checking them, share links, `.ssm` files, saving in the browser |
 | `web/src/stickman.js` | Builds each stick figure from the original animation poses |
 | `web/src/render.js`, `hud.js`, `audio.js`, `input.js`, `main.js` | Drawing, HUD, sound, controls and page wiring |
 | `web/data/` | The 8 maps and the leg animations, decoded from the original game |
@@ -76,7 +94,7 @@ GitHub Pages has to be switched on once: **Settings → Pages → Build and depl
 
 - Online multiplayer (peer-to-peer over WebRTC, which works on a static site)
 - The 8 weapons cut from the original (AK-47, MP5K, 20mm cannon, Beretta, rocket launcher, C4, blaster, "Shocker"), now that their stats are decoded
-- A map editor, and capture the flag (the original started both but never finished CTF)
+- Capture the flag (the original started it but never finished it)
 - Touch controls for phones and tablets
 
 ## Credits

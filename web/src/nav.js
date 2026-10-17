@@ -180,6 +180,49 @@ export class NavGraph {
     return false;
   }
 
+  /**
+   * Groups of spots that can all reach each other (strongly connected
+   * components). Returns { comp: Int32Array (group per node), sizes: Map(group -> size) }.
+   */
+  groups() {
+    const n = this.nodes.length;
+    const index = new Int32Array(n).fill(-1), low = new Int32Array(n), onStack = new Uint8Array(n);
+    const comp = new Int32Array(n).fill(-1);
+    const stack = [];
+    let next = 0, groupCount = 0;
+    for (let root = 0; root < n; root++) {
+      if (index[root] >= 0) continue;
+      const work = [[root, 0]];
+      index[root] = low[root] = next++;
+      stack.push(root); onStack[root] = 1;
+      while (work.length) {
+        const top = work[work.length - 1];
+        const [u, k] = top;
+        const links = this.nodes[u].links;
+        if (k < links.length) {
+          top[1]++;
+          const w = links[k].to.id;
+          if (index[w] < 0) {
+            index[w] = low[w] = next++;
+            stack.push(w); onStack[w] = 1;
+            work.push([w, 0]);
+          } else if (onStack[w]) low[u] = Math.min(low[u], index[w]);
+        } else {
+          work.pop();
+          if (work.length) { const p = work[work.length - 1][0]; low[p] = Math.min(low[p], low[u]); }
+          if (low[u] === index[u]) {
+            let w;
+            do { w = stack.pop(); onStack[w] = 0; comp[w] = groupCount; } while (w !== u);
+            groupCount++;
+          }
+        }
+      }
+    }
+    const sizes = new Map();
+    for (const c of comp) sizes.set(c, (sizes.get(c) || 0) + 1);
+    return { comp, sizes };
+  }
+
   /** Cheapest cost from `start` to every node: { cost: Float64Array, prev: Int32Array, via: [] }. */
   costsFrom(start) {
     const n = this.nodes.length;

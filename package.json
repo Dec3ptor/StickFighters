@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "test": "node --test tests/*.test.mjs",
-    "test:browser": "node tests/browser/smoke.mjs test-results"
+    "test:browser": "node tests/browser/smoke.mjs test-results && node tests/browser/editor.mjs test-results"
   },
   "devDependencies": {
     "playwright": "1.56.1"

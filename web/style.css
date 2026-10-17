@@ -156,3 +156,89 @@ footer a { color: var(--ink); }
   font-weight: bold;
   background: rgba(255, 255, 255, 0.9);
 }
+
+/* ---- Menu additions ---- */
+.field-row { display: flex; align-items: center; justify-content: space-between; }
+button.small { font-size: 12px; padding: 4px 9px; border-width: 1.5px; }
+.map-card { position: relative; }
+.map-card .edit { position: absolute; top: 5px; right: 5px; font-size: 11px; padding: 2px 7px; border-width: 1.5px; font-weight: bold; }
+.map-card.new-map { display: flex; align-items: center; justify-content: center; min-height: 108px; border-style: dashed; color: var(--muted); font-weight: bold; text-align: center; }
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--ink); color: var(--paper); padding: 10px 16px; font-size: 14px; z-index: 50;
+  max-width: calc(100% - 32px);
+}
+
+/* ---- Map maker ---- */
+#editor {
+  position: fixed; inset: 0; background: var(--paper);
+  display: grid; grid-template-columns: 116px minmax(0, 1fr) 290px; grid-template-rows: auto minmax(0, 1fr);
+  z-index: 20;
+}
+.ed-top {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-bottom: 2px solid var(--line); flex-wrap: wrap;
+}
+.ed-top button { padding: 6px 12px; font-size: 14px; }
+.ed-top input { width: min(260px, 40vw); font-weight: bold; font-size: 15px; padding: 6px 8px; border: 1.5px solid var(--line); }
+.ed-spacer { flex: 1; }
+.ed-status { font-size: 12px; color: var(--muted); }
+.ed-status.bad { color: #b3261e; font-weight: bold; }
+.ed-tools { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-right: 2px solid var(--line); overflow-y: auto; }
+.ed-tools button {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 4px;
+  font-size: 12px; border-width: 1.5px; position: relative;
+}
+.ed-tools button kbd { position: absolute; top: 3px; right: 4px; font-size: 9px; padding: 0 3px; border: none; background: none; color: #999; }
+.ed-tools button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.ed-tools button[aria-pressed="true"] kbd { color: #bbb; }
+.ed-icon { display: block; width: 26px; height: 16px; }
+.ed-icon-select { background: linear-gradient(135deg, transparent 45%, currentColor 45%, currentColor 55%, transparent 55%); width: 14px; }
+.ed-icon-platform { border: 2px solid currentColor; height: 10px; margin: 3px 0; }
+.ed-icon-pad { border: 2px solid currentColor; height: 10px; margin: 3px 0; background: #cfe0a8; }
+.ed-icon-spawn { width: 10px; border-radius: 50%; border: 2px solid #2f6fdb; height: 10px; margin: 3px 0; }
+.ed-icon-weapon { height: 4px; margin: 6px 0; background: currentColor; }
+.ed-icon-health { width: 12px; height: 12px; margin: 2px 0; background: linear-gradient(#d21f1f, #d21f1f) center/4px 12px no-repeat, linear-gradient(#d21f1f, #d21f1f) center/12px 4px no-repeat; }
+.ed-icon-armour { width: 12px; height: 12px; margin: 2px 0; background: #7d7d7d; clip-path: polygon(0 0, 35% 0, 50% 25%, 65% 0, 100% 0, 100% 100%, 0 100%); }
+.ed-icon-jetpack { width: 10px; height: 14px; margin: 1px 0; border-left: 4px solid #5b5b5b; border-right: 4px solid #5b5b5b; }
+.ed-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.ed-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+.ed-hint { position: absolute; left: 10px; bottom: 6px; margin: 0; font-size: 12px; color: var(--muted); pointer-events: none; max-width: 70%; }
+.ed-side { border-left: 2px solid var(--line); padding: 4px 12px 16px; overflow-y: auto; font-size: 13px; }
+.ed-side h3 { font-size: 13px; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: 0.06em; }
+.ed-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ed-num, .ed-field, .ed-range { display: block; font-size: 12px; color: var(--muted); margin: 6px 0; }
+.ed-num input, .ed-field select { display: block; width: 100%; margin-top: 3px; font: inherit; color: var(--ink); padding: 5px 6px; border: 1.5px solid var(--line); background: var(--paper); }
+.ed-range input { width: 100%; accent-color: var(--ink); }
+.ed-range output { font-weight: bold; color: var(--ink); }
+.ed-team { margin: 6px 0; }
+.ed-team label { font-size: 12px; padding: 5px 4px; }
+.ed-row { display: flex; gap: 6px; margin-top: 8px; }
+.ed-row button, .ed-files button { font-size: 12px; padding: 6px 8px; border-width: 1.5px; }
+.ed-files { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+button.danger { color: #b3261e; border-color: #b3261e; }
+.ed-note { color: var(--muted); font-size: 12px; margin: 6px 0; }
+.ed-stats { margin: 4px 0; line-height: 1.5; }
+.ed-problem {
+  display: block; width: 100%; text-align: left; font-weight: normal; font-size: 12px; padding: 6px 8px; margin: 4px 0;
+  border-width: 1.5px; border-left-width: 5px;
+}
+.ed-problem.error { border-left-color: #b3261e; }
+.ed-problem.warning { border-left-color: #d98a00; }
+.ed-problem.ok { border-left-color: #3f9a3a; }
+.ed-problem[disabled] { cursor: default; background: var(--paper); }
+.ed-keys { margin-top: 14px; font-size: 12px; }
+.ed-keys summary { cursor: pointer; font-weight: bold; }
+.ed-keys td { padding: 2px 6px 2px 0; vertical-align: top; }
+.ed-keys td:first-child { color: var(--muted); }
+#edOpenDialog { border: 2px solid var(--line); padding: 16px 18px; width: min(460px, calc(100% - 32px)); max-height: 80vh; box-shadow: 6px 6px 0 rgba(0,0,0,0.12); }
+#edOpenDialog::backdrop { background: rgba(255,255,255,0.7); }
+#edOpenDialog form { display: flex; flex-direction: column; gap: 10px; }
+.ed-list h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; margin: 10px 0 6px; }
+.ed-list-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid #eee; }
+.ed-list-row small { display: block; color: var(--muted); font-size: 11px; }
+.ed-list-row button { font-size: 12px; padding: 4px 10px; border-width: 1.5px; }
+@media (max-width: 900px) {
+  #editor { grid-template-columns: 96px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) 40vh; }
+  .ed-side { grid-column: 1 / -1; border-left: none; border-top: 2px solid var(--line); }
+}

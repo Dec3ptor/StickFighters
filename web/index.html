@@ -20,7 +20,7 @@
       <div class="cols">
         <div class="col">
           <label class="field">Your name <input id="name" maxlength="14" autocomplete="off" spellcheck="false"></label>
-          <div class="field">Map</div>
+          <div class="field field-row">Map <button type="button" id="openEditor" class="small">Map maker</button></div>
           <div id="maps" class="maps" role="radiogroup" aria-label="Map"></div>
         </div>
         <div class="col">
@@ -84,6 +84,7 @@
       <h2>Paused</h2>
       <button id="resume" class="primary">Resume</button>
       <button id="restart">Restart match</button>
+      <button id="toEditor" class="hidden">Back to map maker</button>
       <button id="quit">Quit to menu</button>
       <label class="check"><input type="checkbox" id="mute"> Mute sound</label>
     </div>
@@ -95,6 +96,62 @@
       <button id="toMenu">Menu</button>
     </div>
   </section>
+
+  <section id="editor" class="hidden" aria-label="Map maker">
+    <header class="ed-top">
+      <button type="button" id="edBack">&larr; Menu</button>
+      <input id="edName" maxlength="32" aria-label="Map name" spellcheck="false" autocomplete="off">
+      <span id="edStatus" class="ed-status">Saved</span>
+      <span class="ed-spacer"></span>
+      <button type="button" id="edUndo" title="Undo (Ctrl+Z)">Undo</button>
+      <button type="button" id="edRedo" title="Redo (Ctrl+Y)">Redo</button>
+      <button type="button" id="edFit" title="Show the whole map (F)">Fit</button>
+      <button type="button" id="edCheck" title="Look for places players get stuck">Check map</button>
+      <button type="button" id="edTest" class="primary">Test play</button>
+    </header>
+    <nav id="edTools" class="ed-tools" aria-label="Tools"></nav>
+    <div class="ed-stage">
+      <canvas id="edCanvas" tabindex="0" aria-label="Map"></canvas>
+      <p id="edHint" class="ed-hint"></p>
+    </div>
+    <aside class="ed-side">
+      <div id="edProps"></div>
+      <div id="edReport"></div>
+      <h3>File</h3>
+      <div class="ed-files">
+        <button type="button" id="edNew">New map</button>
+        <button type="button" id="edOpen">Open&hellip;</button>
+        <button type="button" id="edCopy">Duplicate</button>
+        <button type="button" id="edShare">Copy share link</button>
+        <button type="button" id="edImport">Import&hellip;</button>
+        <button type="button" id="edExport">Export .json</button>
+        <button type="button" id="edExportSSM" title="The original Stick Soldiers II map format">Export .ssm</button>
+        <button type="button" id="edDelete" class="danger">Delete map</button>
+      </div>
+      <input type="file" id="edFile" accept=".json,.ssm,application/json" hidden>
+      <details class="ed-keys">
+        <summary>Shortcuts</summary>
+        <table>
+          <tr><td>Tools</td><td><kbd>V</kbd> <kbd>P</kbd> <kbd>J</kbd> <kbd>S</kbd> <kbd>W</kbd> <kbd>H</kbd> <kbd>A</kbd> <kbd>K</kbd></td></tr>
+          <tr><td>Delete</td><td><kbd>Del</kbd> or right-click</td></tr>
+          <tr><td>Move selection</td><td>arrow keys (<kbd>Shift</kbd> for bigger steps)</td></tr>
+          <tr><td>Duplicate</td><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td></tr>
+          <tr><td>Undo / redo</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td></tr>
+          <tr><td>Move the view</td><td>drag empty space, or hold <kbd>Space</kbd></td></tr>
+          <tr><td>Zoom / fit</td><td>mouse wheel / <kbd>F</kbd></td></tr>
+          <tr><td>Grid size</td><td><kbd>G</kbd></td></tr>
+        </table>
+      </details>
+    </aside>
+    <dialog id="edOpenDialog">
+      <form method="dialog">
+        <div class="ed-list"></div>
+        <button class="primary">Close</button>
+      </form>
+    </dialog>
+  </section>
+
+  <div id="toast" class="toast hidden" role="status"></div>
 
   <div id="loading" class="hidden">Loading map&hellip;</div>
 

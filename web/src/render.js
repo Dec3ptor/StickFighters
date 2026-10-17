@@ -426,7 +426,7 @@ export function drawWeapon(ctx, def, lying) {
   }
 }
 
-function drawHealth(ctx) {
+export function drawHealth(ctx) {
   ctx.fillStyle = '#fff';
   ctx.strokeStyle = '#c22';
   ctx.lineWidth = 1.2;
@@ -436,7 +436,7 @@ function drawHealth(ctx) {
   ctx.fillRect(-4.4, -1.6, 8.8, 3.2);
 }
 
-function drawArmour(ctx) {
+export function drawArmour(ctx) {
   ctx.fillStyle = '#7d7d7d';
   ctx.strokeStyle = '#333';
   ctx.lineWidth = 0.9;
@@ -448,7 +448,7 @@ function drawArmour(ctx) {
   ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(4, 0); ctx.moveTo(-4, 3); ctx.lineTo(4, 3); ctx.stroke();
 }
 
-function drawJetpack(ctx) {
+export function drawJetpack(ctx) {
   ctx.fillStyle = '#5b5b5b';
   ctx.strokeStyle = '#222';
   ctx.lineWidth = 0.8;
