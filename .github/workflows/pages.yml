@@ -36,8 +36,8 @@ jobs:
           path: test-results/
 
   publish:
-    # Only the default branch goes live.
-    if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
+    # Only main goes live.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
     permissions:

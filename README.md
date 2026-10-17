@@ -42,7 +42,7 @@ There's no build step: the game is plain JavaScript modules in `web/`, and the b
 
 ## Publishing
 
-Every push to the default branch runs the tests, then publishes `web/` to GitHub Pages (`.github/workflows/pages.yml`). Pull requests run the tests only.
+Every push to `main` runs the tests, then publishes `web/` to GitHub Pages (`.github/workflows/pages.yml`). Other branches and pull requests run the tests only.
 
 GitHub Pages has to be switched on once: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
