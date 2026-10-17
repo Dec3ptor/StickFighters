@@ -1,0 +1,237 @@
+{
+  "source": "ssdm5.ssm",
+  "name": "Sniping Grounds",
+  "bounds": {
+    "left": -890,
+    "top": -386,
+    "right": 890,
+    "bottom": 418
+  },
+  "platforms": [
+    {
+      "left": -488,
+      "top": 80,
+      "right": -248,
+      "bottom": 168
+    },
+    {
+      "left": 248,
+      "top": 80,
+      "right": 488,
+      "bottom": 168
+    },
+    {
+      "left": -456,
+      "top": 48,
+      "right": -400,
+      "bottom": 136
+    },
+    {
+      "left": 400,
+      "top": 48,
+      "right": 456,
+      "bottom": 136
+    },
+    {
+      "left": -336,
+      "top": 48,
+      "right": -280,
+      "bottom": 120
+    },
+    {
+      "left": 280,
+      "top": 48,
+      "right": 336,
+      "bottom": 120
+    },
+    {
+      "left": -64,
+      "top": 80,
+      "right": 64,
+      "bottom": 104
+    },
+    {
+      "left": -448,
+      "top": -136,
+      "right": -408,
+      "bottom": -72
+    },
+    {
+      "left": 408,
+      "top": -136,
+      "right": 448,
+      "bottom": -72
+    },
+    {
+      "left": -448,
+      "top": -96,
+      "right": -312,
+      "bottom": -72
+    },
+    {
+      "left": 312,
+      "top": -96,
+      "right": 448,
+      "bottom": -72
+    },
+    {
+      "left": -224,
+      "top": -16,
+      "right": -120,
+      "bottom": 8
+    },
+    {
+      "left": 120,
+      "top": -16,
+      "right": 224,
+      "bottom": 8
+    },
+    {
+      "left": 104,
+      "top": 112,
+      "right": 640,
+      "bottom": 168
+    },
+    {
+      "left": -640,
+      "top": 112,
+      "right": -104,
+      "bottom": 168
+    }
+  ],
+  "spawns": [
+    {
+      "x": -561,
+      "y": 82,
+      "team": 2
+    },
+    {
+      "x": 561,
+      "y": 82,
+      "team": 1
+    },
+    {
+      "x": -424,
+      "y": 13,
+      "team": 2
+    },
+    {
+      "x": 424,
+      "y": 13,
+      "team": 1
+    },
+    {
+      "x": -307,
+      "y": 12,
+      "team": 2
+    },
+    {
+      "x": 307,
+      "y": 12,
+      "team": 1
+    },
+    {
+      "x": -358,
+      "y": -144,
+      "team": 2
+    },
+    {
+      "x": 358,
+      "y": -144,
+      "team": 1
+    },
+    {
+      "x": -496,
+      "y": 43,
+      "team": 2
+    },
+    {
+      "x": 496,
+      "y": 43,
+      "team": 1
+    },
+    {
+      "x": -240,
+      "y": 43,
+      "team": 2
+    },
+    {
+      "x": 240,
+      "y": 43,
+      "team": 1
+    }
+  ],
+  "items": [
+    {
+      "type": "armour",
+      "x": 3,
+      "y": 56
+    },
+    {
+      "type": "jetpack",
+      "x": -367,
+      "y": 53
+    },
+    {
+      "type": "jetpack",
+      "x": 367,
+      "y": 53
+    },
+    {
+      "type": "weapon",
+      "x": -170,
+      "y": 82,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 170,
+      "y": 82,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": -361,
+      "y": -123,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 361,
+      "y": -123,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": -174,
+      "y": -41,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "weapon",
+      "x": 174,
+      "y": -41,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "health",
+      "x": 111,
+      "y": 76
+    },
+    {
+      "type": "health",
+      "x": -111,
+      "y": 76
+    },
+    {
+      "type": "health",
+      "x": -429,
+      "y": -165
+    },
+    {
+      "type": "health",
+      "x": 429,
+      "y": -165
+    }
+  ]
+}

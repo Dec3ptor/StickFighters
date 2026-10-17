@@ -1,0 +1,310 @@
+{
+  "source": "ssdm7.ssm",
+  "name": "Hells Steeple",
+  "bounds": {
+    "left": -818,
+    "top": -498,
+    "right": 818,
+    "bottom": 754
+  },
+  "platforms": [
+    {
+      "left": -112,
+      "top": 128,
+      "right": -48,
+      "bottom": 160
+    },
+    {
+      "left": 48,
+      "top": 128,
+      "right": 112,
+      "bottom": 160
+    },
+    {
+      "left": -112,
+      "top": -56,
+      "right": -48,
+      "bottom": -24
+    },
+    {
+      "left": 48,
+      "top": -56,
+      "right": 112,
+      "bottom": -24
+    },
+    {
+      "left": 24,
+      "top": 416,
+      "right": 544,
+      "bottom": 456
+    },
+    {
+      "left": -544,
+      "top": 416,
+      "right": -24,
+      "bottom": 456
+    },
+    {
+      "left": 32,
+      "top": 408,
+      "right": 88,
+      "bottom": 432,
+      "bounce": -7
+    },
+    {
+      "left": -88,
+      "top": 408,
+      "right": -32,
+      "bottom": 432,
+      "bounce": -7
+    },
+    {
+      "left": -32,
+      "top": 432,
+      "right": 32,
+      "bottom": 456,
+      "bounce": -7
+    },
+    {
+      "left": -112,
+      "top": -200,
+      "right": -48,
+      "bottom": -168
+    },
+    {
+      "left": 48,
+      "top": -200,
+      "right": 112,
+      "bottom": -168
+    },
+    {
+      "left": -152,
+      "top": 112,
+      "right": -104,
+      "bottom": 368
+    },
+    {
+      "left": 104,
+      "top": 112,
+      "right": 152,
+      "bottom": 368
+    },
+    {
+      "left": -152,
+      "top": -248,
+      "right": -104,
+      "bottom": 32
+    },
+    {
+      "left": 104,
+      "top": -248,
+      "right": 152,
+      "bottom": 32
+    },
+    {
+      "left": -304,
+      "top": 368,
+      "right": -240,
+      "bottom": 424
+    },
+    {
+      "left": 240,
+      "top": 368,
+      "right": 304,
+      "bottom": 424
+    },
+    {
+      "left": -200,
+      "top": 312,
+      "right": -128,
+      "bottom": 344,
+      "bounce": -7
+    },
+    {
+      "left": 128,
+      "top": 312,
+      "right": 200,
+      "bottom": 344,
+      "bounce": -7
+    },
+    {
+      "left": -568,
+      "top": 368,
+      "right": -512,
+      "bottom": 504
+    },
+    {
+      "left": 512,
+      "top": 368,
+      "right": 568,
+      "bottom": 504
+    },
+    {
+      "left": -24,
+      "top": 208,
+      "right": 24,
+      "bottom": 240,
+      "bounce": -6.5
+    },
+    {
+      "left": -72,
+      "top": 40,
+      "right": -24,
+      "bottom": 64,
+      "bounce": -7.5
+    },
+    {
+      "left": 24,
+      "top": 40,
+      "right": 72,
+      "bottom": 64,
+      "bounce": -7.5
+    }
+  ],
+  "spawns": [
+    {
+      "x": -472,
+      "y": 361,
+      "team": 2
+    },
+    {
+      "x": 472,
+      "y": 361,
+      "team": 1
+    },
+    {
+      "x": -400,
+      "y": 381,
+      "team": 2
+    },
+    {
+      "x": 400,
+      "y": 381,
+      "team": 1
+    },
+    {
+      "x": -335,
+      "y": 364,
+      "team": 2
+    },
+    {
+      "x": 335,
+      "y": 364,
+      "team": 1
+    },
+    {
+      "x": -270,
+      "y": 340,
+      "team": 2
+    },
+    {
+      "x": 270,
+      "y": 340,
+      "team": 1
+    },
+    {
+      "x": -198,
+      "y": 379,
+      "team": 2
+    },
+    {
+      "x": 198,
+      "y": 379,
+      "team": 1
+    }
+  ],
+  "items": [
+    {
+      "type": "armour",
+      "x": -128,
+      "y": 392
+    },
+    {
+      "type": "armour",
+      "x": 128,
+      "y": 392
+    },
+    {
+      "type": "jetpack",
+      "x": -335,
+      "y": 392
+    },
+    {
+      "type": "jetpack",
+      "x": 335,
+      "y": 392
+    },
+    {
+      "type": "weapon",
+      "x": -75,
+      "y": 100,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 75,
+      "y": 100,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 0,
+      "y": 403,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "weapon",
+      "x": 474,
+      "y": 389,
+      "weapon": "Shotgun"
+    },
+    {
+      "type": "weapon",
+      "x": -474,
+      "y": 389,
+      "weapon": "Shotgun"
+    },
+    {
+      "type": "weapon",
+      "x": 76,
+      "y": -80,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": -76,
+      "y": -80,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 76,
+      "y": -226,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "weapon",
+      "x": -76,
+      "y": -226,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "weapon",
+      "x": -2,
+      "y": -269,
+      "weapon": "Bazooka"
+    },
+    {
+      "type": "weapon",
+      "x": -197,
+      "y": 389,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 197,
+      "y": 389,
+      "weapon": "M4"
+    }
+  ]
+}

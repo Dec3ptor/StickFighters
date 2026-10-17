@@ -1,0 +1,14 @@
+{
+  "name": "stick-soldiers",
+  "private": true,
+  "type": "module",
+  "description": "A browser remake of Stick Soldiers II (2003).",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "node tests/browser/smoke.mjs test-results"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

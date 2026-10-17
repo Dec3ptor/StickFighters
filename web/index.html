@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stick Soldiers</title>
+  <meta name="description" content="A browser remake of Stick Soldiers II (2003): black-and-white stick-figure deathmatch with weapons lying around the map.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='white'/%3E%3Cg stroke='black' stroke-width='2.2' fill='none' stroke-linecap='round'%3E%3Ccircle cx='16' cy='7' r='4' fill='white'/%3E%3Cpath d='M16 11v10M16 21l-5 8M16 21l5 8M16 14l-6 4M16 14l7 1h5'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game" aria-label="Game"></canvas>
+
+  <section id="menu" class="screen">
+    <div class="panel">
+      <header>
+        <h1>Stick Soldiers</h1>
+        <p class="tag">The 2003 stick-figure shooter, remade for the browser.</p>
+      </header>
+      <div class="cols">
+        <div class="col">
+          <label class="field">Your name <input id="name" maxlength="14" autocomplete="off" spellcheck="false"></label>
+          <div class="field">Map</div>
+          <div id="maps" class="maps" role="radiogroup" aria-label="Map"></div>
+        </div>
+        <div class="col">
+          <div class="field">Mode</div>
+          <div class="seg" role="radiogroup" aria-label="Mode">
+            <label><input type="radio" name="mode" value="ffa" checked> Free-for-all</label>
+            <label><input type="radio" name="mode" value="team"> Team deathmatch</label>
+          </div>
+          <label class="field">Bots: <output id="botsOut">5</output>
+            <input type="range" id="bots" min="1" max="9" value="5">
+          </label>
+          <label class="field">Bot skill
+            <select id="difficulty">
+              <option value="easy">Easy</option>
+              <option value="normal" selected>Normal</option>
+              <option value="hard">Hard</option>
+            </select>
+          </label>
+          <label class="field">Frag limit
+            <select id="fragLimit">
+              <option>10</option><option selected>20</option><option>30</option><option>50</option>
+            </select>
+          </label>
+          <button id="play" class="primary">Play</button>
+          <p id="pointer-note" class="note hidden">This game needs a keyboard and mouse.</p>
+          <details class="controls" open>
+            <summary>Controls</summary>
+            <table>
+              <tr><td>Move</td><td><kbd>A</kbd> <kbd>D</kbd></td></tr>
+              <tr><td>Jump (hold for higher)</td><td><kbd>W</kbd> or <kbd>Space</kbd></td></tr>
+              <tr><td>Jetpack</td><td>hold jump in the air, or <kbd>Shift</kbd></td></tr>
+              <tr><td>Crouch</td><td><kbd>S</kbd></td></tr>
+              <tr><td>Aim / fire</td><td>mouse / left click</td></tr>
+              <tr><td>Sniper zoom</td><td>right click</td></tr>
+              <tr><td>Weapons</td><td><kbd>1</kbd>&ndash;<kbd>8</kbd>, <kbd>Q</kbd> <kbd>E</kbd>, wheel</td></tr>
+              <tr><td>Scores / pause / mute</td><td><kbd>Tab</kbd> / <kbd>Esc</kbd> / <kbd>M</kbd></td></tr>
+            </table>
+          </details>
+        </div>
+      </div>
+      <footer>
+        Remake of <em>Stick Soldiers II</em> by Whitespace Unlimited (2003).
+        Maps and weapon stats decoded from the original game.
+        <a href="https://github.com/Dec3ptor/StickFighters" target="_blank" rel="noopener">Source on GitHub</a>
+      </footer>
+    </div>
+  </section>
+
+  <section id="pause" class="screen hidden">
+    <div class="panel small">
+      <h2>Paused</h2>
+      <button id="resume" class="primary">Resume</button>
+      <button id="restart">Restart match</button>
+      <button id="quit">Quit to menu</button>
+      <label class="check"><input type="checkbox" id="mute"> Mute sound</label>
+    </div>
+  </section>
+
+  <section id="over" class="screen hidden overlay-low">
+    <div class="buttons">
+      <button id="again" class="primary">Play again</button>
+      <button id="toMenu">Menu</button>
+    </div>
+  </section>
+
+  <div id="loading" class="hidden">Loading map&hellip;</div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,341 @@
+{
+  "source": "ssdm6.ssm",
+  "name": "Fatality Zone",
+  "bounds": {
+    "left": -970,
+    "top": -562,
+    "right": 970,
+    "bottom": 554
+  },
+  "platforms": [
+    {
+      "left": -360,
+      "top": -56,
+      "right": -40,
+      "bottom": 192
+    },
+    {
+      "left": 40,
+      "top": -56,
+      "right": 360,
+      "bottom": 192
+    },
+    {
+      "left": -360,
+      "top": -96,
+      "right": -264,
+      "bottom": -16
+    },
+    {
+      "left": 264,
+      "top": -96,
+      "right": 360,
+      "bottom": -16
+    },
+    {
+      "left": -80,
+      "top": -168,
+      "right": -40,
+      "bottom": 0
+    },
+    {
+      "left": 40,
+      "top": -168,
+      "right": 80,
+      "bottom": 0
+    },
+    {
+      "left": -360,
+      "top": -136,
+      "right": -288,
+      "bottom": -80
+    },
+    {
+      "left": 288,
+      "top": -136,
+      "right": 360,
+      "bottom": -80
+    },
+    {
+      "left": -360,
+      "top": -176,
+      "right": -312,
+      "bottom": -104
+    },
+    {
+      "left": 312,
+      "top": -176,
+      "right": 360,
+      "bottom": -104
+    },
+    {
+      "left": -128,
+      "top": -112,
+      "right": -56,
+      "bottom": -40
+    },
+    {
+      "left": 56,
+      "top": -112,
+      "right": 128,
+      "bottom": -40
+    },
+    {
+      "left": -272,
+      "top": -224,
+      "right": -184,
+      "bottom": -200
+    },
+    {
+      "left": 184,
+      "top": -224,
+      "right": 272,
+      "bottom": -200
+    },
+    {
+      "left": -224,
+      "top": -72,
+      "right": -160,
+      "bottom": -48
+    },
+    {
+      "left": 160,
+      "top": -72,
+      "right": 224,
+      "bottom": -48
+    },
+    {
+      "left": -120,
+      "top": -264,
+      "right": -24,
+      "bottom": -240
+    },
+    {
+      "left": 24,
+      "top": -264,
+      "right": 120,
+      "bottom": -240
+    },
+    {
+      "left": -16,
+      "top": -312,
+      "right": 16,
+      "bottom": -288
+    },
+    {
+      "left": -48,
+      "top": -112,
+      "right": -24,
+      "bottom": -56
+    },
+    {
+      "left": 24,
+      "top": -112,
+      "right": 48,
+      "bottom": -56
+    },
+    {
+      "left": -584,
+      "top": -136,
+      "right": -336,
+      "bottom": 192
+    },
+    {
+      "left": 336,
+      "top": -136,
+      "right": 584,
+      "bottom": 192
+    },
+    {
+      "left": -680,
+      "top": 264,
+      "right": -24,
+      "bottom": 288
+    },
+    {
+      "left": 24,
+      "top": 264,
+      "right": 680,
+      "bottom": 288
+    },
+    {
+      "left": -720,
+      "top": 248,
+      "right": -584,
+      "bottom": 304,
+      "bounce": -9.5
+    },
+    {
+      "left": 584,
+      "top": 248,
+      "right": 720,
+      "bottom": 304,
+      "bounce": -9.5
+    }
+  ],
+  "spawns": [
+    {
+      "x": 458,
+      "y": -171,
+      "team": 2
+    },
+    {
+      "x": -458,
+      "y": -171,
+      "team": 1
+    },
+    {
+      "x": 337,
+      "y": -208,
+      "team": 2
+    },
+    {
+      "x": -337,
+      "y": -208,
+      "team": 1
+    },
+    {
+      "x": 247,
+      "y": -146,
+      "team": 2
+    },
+    {
+      "x": -247,
+      "y": -146,
+      "team": 1
+    },
+    {
+      "x": 197,
+      "y": -147,
+      "team": 2
+    },
+    {
+      "x": -197,
+      "y": -147,
+      "team": 1
+    },
+    {
+      "x": 140,
+      "y": -151,
+      "team": 2
+    },
+    {
+      "x": -140,
+      "y": -151,
+      "team": 1
+    },
+    {
+      "x": 232,
+      "y": -268,
+      "team": 2
+    },
+    {
+      "x": -232,
+      "y": -268,
+      "team": 1
+    },
+    {
+      "x": -491,
+      "y": -171,
+      "team": 1
+    },
+    {
+      "x": 491,
+      "y": -171,
+      "team": 2
+    }
+  ],
+  "items": [
+    {
+      "type": "armour",
+      "x": 1,
+      "y": -145
+    },
+    {
+      "type": "health",
+      "x": -61,
+      "y": -200
+    },
+    {
+      "type": "health",
+      "x": 61,
+      "y": -200
+    },
+    {
+      "type": "weapon",
+      "x": -88,
+      "y": 231,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "weapon",
+      "x": 88,
+      "y": 231,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "weapon",
+      "x": -229,
+      "y": -247,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 229,
+      "y": -247,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": -398,
+      "y": -161,
+      "weapon": "Shotgun"
+    },
+    {
+      "type": "weapon",
+      "x": 398,
+      "y": -161,
+      "weapon": "Shotgun"
+    },
+    {
+      "type": "weapon",
+      "x": -192,
+      "y": -97,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 192,
+      "y": -97,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 105,
+      "y": -134,
+      "weapon": "Bazooka"
+    },
+    {
+      "type": "weapon",
+      "x": -105,
+      "y": -134,
+      "weapon": "Bazooka"
+    },
+    {
+      "type": "weapon",
+      "x": -2,
+      "y": -333,
+      "weapon": "Flamer"
+    },
+    {
+      "type": "health",
+      "x": -71,
+      "y": -289
+    },
+    {
+      "type": "health",
+      "x": 72,
+      "y": -288
+    }
+  ]
+}

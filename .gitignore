@@ -6,3 +6,5 @@ reference/ss2/assets/
 
 __pycache__/
 *.pyc
+node_modules/
+test-results/

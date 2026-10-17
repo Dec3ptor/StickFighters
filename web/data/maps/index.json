@@ -1,0 +1,42 @@
+[
+  {
+    "file": "ssdm1.json",
+    "name": "Fire in the Hole",
+    "mode": "ffa"
+  },
+  {
+    "file": "ssdm2.json",
+    "name": "Habitat",
+    "mode": "ffa"
+  },
+  {
+    "file": "ssdm3.json",
+    "name": "King of the Hill",
+    "mode": "ffa"
+  },
+  {
+    "file": "ssdm4.json",
+    "name": "Fraghouse",
+    "mode": "ffa"
+  },
+  {
+    "file": "ssdm5.json",
+    "name": "Sniping Grounds",
+    "mode": "ffa"
+  },
+  {
+    "file": "ssdm6.json",
+    "name": "Fatality Zone",
+    "mode": "ffa"
+  },
+  {
+    "file": "ssdm7.json",
+    "name": "Hells Steeple",
+    "mode": "ffa"
+  },
+  {
+    "file": "ssteam1.json",
+    "name": "Two Towers",
+    "mode": "team"
+  }
+]
