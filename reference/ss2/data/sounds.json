@@ -1,0 +1,90 @@
+[
+  {
+    "file": "Platinum.wav",
+    "channels": 5
+  },
+  {
+    "file": "PwrHealth.wav",
+    "channels": 1
+  },
+  {
+    "file": "M4.wav",
+    "channels": 10
+  },
+  {
+    "file": "menu1.wav",
+    "channels": 1
+  },
+  {
+    "file": "menu2.wav",
+    "channels": 1
+  },
+  {
+    "file": "menu3.wav",
+    "channels": 1
+  },
+  {
+    "file": "Sr1.wav",
+    "channels": 3
+  },
+  {
+    "file": "Platinum.wav",
+    "channels": 5
+  },
+  {
+    "file": "PlatRld.wav",
+    "channels": 2
+  },
+  {
+    "file": "Shotgun.wav",
+    "channels": 3
+  },
+  {
+    "file": "Gib1.wav",
+    "channels": 2
+  },
+  {
+    "file": "Explode.wav",
+    "channels": 3
+  },
+  {
+    "file": "Pop.wav",
+    "channels": 2
+  },
+  {
+    "file": "ricochet.wav",
+    "channels": 3
+  },
+  {
+    "file": "pickup.wav",
+    "channels": 2
+  },
+  {
+    "file": "HitMan.wav",
+    "channels": 2
+  },
+  {
+    "file": "die4.wav",
+    "channels": 1
+  },
+  {
+    "file": "GrenFire.wav",
+    "channels": 2
+  },
+  {
+    "file": "Jetpack.wav",
+    "channels": 1
+  },
+  {
+    "file": "rlboom.wav",
+    "channels": 2
+  },
+  {
+    "file": "Flamer.wav",
+    "channels": 1
+  },
+  {
+    "file": "Uzi.wav",
+    "channels": 12
+  }
+]

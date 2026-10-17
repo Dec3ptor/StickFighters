@@ -1,0 +1,343 @@
+{
+  "weapons": [
+    {
+      "id": "Platinum",
+      "Name": "Platinum",
+      "Template": "Platinum",
+      "ROF": 20,
+      "Power": [
+        20,
+        10
+      ],
+      "Accuracy": 6,
+      "Sprite": "plat",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -10,
+        0
+      ],
+      "FireSound": "Platinum.wav",
+      "Ammo": 8
+    },
+    {
+      "id": "M4",
+      "Name": "M4 Carbine",
+      "Template": "M4",
+      "ROF": 8,
+      "Power": [
+        12,
+        9
+      ],
+      "Accuracy": 4,
+      "Sprite": "m4",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -16,
+        -2
+      ],
+      "FireSound": "M4.wav",
+      "RPG": true,
+      "RPGFireSound": "none.wav",
+      "Cannon": false,
+      "Ammo": 60
+    },
+    {
+      "id": "Shotgun",
+      "Name": "Shotgun",
+      "Template": "SG",
+      "Sprite": "sg",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -16,
+        -2
+      ],
+      "ROF": 50,
+      "FireSound": "Shotgun.wav",
+      "Ammo": 8,
+      "NumPellets": 11,
+      "Power": [
+        7.5,
+        2.5
+      ],
+      "Spread": 12
+    },
+    {
+      "id": "Uzi",
+      "Name": "Uzi",
+      "Template": "M4",
+      "ROF": 5,
+      "Ammo": 100,
+      "Power": [
+        11,
+        4
+      ],
+      "Accuracy": 6,
+      "Sprite": "uzi",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -13,
+        -2
+      ],
+      "FireSound": "Uzi.wav",
+      "RPG": false,
+      "RPGFireSound": "none.wav"
+    },
+    {
+      "id": "SR",
+      "Name": "Sniper Rifle",
+      "Template": "SR",
+      "ROF": 60,
+      "Power": [
+        50,
+        50
+      ],
+      "Accuracy": 0,
+      "Sprite": "sr",
+      "Hand": [
+        0,
+        2
+      ],
+      "Fire": [
+        -17,
+        0
+      ],
+      "FireSound": "Sr1.wav",
+      "Ammo": 10
+    },
+    {
+      "id": "Bazooka",
+      "Name": "Bazooka",
+      "Template": "RL",
+      "Sprite": "rl",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -10,
+        0
+      ],
+      "ROF": 150,
+      "FireSound": "None",
+      "Ammo": 5
+    },
+    {
+      "id": "GrenadeLauncher",
+      "Name": "Grenade Laucher",
+      "Template": "GL",
+      "Sprite": "gl",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -10,
+        0
+      ],
+      "ROF": 50,
+      "FireSound": "None",
+      "Ammo": 10
+    },
+    {
+      "id": "Flamer",
+      "Name": "Flamethrower",
+      "Template": "Flamer",
+      "ROF": 3,
+      "Power": 1,
+      "Accuracy": 4,
+      "Sprite": "Flamer",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -10,
+        0
+      ],
+      "FireSound": "None",
+      "Ammo": 200
+    }
+  ],
+  "cut_weapons": [
+    {
+      "id": "RocketLauncher",
+      "Name": "Rocket Launcher",
+      "Sprite": "rl",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        0,
+        0
+      ],
+      "found_in": "Copy of SSwep.wtb"
+    },
+    {
+      "id": "20mm",
+      "Name": "20mm Cannon",
+      "Template": "M4",
+      "ROF": 12,
+      "Power": [
+        10,
+        10
+      ],
+      "Accuracy": 3,
+      "Sprite": "m4",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -16,
+        -2
+      ],
+      "FireSound": "m4.wav",
+      "RPG": false,
+      "RPGFireSound": "none.wav",
+      "Cannon": true,
+      "found_in": "Copy of SSwep.wtb"
+    },
+    {
+      "id": "AK47",
+      "Name": "AK-47",
+      "Template": "M4",
+      "ROF": 11,
+      "Power": [
+        15,
+        20
+      ],
+      "Accuracy": 11,
+      "Sprite": "ak",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -16,
+        -2
+      ],
+      "FireSound": "m4.wav",
+      "RPG": false,
+      "RPGFireSound": "none.wav",
+      "Cannon": false,
+      "Ammo": 40,
+      "found_in": "Copy of SSwep.wtb"
+    },
+    {
+      "id": "MP5K",
+      "Name": "MP5K",
+      "Template": "M4",
+      "ROF": 6,
+      "Power": [
+        10,
+        4
+      ],
+      "Accuracy": 6,
+      "Sprite": "mp5k",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -16,
+        -2
+      ],
+      "FireSound": "mp5k.wav",
+      "RPG": false,
+      "RPGFireSound": "none.wav",
+      "Cannon": false,
+      "Ammo": 60,
+      "found_in": "Copy of SSwep.wtb"
+    },
+    {
+      "id": "Blaster",
+      "Name": "Blaster",
+      "Template": "Blaster",
+      "Accuracy": 6,
+      "Sprite": "plat",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -7,
+        -2
+      ],
+      "FireSound": "pstl3.wav",
+      "found_in": "Copy of SSwep.wtb"
+    },
+    {
+      "id": "Beretta",
+      "Name": "Beretta",
+      "Template": "Platinum",
+      "ROF": 20,
+      "Power": [
+        20,
+        10
+      ],
+      "Accuracy": 1,
+      "Sprite": "beretta",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -8,
+        0
+      ],
+      "FireSound": "None",
+      "found_in": "Copy of SSwep.wtb"
+    },
+    {
+      "id": "C4",
+      "Name": "C4 Detonator",
+      "Template": "C4",
+      "Sprite": "c4charge",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        5,
+        0
+      ],
+      "ROF": 50,
+      "FireSound": "None",
+      "Ammo": 3,
+      "found_in": "Copy of SSwep.wtb"
+    },
+    {
+      "id": "Shocker",
+      "Name": "Shocker",
+      "Template": "Shocker",
+      "Power": [
+        1,
+        1
+      ],
+      "Sprite": "railgun",
+      "Hand": [
+        0,
+        0
+      ],
+      "Fire": [
+        -14,
+        0
+      ],
+      "Ammo": 300,
+      "found_in": "Copy (2) of SSwep.wtb"
+    }
+  ]
+}

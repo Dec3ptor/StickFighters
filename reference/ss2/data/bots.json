@@ -1,0 +1,221 @@
+[
+  {
+    "kind": "bot",
+    "name": "Grunt",
+    "nick": [
+      "Grunt",
+      "Marine",
+      "Fatty",
+      "Fatboy"
+    ],
+    "acc": 15,
+    "camp": 8,
+    "chat": "grunt",
+    "chatty_event": 25,
+    "chatty_respond": 5,
+    "chatty_misc": 10,
+    "skill": 0
+  },
+  {
+    "kind": "bot",
+    "name": "Ranger",
+    "nick": [
+      "Ranger",
+      "Recon",
+      "Scout",
+      "Loner",
+      "quiet guy"
+    ],
+    "acc": 10,
+    "camp": 12,
+    "chat": "grunt",
+    "chatty_event": 20,
+    "chatty_respond": 4,
+    "chatty_misc": 6,
+    "skill": 1
+  },
+  {
+    "kind": "bot",
+    "name": "Sarge",
+    "nick": [
+      "Sarge",
+      "Boss",
+      "Sergeant"
+    ],
+    "acc": 10,
+    "camp": 10,
+    "chat": "sarge",
+    "chatty_event": 25,
+    "chatty_respond": 10,
+    "chatty_misc": 6,
+    "skill": 2
+  },
+  {
+    "kind": "bot",
+    "name": "Obi-Wan",
+    "nick": [
+      "Obi-Wan",
+      "Jedi",
+      "Master",
+      "jedi dude"
+    ],
+    "acc": 10,
+    "camp": 14,
+    "chat": "starwars",
+    "chatty_event": 15,
+    "chatty_respond": 4,
+    "chatty_misc": 4,
+    "skill": 1
+  },
+  {
+    "kind": "bot",
+    "name": "YodaTheCoda",
+    "nick": [
+      "yoda",
+      "Yoda",
+      "green guy",
+      "tiny",
+      "coder"
+    ],
+    "acc": 5,
+    "camp": 12,
+    "chat": "starwars",
+    "chatty_event": 25,
+    "chatty_respond": 5,
+    "chatty_misc": 10,
+    "skill": 3
+  },
+  {
+    "kind": "bot",
+    "name": "Sonne",
+    "nick": [
+      "Sonne",
+      "Light",
+      "Sun",
+      "Lightness",
+      "Day"
+    ],
+    "acc": 10,
+    "camp": 25,
+    "chat": "scope",
+    "chatty_event": 10,
+    "chatty_respond": 5,
+    "chatty_misc": 4,
+    "skill": 2
+  },
+  {
+    "kind": "bot",
+    "name": "Cresta",
+    "nick": [
+      "Cresta",
+      "Crest",
+      "Slim"
+    ],
+    "acc": 10,
+    "camp": 15,
+    "chat": "grunt",
+    "chatty_event": 25,
+    "chatty_respond": 5,
+    "chatty_misc": 2,
+    "skill": 0
+  },
+  {
+    "kind": "bot",
+    "name": "Anti",
+    "nick": [
+      "anti",
+      "hyper",
+      "dev-dude",
+      "weirdo"
+    ],
+    "acc": 15,
+    "camp": 8,
+    "chat": "grunt",
+    "chatty_event": 25,
+    "chatty_respond": 5,
+    "chatty_misc": 10,
+    "skill": 3
+  },
+  {
+    "kind": "bot",
+    "name": "Scope",
+    "nick": [
+      "Scope",
+      "Sniper",
+      "Snipey",
+      "Eyeliner",
+      "Sloth",
+      "Worm",
+      "Oh Deadly One"
+    ],
+    "camp": 30,
+    "acc": 3,
+    "chat": "scope",
+    "chatty_event": 15,
+    "chatty_respond": 10,
+    "chatty_misc": 2,
+    "skill": 2
+  },
+  {
+    "kind": "bot",
+    "name": "Chavez",
+    "nick": [
+      "Chavez",
+      "Ninja"
+    ],
+    "acc": 10,
+    "camp": 8,
+    "chat": "chavez",
+    "chatty_event": 25,
+    "chatty_respond": 10,
+    "chatty_misc": 6,
+    "skill": 2
+  },
+  {
+    "kind": "ctfbot",
+    "name": "Sniper",
+    "class": "sniper",
+    "nick": [
+      "Scope",
+      "Eyeliner",
+      "Sloth",
+      "Worm",
+      "Oh Deadly One"
+    ],
+    "acc": 15,
+    "camp": 60,
+    "chat": "scope"
+  },
+  {
+    "kind": "ctfbot",
+    "name": "Grunt",
+    "class": "soldier",
+    "nick": [
+      "Marine",
+      "Wall",
+      "anti-camper",
+      "wimp",
+      "fatty"
+    ],
+    "acc": 20,
+    "camp": 30,
+    "chat": "grunt"
+  },
+  {
+    "kind": "ctfbot",
+    "name": "Engineer",
+    "class": "engineer",
+    "nick": [
+      "Monkey",
+      "Wrench",
+      "Fixit",
+      "Bot",
+      "Rust",
+      "Mech",
+      "George"
+    ],
+    "acc": 30,
+    "camp": 70,
+    "chat": "george"
+  }
+]

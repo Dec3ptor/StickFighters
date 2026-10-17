@@ -1,0 +1,303 @@
+{
+  "source": "ssdm1.ssm",
+  "name": "Fire in the Hole",
+  "bounds": {
+    "left": -954,
+    "top": -434,
+    "right": 954,
+    "bottom": 394
+  },
+  "platforms": [
+    {
+      "left": -368,
+      "top": -40,
+      "right": -152,
+      "bottom": -16
+    },
+    {
+      "left": 152,
+      "top": -40,
+      "right": 368,
+      "bottom": -16
+    },
+    {
+      "left": -40,
+      "top": -8,
+      "right": 40,
+      "bottom": 16
+    },
+    {
+      "left": -40,
+      "top": -96,
+      "right": 40,
+      "bottom": -72
+    },
+    {
+      "left": -184,
+      "top": -72,
+      "right": -120,
+      "bottom": -16
+    },
+    {
+      "left": 120,
+      "top": -72,
+      "right": 184,
+      "bottom": -16
+    },
+    {
+      "left": -552,
+      "top": 0,
+      "right": -480,
+      "bottom": 24
+    },
+    {
+      "left": 480,
+      "top": 0,
+      "right": 552,
+      "bottom": 24
+    },
+    {
+      "left": -480,
+      "top": -88,
+      "right": -408,
+      "bottom": -64
+    },
+    {
+      "left": 408,
+      "top": -88,
+      "right": 480,
+      "bottom": -64
+    },
+    {
+      "left": -24,
+      "top": 88,
+      "right": 24,
+      "bottom": 136
+    },
+    {
+      "left": -120,
+      "top": 120,
+      "right": 120,
+      "bottom": 144
+    },
+    {
+      "left": -376,
+      "top": -152,
+      "right": -152,
+      "bottom": -128
+    },
+    {
+      "left": 152,
+      "top": -152,
+      "right": 376,
+      "bottom": -128
+    },
+    {
+      "left": -40,
+      "top": -184,
+      "right": 40,
+      "bottom": -160
+    },
+    {
+      "left": -128,
+      "top": 56,
+      "right": -104,
+      "bottom": 144
+    },
+    {
+      "left": 104,
+      "top": 56,
+      "right": 128,
+      "bottom": 144
+    },
+    {
+      "left": -704,
+      "top": 96,
+      "right": -464,
+      "bottom": 120
+    },
+    {
+      "left": 464,
+      "top": 96,
+      "right": 704,
+      "bottom": 120
+    },
+    {
+      "left": -432,
+      "top": 40,
+      "right": -112,
+      "bottom": 64
+    },
+    {
+      "left": 112,
+      "top": 40,
+      "right": 432,
+      "bottom": 64
+    }
+  ],
+  "spawns": [
+    {
+      "x": -345,
+      "y": -190,
+      "team": 1
+    },
+    {
+      "x": 345,
+      "y": -190,
+      "team": 2
+    },
+    {
+      "x": -341,
+      "y": -70,
+      "team": 1
+    },
+    {
+      "x": 341,
+      "y": -70,
+      "team": 2
+    },
+    {
+      "x": -333,
+      "y": 12,
+      "team": 1
+    },
+    {
+      "x": 333,
+      "y": 12,
+      "team": 2
+    },
+    {
+      "x": -164,
+      "y": 15,
+      "team": 1
+    },
+    {
+      "x": 164,
+      "y": 15,
+      "team": 2
+    },
+    {
+      "x": -218,
+      "y": -72,
+      "team": 1
+    },
+    {
+      "x": 218,
+      "y": -72,
+      "team": 2
+    },
+    {
+      "x": -201,
+      "y": -185,
+      "team": 1
+    },
+    {
+      "x": 201,
+      "y": -185,
+      "team": 2
+    },
+    {
+      "x": -70,
+      "y": 96,
+      "team": 1
+    },
+    {
+      "x": 70,
+      "y": 96,
+      "team": 2
+    }
+  ],
+  "items": [
+    {
+      "type": "armour",
+      "x": 0,
+      "y": 56
+    },
+    {
+      "type": "weapon",
+      "x": 0,
+      "y": -39,
+      "weapon": "Flamer"
+    },
+    {
+      "type": "weapon",
+      "x": -2,
+      "y": -128,
+      "weapon": "Shotgun"
+    },
+    {
+      "type": "weapon",
+      "x": -251,
+      "y": 12,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 251,
+      "y": 12,
+      "weapon": "M4"
+    },
+    {
+      "type": "jetpack",
+      "x": -515,
+      "y": -24
+    },
+    {
+      "type": "jetpack",
+      "x": 515,
+      "y": -24
+    },
+    {
+      "type": "health",
+      "x": -441,
+      "y": -116
+    },
+    {
+      "type": "health",
+      "x": 441,
+      "y": -116
+    },
+    {
+      "type": "weapon",
+      "x": -1,
+      "y": -215,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "weapon",
+      "x": -265,
+      "y": -178,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 265,
+      "y": -178,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": -152,
+      "y": -95,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 152,
+      "y": -95,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 587,
+      "y": 66,
+      "weapon": "Bazooka"
+    },
+    {
+      "type": "weapon",
+      "x": -587,
+      "y": 66,
+      "weapon": "Bazooka"
+    }
+  ]
+}

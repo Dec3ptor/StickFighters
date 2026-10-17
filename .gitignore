@@ -1,0 +1,8 @@
+# Original Stick Soldiers II game files and art/sounds (Whitespace Unlimited's work).
+# Regenerate locally with: python3 tools/ss2/extract.py path/to/ss2.zip
+reference/ss2/original/
+reference/ss2/assets/
+*.zip
+
+__pycache__/
+*.pyc

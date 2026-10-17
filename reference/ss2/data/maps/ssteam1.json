@@ -1,0 +1,399 @@
+{
+  "source": "ssteam1.ssm",
+  "name": "Two Towers",
+  "bounds": {
+    "left": -178,
+    "top": -266,
+    "right": 1058,
+    "bottom": 882
+  },
+  "platforms": [
+    {
+      "left": 112,
+      "top": 192,
+      "right": 136,
+      "bottom": 632
+    },
+    {
+      "left": 112,
+      "top": 608,
+      "right": 768,
+      "bottom": 632
+    },
+    {
+      "left": 128,
+      "top": 552,
+      "right": 152,
+      "bottom": 616
+    },
+    {
+      "left": 200,
+      "top": 480,
+      "right": 224,
+      "bottom": 552
+    },
+    {
+      "left": 128,
+      "top": 392,
+      "right": 152,
+      "bottom": 480
+    },
+    {
+      "left": 200,
+      "top": 304,
+      "right": 224,
+      "bottom": 392
+    },
+    {
+      "left": 128,
+      "top": 224,
+      "right": 152,
+      "bottom": 304
+    },
+    {
+      "left": 136,
+      "top": 240,
+      "right": 160,
+      "bottom": 288
+    },
+    {
+      "left": 192,
+      "top": 320,
+      "right": 216,
+      "bottom": 376
+    },
+    {
+      "left": 136,
+      "top": 408,
+      "right": 160,
+      "bottom": 464
+    },
+    {
+      "left": 192,
+      "top": 496,
+      "right": 216,
+      "bottom": 536
+    },
+    {
+      "left": 136,
+      "top": 568,
+      "right": 160,
+      "bottom": 616
+    },
+    {
+      "left": 744,
+      "top": 192,
+      "right": 768,
+      "bottom": 632
+    },
+    {
+      "left": 656,
+      "top": 480,
+      "right": 680,
+      "bottom": 552
+    },
+    {
+      "left": 664,
+      "top": 496,
+      "right": 688,
+      "bottom": 536
+    },
+    {
+      "left": 728,
+      "top": 392,
+      "right": 752,
+      "bottom": 480
+    },
+    {
+      "left": 720,
+      "top": 408,
+      "right": 744,
+      "bottom": 464
+    },
+    {
+      "left": 728,
+      "top": 552,
+      "right": 752,
+      "bottom": 616
+    },
+    {
+      "left": 720,
+      "top": 568,
+      "right": 744,
+      "bottom": 616
+    },
+    {
+      "left": 656,
+      "top": 304,
+      "right": 680,
+      "bottom": 392
+    },
+    {
+      "left": 664,
+      "top": 320,
+      "right": 688,
+      "bottom": 376
+    },
+    {
+      "left": 728,
+      "top": 224,
+      "right": 752,
+      "bottom": 304
+    },
+    {
+      "left": 720,
+      "top": 240,
+      "right": 744,
+      "bottom": 288
+    },
+    {
+      "left": 232,
+      "top": 336,
+      "right": 288,
+      "bottom": 360
+    },
+    {
+      "left": 592,
+      "top": 336,
+      "right": 648,
+      "bottom": 360
+    },
+    {
+      "left": 640,
+      "top": 192,
+      "right": 664,
+      "bottom": 552
+    },
+    {
+      "left": 216,
+      "top": 192,
+      "right": 240,
+      "bottom": 552
+    },
+    {
+      "left": 336,
+      "top": 592,
+      "right": 560,
+      "bottom": 616
+    },
+    {
+      "left": 360,
+      "top": 576,
+      "right": 384,
+      "bottom": 600
+    },
+    {
+      "left": 512,
+      "top": 576,
+      "right": 536,
+      "bottom": 600
+    },
+    {
+      "left": 320,
+      "top": 16,
+      "right": 376,
+      "bottom": 40
+    },
+    {
+      "left": 504,
+      "top": 16,
+      "right": 560,
+      "bottom": 40
+    },
+    {
+      "left": 408,
+      "top": -16,
+      "right": 472,
+      "bottom": 8
+    },
+    {
+      "left": 216,
+      "top": 176,
+      "right": 280,
+      "bottom": 200
+    },
+    {
+      "left": 256,
+      "top": 64,
+      "right": 280,
+      "bottom": 200
+    },
+    {
+      "left": 72,
+      "top": 176,
+      "right": 136,
+      "bottom": 200
+    },
+    {
+      "left": 72,
+      "top": 64,
+      "right": 96,
+      "bottom": 200
+    },
+    {
+      "left": 152,
+      "top": 112,
+      "right": 200,
+      "bottom": 136
+    },
+    {
+      "left": 680,
+      "top": 112,
+      "right": 728,
+      "bottom": 136
+    },
+    {
+      "left": 600,
+      "top": 176,
+      "right": 664,
+      "bottom": 200
+    },
+    {
+      "left": 744,
+      "top": 176,
+      "right": 808,
+      "bottom": 200
+    },
+    {
+      "left": 600,
+      "top": 64,
+      "right": 624,
+      "bottom": 200
+    },
+    {
+      "left": 784,
+      "top": 64,
+      "right": 808,
+      "bottom": 200
+    },
+    {
+      "left": 416,
+      "top": 584,
+      "right": 480,
+      "bottom": 608,
+      "bounce": -8
+    }
+  ],
+  "spawns": [
+    {
+      "x": 125,
+      "y": 136,
+      "team": 2
+    },
+    {
+      "x": 226,
+      "y": 133,
+      "team": 2
+    },
+    {
+      "x": 271,
+      "y": 565,
+      "team": 2
+    },
+    {
+      "x": 656,
+      "y": 135,
+      "team": 1
+    },
+    {
+      "x": 753,
+      "y": 133,
+      "team": 1
+    },
+    {
+      "x": 606,
+      "y": 562,
+      "team": 1
+    },
+    {
+      "x": 267,
+      "y": 305,
+      "team": 2
+    },
+    {
+      "x": 613,
+      "y": 308,
+      "team": 1
+    }
+  ],
+  "items": [
+    {
+      "type": "weapon",
+      "x": 227,
+      "y": 585,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 657,
+      "y": 587,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 160,
+      "y": 347,
+      "weapon": "Shotgun"
+    },
+    {
+      "type": "weapon",
+      "x": 718,
+      "y": 346,
+      "weapon": "Shotgun"
+    },
+    {
+      "type": "weapon",
+      "x": 268,
+      "y": 304,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 612,
+      "y": 308,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 439,
+      "y": -44,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "health",
+      "x": 348,
+      "y": -16
+    },
+    {
+      "type": "health",
+      "x": 532,
+      "y": -11
+    },
+    {
+      "type": "weapon",
+      "x": 447,
+      "y": 563,
+      "weapon": "Bazooka"
+    },
+    {
+      "type": "jetpack",
+      "x": 165,
+      "y": 515
+    },
+    {
+      "type": "jetpack",
+      "x": 716,
+      "y": 515
+    },
+    {
+      "type": "armour",
+      "x": 176,
+      "y": 89
+    },
+    {
+      "type": "armour",
+      "x": 704,
+      "y": 92
+    }
+  ]
+}

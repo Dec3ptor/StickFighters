@@ -1,0 +1,246 @@
+{
+  "source": "ssdm4.ssm",
+  "name": "Fraghouse",
+  "bounds": {
+    "left": -234,
+    "top": -90,
+    "right": 1042,
+    "bottom": 818
+  },
+  "platforms": [
+    {
+      "left": 240,
+      "top": 496,
+      "right": 561,
+      "bottom": 529
+    },
+    {
+      "left": 32,
+      "top": 304,
+      "right": 224,
+      "bottom": 328
+    },
+    {
+      "left": 576,
+      "top": 304,
+      "right": 776,
+      "bottom": 328
+    },
+    {
+      "left": 288,
+      "top": 352,
+      "right": 512,
+      "bottom": 376
+    },
+    {
+      "left": 288,
+      "top": 232,
+      "right": 512,
+      "bottom": 272
+    },
+    {
+      "left": 336,
+      "top": 200,
+      "right": 464,
+      "bottom": 304
+    },
+    {
+      "left": 32,
+      "top": 504,
+      "right": 768,
+      "bottom": 568
+    },
+    {
+      "left": 768,
+      "top": 160,
+      "right": 792,
+      "bottom": 424
+    },
+    {
+      "left": 16,
+      "top": 160,
+      "right": 40,
+      "bottom": 424
+    },
+    {
+      "left": 272,
+      "top": 456,
+      "right": 304,
+      "bottom": 504
+    },
+    {
+      "left": 496,
+      "top": 456,
+      "right": 528,
+      "bottom": 504
+    },
+    {
+      "left": 16,
+      "top": 416,
+      "right": 56,
+      "bottom": 568
+    },
+    {
+      "left": 752,
+      "top": 416,
+      "right": 792,
+      "bottom": 568
+    },
+    {
+      "left": 16,
+      "top": 400,
+      "right": 224,
+      "bottom": 424
+    },
+    {
+      "left": 576,
+      "top": 400,
+      "right": 792,
+      "bottom": 424
+    }
+  ],
+  "spawns": [
+    {
+      "x": 143,
+      "y": 257,
+      "team": 2
+    },
+    {
+      "x": 145,
+      "y": 358,
+      "team": 2
+    },
+    {
+      "x": 302,
+      "y": 204,
+      "team": 2
+    },
+    {
+      "x": 501,
+      "y": 205,
+      "team": 1
+    },
+    {
+      "x": 655,
+      "y": 258,
+      "team": 1
+    },
+    {
+      "x": 659,
+      "y": 363,
+      "team": 1
+    },
+    {
+      "x": 594,
+      "y": 457,
+      "team": 1
+    },
+    {
+      "x": 190,
+      "y": 456,
+      "team": 2
+    },
+    {
+      "x": 109,
+      "y": 458,
+      "team": 2
+    },
+    {
+      "x": 81,
+      "y": 259,
+      "team": 2
+    },
+    {
+      "x": 730,
+      "y": 258,
+      "team": 1
+    },
+    {
+      "x": 730,
+      "y": 363,
+      "team": 1
+    },
+    {
+      "x": 674,
+      "y": 459,
+      "team": 1
+    },
+    {
+      "x": 81,
+      "y": 364,
+      "team": 2
+    }
+  ],
+  "items": [
+    {
+      "type": "health",
+      "x": 515,
+      "y": 304
+    },
+    {
+      "type": "health",
+      "x": 290,
+      "y": 304
+    },
+    {
+      "type": "weapon",
+      "x": 402,
+      "y": 330,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "weapon",
+      "x": 144,
+      "y": 258,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 145,
+      "y": 359,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 303,
+      "y": 205,
+      "weapon": "Shotgun"
+    },
+    {
+      "type": "weapon",
+      "x": 503,
+      "y": 206,
+      "weapon": "Shotgun"
+    },
+    {
+      "type": "weapon",
+      "x": 235,
+      "y": 458,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 563,
+      "y": 462,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 661,
+      "y": 260,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 663,
+      "y": 364,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 402,
+      "y": 467,
+      "weapon": "Bazooka"
+    }
+  ]
+}

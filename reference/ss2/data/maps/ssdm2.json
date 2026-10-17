@@ -1,0 +1,254 @@
+{
+  "source": "ssdm2.ssm",
+  "name": "Habitat",
+  "bounds": {
+    "left": -234,
+    "top": -218,
+    "right": 1035,
+    "bottom": 843
+  },
+  "platforms": [
+    {
+      "left": 16,
+      "top": 528,
+      "right": 785,
+      "bottom": 593
+    },
+    {
+      "left": 64,
+      "top": 496,
+      "right": 113,
+      "bottom": 545
+    },
+    {
+      "left": 688,
+      "top": 496,
+      "right": 737,
+      "bottom": 545
+    },
+    {
+      "left": 16,
+      "top": 416,
+      "right": 305,
+      "bottom": 449
+    },
+    {
+      "left": 496,
+      "top": 416,
+      "right": 785,
+      "bottom": 449
+    },
+    {
+      "left": 320,
+      "top": 496,
+      "right": 481,
+      "bottom": 545
+    },
+    {
+      "left": 336,
+      "top": 464,
+      "right": 465,
+      "bottom": 513
+    },
+    {
+      "left": 384,
+      "top": 432,
+      "right": 417,
+      "bottom": 481
+    },
+    {
+      "left": 128,
+      "top": 272,
+      "right": 209,
+      "bottom": 433
+    },
+    {
+      "left": 592,
+      "top": 272,
+      "right": 673,
+      "bottom": 433
+    },
+    {
+      "left": 192,
+      "top": 368,
+      "right": 241,
+      "bottom": 433
+    },
+    {
+      "left": 192,
+      "top": 320,
+      "right": 225,
+      "bottom": 385
+    },
+    {
+      "left": 560,
+      "top": 368,
+      "right": 609,
+      "bottom": 433
+    },
+    {
+      "left": 576,
+      "top": 320,
+      "right": 609,
+      "bottom": 385
+    },
+    {
+      "left": 336,
+      "top": 192,
+      "right": 465,
+      "bottom": 241
+    },
+    {
+      "left": 256,
+      "top": 224,
+      "right": 545,
+      "bottom": 241
+    },
+    {
+      "left": 384,
+      "top": 224,
+      "right": 417,
+      "bottom": 353
+    },
+    {
+      "left": 160,
+      "top": 256,
+      "right": 177,
+      "bottom": 289
+    },
+    {
+      "left": 624,
+      "top": 256,
+      "right": 641,
+      "bottom": 289
+    },
+    {
+      "left": 16,
+      "top": 32,
+      "right": 785,
+      "bottom": 97
+    },
+    {
+      "left": 72,
+      "top": 352,
+      "right": 144,
+      "bottom": 432
+    },
+    {
+      "left": 656,
+      "top": 352,
+      "right": 728,
+      "bottom": 424
+    },
+    {
+      "left": 320,
+      "top": 304,
+      "right": 480,
+      "bottom": 328
+    },
+    {
+      "left": 704,
+      "top": 224,
+      "right": 768,
+      "bottom": 248
+    },
+    {
+      "left": 32,
+      "top": 224,
+      "right": 96,
+      "bottom": 248
+    }
+  ],
+  "spawns": [
+    {
+      "x": 144,
+      "y": 221,
+      "team": 2
+    },
+    {
+      "x": 194,
+      "y": 222,
+      "team": 2
+    },
+    {
+      "x": 161,
+      "y": 488,
+      "team": 2
+    },
+    {
+      "x": 602,
+      "y": 211,
+      "team": 1
+    },
+    {
+      "x": 655,
+      "y": 211,
+      "team": 1
+    },
+    {
+      "x": 639,
+      "y": 490,
+      "team": 1
+    },
+    {
+      "x": 698,
+      "y": 314,
+      "team": 1
+    },
+    {
+      "x": 102,
+      "y": 318,
+      "team": 2
+    }
+  ],
+  "items": [
+    {
+      "type": "weapon",
+      "x": 402,
+      "y": 398,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "weapon",
+      "x": 737,
+      "y": 198,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 62,
+      "y": 201,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 349,
+      "y": 283,
+      "weapon": "Shotgun"
+    },
+    {
+      "type": "weapon",
+      "x": 451,
+      "y": 284,
+      "weapon": "Shotgun"
+    },
+    {
+      "type": "weapon",
+      "x": 399,
+      "y": 165,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "weapon",
+      "x": 258,
+      "y": 495,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 527,
+      "y": 494,
+      "weapon": "M4"
+    }
+  ]
+}

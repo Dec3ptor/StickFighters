@@ -1,0 +1,13 @@
+{
+  "AimUp": "UpArrow",
+  "AimDown": "DownArrow",
+  "MoveLeft": "LeftArrow",
+  "MoveRight": "RightArrow",
+  "Jump": "RightAlt",
+  "Jet": "Numpad0",
+  "DropJetpack": "Z",
+  "FirePrimary": "Space",
+  "FireSecondary": "B",
+  "NextWeapon": "M",
+  "PrevWeapon": "N"
+}

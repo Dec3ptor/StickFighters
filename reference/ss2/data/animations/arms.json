@@ -1,0 +1,502 @@
+[
+  {
+    "index": 0,
+    "speed": 0.0248,
+    "poses": [
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -4,
+          7
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -10,
+          7
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      },
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -6,
+          8
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -12,
+          8
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      }
+    ]
+  },
+  {
+    "index": 1,
+    "speed": 0.1142,
+    "poses": [
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          3,
+          5
+        ],
+        "back_elbow": [
+          10,
+          5
+        ],
+        "front_hand": [
+          -3,
+          8
+        ],
+        "back_hand": [
+          8,
+          9
+        ]
+      },
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -5,
+          5
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -10,
+          8
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      }
+    ]
+  },
+  {
+    "index": 2,
+    "speed": 0.0296,
+    "poses": [
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          0,
+          6
+        ],
+        "back_elbow": [
+          -6,
+          2
+        ],
+        "front_hand": [
+          -6,
+          7
+        ],
+        "back_hand": [
+          -11,
+          8
+        ]
+      },
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -1,
+          6
+        ],
+        "back_elbow": [
+          4,
+          7
+        ],
+        "front_hand": [
+          -8,
+          7
+        ],
+        "back_hand": [
+          -4,
+          9
+        ]
+      }
+    ]
+  },
+  {
+    "index": 3,
+    "speed": 0.04,
+    "poses": [
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -10,
+          0
+        ],
+        "back_elbow": [
+          11,
+          -1
+        ],
+        "front_hand": [
+          -11,
+          -10
+        ],
+        "back_hand": [
+          12,
+          -12
+        ]
+      },
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -11,
+          -3
+        ],
+        "back_elbow": [
+          12,
+          -3
+        ],
+        "front_hand": [
+          -10,
+          -13
+        ],
+        "back_hand": [
+          11,
+          -13
+        ]
+      }
+    ]
+  },
+  {
+    "index": 4,
+    "speed": 0.0183,
+    "poses": [
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -3,
+          7
+        ],
+        "back_elbow": [
+          4,
+          6
+        ],
+        "front_hand": [
+          -5,
+          12
+        ],
+        "back_hand": [
+          4,
+          13
+        ]
+      },
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -2,
+          6
+        ],
+        "back_elbow": [
+          4,
+          7
+        ],
+        "front_hand": [
+          -4,
+          12
+        ],
+        "back_hand": [
+          6,
+          12
+        ]
+      }
+    ]
+  },
+  {
+    "index": 5,
+    "speed": 0.0701,
+    "poses": [
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -5,
+          5
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -10,
+          8
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      },
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -5,
+          5
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -15,
+          8
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      }
+    ]
+  },
+  {
+    "index": 6,
+    "speed": 0.008,
+    "poses": [
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -5,
+          5
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -10,
+          8
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      },
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -5,
+          5
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -10,
+          8
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      }
+    ]
+  },
+  {
+    "index": 7,
+    "speed": 0.008,
+    "poses": [
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -5,
+          5
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -10,
+          8
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      },
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -5,
+          5
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -10,
+          8
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      }
+    ]
+  },
+  {
+    "index": 8,
+    "speed": 0.008,
+    "poses": [
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -5,
+          5
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -10,
+          8
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      },
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -5,
+          5
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -10,
+          8
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      }
+    ]
+  },
+  {
+    "index": 9,
+    "speed": 0.008,
+    "poses": [
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -5,
+          5
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -10,
+          8
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      },
+      {
+        "shoulder": [
+          0,
+          0
+        ],
+        "front_elbow": [
+          -5,
+          5
+        ],
+        "back_elbow": [
+          5,
+          5
+        ],
+        "front_hand": [
+          -10,
+          8
+        ],
+        "back_hand": [
+          3,
+          8
+        ]
+      }
+    ]
+  }
+]

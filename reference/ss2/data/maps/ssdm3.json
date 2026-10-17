@@ -1,0 +1,227 @@
+{
+  "source": "ssdm3.ssm",
+  "name": "King of the Hill",
+  "bounds": {
+    "left": -314,
+    "top": -250,
+    "right": 1114,
+    "bottom": 843
+  },
+  "platforms": [
+    {
+      "left": 16,
+      "top": 560,
+      "right": 785,
+      "bottom": 593
+    },
+    {
+      "left": 352,
+      "top": 496,
+      "right": 449,
+      "bottom": 577
+    },
+    {
+      "left": 432,
+      "top": 528,
+      "right": 497,
+      "bottom": 577
+    },
+    {
+      "left": 304,
+      "top": 528,
+      "right": 369,
+      "bottom": 577
+    },
+    {
+      "left": 384,
+      "top": 480,
+      "right": 417,
+      "bottom": 513
+    },
+    {
+      "left": 304,
+      "top": 224,
+      "right": 337,
+      "bottom": 449
+    },
+    {
+      "left": 464,
+      "top": 224,
+      "right": 497,
+      "bottom": 449
+    },
+    {
+      "left": 368,
+      "top": 192,
+      "right": 433,
+      "bottom": 225
+    },
+    {
+      "left": 288,
+      "top": 272,
+      "right": 513,
+      "bottom": 353
+    },
+    {
+      "left": 656,
+      "top": 80,
+      "right": 785,
+      "bottom": 113
+    },
+    {
+      "left": 16,
+      "top": 80,
+      "right": 145,
+      "bottom": 113
+    },
+    {
+      "left": 160,
+      "top": 144,
+      "right": 289,
+      "bottom": 177
+    },
+    {
+      "left": 512,
+      "top": 144,
+      "right": 641,
+      "bottom": 177
+    },
+    {
+      "left": 224,
+      "top": 312,
+      "right": 576,
+      "bottom": 344
+    },
+    {
+      "left": 824,
+      "top": 0,
+      "right": 864,
+      "bottom": 416
+    },
+    {
+      "left": 544,
+      "top": 384,
+      "right": 864,
+      "bottom": 416
+    },
+    {
+      "left": -64,
+      "top": 0,
+      "right": -24,
+      "bottom": 416
+    },
+    {
+      "left": -64,
+      "top": 384,
+      "right": 256,
+      "bottom": 416
+    }
+  ],
+  "spawns": [
+    {
+      "x": 225,
+      "y": 120,
+      "team": 2
+    },
+    {
+      "x": 79,
+      "y": 14,
+      "team": 2
+    },
+    {
+      "x": 257,
+      "y": 267,
+      "team": 2
+    },
+    {
+      "x": 139,
+      "y": 313,
+      "team": 2
+    },
+    {
+      "x": 164,
+      "y": 528,
+      "team": 2
+    },
+    {
+      "x": 726,
+      "y": 23,
+      "team": 1
+    },
+    {
+      "x": 579,
+      "y": 120,
+      "team": 1
+    },
+    {
+      "x": 543,
+      "y": 262,
+      "team": 1
+    },
+    {
+      "x": 668,
+      "y": 311,
+      "team": 1
+    },
+    {
+      "x": 660,
+      "y": 527,
+      "team": 1
+    }
+  ],
+  "items": [
+    {
+      "type": "weapon",
+      "x": 140,
+      "y": 352,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 666,
+      "y": 355,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 399,
+      "y": 170,
+      "weapon": "GrenadeLauncher"
+    },
+    {
+      "type": "weapon",
+      "x": 725,
+      "y": 56,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 78,
+      "y": 55,
+      "weapon": "SR"
+    },
+    {
+      "type": "weapon",
+      "x": 403,
+      "y": 250,
+      "weapon": "Shotgun"
+    },
+    {
+      "type": "health",
+      "x": 400,
+      "y": 441
+    },
+    {
+      "type": "weapon",
+      "x": 203,
+      "y": 527,
+      "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": 625,
+      "y": 524,
+      "weapon": "M4"
+    }
+  ]
+}
