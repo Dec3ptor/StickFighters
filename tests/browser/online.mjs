@@ -114,7 +114,8 @@ await joiner.waitForSelector('#menu:not(.hidden)', { timeout: 10000 }).catch(() 
 const toast = await joiner.textContent('#toast');
 expect(/host/i.test(toast), `joiner told the host left ("${toast}")`);
 expect((await S(joiner)).mode === 'offline' && !(await S(joiner)).playing, 'joiner back at the menu');
-await joiner.waitForTimeout(1500);
+// (Through public relays the "closed" update can take a few seconds to reach them all.)
+await joiner.waitForFunction(name => ![...document.querySelectorAll('.game-row b')].some(b => b.textContent === name), GAME, { timeout: publicRelays ? 15000 : 5000 }).catch(() => {});
 const after = await joiner.$$eval('.game-row b', els => els.map(e => e.textContent));
 expect(!after.includes(GAME), 'closed game is gone from the list');
 

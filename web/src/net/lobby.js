@@ -85,14 +85,24 @@ export class Lobby {
   /** Keep an up-to-date list of open games. Calls onChange(list) as it changes. Returns { stop, refresh }. */
   watch(onChange) {
     const games = new Map();
+    // Games we've seen close. Relays that haven't heard yet can still send the
+    // old listing, so remember when each closed and ignore anything older.
+    const closed = new Map();
     const emit = () => {
       const t = now();
       for (const [k, g] of games) if (g.closed || g.seen < t - STALE_AFTER) games.delete(k);
       onChange([...games.values()].sort((a, b) => (b.version === PROTOCOL) - (a.version === PROTOCOL) || b.players - a.players || b.seen - a.seen));
     };
+    const close = (key, at) => {
+      closed.set(key, Math.max(at, closed.get(key) || 0));
+      games.delete(key);
+      emit();
+    };
     const add = (ev, data) => {
       const g = parseListing(ev, data);
       if (!g) return;
+      if (g.closed) { close(g.key, g.seen); return; }
+      if (closed.has(g.key) && g.seen <= closed.get(g.key)) return;
       const old = games.get(g.key);
       if (old && old.seen > g.seen) return;
       games.set(g.key, g);
@@ -101,7 +111,11 @@ export class Lobby {
     const subs = [
       this.pool.subscribe({ kinds: [KIND.app], '#t': [TAG.game], since: now() - 150 }, ev => { try { add(ev, JSON.parse(ev.content)); } catch { /* not ours */ } }),
       this.pool.subscribe({ kinds: [KIND.lobby], '#x': [TAG.lobby], since: now() - 10 }, ev => {
-        try { const m = JSON.parse(ev.content); if (m.type === 'game') add(ev, m.game); else if (m.type === 'closed') { games.delete(`${ev.pubkey}:${m.id}`); emit(); } } catch { /* not ours */ }
+        try {
+          const m = JSON.parse(ev.content);
+          if (m.type === 'game') add(ev, m.game);
+          else if (m.type === 'closed' && typeof m.id === 'string') close(`${ev.pubkey}:${m.id}`, ev.created_at);
+        } catch { /* not ours */ }
       }),
     ];
     const refresh = () => this.pool.ready(1, 4000).then(() => this.announce({ type: 'who' }));

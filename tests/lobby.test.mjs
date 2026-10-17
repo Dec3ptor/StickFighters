@@ -59,6 +59,29 @@ test('hosted games show up in the server browser, and vanish when closed', async
   w.stop(); host.close(); browser.close();
 });
 
+test('an old listing arriving after a game closed does not bring it back', async () => {
+  const host = lobby(), browser = lobby();
+  const { handle } = hostGame(host);
+  let list = [];
+  const w = browser.watch(l => { list = l; });
+  for (let i = 0; i < 40 && !list.length; i++) await wait(100);
+  assert.equal(list.length, 1);
+  // Grab the open listing as a relay that hasn't heard about the close would have it.
+  const stale = relay.stored.find(e => e.kind === KIND.app && e.pubkey === host.keys.pubkey);
+  await handle.close();
+  for (let i = 0; i < 40 && list.length; i++) await wait(100);
+  assert.equal(list.length, 0);
+  // A second relay (simulated) sends the old listing again.
+  const fake = await startRelay();
+  fake.stored.push(stale);
+  const late = new Lobby({ relays: [relay.url, fake.url], keys: makeKeys(), makeLink: () => new FakeLink() });
+  let list2 = [];
+  const w2 = late.watch(l => { list2 = l; });
+  await wait(1500);
+  assert.equal(list2.length, 0, 'stale listing ignored');
+  w.stop(); w2.stop(); host.close(); browser.close(); late.close(); await fake.close();
+});
+
 test('a player can join through the relay: sealed offer, answer, connected', async () => {
   const host = lobby(), player = lobby();
   const { handle, joined } = hostGame(host);
