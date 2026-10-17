@@ -157,7 +157,15 @@ export class NetHost {
     switch (data.t) {
       case 'ready': p.ready = true; break;
       case 'ping': p.link.send({ t: 'pong', at: data.at }, false); break;
-      case 'chat': this.chat(p.soldier?.name || p.name, data.text); break;
+      case 'chat': {
+        // At most 5 messages in 5 seconds each.
+        const t = Date.now();
+        p.said = (p.said || []).filter(x => t - x < 5000);
+        if (p.said.length >= 5) break;
+        p.said.push(t);
+        this.chat(p.soldier?.name || p.name, data.text);
+        break;
+      }
       case 'bye': p.link.close('left'); break;
     }
   }
@@ -195,7 +203,12 @@ export class NetHost {
   /** Call after every game update: sends snapshots and events every few ticks. */
   afterTick() {
     const g = this.game;
-    if (!g || g.tick % SNAPSHOT_EVERY !== 0) return;
+    if (!g) return;
+    if (g.tick === this.sentTick) {
+      // The match is over and the clock has stopped: just refresh now and then.
+      if (++this.idle % 30) return;
+    } else if (g.tick % SNAPSHOT_EVERY !== 0) return;
+    this.sentTick = g.tick;
     const ready = [...this.players].filter(p => p.ready);
     if (ready.length) {
       const world = encodeWorld(g);

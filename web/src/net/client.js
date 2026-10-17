@@ -69,7 +69,12 @@ export class NetClient {
     switch (data.t) {
       case 'welcome': this.start(data).catch(e => this.end(`Couldn't load the match: ${e.message}`)); break;
       case 'roster': if (this.game) { this.applyRoster(data.roster); this.opts.onRoster?.(); } break;
-      case 'ev': if (this.game) this.events.push(data); break;
+      case 'ev':
+        if (!this.game) break;
+        this.events.push(data);
+        // (In a background tab nothing is drawn, so don't let events pile up.)
+        if (this.events.length > 300) this.events.splice(0, this.events.length - 300);
+        break;
       case 'chat': this.addChat(data); break;
       case 'pong': { const rtt = this.clock() - data.at; this.ping = this.ping == null ? rtt : this.ping * 0.7 + rtt * 0.3; break; }
       case 'end': this.end(data.reason || 'The game ended'); break;
