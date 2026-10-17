@@ -36,8 +36,12 @@ jobs:
           path: test-results/
 
   publish:
-    # Only the repo's default branch goes live (GitHub Pages only accepts deploys from it).
-    if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
+    # The default branch goes live. claude/bold-euler-fpbmyp is also allowed because
+    # it's the only branch the github-pages environment accepts until `main` is added
+    # under Settings -> Environments -> github-pages -> Deployment branches and tags.
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref_name == github.event.repository.default_branch || github.ref_name == 'claude/bold-euler-fpbmyp')
     needs: test
     runs-on: ubuntu-latest
     permissions:
