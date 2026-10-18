@@ -129,8 +129,10 @@ test('a player joins: same soldiers on both sides, bots make room, prediction ma
   assert.equal(game.soldiers.filter(s => s.isBot).length, 3);
   await step(600);
   const mine = game.soldiers.find(s => s.remote);
-  assert.ok(mine.alive, 'my soldier spawned on the host');
-  assert.ok(c.me.alive, 'and on my screen');
+  assert.ok(mine.alive || mine.deaths > 0, 'my soldier spawned on the host');
+  // (If a bot has just got me, wait until I'm back: both sides then agree I'm alive.)
+  for (let i = 0; i < 600 && !(mine.alive && c.me.alive); i++) await step(1);
+  assert.ok(mine.alive && c.me.alive, 'alive on the host and on my screen');
   // No lag: what I predict is where the host has me, plus the one input it hasn't used yet (a tick of running).
   assert.ok(Math.hypot(c.me.x - mine.x, c.me.y - mine.y) < 4, `prediction off by ${Math.hypot(c.me.x - mine.x, c.me.y - mine.y).toFixed(1)} px`);
   for (const s of c.game.soldiers) assert.ok(Number.isFinite(s.x));

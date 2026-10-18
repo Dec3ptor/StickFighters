@@ -124,6 +124,8 @@ export function fire(game, s, input = {}) {
   s.spawnProtect = 0;
   s.anim.recoil = def.kind === 'rocket' || def.kind === 'rail' ? 4 : def.kind === 'melee' ? 0 : 2.5;
   if (def.kind !== 'flame' || game.tick % 6 === 0) game.sound(def.sound, muzzle.x, muzzle.y);
+  // How far the shot is heard (by bots that only know what they see and hear).
+  game.noise(s.x, s.y, def.kind === 'melee' ? 150 : def.kind === 'arrow' ? 260 : def.kind === 'thrown' || def.kind === 'placed' ? 320 : def.kind === 'flame' ? 450 : def.kind === 'rail' ? 1200 : 950, s);
   if (GUN_KINDS.has(def.kind)) game.fx?.muzzle(muzzle.x, muzzle.y, s.aim, (def.pellets || 0) > 1 || def.kind === 'rocket');
   if (!def.mag && inv.ammo <= 0 && !s.body.rope) s.selectBest();
   return true;
@@ -809,6 +811,7 @@ function ignite(s, by) {
 export function explode(game, x, y, blast, owner, weapon, direct = null) {
   game.fx?.explosion(x, y, blast.radius * 0.5);
   game.sound(blast.radius > 85 ? 'explosion' : 'explosionSmall', x, y);
+  game.noise(x, y, 1100, owner);
   game.shake(x, y, Math.min(16, 5 + blast.radius / 20));
   const reach = blast.radius + 8;
   let hit = game.near(x - reach, y - reach, x + reach, y + reach);

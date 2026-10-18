@@ -51,6 +51,8 @@ export function drawHud(r, game, me, opts = {}) {
   drawFeed(ctx, game, W, opts.chat);
   drawTop(ctx, game, me, W, standings, r, H);
   if (bigMap(game.map) && !game.over) drawMinimap(r, ctx, game, me, W);
+  // Fog of war: sounds from out of sight, off screen.
+  r.fogNow?.drawEdgeAlerts(ctx, r, W, H);
 
   // Messages for the player ("You got the Sniper Rifle").
   const notes = game.over ? [] : game.notes.filter(n => (n.to == null || n.to === me.id) && game.tick - n.tick < 150).slice(-3);

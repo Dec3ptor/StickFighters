@@ -55,6 +55,8 @@ const DEFAULTS = {
   lives: 3, gunKills: 1, crates: 'normal', maxPlayers: 8, visibility: 'public', gameName: '', tab: 'online', mapSource: 'originals',
   // Objective modes: the goal chosen for each (points, captures, tickets), and which team you're on.
   goals: {}, side: 1,
+  // Experimental: what bots notice ('classic' | 'sight') and fog of war ('off' | 'on').
+  botVision: 'classic', fog: 'off',
   // Settings screen
   graphics: 'auto', fpsCap: 'auto', showFps: false, showPing: true,
 };
@@ -104,6 +106,10 @@ function buildMenu(settings) {
   $('speedField').classList.toggle('hidden', !SHOW_SPEED_MENU);
   $('mode').value = settings.mode;
   $('side').value = String(settings.side === 2 ? 2 : 1);
+  $('botVision').value = settings.botVision === 'sight' ? 'sight' : 'classic';
+  $('fog').value = settings.fog === 'on' ? 'on' : 'off';
+  // Keep the experimental options open if any is in use.
+  $('experimental').open = settings.botVision === 'sight' || settings.fog === 'on';
   $('mute').checked = settings.muted;
   audio.setMuted(settings.muted);
   $('bots').addEventListener('input', showBots);
@@ -118,7 +124,7 @@ function buildMenu(settings) {
     r.checked = r.value === settings.mapSource;
     r.addEventListener('change', () => { buildMapCards(selectedMap()); rememberMenu(); });
   }
-  for (const id of ['difficulty', 'fragLimit', 'goal', 'side', 'lives', 'gunKills', 'crates', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
+  for (const id of ['difficulty', 'fragLimit', 'goal', 'side', 'botVision', 'fog', 'lives', 'gunKills', 'crates', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
   $('bots').addEventListener('change', rememberMenu);
   modeFields();
   buildMapCards(settings.map, { follow: true });
@@ -349,6 +355,8 @@ function readMenu() {
     goal: MODES[mode]?.goal ? +$('goal').value : 0,
     goals,
     side: +$('side').value === 2 ? 2 : 1,
+    botVision: $('botVision').value,
+    fog: $('fog').value,
     lives: +$('lives').value,
     gunKills: +$('gunKills').value,
     crates: $('crates').value,
@@ -408,7 +416,10 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const map = await mapDataFor(settings.map);
   // Let the loading message paint before building the bots' route map.
   await new Promise(r => setTimeout(r, 30));
-  const options = { lives: settings.lives, gunGameKills: settings.gunKills, crates: settings.crates };
+  const options = {
+    lives: settings.lives, gunGameKills: settings.gunKills, crates: settings.crates,
+    botVision: settings.botVision === 'sight' ? 'sight' : 'classic', fog: settings.fog === 'on',
+  };
   const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
   // Route maps depend on the map version and the speed's move timings.
@@ -820,6 +831,8 @@ function frame(now) {
     if (watching) view = watching;
   }
 
+  // Fog of war: sounds from places you can't see show where they came from.
+  if (g.options.fog) renderer.fog?.hear(g.sounds, view);
   audio.playQueue(g.sounds, view.x, view.y, me.id, me.team);
   g.sounds.length = 0;
 
@@ -829,6 +842,7 @@ function frame(now) {
   renderer.updateCamera(g, ax, ay, state.menuOpen ? null : input.mouse, sniping, dt);
   const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
+  renderer.fogFrom = view;
   renderer.render(g, alpha, me);
   if (client) me.ping = client.ping;
   drawHud(renderer, g, me, {

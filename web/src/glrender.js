@@ -156,6 +156,7 @@ export class GLRenderer extends Renderer {
     }
     this.lineW = Math.max(1.1, 1.3 / this.scale);
 
+    const fog = this.startFog(game, alpha, viewer);
     this.drawMap(game);
     this.drawStains(game);
     drawObjectives(this, game);
@@ -168,6 +169,7 @@ export class GLRenderer extends Renderer {
     this.drawEffects(game);
     for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);
     for (const sol of shown.names) this.drawName(game, sol, alpha, viewer);
+    fog?.drawAlerts(ctx);
   }
 
   /** The map doesn't change: build it once (again only if the outline width changes with the zoom). */

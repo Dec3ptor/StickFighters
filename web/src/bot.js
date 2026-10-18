@@ -9,6 +9,10 @@ import { inZone } from './objectives.js';
 
 const SIGHT = 1300;  // how far bots look for enemies
 const LOOKS = 6;     // in big games, sight lines a bot checks each time it looks around
+// Bot vision 'sight': what a bot can see is what would be on its screen (a 16:10 view
+// around it, like a player's), in front of it, in a clear line. Right next to it, it can
+// feel someone; behind it, only hear them.
+const VIEW = { hw: 520, hh: 330, behind: 30, touch: 26 };
 
 /** The route map spot nearest an item (remembered while the item stays put). */
 function nodeFor(nav, it) {
@@ -226,7 +230,35 @@ export class BotController {
     return game.map.clearLine(sx, sy, o.x, o.y - 8) || game.map.clearLine(sx, sy, o.x, o.y - 17);
   }
 
+  /** Bot vision 'sight': is `o` where this bot could see them (on its screen, in front of it)? */
+  inView(game, s, o) {
+    if (game.options.botVision !== 'sight') return true;
+    const dx = o.x - s.x, dy = o.y - 10 - (s.y - 20);
+    if (Math.abs(dx) > VIEW.hw || Math.abs(dy) > VIEW.hh) return false;
+    if (Math.hypot(dx, o.y - s.y) < VIEW.touch) return true;
+    const facing = Math.cos(this.aim ?? s.aim) >= 0 ? 1 : -1;
+    return dx * facing >= -VIEW.behind;
+  }
+
+  /**
+   * Bot vision 'sight': enemies' noises (shots, explosions, jetpacks, footsteps) within
+   * earshot. The bot turns that way and goes to have a look (unless it's busy fighting).
+   */
+  listen(game, s) {
+    for (const n of game.noises) {
+      if (n.id <= (this.heardId ?? 0)) continue;
+      this.heardId = n.id;
+      const o = n.by;
+      if (!o || o === s || (game.rules.teams && o.team === s.team)) continue;
+      if (Math.hypot(n.x - s.x, n.y - s.y) > n.r) continue;
+      if (this.target && this.target.alive) continue;
+      this.lastSeen = { x: n.x, y: n.y, tick: game.tick, heard: true };
+      this.thinkIn = Math.min(this.thinkIn, 8);
+    }
+  }
+
   perceive(game, s) {
+    if (game.options.botVision === 'sight') this.listen(game, s);
     const best = game.crowded ? this.lookAround(game, s) : this.lookAtAll(game, s);
     if (best !== this.target) {
       this.seen = 0;
@@ -242,7 +274,7 @@ export class BotController {
     for (const o of this.enemies(game, s)) {
       if (o.spawnProtect > 30) continue;
       const d = Math.hypot(o.x - s.x, o.y - s.y);
-      if (d > SIGHT || !this.canSee(game, s, o)) continue;
+      if (d > SIGHT || !this.inView(game, s, o) || !this.canSee(game, s, o)) continue;
       const score = d * (o === this.target ? 0.6 : 1) * (o === this.threat ? 0.7 : 1);
       if (score < bestD) { bestD = score; best = o; }
     }
@@ -259,7 +291,7 @@ export class BotController {
     for (const o of [this.target, this.threat]) {
       if (!o || !enemy(o)) continue;
       const d = Math.hypot(o.x - s.x, o.y - s.y);
-      if (d > SIGHT || !this.canSee(game, s, o)) continue;
+      if (d > SIGHT || !this.inView(game, s, o) || !this.canSee(game, s, o)) continue;
       const score = d * (o === this.target ? 0.6 : 1) * (o === this.threat ? 0.7 : 1);
       if (score < bestD) { bestD = score; best = o; }
     }
@@ -282,6 +314,7 @@ export class BotController {
         near[i] = { d, o };
       }
       for (const { d, o } of near) {
+        if (!this.inView(game, s, o)) continue;
         if (looks++ >= LOOKS) return best;
         if (this.canSee(game, s, o)) { bestD = d; best = o; break; }
       }
@@ -436,9 +469,11 @@ export class BotController {
       kind = 'chase';
     }
     if (!goal) {
-      // Hunt: head for a random enemy, or wander.
-      const f = game.crowded ? this.someEnemy(game, s) : null;
-      const foes = game.crowded ? (f ? [f] : []) : this.enemies(game, s);
+      // Hunt: head for a random enemy, or wander. (Bots that only know what they see and
+      // hear don't know where anyone is: they just wander.)
+      const blind = game.options.botVision === 'sight';
+      const f = game.crowded && !blind ? this.someEnemy(game, s) : null;
+      const foes = blind ? [] : game.crowded ? (f ? [f] : []) : this.enemies(game, s);
       if (foes.length && this.rng() < 0.75) {
         const f = foes[Math.floor(this.rng() * foes.length)];
         goal = costTo(f.x, f.y + 4).n;
@@ -632,7 +667,14 @@ export class BotController {
       let want;
       if (this.lastSeen && game.tick - this.lastSeen.tick < 120) want = Math.atan2(this.lastSeen.y - 10 - sy, this.lastSeen.x - sx);
       else if (Math.abs(s.body.vx) > 0.5) want = s.body.vx < 0 ? Math.PI + 0.05 : -0.05;
-      else want = this.aim ?? s.aim;
+      else if (game.options.botVision === 'sight') {
+        // Standing still with only its eyes to go on: look the other way now and then.
+        if (game.tick >= (this.glanceAt ?? 0)) {
+          this.glanceAt = game.tick + 100 + Math.floor(this.rng() * 160);
+          this.glance = Math.cos(this.aim ?? s.aim) >= 0 ? Math.PI : 0;
+        }
+        want = this.glance ?? this.aim ?? s.aim;
+      } else want = this.aim ?? s.aim;
       this.aim = (this.aim ?? s.aim) + clamp(angleDiff(this.aim ?? s.aim, want), -this.d.turn * 0.6, this.d.turn * 0.6);
       inp.aim = this.aim;
       return;

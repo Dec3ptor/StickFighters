@@ -170,8 +170,11 @@ function giveWeapon(game, s, id, ammo, it, crate) {
   const amount = ammo ?? def.ammo;
   if (!inv) {
     s.weapons[id] = def.mag ? { ammo: Infinity, mag: def.mag } : { ammo: amount };
-    if (!NO_SWITCH_KINDS.has(def.kind)) s.select(id);
-    game.notify(s, `${crate ? 'Crate: ' : 'You got the '}${def.name}${NO_SWITCH_KINDS.has(def.kind) ? ` (key ${KEY[def.slot]})` : ''}`);
+    // Only take it out if it's an upgrade on the starting pistol (or a melee fallback, or
+    // something out of ammo): don't swap out a weapon the player chose to hold.
+    const basic = s.current === 'Platinum' || !s.has(s.current) || WEAPONS[s.current]?.kind === 'melee';
+    const switched = basic && !NO_SWITCH_KINDS.has(def.kind) && s.select(id);
+    game.notify(s, `${crate ? 'Crate: ' : 'You got the '}${def.name}${switched ? '' : ` (key ${KEY[def.slot]})`}`);
   } else {
     if (inv.ammo >= (def.maxAmmo ?? def.ammo ?? 1) && !crate) return false;
     inv.ammo = Math.min(def.maxAmmo ?? Infinity, inv.ammo + amount);

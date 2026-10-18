@@ -8,7 +8,7 @@ import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
 import { fire, updateProjectiles, damage, explode, soldierBox, canHurt } from './combat.js';
 import { buildPose } from './stickman.js';
-import { RULES, TICK_RATE, MOTION } from './config.js';
+import { RULES, TICK_RATE, MOTION, PHYS } from './config.js';
 import { setGameSpeed } from './speed.js';
 import { WEAPONS } from './weapons.js';
 import { modeOf } from './modes.js';
@@ -19,7 +19,9 @@ const IDLE = { move: 0 };
 
 export class Game {
   /**
-   * options: { lives (one in the chamber), gunGameKills (kills per weapon), crates: 'off'|'normal'|'lots' }
+   * options: { lives (one in the chamber), gunGameKills (kills per weapon), crates: 'off'|'normal'|'lots',
+   *   botVision: 'classic' (bots see everyone nearby in a clear line) | 'sight' (only what's on their
+   *   screen in front of them, plus what they hear), fog: true (players only see what's in their line of sight) }
    */
   constructor({ mapData, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1, options = {} }) {
     // Speed rescales shared constants, so set it before anything reads them.
@@ -27,7 +29,9 @@ export class Game {
     this.map = new GameMap(mapData);
     this.mode = mode;
     this.rules = modeOf(mode);
-    this.options = { lives: 3, gunGameKills: 1, crates: 'normal', ...options };
+    this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, ...options };
+    // Noises bots can hear (with bot vision 'sight'): { x, y, r (how far it carries), by, tick }.
+    this.noises = [];
     this.fragLimit = fragLimit;
     this.tickRate = TICK_RATE;
     this.speed = speed;
@@ -144,6 +148,12 @@ export class Game {
     if (this.quake?.owner === s) this.quake.owner = null;
   }
 
+  /** A noise bots can hear (bot vision 'sight' only): made by `by` at (x, y), heard up to r px away. */
+  noise(x, y, r, by) {
+    if (this.options.botVision !== 'sight') return;
+    this.noises.push({ x, y, r, by, tick: this.tick, id: (this.noiseCount = (this.noiseCount || 0) + 1) });
+  }
+
   /** Queue a sound at (x, y). `to` = a soldier id when only that player should hear it. */
   sound(name, x, y, to = null) {
     if (this.sounds.length < 96) this.sounds.push({ name, x, y, to });
@@ -183,6 +193,8 @@ export class Game {
     if (this.quake) this.updateQuake();
     this.fx?.update(this.map, MOTION.timeScale);
     if (this.feed.length > 6) this.feed.splice(0, this.feed.length - 6);
+    // (Bots listen every few updates: keep the last few updates' noises.)
+    if (this.noises.length) this.noises = this.noises.filter(n => this.tick - n.tick < 8);
     if (this.notes.length > 20) this.notes.splice(0, this.notes.length - 20);
   }
 
@@ -207,7 +219,10 @@ export class Game {
     s.move(move, this.map);
     const b = s.body;
     if (b.bounced) this.sound('bounce', s.x, s.y);
-    if (b.landed > MOTION.landSound) this.sound('land', s.x, s.y);
+    if (b.landed > MOTION.landSound) { this.sound('land', s.x, s.y); this.noise(s.x, s.y, 220, s); }
+    // Footsteps: running is heard close by (creeping along crouched isn't).
+    if (b.onGround && !b.crouching && Math.abs(b.vx) > PHYS.runSpeed * MOTION.timeScale * 0.6 && this.tick % 12 === s.id % 12) this.noise(s.x, s.y, 110, s);
+    if (b.jetting && this.tick % 10 === s.id % 10) this.noise(s.x, s.y, 420, s);
     if (b.jetting) {
       if (this.tick % 30 === 0) this.sound('jet', s.x, s.y);
       if (this.tick % 2 === 0) this.fx?.fire(s.x + s.facing * 3, s.y - 4);

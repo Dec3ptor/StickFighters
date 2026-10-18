@@ -8,6 +8,7 @@ import { clamp, lerp } from './util.js';
 import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate } from './sprites.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
 import { seamsOf, fillSeams } from './map.js';
+import { Fog } from './fog.js';
 
 export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate };
 
@@ -116,6 +117,7 @@ export class Renderer {
     this.updateView(s, this.canvas.width / 2 - (this.cam.x + sx) * s, this.canvas.height / 2 - (this.cam.y + sy) * s);
     this.lineW = Math.max(1.1, 1.3 / (this.scale));
 
+    const fog = this.startFog(game, alpha, viewer);
     this.drawMap(game);
     this.drawStains(game);
     drawObjectives(this, game);
@@ -128,6 +130,17 @@ export class Renderer {
     this.drawEffects(game);
     for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);
     for (const sol of shown.names) this.drawName(game, sol, alpha, viewer);
+    fog?.drawAlerts(this.ctx);
+  }
+
+  /**
+   * Fog of war (a match option): work out what the player can see, and grey out the rest
+   * (drawn first, under the map). `fogFrom` is who the camera follows, if not the viewer.
+   */
+  startFog(game, alpha, viewer) {
+    this.fogNow = game.options?.fog && (this.fogFrom || viewer) ? (this.fog ||= new Fog()).update(game, this.fogFrom || viewer, alpha) : null;
+    this.fogNow?.drawShadows(this.ctx, this.view);
+    return this.fogNow;
   }
 
   /** The part of the world on screen (plus a margin), for skipping what's off it in big games. */
@@ -146,9 +159,12 @@ export class Renderer {
    * Big games: only those on screen, and in a crowd, only human players' names.
    */
   shownSoldiers(game, viewer) {
-    const alive = game.soldiers.filter(o => o.alive);
-    if (!game.crowded) return { soldiers: alive, names: alive };
-    const soldiers = alive.filter(o => this.inView(o.x, o.y));
+    const fog = this.fogNow;
+    if (!game.crowded) {
+      const alive = game.soldiers.filter(o => o.alive && (!fog || fog.shows(o)));
+      return { soldiers: alive, names: alive };
+    }
+    const soldiers = game.soldiers.filter(o => o.alive && this.inView(o.x, o.y) && (!fog || fog.shows(o)));
     return { soldiers, names: soldiers.length > 60 ? soldiers.filter(o => o === viewer || !o.isBot) : soldiers };
   }
 
@@ -225,6 +241,7 @@ export class Renderer {
       const front = p0.kind === 'flame' || p0.kind === 'gas' || p0.kind === 'fire';
       if (front !== top) continue;
       const p = between(p0, this.alpha);
+      if (this.fogNow && !this.fogNow.sees(p.x, p.y)) continue; // (fog of war: out of sight)
       switch (p.kind) {
         case 'flame': drawFlame(ctx, p); break;
         case 'fire': drawFirePatch(ctx, p, t); break;

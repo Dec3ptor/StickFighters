@@ -94,6 +94,8 @@ input[type="range"] { width: 100%; accent-color: var(--ink); }
   padding: 2px 6px 2px 2px;
   align-content: start;
 }
+.experimental { margin: 4px 0 14px; }
+.experimental summary { cursor: pointer; font-weight: bold; font-size: 14px; margin-bottom: 8px; }
 .map-card .made-for {
   position: absolute; top: 5px; left: 5px; font-size: 10px; padding: 1px 6px;
   background: var(--ink); color: var(--paper); letter-spacing: 0.02em;

@@ -107,6 +107,21 @@
                 <option value="hard">Hard</option>
               </select>
             </label>
+            <details class="experimental" id="experimental">
+              <summary>Experimental</summary>
+              <div class="field-pair">
+                <label class="field">Bot vision
+                  <select id="botVision">
+                    <option value="classic">See everyone nearby</option>
+                    <option value="sight">Only what they see or hear</option>
+                  </select>
+                </label>
+                <label class="field">Fog of war
+                  <select id="fog"><option value="off">Off</option><option value="on">On</option></select>
+                </label>
+              </div>
+              <p class="muted-note"><b>Only what they see or hear</b>: bots spot you only on their screen, in front of them and in a clear line; behind them, they only hear you (shots, explosions, jetpacks, landings, running close by; creeping along crouched is silent). <b>Fog of war</b>: you only see what your soldier can see; the rest is greyed out, enemies there are hidden, and sounds from there show as orange ripples (or arrows at the screen's edge).</p>
+            </details>
             <!-- Hidden unless SHOW_SPEED_MENU is true in src/config.js -->
             <label class="field hidden" id="speedField">Game speed
               <select id="speed">
