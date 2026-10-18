@@ -13,10 +13,12 @@ const INK = '#111';
 const TEAM_COLORS = { 1: '#2f6fdb', 2: '#d33b2f' };
 const TEAM_HEAD = { 1: '#d9e6ff', 2: '#ffdcd8' };
 
+/** Draws with the browser's 2D canvas. (glrender.js draws the same things with WebGL.) */
 export class Renderer {
-  constructor(canvas) {
+  constructor(canvas, ctx = canvas.getContext('2d')) {
+    this.kind = 'canvas';
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
+    this.ctx = ctx;
     this.cam = { x: 0, y: 0, zoom: 1 };
     this.shake = 0;
     this.resize();
@@ -27,13 +29,33 @@ export class Renderer {
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.w = window.innerWidth;
     this.h = window.innerHeight;
-    this.canvas.width = Math.round(this.w * this.dpr);
-    this.canvas.height = Math.round(this.h * this.dpr);
+    this.pw = Math.round(this.w * this.dpr);
+    this.ph = Math.round(this.h * this.dpr);
     this.canvas.style.width = this.w + 'px';
     this.canvas.style.height = this.h + 'px';
+    this.applySize();
+    this.blank = false;
     // Show at least the original 800x600 view, scaled to fit the window.
     this.baseScale = Math.min(this.w / VIEW_W, this.h / VIEW_H);
   }
+
+  applySize() {
+    this.canvas.width = this.pw;
+    this.canvas.height = this.ph;
+  }
+
+  /** Nothing playing: a blank page behind the menus (drawn once, not every frame). */
+  clear() {
+    if (this.blank) return;
+    const ctx = this.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    this.blank = true;
+  }
+
+  /** Show the frame (a canvas shows what's drawn straight away). */
+  present() {}
 
   get scale() { return this.baseScale * this.cam.zoom; }
 
@@ -71,6 +93,7 @@ export class Renderer {
 
   render(game, alpha, viewer) {
     const ctx = this.ctx, s = this.scale * this.dpr;
+    this.blank = false;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -95,11 +118,18 @@ export class Renderer {
     for (const p of game.map.solids) ctx.fillRect(p.l - e, p.t - e, p.r - p.l + 2 * e, p.b - p.t + 2 * e);
     ctx.fillStyle = '#fff';
     for (const p of game.map.solids) ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t);
-    // Jump pads: light fill with upward chevrons.
+    this.drawPads(game, true);
+  }
+
+  /** Jump pads: light fill with upward chevrons that move. */
+  drawPads(game, fill) {
+    const ctx = this.ctx;
     for (const p of game.map.solids) {
       if (!p.bounce) continue;
-      ctx.fillStyle = '#eef3e2';
-      ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t);
+      if (fill) {
+        ctx.fillStyle = '#eef3e2';
+        ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t);
+      }
       ctx.strokeStyle = '#7c9a3d';
       ctx.lineWidth = 1.5;
       const pulse = (Date.now() / 400) % 1;
@@ -335,129 +365,130 @@ export class Renderer {
 
   drawEffects(game) {
     if (!game.fx) return;
-    const ctx = this.ctx;
-    for (const p of game.fx.parts) {
-      switch (p.kind) {
-        case 'blood':
-          ctx.fillStyle = '#c40f0f';
-          ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
-          break;
-        case 'spark':
-          ctx.fillStyle = '#444';
-          ctx.fillRect(p.x - 0.5, p.y - 0.5, 1, 1);
-          break;
-        case 'ember':
-          ctx.fillStyle = p.life > 15 ? '#ffb02e' : '#c4561a';
-          ctx.fillRect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
-          break;
-        case 'puff':
-          ctx.strokeStyle = `rgba(120,120,120,${0.5 * p.life / p.max})`;
-          ctx.lineWidth = 0.8;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.stroke();
-          break;
-        case 'flash': {
-          ctx.save();
-          ctx.translate(p.x, p.y);
-          ctx.rotate(p.angle);
-          ctx.fillStyle = p.life > 1 ? '#fff3a0' : '#ffb02e';
-          ctx.beginPath();
-          ctx.moveTo(0, -p.size * 0.35); ctx.lineTo(p.size, 0); ctx.lineTo(0, p.size * 0.35); ctx.lineTo(p.size * 0.3, 0);
-          ctx.fill();
-          ctx.restore();
-          break;
-        }
-        case 'shell':
-          ctx.save();
-          ctx.translate(p.x, p.y); ctx.rotate(p.angle);
-          ctx.fillStyle = '#c9a227';
-          ctx.fillRect(-1.2, -0.5, 2.4, 1);
-          ctx.restore();
-          break;
-        case 'smoke':
-          ctx.fillStyle = `rgba(140,140,140,${0.32 * p.life / p.max})`;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
-          break;
-        case 'fire': {
-          const k = p.life / p.max;
-          ctx.fillStyle = k > 0.6 ? `rgba(255,220,90,${k})` : `rgba(255,110,30,${k})`;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (0.6 + k * 0.4), 0, Math.PI * 2); ctx.fill();
-          break;
-        }
-        case 'boom': {
-          const k = p.life / p.max;
-          const r = p.r * (1.3 - k * 0.6);
-          const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
-          g.addColorStop(0, `rgba(255,255,220,${k})`);
-          g.addColorStop(0.4, `rgba(255,170,40,${k})`);
-          g.addColorStop(1, 'rgba(255,90,20,0)');
-          ctx.fillStyle = g;
-          ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
-          break;
-        }
-        case 'trail':
-          ctx.strokeStyle = `rgba(90,90,90,${0.7 * p.life / p.max})`;
-          ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x1, p.y1); ctx.stroke();
-          break;
-        case 'ring': {
-          const k = p.life / p.max;
-          ctx.strokeStyle = p.color;
-          ctx.globalAlpha = k;
-          ctx.lineWidth = 1.5;
-          ctx.beginPath(); ctx.arc(p.x, p.y, 6 + (1 - k) * 22, 0, Math.PI * 2); ctx.stroke();
-          ctx.beginPath(); ctx.arc(p.x, p.y, 2 + (1 - k) * 12, 0, Math.PI * 2); ctx.stroke();
-          ctx.globalAlpha = 1;
-          break;
-        }
-        case 'whack': {
-          const k = p.life / p.max;
-          ctx.save();
-          ctx.translate(p.x, p.y);
-          ctx.rotate(p.angle);
-          ctx.fillStyle = `rgba(255,214,60,${k})`;
-          ctx.strokeStyle = `rgba(30,30,30,${k})`;
-          ctx.lineWidth = 0.7;
-          const r = 7 + (1 - k) * 4;
-          ctx.beginPath();
-          for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8, rr = i % 2 ? r * 0.45 : r; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
-          ctx.closePath(); ctx.fill(); ctx.stroke();
-          ctx.restore();
-          break;
-        }
-        case 'sparkle':
-          ctx.fillStyle = `rgba(170,120,255,${p.life / p.max})`;
-          ctx.fillRect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
-          break;
-        case 'plane':
-          ctx.save();
-          ctx.translate(p.x, p.y);
-          ctx.scale(Math.sign(p.vx) || 1, 1);
-          ctx.fillStyle = '#555';
-          ctx.beginPath(); ctx.ellipse(0, 0, 22, 4, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(-10, 12); ctx.lineTo(-2, 12); ctx.lineTo(6, 0); ctx.fill();
-          ctx.beginPath(); ctx.moveTo(-18, 0); ctx.lineTo(-24, -9); ctx.lineTo(-19, -9); ctx.lineTo(-12, 0); ctx.fill();
-          ctx.restore();
-          break;
-        case 'gib':
-          ctx.globalAlpha = Math.min(1, p.life / 40);
-          ctx.strokeStyle = INK;
-          ctx.lineWidth = 1.5;
-          ctx.lineCap = 'round';
-          ctx.beginPath();
-          ctx.moveTo(p.x - Math.cos(p.angle) * p.len / 2, p.y - Math.sin(p.angle) * p.len / 2);
-          ctx.lineTo(p.x + Math.cos(p.angle) * p.len / 2, p.y + Math.sin(p.angle) * p.len / 2);
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-          break;
-        case 'head':
-          ctx.globalAlpha = Math.min(1, p.life / 40);
-          ctx.fillStyle = '#fff';
-          ctx.strokeStyle = INK;
-          ctx.lineWidth = 1.5;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-          ctx.globalAlpha = 1;
-          break;
+    for (const p of game.fx.parts) this.drawEffect(this.ctx, p);
+  }
+
+  drawEffect(ctx, p) {
+    switch (p.kind) {
+      case 'blood':
+        ctx.fillStyle = '#c40f0f';
+        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+        break;
+      case 'spark':
+        ctx.fillStyle = '#444';
+        ctx.fillRect(p.x - 0.5, p.y - 0.5, 1, 1);
+        break;
+      case 'ember':
+        ctx.fillStyle = p.life > 15 ? '#ffb02e' : '#c4561a';
+        ctx.fillRect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
+        break;
+      case 'puff':
+        ctx.strokeStyle = `rgba(120,120,120,${0.5 * p.life / p.max})`;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.stroke();
+        break;
+      case 'flash': {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.angle);
+        ctx.fillStyle = p.life > 1 ? '#fff3a0' : '#ffb02e';
+        ctx.beginPath();
+        ctx.moveTo(0, -p.size * 0.35); ctx.lineTo(p.size, 0); ctx.lineTo(0, p.size * 0.35); ctx.lineTo(p.size * 0.3, 0);
+        ctx.fill();
+        ctx.restore();
+        break;
       }
+      case 'shell':
+        ctx.save();
+        ctx.translate(p.x, p.y); ctx.rotate(p.angle);
+        ctx.fillStyle = '#c9a227';
+        ctx.fillRect(-1.2, -0.5, 2.4, 1);
+        ctx.restore();
+        break;
+      case 'smoke':
+        ctx.fillStyle = `rgba(140,140,140,${0.32 * p.life / p.max})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'fire': {
+        const k = p.life / p.max;
+        ctx.fillStyle = k > 0.6 ? `rgba(255,220,90,${k})` : `rgba(255,110,30,${k})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (0.6 + k * 0.4), 0, Math.PI * 2); ctx.fill();
+        break;
+      }
+      case 'boom': {
+        const k = p.life / p.max;
+        const r = p.r * (1.3 - k * 0.6);
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+        g.addColorStop(0, `rgba(255,255,220,${k})`);
+        g.addColorStop(0.4, `rgba(255,170,40,${k})`);
+        g.addColorStop(1, 'rgba(255,90,20,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+        break;
+      }
+      case 'trail':
+        ctx.strokeStyle = `rgba(90,90,90,${0.7 * p.life / p.max})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x1, p.y1); ctx.stroke();
+        break;
+      case 'ring': {
+        const k = p.life / p.max;
+        ctx.strokeStyle = p.color;
+        ctx.globalAlpha = k;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 6 + (1 - k) * 22, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(p.x, p.y, 2 + (1 - k) * 12, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case 'whack': {
+        const k = p.life / p.max;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.angle);
+        ctx.fillStyle = `rgba(255,214,60,${k})`;
+        ctx.strokeStyle = `rgba(30,30,30,${k})`;
+        ctx.lineWidth = 0.7;
+        const r = 7 + (1 - k) * 4;
+        ctx.beginPath();
+        for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8, rr = i % 2 ? r * 0.45 : r; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.restore();
+        break;
+      }
+      case 'sparkle':
+        ctx.fillStyle = `rgba(170,120,255,${p.life / p.max})`;
+        ctx.fillRect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
+        break;
+      case 'plane':
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.scale(Math.sign(p.vx) || 1, 1);
+        ctx.fillStyle = '#555';
+        ctx.beginPath(); ctx.ellipse(0, 0, 22, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(-10, 12); ctx.lineTo(-2, 12); ctx.lineTo(6, 0); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-18, 0); ctx.lineTo(-24, -9); ctx.lineTo(-19, -9); ctx.lineTo(-12, 0); ctx.fill();
+        ctx.restore();
+        break;
+      case 'gib':
+        ctx.globalAlpha = Math.min(1, p.life / 40);
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(p.x - Math.cos(p.angle) * p.len / 2, p.y - Math.sin(p.angle) * p.len / 2);
+        ctx.lineTo(p.x + Math.cos(p.angle) * p.len / 2, p.y + Math.sin(p.angle) * p.len / 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        break;
+      case 'head':
+        ctx.globalAlpha = Math.min(1, p.life / 40);
+        ctx.fillStyle = '#fff';
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.globalAlpha = 1;
+        break;
     }
   }
 

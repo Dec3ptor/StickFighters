@@ -7,7 +7,7 @@ import { GUN_GAME_LADDER } from './modes.js';
 const FONT = 'Arial, Helvetica, sans-serif';
 const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
 
-/** opts: { showScores, watching (soldier the camera follows when you're out), chat: [{ text, tick }], ping } */
+/** opts: { showScores, watching (soldier the camera follows when you're out), chat: [{ text, tick }], ping, perf (frame rate text) } */
 export function drawHud(r, game, me, opts = {}) {
   const ctx = r.ctx, d = r.dpr, W = r.w, H = r.h;
   ctx.setTransform(d, 0, 0, d, 0, 0);
@@ -77,6 +77,12 @@ export function drawHud(r, game, me, opts = {}) {
     ctx.font = `10px ${FONT}`;
     ctx.fillStyle = opts.ping > 200 ? '#c22' : '#999';
     ctx.fillText(`${Math.round(opts.ping)} ms`, W - 12, H - 12);
+  }
+  if (opts.perf) {
+    ctx.textAlign = 'right';
+    ctx.font = `10px ${FONT}`;
+    ctx.fillStyle = '#999';
+    ctx.fillText(opts.perf, W - 12, H - (opts.ping != null ? 26 : 12));
   }
 
   if (opts.showScores || game.over) drawScoreboard(ctx, game, me, W, H, opts);

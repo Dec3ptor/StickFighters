@@ -16,6 +16,7 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
 - **Bots** that get around every map, go for weapons, health and crates, and fight with human-like aim and reactions. They use every weapon: they lob grenades, call air strikes on you, steer super sheep and set them off next to you. There are 10 personalities and three skill levels.
 - **The original game's sound effects**, from the Stick Soldiers Python fan project (see [`web/sounds/CREDITS.md`](web/sounds/CREDITS.md)). The new weapons' sounds (sheep included) are generated in code. The original game had no music.
 - **Headshots** do double damage (2.5× with the sniper rifle, 2× with the bow), and you hear a hitmarker tick when you land one.
+- **Drawn with WebGL** (through [PixiJS](https://pixijs.com/)) on computers with a graphics card, and with the plain 2D canvas on computers without one, where it's faster. Both draw exactly the same picture. Add `?fps` to the address to see which one you're on and your frame rate, and `?renderer=webgl` or `?renderer=canvas` to try the other.
 - **Game speed fixed at 75%** of the original tuning: movement, jumps, bullets, grenades and fire rates are slowed, while the game keeps updating 60 times a second. Jumps keep their height, so every map stays climbable. A hidden speed picker can be switched back on with `SHOW_SPEED_MENU` in `web/src/config.js`.
 
 ## Game modes
@@ -104,10 +105,10 @@ npm run relay        # optional: a local Nostr relay at ws://localhost:7447, for
                      # open http://localhost:8080/?relay=ws://localhost:7447 in two windows, host in one, join in the other
 npm test             # game logic: physics, bots, weapons, modes, netcode, lobby (through a local relay)
 npx playwright install chromium
-npm run test:browser # in Chromium: plays matches, uses the map maker, and plays online between three browsers
+npm run test:browser # in Chromium: plays matches, uses the map maker, checks WebGL draws the same as the canvas, and plays online between three browsers
 ```
 
-There's no build step: the game is plain JavaScript modules in `web/`, and the browser loads them directly. The only library is [noble-secp256k1](https://github.com/paulmillr/noble-secp256k1) (in `web/vendor/`), for signing relay messages.
+There's no build step: the game is plain JavaScript modules in `web/`, and the browser loads them directly. Two libraries are copied into `web/vendor/`: [PixiJS](https://pixijs.com/) 8.22 (`pixi.min.js`, MIT licence), for WebGL drawing, and [noble-secp256k1](https://github.com/paulmillr/noble-secp256k1), for signing relay messages. PixiJS is only downloaded on computers that draw with WebGL.
 
 ## Publishing
 
@@ -130,7 +131,9 @@ GitHub Pages has to be switched on once: **Settings → Pages → Build and depl
 | `web/src/editor.js` | The map maker |
 | `web/src/custommaps.js`, `mapstore.js` | Custom maps: checking them, share links, `.ssm` files, saving in the browser |
 | `web/src/stickman.js`, `sprites.js` | The stick figures, and drawings of weapons, animals and crates |
-| `web/src/render.js`, `hud.js`, `audio.js`, `input.js`, `main.js` | Drawing, HUD, sound, controls and page wiring |
+| `web/src/render.js`, `hud.js` | Drawing the world and the HUD (with a 2D canvas, or anything that draws like one) |
+| `web/src/glrender.js`, `glctx.js` | WebGL drawing: picks WebGL or the canvas, and lets the drawing code above draw through PixiJS |
+| `web/src/audio.js`, `input.js`, `main.js` | Sound, controls and page wiring |
 | `web/data/` | The 8 maps and the leg animations, decoded from the original game |
 | `web/sounds/` | The original game's sound effects ([credits](web/sounds/CREDITS.md)) |
 | `tests/` | Headless tests (`npm test`) and browser tests (`tests/browser/`) |
@@ -143,6 +146,7 @@ GitHub Pages has to be switched on once: **Settings → Pages → Build and depl
 - **Jump height.** The original's physics constants are lost, so they were tuned against its maps. A jump reaches about 168 px and jump pads launch 2.05× their stored "bounce" value. Those are the smallest values that let you climb out of every pit and back up every tower in all 8 maps. A test checks that every map stays fully connected.
 - **Bots.** The bots' route planner finds every spot a soldier can stand on. It then tries walks, jumps (including mid-air direction changes) and drops from each spot with the same physics code the game uses, so every planned move is one the bot can actually perform. In a real match a move can still go wrong (a bot lines up a jump slightly off, or lands on a jump pad), so a move that fails costs more to plan with next time and the bots find another way. A bot that hasn't got anywhere for a few seconds gives up on what it was doing and goes somewhere else, and teammates spread out over different pickups instead of piling onto the same one.
 - **Floating pickups.** Items sit exactly where the original map files put them, which is often 20–50 px above the floor. You may need to hop to grab some.
+- **WebGL.** All drawing code is written for the browser's 2D canvas. `glctx.js` takes the same drawing calls and turns them into PixiJS shapes and cached text, in the same order, so the WebGL renderer reuses every drawing (soldiers, weapons, animals, the HUD) unchanged. The map is built once, and blood and most particles are sprites, as they're the most numerous. A browser test draws the same frames both ways and checks they match. Computers without a graphics card run WebGL on the processor, which is slower than the canvas, so those get the canvas.
 - **Same game everywhere.** Offline, hosting and joining all run the same `Game` code. The host records every sound and effect as it happens and sends them on, and players draw trails (rocket smoke, jetpack flames) themselves, from what's in the snapshots.
 
 ## Ideas for what's next

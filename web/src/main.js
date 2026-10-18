@@ -5,7 +5,7 @@ import { Game } from './game.js';
 import { NavGraph } from './nav.js';
 import { BotController, BOT_PROFILES } from './bot.js';
 import { Input, PlayerController } from './input.js';
-import { Renderer } from './render.js';
+import { createRenderer } from './glrender.js';
 import { drawHud } from './hud.js';
 import { SoundSystem } from './audio.js';
 import { setLegAnimations } from './stickman.js';
@@ -23,9 +23,10 @@ import { PROTOCOL } from './net/protocol.js';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const canvas = $('game');
-const renderer = new Renderer(canvas);
-const input = new Input(canvas);
+// Set up in boot(): the renderer (WebGL or canvas) decides which canvas element we draw on.
+let canvas = $('game');
+let renderer = null;
+let input = null;
 const audio = new SoundSystem();
 
 const maps = { index: [], data: new Map(), nav: new Map(), community: new Map() };
@@ -636,10 +637,7 @@ function frame(now) {
   const g = state.game;
   if (!g) {
     // Nothing playing: keep the canvas blank behind the menus.
-    const ctx = renderer.ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, renderer.canvas.width, renderer.canvas.height);
+    renderer.clear();
     return;
   }
   const client = state.mode === 'client' ? state.net?.client : null;
@@ -661,13 +659,32 @@ function frame(now) {
   const ax = view === me ? lerp(me.prevX, me.x, alpha) + (me.drawDX || 0) : view.x;
   const ay = view === me ? lerp(me.prevY, me.y, alpha) + (me.drawDY || 0) : view.y;
   renderer.updateCamera(g, ax, ay, state.menuOpen ? null : input.mouse, sniping);
+  const drawStart = performance.now();
   renderer.render(g, alpha, me);
   drawHud(renderer, g, me, {
     showScores: input.down('Tab') && !state.chatOpen, watching, chat: state.chat,
-    ping: client ? client.ping : null,
+    ping: client ? client.ping : null, perf: perf.text,
   });
   if (!state.menuOpen && !g.over && !state.chatOpen) renderer.drawCrosshair(input.mouse.x, input.mouse.y, sniping);
+  renderer.present();
+  if (perf.on) countFrame(now, performance.now() - drawStart);
   if (g.over) matchOver(g);
+}
+
+// Frame rate readout, shown with ?fps in the address.
+const perf = { on: new URLSearchParams(location.search).has('fps'), text: null, at: 0, frames: 0, ms: 0 };
+
+function countFrame(now, drawMs) {
+  perf.frames++;
+  perf.ms += drawMs;
+  if (now - perf.at < 500) return;
+  if (perf.at) {
+    const fps = Math.round((perf.frames * 1000) / (now - perf.at));
+    perf.text = `${renderer.kind === 'webgl' ? 'WebGL' : 'Canvas'} · ${fps} fps · ${(perf.ms / perf.frames).toFixed(1)} ms drawing`;
+  }
+  perf.at = now;
+  perf.frames = 0;
+  perf.ms = 0;
 }
 
 function matchOver(g) {
@@ -705,9 +722,12 @@ function nextMatch() {
 // Keep online games running in a background tab (browsers pause animation frames there).
 function startBackgroundTicker() {
   try {
-    const src = 'setInterval(() => postMessage(0), 16);';
+    // The worker only ticks while the tab is hidden.
+    const src = 'let t = null; onmessage = e => { clearInterval(t); t = e.data ? setInterval(() => postMessage(0), 16) : null; };';
     const worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
     worker.onmessage = () => { if (document.hidden && state.game && state.mode !== 'offline') simulate(performance.now()); };
+    document.addEventListener('visibilitychange', () => worker.postMessage(document.hidden));
+    worker.postMessage(document.hidden);
   } catch { /* no workers: online games pause in background tabs */ }
 }
 
@@ -807,10 +827,14 @@ function takeInvite() {
 }
 
 async function boot() {
-  const [index, legs] = await Promise.all([
+  const [index, legs, r] = await Promise.all([
     fetch('data/maps/index.json').then(r => r.json()),
     fetch('data/animations/legs.json').then(r => r.json()),
+    createRenderer(canvas),
   ]);
+  renderer = r;
+  canvas = renderer.canvas;
+  input = new Input(canvas);
   setLegAnimations(legs);
   audio.preload();
   maps.index = index;
@@ -858,7 +882,7 @@ async function boot() {
     toast(result.text);
   });
   // For automated tests and debugging in the console.
-  window.stickSoldiers = { state, startMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab };
+  window.stickSoldiers = { state, renderer, startMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab };
 }
 
 boot().catch(err => {
