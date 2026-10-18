@@ -230,21 +230,21 @@ test('conquest: deaths cost tickets, holding fewer points bleeds them, out of ti
   assert.ok(game.over && game.winner.team === 1);
 });
 
-test('conquest: soldiers can spawn on points their team holds', () => {
+test('conquest: soldiers respawn at the usable place nearest where they died', () => {
   const game = arena('conquest', { fragLimit: 100 });
   const blue = put(game, 'Blue', 1, 0);
   run(game, 7 * SEC + 2);
-  assert.equal(game.modeState.points[1].own, 1);
-  let onPoint = 0;
-  for (let i = 0; i < 40; i++) {
-    const p = game.pickSpawn(blue);
-    if (p.x > -100 && p.x < 100) onPoint++;
-    else assert.equal(p.x, -800, 'otherwise at base');
-  }
-  assert.ok(onPoint > 15, `spawned on B ${onPoint} times out of 40`);
-  // Not while enemies are on it.
+  assert.equal(game.modeState.points[1].own, 1, 'blue holds B');
+  const diesAt = x => { if (!blue.alive) game.respawn(blue); place(blue, x); game.kill(blue, null, null); };
+  // Died near B: back on B. Near the base (or further out than B): the base.
+  diesAt(150);
+  for (let i = 0; i < 10; i++) { const p = game.pickSpawn(blue); assert.ok(p.x > -100 && p.x < 100, `on B (${p.x})`); }
+  diesAt(-650);
+  for (let i = 0; i < 10; i++) assert.equal(game.pickSpawn(blue).x, -800, 'at base');
+  // B with an enemy on it can't be used: the nearest usable place is the base.
+  diesAt(150);
   put(game, 'Red', 2, 50);
-  for (let i = 0; i < 20; i++) assert.equal(game.pickSpawn(blue).x, -800);
+  for (let i = 0; i < 10; i++) assert.equal(game.pickSpawn(blue).x, -800);
 });
 
 test('conquest: players choose where they spawn: base, or a point their team holds', () => {
@@ -324,6 +324,22 @@ test("rush: an M-COM's blast can't end the round on tickets the next sector refi
   assert.ok(!blue.alive, 'caught in the blast');
   assert.equal(game.teamScore[1], 2, 'that death costs a ticket from the refill');
   assert.ok(!game.over, `the round goes on (${JSON.stringify(game.winner)})`);
+});
+
+test('rush: soldiers respawn as far forward as they can', () => {
+  const spawns = [
+    { x: -850, y: -12, team: 1, sector: 1 }, { x: -500, y: -12, team: 1, sector: 1 }, { x: -200, y: -12, team: 1, sector: 1 },
+    { x: 850, y: -12, team: 2, sector: 1 }, { x: 450, y: -12, team: 2, sector: 1 },
+  ];
+  const game = arena('rush', { spawns });
+  const blue = put(game, 'Blue', 1, -850), red = put(game, 'Red', 2, 850);
+  run(game, 1);
+  // Sector 1's M-COM is at x 200: blue's most forward spawn is -200, red's 450.
+  for (let i = 0; i < 10; i++) assert.equal(game.pickSpawn(blue).x, -200);
+  for (let i = 0; i < 10; i++) assert.equal(game.pickSpawn(red).x, 450);
+  // Unless the enemy is standing on it.
+  place(red, -180);
+  for (let i = 0; i < 10; i++) assert.equal(game.pickSpawn(blue).x, -500);
 });
 
 test('rush: each sector uses its own spawn points', () => {

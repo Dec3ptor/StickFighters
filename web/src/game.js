@@ -358,6 +358,9 @@ export class Game {
     }
     victim.alive = false;
     victim.deaths++;
+    // Where they died (conquest respawns them at the nearest place they can).
+    victim.deathX = victim.x;
+    victim.deathY = victim.y;
     victim.respawnTimer = RULES.respawnTicks;
     victim.burnTicks = 0;
     victim.kamikaze = null;

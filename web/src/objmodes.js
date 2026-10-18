@@ -52,6 +52,14 @@ function enemiesNear(game, z, team, margin) {
   return false;
 }
 
+/** True if an enemy of `team` is within `r` px of a spawn point. */
+function spawnUnsafe(game, p, team, r = 250) {
+  for (const o of game.near(p.x - r, p.y - r, p.x + r, p.y + r)) {
+    if (o.alive && o.team && o.team !== team && Math.abs(o.x - p.x) < r && Math.abs(o.y - p.y) < r) return true;
+  }
+  return false;
+}
+
 /** A message for everyone on a team (players only; bots don't read). */
 function tell(game, team, text) {
   for (const s of game.soldiers) if (!s.isBot && s.team === team) game.notify(s, text);
@@ -382,7 +390,7 @@ export function objectiveModes(base) {
       return [{ key: 'auto', label: 'Auto' }, { key: 'base', label: 'Base' }, ...held];
     },
 
-    /** Spawn on a point we hold (one near the fighting, usually), unless enemies are there. */
+    /** Where to respawn: the player's choice, or the nearest usable place to where they died. */
     spawnPoint(game, s) {
       const st = game.modeState, pts = objectivesOf(game.map, 'point');
       const safe = pts.filter((z, i) => st.points[i].own === s.team && !enemiesNear(game, z, s.team, 220));
@@ -390,13 +398,22 @@ export function objectiveModes(base) {
       if (s.deployAt === 'base') return null;
       const chosen = s.deployAt && safe.find(z => z.label === s.deployAt);
       if (chosen) return spotIn(game, chosen);
-      if (!safe.length || game.rng() < 0.2) return null;
-      // The front: our safe point closest to a point we don't hold.
-      const away = pts.filter((z, i) => st.points[i].own !== s.team);
-      const cx = z => (z.left + z.right) / 2, cy = z => (z.top + z.bottom) / 2;
-      const front = z => (away.length ? Math.min(...away.map(a => Math.hypot(cx(a) - cx(z), cy(a) - cy(z)))) : 0);
-      const pick = game.rng() < 0.65 ? safe.reduce((a, b) => (front(b) < front(a) ? b : a)) : safe[Math.floor(game.rng() * safe.length)];
-      return spotIn(game, pick);
+      // Auto: the usable spot closest to where they died: a point we hold (with no enemies on
+      // it), or one of our base spawn points (without enemies right there).
+      if (s.deathX == null) return null;
+      const far = (x, y) => Math.hypot(x - s.deathX, y - s.deathY);
+      let best = null, bestD = Infinity;
+      for (const z of safe) {
+        const d = far((z.left + z.right) / 2, z.bottom);
+        if (d < bestD) { bestD = d; best = z; }
+      }
+      let base = null;
+      for (const p of this.spawnPoints(game, s)) {
+        const d = far(p.x, p.y);
+        if (d < bestD && !spawnUnsafe(game, p, s.team)) { bestD = d; base = p; }
+      }
+      if (base) return base;
+      return best ? spotIn(game, best) : null;
     },
 
     botGoal(game, s, bot) {
@@ -543,6 +560,25 @@ export function objectiveModes(base) {
       // Out of tickets: red wins, unless an M-COM is still ticking.
       if (st.mcoms.some(o => o.s === 1)) return null;
       return { team: 2 };
+    },
+
+    /**
+     * Respawn as far forward as possible: at the team's spawn point (for the sector being
+     * fought over) closest to the M-COMs still standing, unless enemies are right there.
+     */
+    spawnPoint(game, s) {
+      const st = game.modeState, mcoms = objectivesOf(game.map, 'mcom');
+      const sector = this.current(game);
+      const front = mcoms.filter((m, i) => m.sector === sector && st.mcoms[i]?.s !== 2);
+      const list = this.spawnPoints(game, s);
+      if (!front.length || !list.length) return null;
+      const dist = p => Math.min(...front.map(m => Math.hypot(m.x - p.x, m.y - p.y)));
+      const safe = list.filter(p => !spawnUnsafe(game, p, s.team));
+      const pool = safe.length ? safe : list;
+      // The most forward ones (a few, so everyone doesn't land on the same spot).
+      const best = Math.min(...pool.map(dist));
+      const near = pool.filter(p => dist(p) <= best + 120);
+      return near[Math.floor(game.rng() * near.length)];
     },
 
     /** Spawn points for the sector being fought over (falling back to the team's other spawns). */
