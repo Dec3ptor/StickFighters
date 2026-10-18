@@ -166,6 +166,7 @@ function defaults(map) {
     let second = null, bestScore = Infinity;
     for (const p of spots) {
       if (used.some(a => Math.hypot(a.x - p.x, a.y - p.y) < 160) || Math.abs(p.x - first.x) > 420) continue;
+      if ((p.x - along(f - 0.15)) * dir < 0) continue; // not back toward the attackers
       if (Math.abs(p.y - all.y) > ySpread + 60) continue;
       const score = Math.abs(p.x - along(f)) * 0.5 - Math.min(150, Math.abs(p.y - first.y)) + (p.width < 60 ? 100 : 0);
       if (score < bestScore) { bestScore = score; second = p; }
