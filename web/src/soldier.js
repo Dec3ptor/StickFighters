@@ -78,6 +78,7 @@ export class Soldier {
     this.lastHurtWeapon = null;
     this.lastHurtTick = -9999;
     this.anim = { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, swing: 0 };
+    this.animPrev = null;
   }
 
   has(id) {
@@ -129,6 +130,7 @@ export class Soldier {
   move(input, map) {
     this.prevX = this.body.x;
     this.prevY = this.body.y;
+    this.animPrev = { ...this.anim }; // (the renderer draws the animation in between)
     if (input.aim != null) this.aim = input.aim;
     const c = Math.cos(this.aim);
     if (Math.abs(c) > 0.05) this.facing = c < 0 ? -1 : 1;

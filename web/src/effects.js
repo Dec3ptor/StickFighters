@@ -127,6 +127,7 @@ export class Effects {
     for (const p of this.parts) {
       p.life -= dt;
       if (p.life <= 0) continue;
+      p.px = p.x; p.py = p.y; // (drawn in between this and the new position)
       switch (p.kind) {
         case 'blood': {
           p.vy += 0.25 * dt;

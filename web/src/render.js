@@ -66,10 +66,15 @@ export class Renderer {
   /** Jump straight to a point (used at match start). */
   snapCamera(x, y) { this.cam.x = x; this.cam.y = y; }
 
-  /** Follow a point, looking a little toward the mouse; zoomed out while sniping. */
-  updateCamera(game, fx, fy, mouse, sniping) {
+  /**
+   * Follow a point, looking a little toward the mouse; zoomed out while sniping.
+   * dt: milliseconds since the last frame (the camera moves the same at any frame rate).
+   */
+  updateCamera(game, fx, fy, mouse, sniping, dt = 1000 / 60) {
+    const f = dt / (1000 / 60);
+    const ease = k => 1 - Math.pow(1 - k, f);
     const zoomTarget = sniping ? 0.72 : 1;
-    this.cam.zoom = lerp(this.cam.zoom, zoomTarget, 0.12);
+    this.cam.zoom = lerp(this.cam.zoom, zoomTarget, ease(0.12));
     let tx = fx, ty = fy - 20;
     if (mouse) {
       const look = sniping ? 0.55 : 0.22;
@@ -81,19 +86,20 @@ export class Renderer {
     const pad = 60;
     tx = b.right - b.left + pad * 2 < hw * 2 ? (b.left + b.right) / 2 : clamp(tx, b.left - pad + hw, b.right + pad - hw);
     ty = b.bottom - b.top + pad * 2 < hh * 2 ? (b.top + b.bottom) / 2 : clamp(ty, b.top - pad + hh, b.bottom + pad - hh);
-    this.cam.x = lerp(this.cam.x, tx, 0.14);
-    this.cam.y = lerp(this.cam.y, ty, 0.14);
+    this.cam.x = lerp(this.cam.x, tx, ease(0.14));
+    this.cam.y = lerp(this.cam.y, ty, ease(0.14));
     for (const s of game.shakes) {
       const d = s.x == null ? 0 : Math.hypot(s.x - fx, s.y - fy);
       this.shake = Math.max(this.shake, s.amount * Math.max(0, 1 - d / 700));
     }
     game.shakes.length = 0;
-    this.shake *= 0.85;
+    this.shake *= Math.pow(0.85, f);
   }
 
   render(game, alpha, viewer) {
     const ctx = this.ctx, s = this.scale * this.dpr;
     this.blank = false;
+    this.alpha = alpha;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -156,14 +162,14 @@ export class Renderer {
   }
 
   drawPickups(game) {
-    const ctx = this.ctx, t = game.tick;
+    const ctx = this.ctx, t = game.tick, a = this.alpha ?? 1;
     for (const it of game.pickups.items) {
       if (!it.active) continue;
       if (it.dropped && it.life < 120 && Math.floor(it.life / 6) % 2) continue;
-      const bob = it.dropped ? 0 : Math.sin(t * 0.06 + it.bob) * 1.5;
+      const bob = it.dropped ? 0 : Math.sin((t + a) * 0.06 + it.bob) * 1.5;
       if (it.type === 'crate' && it.landed && it.life < 120 && Math.floor(it.life / 6) % 2) continue;
       ctx.save();
-      ctx.translate(it.x, it.y + bob);
+      ctx.translate(lerp(it.px ?? it.x, it.x, a), lerp(it.py ?? it.y, it.y, a) + bob);
       switch (it.type) {
         case 'crate': drawCrate(ctx, it, t); break;
         case 'health': drawHealth(ctx); break;
@@ -177,10 +183,11 @@ export class Renderer {
 
   drawProjectiles(game, top) {
     const ctx = this.ctx, t = game.tick;
-    for (const p of game.projectiles) {
-      if (p.delay > 0) continue;
-      const front = p.kind === 'flame' || p.kind === 'gas' || p.kind === 'fire';
+    for (const p0 of game.projectiles) {
+      if (p0.delay > 0) continue;
+      const front = p0.kind === 'flame' || p0.kind === 'gas' || p0.kind === 'fire';
       if (front !== top) continue;
+      const p = between(p0, this.alpha);
       switch (p.kind) {
         case 'flame': drawFlame(ctx, p); break;
         case 'fire': drawFirePatch(ctx, p, t); break;
@@ -282,7 +289,8 @@ export class Renderer {
   drawSoldier(game, s, alpha, viewer) {
     const ctx = this.ctx;
     const x = lerp(s.prevX, s.x, alpha) + (s.drawDX || 0), y = lerp(s.prevY, s.y, alpha) + (s.drawDY || 0);
-    const pose = buildPose(s);
+    const v = this.animated(s);
+    const pose = buildPose(v);
     if (s.body.rope) {
       ctx.strokeStyle = '#8a6a3a';
       ctx.lineWidth = 0.9;
@@ -305,7 +313,7 @@ export class Renderer {
     ctx.save();
     ctx.translate(pose.gun.x, pose.gun.y);
     let angle = pose.gun.angle;
-    if (pose.gun.def.kind === 'melee' && s.anim.swing > 0) angle -= Math.sin(s.anim.swing * Math.PI) * 1.7 * (Math.cos(angle) < 0 ? -1 : 1);
+    if (pose.gun.def.kind === 'melee' && v.anim.swing > 0) angle -= Math.sin(v.anim.swing * Math.PI) * 1.7 * (Math.cos(angle) < 0 ? -1 : 1);
     ctx.rotate(angle);
     if (Math.cos(pose.gun.angle) < 0) ctx.scale(1, -1);
     drawWeapon(ctx, pose.gun.def, false);
@@ -338,6 +346,26 @@ export class Renderer {
     ctx.restore();
   }
 
+  /**
+   * The soldier with its animation (running legs, flips, recoil, swings) part
+   * way between the last two game updates. Things that start suddenly (a flip,
+   * a shot's kick) show at once; things winding down ease out.
+   */
+  animated(s) {
+    const a = this.alpha ?? 1, prev = s.animPrev, cur = s.anim;
+    if (!prev || a >= 1) return s;
+    let d = cur.run - prev.run;
+    if (d > 0.5) d -= 1; else if (d < -0.5) d += 1;
+    const ease = k => (cur[k] < prev[k] ? prev[k] + (cur[k] - prev[k]) * a : cur[k]);
+    const v = Object.create(s);
+    v.anim = {
+      run: (((prev.run + d * a) % 1) + 1) % 1,
+      idle: prev.idle + (cur.idle - prev.idle) * a,
+      land: ease('land'), flip: ease('flip'), recoil: ease('recoil'), swing: ease('swing'),
+    };
+    return v;
+  }
+
   drawName(game, s, alpha, viewer) {
     const ctx = this.ctx;
     const x = lerp(s.prevX, s.x, alpha) + (s.drawDX || 0), y = lerp(s.prevY, s.y, alpha) + (s.drawDY || 0);
@@ -354,8 +382,11 @@ export class Renderer {
   }
 
   drawLaser(game, s) {
-    const ctx = this.ctx;
+    const ctx = this.ctx, a = this.alpha ?? 1;
     const l = laserEnd(game, s);
+    // Start from where the soldier is drawn (between game updates).
+    l.x0 += lerp(s.prevX, s.x, a) + (s.drawDX || 0) - s.x;
+    l.y0 += lerp(s.prevY, s.y, a) + (s.drawDY || 0) - s.y;
     ctx.strokeStyle = 'rgba(255,0,0,0.35)';
     ctx.lineWidth = 0.7;
     ctx.beginPath(); ctx.moveTo(l.x0, l.y0); ctx.lineTo(l.x, l.y); ctx.stroke();
@@ -369,27 +400,30 @@ export class Renderer {
   }
 
   drawEffect(ctx, p) {
+    // Particles are drawn between game updates too.
+    const a = this.alpha ?? 1;
+    const x = p.px == null ? p.x : lerp(p.px, p.x, a), y = p.py == null ? p.y : lerp(p.py, p.y, a);
     switch (p.kind) {
       case 'blood':
         ctx.fillStyle = '#c40f0f';
-        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+        ctx.fillRect(x - p.size / 2, y - p.size / 2, p.size, p.size);
         break;
       case 'spark':
         ctx.fillStyle = '#444';
-        ctx.fillRect(p.x - 0.5, p.y - 0.5, 1, 1);
+        ctx.fillRect(x - 0.5, y - 0.5, 1, 1);
         break;
       case 'ember':
         ctx.fillStyle = p.life > 15 ? '#ffb02e' : '#c4561a';
-        ctx.fillRect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
+        ctx.fillRect(x - 0.8, y - 0.8, 1.6, 1.6);
         break;
       case 'puff':
         ctx.strokeStyle = `rgba(120,120,120,${0.5 * p.life / p.max})`;
         ctx.lineWidth = 0.8;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, p.r, 0, Math.PI * 2); ctx.stroke();
         break;
       case 'flash': {
         ctx.save();
-        ctx.translate(p.x, p.y);
+        ctx.translate(x, y);
         ctx.rotate(p.angle);
         ctx.fillStyle = p.life > 1 ? '#fff3a0' : '#ffb02e';
         ctx.beginPath();
@@ -400,51 +434,51 @@ export class Renderer {
       }
       case 'shell':
         ctx.save();
-        ctx.translate(p.x, p.y); ctx.rotate(p.angle);
+        ctx.translate(x, y); ctx.rotate(p.angle);
         ctx.fillStyle = '#c9a227';
         ctx.fillRect(-1.2, -0.5, 2.4, 1);
         ctx.restore();
         break;
       case 'smoke':
         ctx.fillStyle = `rgba(140,140,140,${0.32 * p.life / p.max})`;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, p.r, 0, Math.PI * 2); ctx.fill();
         break;
       case 'fire': {
         const k = p.life / p.max;
         ctx.fillStyle = k > 0.6 ? `rgba(255,220,90,${k})` : `rgba(255,110,30,${k})`;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (0.6 + k * 0.4), 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, p.r * (0.6 + k * 0.4), 0, Math.PI * 2); ctx.fill();
         break;
       }
       case 'boom': {
         const k = p.life / p.max;
         const r = p.r * (1.3 - k * 0.6);
-        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
         g.addColorStop(0, `rgba(255,255,220,${k})`);
         g.addColorStop(0.4, `rgba(255,170,40,${k})`);
         g.addColorStop(1, 'rgba(255,90,20,0)');
         ctx.fillStyle = g;
-        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
         break;
       }
       case 'trail':
         ctx.strokeStyle = `rgba(90,90,90,${0.7 * p.life / p.max})`;
         ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x1, p.y1); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(p.x1, p.y1); ctx.stroke();
         break;
       case 'ring': {
         const k = p.life / p.max;
         ctx.strokeStyle = p.color;
         ctx.globalAlpha = k;
         ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 6 + (1 - k) * 22, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.arc(p.x, p.y, 2 + (1 - k) * 12, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, 6 + (1 - k) * 22, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, 2 + (1 - k) * 12, 0, Math.PI * 2); ctx.stroke();
         ctx.globalAlpha = 1;
         break;
       }
       case 'whack': {
         const k = p.life / p.max;
         ctx.save();
-        ctx.translate(p.x, p.y);
+        ctx.translate(x, y);
         ctx.rotate(p.angle);
         ctx.fillStyle = `rgba(255,214,60,${k})`;
         ctx.strokeStyle = `rgba(30,30,30,${k})`;
@@ -458,11 +492,11 @@ export class Renderer {
       }
       case 'sparkle':
         ctx.fillStyle = `rgba(170,120,255,${p.life / p.max})`;
-        ctx.fillRect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
+        ctx.fillRect(x - 0.8, y - 0.8, 1.6, 1.6);
         break;
       case 'plane':
         ctx.save();
-        ctx.translate(p.x, p.y);
+        ctx.translate(x, y);
         ctx.scale(Math.sign(p.vx) || 1, 1);
         ctx.fillStyle = '#555';
         ctx.beginPath(); ctx.ellipse(0, 0, 22, 4, 0, 0, Math.PI * 2); ctx.fill();
@@ -476,8 +510,8 @@ export class Renderer {
         ctx.lineWidth = 1.5;
         ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.moveTo(p.x - Math.cos(p.angle) * p.len / 2, p.y - Math.sin(p.angle) * p.len / 2);
-        ctx.lineTo(p.x + Math.cos(p.angle) * p.len / 2, p.y + Math.sin(p.angle) * p.len / 2);
+        ctx.moveTo(x - Math.cos(p.angle) * p.len / 2, y - Math.sin(p.angle) * p.len / 2);
+        ctx.lineTo(x + Math.cos(p.angle) * p.len / 2, y + Math.sin(p.angle) * p.len / 2);
         ctx.stroke();
         ctx.globalAlpha = 1;
         break;
@@ -486,7 +520,7 @@ export class Renderer {
         ctx.fillStyle = '#fff';
         ctx.strokeStyle = INK;
         ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, p.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         ctx.globalAlpha = 1;
         break;
     }
@@ -510,6 +544,19 @@ export class Renderer {
 }
 
 // ---- Shapes -----------------------------------------------------------------
+
+/**
+ * Where something is drawn between two game updates: `alpha` of the way from
+ * where it was (px, py) to where it is. (Things with no earlier position are
+ * drawn where they are.)
+ */
+export function between(p, alpha = 1) {
+  if (p.px == null || alpha >= 1) return p;
+  const v = Object.create(p);
+  v.x = p.px + (p.x - p.px) * alpha;
+  v.y = p.py + (p.y - p.py) * alpha;
+  return v;
+}
 
 function drawFirePatch(ctx, p, t) {
   const flick = Math.sin(t * 0.7 + p.id) * 1.2;

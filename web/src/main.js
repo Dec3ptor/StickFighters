@@ -631,8 +631,12 @@ function simulate(now) {
   if (n >= 90) state.acc = 0;
 }
 
+// The game updates 60 times a second; frames are drawn as often as the screen
+// refreshes (60, 120, 144 Hz...), with everything drawn in between updates.
 function frame(now) {
   requestAnimationFrame(frame);
+  const dt = Math.min(100, Math.max(0, now - (state.frameAt ?? now)));
+  state.frameAt = now;
   simulate(now);
   const g = state.game;
   if (!g) {
@@ -658,7 +662,8 @@ function frame(now) {
   const sniping = me.alive && me.current === 'SR' && input.mouse.right && !state.menuOpen && !state.chatOpen;
   const ax = view === me ? lerp(me.prevX, me.x, alpha) + (me.drawDX || 0) : view.x;
   const ay = view === me ? lerp(me.prevY, me.y, alpha) + (me.drawDY || 0) : view.y;
-  renderer.updateCamera(g, ax, ay, state.menuOpen ? null : input.mouse, sniping);
+  renderer.updateCamera(g, ax, ay, state.menuOpen ? null : input.mouse, sniping, dt);
+  const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
   renderer.render(g, alpha, me);
   drawHud(renderer, g, me, {
@@ -667,8 +672,24 @@ function frame(now) {
   });
   if (!state.menuOpen && !g.over && !state.chatOpen) renderer.drawCrosshair(input.mouse.x, input.mouse.y, sniping);
   renderer.present();
+  if (aimed) { me.aim = aimed.aim; me.facing = aimed.facing; }
   if (perf.on) countFrame(now, performance.now() - drawStart);
   if (g.over) matchOver(g);
+}
+
+/**
+ * Between game updates, draw your gun pointing where the mouse is right now, so
+ * aiming feels instant at any frame rate. (Only for drawing: shots use the aim
+ * from the last update.) Returns the real aim and facing, to put back.
+ */
+function liveAim(me, x, y) {
+  if (!me.alive || me.kamikaze || !input.enabled || state.paused || state.game.over) return null;
+  const saved = { aim: me.aim, facing: me.facing };
+  const w = renderer.screenToWorld(input.mouse.x, input.mouse.y);
+  me.aim = Math.atan2(w.y - (me.shoulderY + y - me.y), w.x - x);
+  const c = Math.cos(me.aim);
+  if (Math.abs(c) > 0.05) me.facing = c < 0 ? -1 : 1;
+  return saved;
 }
 
 // Frame rate readout, shown with ?fps in the address.

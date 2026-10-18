@@ -27,6 +27,7 @@ export class Pickups {
     for (const it of this.items) {
       if (it.dropped) {
         it.life--;
+        it.px = it.x; it.py = it.y; // (drawn in between this and the new position)
         if (it.vy !== null) {
           const fall = it.type === 'crate' ? MOTION.crateFall : null;
           if (fall) it.vy = fall;

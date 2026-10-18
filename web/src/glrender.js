@@ -125,6 +125,7 @@ export class GLRenderer extends Renderer {
   render(game, alpha, viewer) {
     const ctx = this.ctx, s = this.scale * this.dpr;
     this.blank = false;
+    this.alpha = alpha;
     ctx.beginFrame();
     const sx = (Math.random() - 0.5) * this.shake, sy = (Math.random() - 0.5) * this.shake;
     const tx = this.pw / 2 - (this.cam.x + sx) * s, ty = this.ph / 2 - (this.cam.y + sy) * s;
@@ -182,37 +183,39 @@ export class GLRenderer extends Renderer {
   /** Blood, sparks, smoke and fire as sprites; everything else as shapes. */
   drawEffects(game) {
     if (!game.fx) return;
-    const pool = this.partSprites, { square, disc, boom } = this.tex;
+    const pool = this.partSprites, { square, disc, boom } = this.tex, a = this.alpha ?? 1;
     let i = 0;
     for (const p of game.fx.parts) {
       if (!SPRITE_PARTS.has(p.kind)) continue;
+      // Drawn between game updates, like everything else.
+      const x = p.px == null ? p.x : p.px + (p.x - p.px) * a, y = p.py == null ? p.y : p.py + (p.y - p.py) * a;
       switch (p.kind) {
         case 'blood':
-          put(this.spriteFrom(pool, i++, this.partLayer, square), p.x, p.y, p.size, p.size, 0, 0xc40f0f, 1);
+          put(this.spriteFrom(pool, i++, this.partLayer, square), x, y, p.size, p.size, 0, 0xc40f0f, 1);
           break;
         case 'spark':
-          put(this.spriteFrom(pool, i++, this.partLayer, square), p.x, p.y, 1, 1, 0, 0x444444, 1);
+          put(this.spriteFrom(pool, i++, this.partLayer, square), x, y, 1, 1, 0, 0x444444, 1);
           break;
         case 'ember':
-          put(this.spriteFrom(pool, i++, this.partLayer, square), p.x, p.y, 1.6, 1.6, 0, p.life > 15 ? 0xffb02e : 0xc4561a, 1);
+          put(this.spriteFrom(pool, i++, this.partLayer, square), x, y, 1.6, 1.6, 0, p.life > 15 ? 0xffb02e : 0xc4561a, 1);
           break;
         case 'sparkle':
-          put(this.spriteFrom(pool, i++, this.partLayer, square), p.x, p.y, 1.6, 1.6, 0, 0xaa78ff, p.life / p.max);
+          put(this.spriteFrom(pool, i++, this.partLayer, square), x, y, 1.6, 1.6, 0, 0xaa78ff, p.life / p.max);
           break;
         case 'shell':
-          put(this.spriteFrom(pool, i++, this.partLayer, square), p.x, p.y, 2.4, 1, p.angle, 0xc9a227, 1);
+          put(this.spriteFrom(pool, i++, this.partLayer, square), x, y, 2.4, 1, p.angle, 0xc9a227, 1);
           break;
         case 'smoke':
-          put(this.spriteFrom(pool, i++, this.partLayer, disc), p.x, p.y, p.r * 2, p.r * 2, 0, 0x8c8c8c, 0.32 * p.life / p.max);
+          put(this.spriteFrom(pool, i++, this.partLayer, disc), x, y, p.r * 2, p.r * 2, 0, 0x8c8c8c, 0.32 * p.life / p.max);
           break;
         case 'fire': {
           const k = p.life / p.max, d = 2 * p.r * (0.6 + k * 0.4);
-          put(this.spriteFrom(pool, i++, this.partLayer, disc), p.x, p.y, d, d, 0, k > 0.6 ? 0xffdc5a : 0xff6e1e, k);
+          put(this.spriteFrom(pool, i++, this.partLayer, disc), x, y, d, d, 0, k > 0.6 ? 0xffdc5a : 0xff6e1e, k);
           break;
         }
         case 'boom': {
           const k = p.life / p.max, d = 2 * p.r * (1.3 - k * 0.6);
-          put(this.spriteFrom(pool, i++, this.partLayer, boom), p.x, p.y, d, d, 0, 0xffffff, k);
+          put(this.spriteFrom(pool, i++, this.partLayer, boom), x, y, d, d, 0, 0xffffff, k);
           break;
         }
       }

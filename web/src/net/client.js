@@ -309,7 +309,6 @@ export class NetClient {
         const back = Math.max(0, 1 - t) * (b.tick - a.tick || 3);
         p.x -= pb.vx * back; p.y -= pb.vy * back;
       }
-      p.px = p.x - p.vx; p.py = p.y - p.vy;
       return p;
     });
 

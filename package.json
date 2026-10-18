@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node tools/serve.mjs",
     "test": "node --test --test-timeout=300000 tests/*.test.mjs",
-    "test:browser": "node tests/browser/smoke.mjs test-results && node tests/browser/editor.mjs test-results && node tests/browser/webgl.mjs test-results && node tests/browser/online.mjs test-results",
+    "test:browser": "node tests/browser/smoke.mjs test-results && node tests/browser/editor.mjs test-results && node tests/browser/webgl.mjs test-results && node tests/browser/framerate.mjs test-results && node tests/browser/online.mjs test-results",
     "relay": "node tools/relay.mjs"
   },
   "devDependencies": {
