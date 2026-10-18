@@ -111,17 +111,41 @@ export class Renderer {
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     const sx = (Math.random() - 0.5) * this.shake, sy = (Math.random() - 0.5) * this.shake;
     ctx.setTransform(s, 0, 0, s, this.canvas.width / 2 - (this.cam.x + sx) * s, this.canvas.height / 2 - (this.cam.y + sy) * s);
+    this.updateView(s, this.canvas.width / 2 - (this.cam.x + sx) * s, this.canvas.height / 2 - (this.cam.y + sy) * s);
     this.lineW = Math.max(1.1, 1.3 / (this.scale));
 
     this.drawMap(game);
     this.drawStains(game);
     this.drawPickups(game);
     this.drawProjectiles(game, false);
-    for (const sol of game.soldiers) if (sol.alive) this.drawSoldier(game, sol, alpha, viewer);
+    const shown = this.shownSoldiers(game, viewer);
+    for (const sol of shown.soldiers) this.drawSoldier(game, sol, alpha, viewer);
     this.drawProjectiles(game, true);
     this.drawEffects(game);
-    for (const sol of game.soldiers) if (sol.alive && sol.current === 'SR') this.drawLaser(game, sol);
-    for (const sol of game.soldiers) if (sol.alive) this.drawName(game, sol, alpha, viewer);
+    for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);
+    for (const sol of shown.names) this.drawName(game, sol, alpha, viewer);
+  }
+
+  /** The part of the world on screen (plus a margin), for skipping what's off it in big games. */
+  updateView(s, tx, ty) {
+    const m = 80;
+    this.view = { l: -tx / s - m, t: -ty / s - m, r: (this.pw - tx) / s + m, b: (this.ph - ty) / s + m };
+  }
+
+  inView(x, y) {
+    const v = this.view;
+    return !v || (x > v.l && x < v.r && y > v.t && y < v.b);
+  }
+
+  /**
+   * Soldiers to draw, and whose names to show. Small games: everyone alive.
+   * Big games: only those on screen, and in a crowd, only human players' names.
+   */
+  shownSoldiers(game, viewer) {
+    const alive = game.soldiers.filter(o => o.alive);
+    if (!game.crowded) return { soldiers: alive, names: alive };
+    const soldiers = alive.filter(o => this.inView(o.x, o.y));
+    return { soldiers, names: soldiers.length > 60 ? soldiers.filter(o => o === viewer || !o.isBot) : soldiers };
   }
 
   drawMap(game) {
@@ -189,8 +213,9 @@ export class Renderer {
 
   drawProjectiles(game, top) {
     const ctx = this.ctx, t = game.tick;
+    const cull = game.crowded;
     for (const p0 of game.projectiles) {
-      if (p0.delay > 0) continue;
+      if (p0.delay > 0 || (cull && !this.inView(p0.x, p0.y))) continue;
       const front = p0.kind === 'flame' || p0.kind === 'gas' || p0.kind === 'fire';
       if (front !== top) continue;
       const p = between(p0, this.alpha);

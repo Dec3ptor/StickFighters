@@ -45,9 +45,10 @@ export function drawHud(r, game, me, opts = {}) {
     drawWeaponBar(ctx, me, W, H);
   }
 
-  drawScores(ctx, game, me, H);
+  const standings = game.standings();
+  drawScores(ctx, game, me, H, standings);
   drawFeed(ctx, game, W, opts.chat);
-  drawTop(ctx, game, me, W);
+  drawTop(ctx, game, me, W, standings);
 
   // Messages for the player ("You got the Sniper Rifle").
   const notes = game.over ? [] : game.notes.filter(n => (n.to == null || n.to === me.id) && game.tick - n.tick < 150).slice(-3);
@@ -90,7 +91,7 @@ export function drawHud(r, game, me, opts = {}) {
     ctx.fillText(opts.perf, W - 12, H - (opts.ping != null ? 26 : 12));
   }
 
-  if (opts.showScores || game.over) drawScoreboard(ctx, game, me, W, H, opts);
+  if (opts.showScores || game.over) drawScoreboard(ctx, game, me, W, H, opts, standings);
 }
 
 const BAR_COLORS = {
@@ -156,8 +157,8 @@ function drawWeaponBar(ctx, me, W, H) {
   ctx.restore();
 }
 
-function drawScores(ctx, game, me, H) {
-  const list = game.standings().slice(0, 8);
+function drawScores(ctx, game, me, H, standings) {
+  const list = standings.slice(0, 8);
   const rules = game.rules;
   ctx.textAlign = 'left';
   list.forEach((s, i) => {
@@ -191,7 +192,7 @@ function drawFeed(ctx, game, W, chat = []) {
   ctx.globalAlpha = 1;
 }
 
-function drawTop(ctx, game, me, W) {
+function drawTop(ctx, game, me, W, standings) {
   ctx.textAlign = 'center';
   ctx.font = `bold 14px ${FONT}`;
   const rules = game.rules;
@@ -204,7 +205,7 @@ function drawTop(ctx, game, me, W) {
     ctx.fillText(`Red ${game.teamScore[2]}`, W / 2 + 50, 16);
     return;
   }
-  const rank = game.standings().indexOf(me) + 1;
+  const rank = standings.indexOf(me) + 1;
   ctx.fillStyle = '#333';
   if (game.mode === 'gungame') {
     const lvl = Math.min(me.level || 0, GUN_GAME_LADDER.length - 1);
@@ -222,8 +223,15 @@ function drawTop(ctx, game, me, W) {
   }
 }
 
-function drawScoreboard(ctx, game, me, W, H, opts) {
-  const list = game.standings();
+function drawScoreboard(ctx, game, me, W, H, opts, standings) {
+  // Huge games: the top 20, then you (if you're further down).
+  const TOP = 20;
+  let list = standings, more = 0;
+  if (list.length > TOP + 2) {
+    more = list.length - TOP;
+    list = list.slice(0, TOP);
+    if (!list.includes(me) && me) { list.push(me); more--; }
+  }
   const rules = game.rules;
   const extra = rules.scoreLabel !== 'Frags';
   // Columns from the right: [heading, value(soldier), colour(soldier)?]
@@ -236,7 +244,7 @@ function drawScoreboard(ctx, game, me, W, H, opts) {
     if (s.id === opts.hostId) return 'host';
     return s.ping == null ? '–' : String(Math.round(s.ping));
   }
-  const w = 300 + cols.length * 65, rowH = 22, h = 70 + list.length * rowH;
+  const w = 300 + cols.length * 65, rowH = 22, h = 70 + list.length * rowH + (more ? rowH : 0);
   const colX = i => x + w - 20 - i * 65;
   const x = W / 2 - w / 2, y = Math.max(40, H / 2 - h / 2 - 40);
   ctx.fillStyle = 'rgba(255,255,255,0.94)';
@@ -273,6 +281,12 @@ function drawScoreboard(ctx, game, me, W, H, opts) {
     });
     if (s.isBot) { ctx.fillStyle = '#aaa'; ctx.font = `10px ${FONT}`; ctx.textAlign = 'left'; ctx.fillText('bot', x + 26 + nameW, ry); }
   });
+  if (more) {
+    ctx.font = `12px ${FONT}`;
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'left';
+    ctx.fillText(`…and ${more} more`, x + 20, y + 70 + list.length * rowH);
+  }
 }
 
 function ordinal(n) {

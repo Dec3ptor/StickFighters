@@ -9,6 +9,7 @@ import { BODY, PHYS, MOTION } from './config.js';
 import { makeBody, stepBody } from './physics.js';
 
 const NODE_STEP = 12;
+const NODE_CELL = 64; // grid cells for finding the nearest node
 const MAX_SIM = 320;
 
 // Jump moves: wait `delay` ticks, steer `dir` for `hold` ticks, then steer `then`.
@@ -102,13 +103,47 @@ export class NavGraph {
 
   /** Nearest node to any point (for goals in mid-air, like items or enemies). */
   nearest(x, y, maxDist = 400) {
+    // Only nodes in the grid cells within reach (same answer as checking them all,
+    // ties going to the lowest id).
+    const cells = this.nodeCells || this._indexNodes();
+    const c0 = Math.floor((x - maxDist) / NODE_CELL), c1 = Math.floor((x + maxDist) / NODE_CELL);
+    const r0 = Math.floor((y - maxDist / 1.6) / NODE_CELL), r1 = Math.floor((y + maxDist / 1.6) / NODE_CELL);
     let best = null, bd = maxDist * maxDist;
-    for (const n of this.nodes) {
+    const check = n => {
       const dy = (n.y - y) * 1.6; // prefer nodes level with the point
       const d = (n.x - x) ** 2 + dy * dy;
-      if (d < bd) { bd = d; best = n; }
+      if (d < bd || (d === bd && best && n.id < best.id)) { bd = d; best = n; }
+    };
+    if ((c1 - c0 + 1) * (r1 - r0 + 1) > this.nodes.length) { for (const n of this.nodes) check(n); return best; }
+    for (let cx = c0; cx <= c1; cx++) {
+      for (let cy = r0; cy <= r1; cy++) {
+        const list = cells.get(cx * 100003 + cy);
+        if (list) for (const n of list) check(n);
+      }
     }
     return best;
+  }
+
+  /** Nodes less than rx across and ry up or down from a point, in id order. */
+  nodesNear(x, y, rx, ry) {
+    const cells = this.nodeCells || this._indexNodes();
+    const out = [];
+    for (let cx = Math.floor((x - rx) / NODE_CELL); cx <= Math.floor((x + rx) / NODE_CELL); cx++) {
+      for (let cy = Math.floor((y - ry) / NODE_CELL); cy <= Math.floor((y + ry) / NODE_CELL); cy++) {
+        for (const n of cells.get(cx * 100003 + cy) || []) if (Math.abs(n.x - x) < rx && Math.abs(n.y - y) < ry) out.push(n);
+      }
+    }
+    return out.sort((a, b) => a.id - b.id);
+  }
+
+  _indexNodes() {
+    this.nodeCells = new Map();
+    for (const n of this.nodes) {
+      const k = Math.floor(n.x / NODE_CELL) * 100003 + Math.floor(n.y / NODE_CELL);
+      if (!this.nodeCells.has(k)) this.nodeCells.set(k, []);
+      this.nodeCells.get(k).push(n);
+    }
+    return this.nodeCells;
   }
 
   _simulate(start, inputAt) {
@@ -249,6 +284,22 @@ export class NavGraph {
       }
     }
     return { cost, prev, via };
+  }
+
+  /**
+   * costsFrom(), but remembered for a couple of seconds and shared: in big
+   * games, lots of bots plan from the same spots. (A recent search is plenty
+   * good enough: it only matters which way to go.)
+   */
+  cachedCostsFrom(start, tick) {
+    const cache = (this.searches ||= new Map());
+    const hit = cache.get(start.id);
+    if (hit && tick - hit.tick < 120 && tick >= hit.tick) return hit.search;
+    const search = this.costsFrom(start);
+    cache.delete(start.id);
+    cache.set(start.id, { tick, search });
+    if (cache.size > 200) cache.delete(cache.keys().next().value); // oldest first
+    return search;
   }
 
   /** The list of links from the search's start to `goal`, or null if unreachable. */

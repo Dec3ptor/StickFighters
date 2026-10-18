@@ -147,6 +147,7 @@ export class GLRenderer extends Renderer {
     const sx = (Math.random() - 0.5) * this.shake, sy = (Math.random() - 0.5) * this.shake;
     const tx = this.pw / 2 - (this.cam.x + sx) * s, ty = this.ph / 2 - (this.cam.y + sy) * s;
     ctx.setTransform(s, 0, 0, s, tx, ty);
+    this.updateView(s, tx, ty);
     for (const layer of [this.mapLayer, this.stainLayer, this.partLayer]) {
       layer.position.set(tx, ty);
       layer.scale.set(s);
@@ -157,11 +158,12 @@ export class GLRenderer extends Renderer {
     this.drawStains(game);
     this.drawPickups(game);
     this.drawProjectiles(game, false);
-    for (const sol of game.soldiers) if (sol.alive) this.drawSoldier(game, sol, alpha, viewer);
+    const shown = this.shownSoldiers(game, viewer);
+    for (const sol of shown.soldiers) this.drawSoldier(game, sol, alpha, viewer);
     this.drawProjectiles(game, true);
     this.drawEffects(game);
-    for (const sol of game.soldiers) if (sol.alive && sol.current === 'SR') this.drawLaser(game, sol);
-    for (const sol of game.soldiers) if (sol.alive) this.drawName(game, sol, alpha, viewer);
+    for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);
+    for (const sol of shown.names) this.drawName(game, sol, alpha, viewer);
   }
 
   /** The map doesn't change: build it once (again only if the outline width changes with the zoom). */

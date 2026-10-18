@@ -10,8 +10,14 @@ export class Effects {
   }
 
   add(p) {
-    if (this.parts.length >= MAX_PARTICLES) this.parts.shift();
+    // (Over the limit, the oldest go at the end of the update: dropping them one
+    // at a time is slow when a huge battle adds thousands.)
     this.parts.push(p);
+    if (this.parts.length > MAX_PARTICLES * 4) this.trim();
+  }
+
+  trim() {
+    if (this.parts.length > MAX_PARTICLES) this.parts.splice(0, this.parts.length - MAX_PARTICLES);
   }
 
   blood(x, y, dirX, dirY, amount) {
@@ -174,6 +180,7 @@ export class Effects {
     }
     this.parts = keep;
     for (const d of drips) this.add(d);
+    this.trim();
     for (const s of this.stains) s.life--;
     if (this.stains.length && this.stains[0].life <= 0) this.stains = this.stains.filter(s => s.life > 0);
   }

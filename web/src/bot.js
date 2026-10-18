@@ -4,6 +4,19 @@ import { MOTION, PHYS, RULES } from './config.js';
 import { WEAPONS } from './weapons.js';
 import { jumpSteer, dropSteer } from './nav.js';
 import { angleDiff, clamp } from './util.js';
+import { CELL } from './grid.js';
+
+const SIGHT = 1300;  // how far bots look for enemies
+const LOOKS = 6;     // in big games, sight lines a bot checks each time it looks around
+
+/** The route map spot nearest an item (remembered while the item stays put). */
+function nodeFor(nav, it) {
+  if (it.navAt !== nav || it.navX !== it.x || it.navY !== it.y) {
+    it.navAt = nav; it.navX = it.x; it.navY = it.y;
+    it.navNode = nav.nearest(it.x, it.y + 12, 90);
+  }
+  return it.navNode;
+}
 
 export const DIFFICULTY = {
   easy: { reaction: 34, aimError: 0.17, turn: 0.07, fireCone: 0.24, trigger: 0.55 },
@@ -150,7 +163,9 @@ export class BotController {
   input(game, s) {
     const inp = { move: 0, jump: false, jumpPressed: false, aim: this.aim ?? s.aim, fire: false, aimDist: 200 };
     if (!s.alive) return inp;
-    if (game.tick % 3 === s.id % 3) this.perceive(game, s);
+    // (In huge games, look around a little less often.)
+    const look = game.soldiers.length > 1000 ? 6 : 3;
+    if (game.tick % look === s.id % look) this.perceive(game, s);
     if (game.tick % 15 === s.id % 15) this.pickWeapon(game, s, inp);
     this.watchdog(game, s);
     const it = this.goalItem;
@@ -171,6 +186,7 @@ export class BotController {
 
   /** The bot's sheep (or other remote-controlled thing) still out there, if any. */
   remoteOut(game, s) {
+    if (game.crowded) return game.remoteOf(s); // (looked up once per update for everyone)
     return game.projectiles.find(p => p.owner === s && p.remote && !p.dead) || null;
   }
 
@@ -194,26 +210,82 @@ export class BotController {
     return game.soldiers.filter(o => o !== s && o.alive && !(game.rules.teams && o.team === s.team));
   }
 
+  /** A random enemy, without listing them all (big games). */
+  someEnemy(game, s) {
+    const all = game.soldiers;
+    for (let i = 0; i < 12; i++) {
+      const o = all[Math.floor(this.rng() * all.length)];
+      if (o !== s && o.alive && !(game.rules.teams && o.team === s.team)) return o;
+    }
+    return null;
+  }
+
   canSee(game, s, o) {
     const sx = s.shoulderX, sy = s.shoulderY;
     return game.map.clearLine(sx, sy, o.x, o.y - 8) || game.map.clearLine(sx, sy, o.x, o.y - 17);
   }
 
   perceive(game, s) {
-    let best = null, bestD = Infinity;
-    for (const o of this.enemies(game, s)) {
-      if (o.spawnProtect > 30) continue;
-      const d = Math.hypot(o.x - s.x, o.y - s.y);
-      if (d > 1300 || !this.canSee(game, s, o)) continue;
-      const score = d * (o === this.target ? 0.6 : 1) * (o === this.threat ? 0.7 : 1);
-      if (score < bestD) { bestD = score; best = o; }
-    }
+    const best = game.crowded ? this.lookAround(game, s) : this.lookAtAll(game, s);
     if (best !== this.target) {
       this.seen = 0;
       if (best && !this.target) this.thinkIn = Math.min(this.thinkIn, 6);
     }
     this.target = best;
     if (best) this.lastSeen = { x: best.x, y: best.y, tick: game.tick };
+  }
+
+  /** The enemy to fight: the nearest one in sight (sticking with the current target or attacker a bit longer). */
+  lookAtAll(game, s) {
+    let best = null, bestD = Infinity;
+    for (const o of this.enemies(game, s)) {
+      if (o.spawnProtect > 30) continue;
+      const d = Math.hypot(o.x - s.x, o.y - s.y);
+      if (d > SIGHT || !this.canSee(game, s, o)) continue;
+      const score = d * (o === this.target ? 0.6 : 1) * (o === this.threat ? 0.7 : 1);
+      if (score < bestD) { bestD = score; best = o; }
+    }
+    return best;
+  }
+
+  /**
+   * The same in a big game, without checking sight lines to everyone: look
+   * outward from here, nearest soldiers first, and check at most a few.
+   */
+  lookAround(game, s) {
+    const enemy = o => o !== s && o.alive && o.spawnProtect <= 30 && !(game.rules.teams && o.team === s.team);
+    let best = null, bestD = Infinity;
+    for (const o of [this.target, this.threat]) {
+      if (!o || !enemy(o)) continue;
+      const d = Math.hypot(o.x - s.x, o.y - s.y);
+      if (d > SIGHT || !this.canSee(game, s, o)) continue;
+      const score = d * (o === this.target ? 0.6 : 1) * (o === this.threat ? 0.7 : 1);
+      if (score < bestD) { bestD = score; best = o; }
+    }
+    const grid = game.soldierGrid(), cx = Math.floor(s.x / CELL), cy = Math.floor(s.y / CELL);
+    const ring = [], near = [];
+    let looks = 0;
+    for (let k = 0; (k - 1) * CELL <= Math.min(SIGHT, bestD); k++) {
+      ring.length = 0;
+      near.length = 0;
+      // The nearest few in this ring, nearest first (kept sorted as we go).
+      // In a packed crowd, the first few dozen are plenty to choose from.
+      let seen = 0;
+      for (const o of grid.ring(cx, cy, k, ring)) {
+        if (++seen > 48) break;
+        if (o === this.target || o === this.threat || !enemy(o)) continue;
+        const d = Math.hypot(o.x - s.x, o.y - s.y);
+        if (d > SIGHT || d >= bestD || (near.length === LOOKS && d >= near[LOOKS - 1].d)) continue;
+        let i = near.length < LOOKS ? near.length : LOOKS - 1;
+        while (i > 0 && near[i - 1].d > d) { near[i] = near[i - 1]; i--; }
+        near[i] = { d, o };
+      }
+      for (const { d, o } of near) {
+        if (looks++ >= LOOKS) return best;
+        if (this.canSee(game, s, o)) { bestD = d; best = o; break; }
+      }
+    }
+    return best;
   }
 
   pickWeapon(game, s, inp) {
@@ -242,7 +314,7 @@ export class BotController {
       return;
     }
     this.offGraph = null;
-    const search = this.nav.costsFrom(start);
+    const search = game.crowded ? this.nav.cachedCostsFrom(start, game.tick) : this.nav.costsFrom(start);
     const costTo = (x, y) => {
       const n = this.nav.nearest(x, y, 90);
       return n ? { n, c: search.cost[n.id] } : { n: null, c: Infinity };
@@ -266,17 +338,24 @@ export class BotController {
     // Items teammates are already going for are worth less: spread out instead of crowding.
     // (In a free-for-all, racing someone to a weapon is fine: they'll fight over it.)
     const claimed = new Set();
-    for (const o of game.soldiers) {
-      if (o === s || !o.isBot || !o.alive || !game.rules.teams || o.team !== s.team) continue;
-      const it = game.controllers.get(o)?.goalItem;
-      if (it) claimed.add(it);
+    if (!game.rules.teams) {
+      // (Free-for-all: no teammates to share with.)
+    } else if (game.crowded) {
+      // (Big games: everyone's claims are counted once per update.)
+      for (const [it, n] of game.claims(s.team)) if (n > (it === this.goalItem ? 1 : 0)) claimed.add(it);
+    } else {
+      for (const o of game.soldiers) {
+        if (o === s || !o.isBot || !o.alive || !game.rules.teams || o.team !== s.team) continue;
+        const it = game.controllers.get(o)?.goalItem;
+        if (it) claimed.add(it);
+      }
     }
     let goalItem = null;
     const best = (filter, value) => {
       let pick = null, pv = -Infinity, item = null;
       for (const it of items) {
         if (!filter(it)) continue;
-        const n = this.nav.nearest(it.x, it.y + 12, 90);
+        const n = nodeFor(this.nav, it);
         // Only items a soldier standing at that spot could reach (not on a roof above it).
         if (!n || Math.abs(n.x - it.x) > 45 || it.y < n.y - 75 || it.y > n.y + 30) continue;
         const c = search.cost[n.id];
@@ -318,7 +397,7 @@ export class BotController {
       kind = 'fight';
       if (this.rng() * 40 < this.profile.camp) goal = start;
       else {
-        const near = this.nav.nodes.filter(n => Math.abs(n.x - s.x) < 140 && Math.abs(n.y - s.y) < 120 && search.cost[n.id] < 110);
+        const near = this.nav.nodesNear(s.x, s.y, 140, 120).filter(n => search.cost[n.id] < 110);
         goal = near.length ? near[Math.floor(this.rng() * near.length)] : start;
       }
     }
@@ -328,7 +407,8 @@ export class BotController {
     }
     if (!goal) {
       // Hunt: head for a random enemy, or wander.
-      const foes = this.enemies(game, s);
+      const f = game.crowded ? this.someEnemy(game, s) : null;
+      const foes = game.crowded ? (f ? [f] : []) : this.enemies(game, s);
       if (foes.length && this.rng() < 0.75) {
         const f = foes[Math.floor(this.rng() * foes.length)];
         goal = costTo(f.x, f.y + 4).n;

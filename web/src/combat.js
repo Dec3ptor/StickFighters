@@ -23,13 +23,25 @@ export function canHurt(game, attacker, target) {
 }
 
 /** Nearest soldier the segment hits (excluding `skip`), or null. */
-function hitSoldier(game, x0, y0, dx, dy, skip, owner) {
-  let best = null;
-  for (const s of game.soldiers) {
-    if (s === skip || !s.alive || !canHurt(game, owner, s)) continue;
-    const b = soldierBox(s);
-    const h = segmentBox(x0, y0, dx, dy, b.l, b.t, b.r, b.b);
-    if (h && (!best || h.t < best.t)) best = { ...h, soldier: s, box: b };
+export function hitSoldier(game, x0, y0, dx, dy, skip, owner) {
+  const len = Math.hypot(dx, dy);
+  // In big games, a long shot is checked a stretch at a time from the gun, stopping
+  // one stretch after the first hit (nobody further on can be hit first).
+  const pieces = game.crowded ? Math.max(1, Math.ceil(len / 160)) : 1;
+  let best = null, firstHit = -1;
+  for (let i = 0; i < pieces; i++) {
+    if (firstHit >= 0 && i > firstHit + 1) break;
+    const a = i / pieces, b = (i + 1) / pieces;
+    const ax = x0 + dx * a, ay = y0 + dy * a, bx = x0 + dx * b, by = y0 + dy * b;
+    for (const s of game.near(Math.min(ax, bx) - 10, Math.min(ay, by) - 16, Math.max(ax, bx) + 10, Math.max(ay, by) + 26)) {
+      if (s === skip || !s.alive || !canHurt(game, owner, s)) continue;
+      const bx2 = soldierBox(s);
+      const h = segmentBox(x0, y0, dx, dy, bx2.l, bx2.t, bx2.r, bx2.b);
+      // (Ties, like a shot starting inside two soldiers, go to the lower id, as in
+      // the list of soldiers; the grid finds soldiers in a different order.)
+      if (h && (!best || h.t < best.t || (game.crowded && h.t === best.t && s.id < best.soldier.id))) best = { ...h, soldier: s, box: bx2 };
+    }
+    if (best && firstHit < 0) firstHit = i;
   }
   return best;
 }
@@ -37,7 +49,7 @@ function hitSoldier(game, x0, y0, dx, dy, skip, owner) {
 /** Nearest enemy of `owner` near (x, y) that's in plain sight, or null. */
 function nearestEnemy(game, owner, x, y, range, needSight = true) {
   let best = null, bd = range;
-  for (const s of game.soldiers) {
+  for (const s of game.near(x - range, y - range, x + range, y + range)) {
     if (s === owner || !s.alive || !canHurt(game, owner, s) || s.spawnProtect > 0) continue;
     const d = Math.hypot(s.x - x, s.y - 8 - y);
     if (d >= bd) continue;
@@ -273,6 +285,7 @@ const LAUNCH = {
     s.body.x = spot.x; s.body.y = spot.y;
     s.body.vx = 0; s.body.vy = 0; s.body.rope = null; s.body.onGround = false;
     s.prevX = spot.x; s.prevY = spot.y;
+    game.moved(s);
     game.fx?.ring(spot.x, spot.y - 6, '#7a4fd0');
     return true;
   },
@@ -315,7 +328,8 @@ function meleeHit(game, s, def, id) {
   const dx = Math.cos(s.aim), dy = Math.sin(s.aim);
   const sx = s.shoulderX, sy = s.shoulderY;
   let best = null, bd = Infinity;
-  for (const o of game.soldiers) {
+  const reach = def.reach + 12;
+  for (const o of game.near(sx - reach, sy - reach, sx + reach, sy + reach)) {
     if (o === s || !o.alive || !canHurt(game, s, o)) continue;
     const cx = o.x, cy = o.y - 6;
     const rx = cx - sx, ry = cy - sy, d = Math.hypot(rx, ry);
@@ -607,7 +621,7 @@ const STEP = {
       p.life -= 4 * MOTION.timeScale;
     } else { p.x = nx; p.y = ny; }
     const r = 3 + p.age * MOTION.flameGrow;
-    for (const s of game.soldiers) {
+    for (const s of game.near(p.x - r, p.y - r, p.x + r, p.y + r)) {
       if (s === p.owner || p.hit.has(s) || !canHurt(game, p.owner, s)) continue;
       const b = soldierBox(s);
       if (p.x + r > b.l && p.x - r < b.r && p.y + r > b.t && p.y - r < b.b) {
@@ -632,7 +646,7 @@ const STEP = {
     }
     if (game.tick % 4 === p.id % 4) game.fx?.fire(p.x + (game.rng() - 0.5) * 6, p.y - 2);
     if (game.tick % 6 === p.id % 6) {
-      for (const s of game.soldiers) {
+      for (const s of game.near(p.x - 8, p.y - 12, p.x + 8, p.y + 2)) {
         if (!canHurt(game, p.owner, s) || s.spawnProtect > 0) continue;
         const b = soldierBox(s);
         if (p.x + 8 > b.l && p.x - 8 < b.r && p.y + 2 > b.t && p.y - 12 < b.b) {
@@ -652,7 +666,8 @@ const STEP = {
     if (wall) { if (wall.nx) p.vx = -p.vx * 0.5; else p.vy = -p.vy * 0.5; } else { p.x += p.vx; p.y += p.vy; }
     p.r = Math.min(c.radius, p.r + 0.3 * MOTION.timeScale);
     const fade = Math.min(1, p.life / 60);
-    for (const s of game.soldiers) {
+    const gr = p.r * fade + 6;
+    for (const s of game.near(p.x - gr, p.y - gr, p.x + gr, p.y + gr)) {
       if (!s.alive || s.spawnProtect > 0 || s.gassed === game.tick || !canHurt(game, p.owner, s)) continue;
       if (Math.hypot(s.x - p.x, s.y - 8 - p.y) < p.r * fade + 6) {
         s.gassed = game.tick; // overlapping clouds don't stack
@@ -699,7 +714,7 @@ const STEP = {
     } else { p.vy = 0; }
     if (game.tick % 90 === p.id % 90) game.sound(p.weapon === 'MadCow' ? 'moo' : p.weapon === 'OldWoman' ? 'mumble' : 'baa', p.x, p.y);
     if (c.contact) {
-      for (const s of game.soldiers) {
+      for (const s of game.near(p.x - 11, p.y - 14, p.x + 11, p.y + 22)) {
         if (s === p.owner || !s.alive || !canHurt(game, p.owner, s)) continue;
         if (Math.abs(s.x - p.x) < 11 && s.y - 22 < p.y && s.y + 14 > p.y - 12) { detonate(game, p, s); return false; }
       }
@@ -752,7 +767,8 @@ const STEP = {
     if (c.mine) {
       if (p.armed > 0) p.armed--;
       else if (p.triggered < 0) {
-        for (const s of game.soldiers) {
+        const tr = c.mine.trigger;
+        for (const s of game.near(p.x - tr, p.y - tr, p.x + tr, p.y + tr)) {
           if (s === p.owner || !s.alive || !canHurt(game, p.owner, s)) continue;
           if (Math.hypot(s.x - p.x, s.y - p.y) < c.mine.trigger) { p.triggered = c.mine.delay; game.sound('beep', p.x, p.y); break; }
         }
@@ -774,7 +790,7 @@ const STEP = {
       explode(game, p.x, p.y, c.blast, p.owner, p.weapon);
     }
     p.inside = inside;
-    for (const s of game.soldiers) {
+    for (const s of game.near(p.x - 16, p.y - 12, p.x + 16, p.y + 24)) {
       if (!s.alive || !canHurt(game, p.owner, s) || s === p.owner) continue;
       if (Math.abs(s.x - p.x) < 16 && Math.abs(s.y - 6 - p.y) < 18 && !p.squashed?.has(s)) {
         (p.squashed ||= new Set()).add(s);
@@ -795,7 +811,9 @@ export function explode(game, x, y, blast, owner, weapon, direct = null) {
   game.sound(blast.radius > 85 ? 'explosion' : 'explosionSmall', x, y);
   game.shake(x, y, Math.min(16, 5 + blast.radius / 20));
   const reach = blast.radius + 8;
-  for (const s of game.soldiers) {
+  let hit = game.near(x - reach, y - reach, x + reach, y + reach);
+  if (direct && !hit.includes(direct)) hit = [...hit, direct];
+  for (const s of hit) {
     if (!s.alive) continue;
     const cx = s.x, cy = s.y - 5;
     const d = Math.hypot(cx - x, cy - y);

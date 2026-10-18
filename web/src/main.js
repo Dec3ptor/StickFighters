@@ -76,10 +76,19 @@ const playerName = () => ($('name').value.trim() || 'Player').slice(0, 14);
 
 // ---- Menu ---------------------------------------------------------------------
 
+// The bots slider: one at a time up to 10, then bigger steps, up to 4,000 (for testing huge battles).
+const BOT_STEPS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000, 3000, 4000];
+const botsChosen = () => BOT_STEPS[+$('bots').value] ?? 5;
+function showBots() {
+  $('botsOut').textContent = botsChosen();
+  $('botsNote').classList.toggle('hidden', botsChosen() < 300);
+}
+
 function buildMenu(settings) {
   $('name').value = settings.name;
-  $('bots').value = settings.bots;
-  $('botsOut').textContent = settings.bots;
+  $('bots').max = BOT_STEPS.length - 1;
+  $('bots').value = BOT_STEPS.reduce((best, n, i) => (Math.abs(n - settings.bots) < Math.abs(BOT_STEPS[best] - settings.bots) ? i : best), 0);
+  showBots();
   $('difficulty').value = settings.difficulty;
   $('fragLimit').value = String(settings.fragLimit);
   $('lives').value = String(settings.lives);
@@ -93,7 +102,7 @@ function buildMenu(settings) {
   $('mode').value = settings.mode;
   $('mute').checked = settings.muted;
   audio.setMuted(settings.muted);
-  $('bots').addEventListener('input', () => { $('botsOut').textContent = $('bots').value; });
+  $('bots').addEventListener('input', showBots);
   $('mode').addEventListener('change', () => { modeFields(); rememberMenu(); });
   for (const r of document.querySelectorAll('input[name=mapSource]')) {
     r.checked = r.value === settings.mapSource;
@@ -261,7 +270,7 @@ function readMenu() {
     name: playerName(),
     map: selectedMap() || maps.index[0]?.file,
     mode,
-    bots: +$('bots').value,
+    bots: botsChosen(),
     difficulty: $('difficulty').value,
     fragLimit: +$('fragLimit').value,
     lives: +$('lives').value,
@@ -688,10 +697,14 @@ function simulate(now) {
   if (state.paused) return;
   state.acc += dt;
   let n = 0;
+  const started = performance.now();
   while (state.acc >= state.step && n++ < 90) {
     if (state.mode === 'client') state.net?.client?.tick();
     else { g.update(); state.net?.host?.afterTick(); }
     state.acc -= state.step;
+    perf.updates++;
+    // Too much to do (thousands of bots): run in slow motion rather than freeze the page.
+    if (performance.now() - started > 50) { state.acc = 0; break; }
   }
   if (n >= 90) state.acc = 0;
 }
@@ -768,19 +781,23 @@ function liveAim(me, x, y) {
 }
 
 // Frame rate readout (Settings -> Show frame rate, or ?fps in the address).
-const perf = { on: params.has('fps'), text: null, at: 0, frames: 0, ms: 0 };
+const perf = { on: params.has('fps'), text: null, at: 0, frames: 0, ms: 0, updates: 0 };
 
 function countFrame(now, drawMs) {
   perf.frames++;
   perf.ms += drawMs;
   if (now - perf.at < 500) return;
   if (perf.at) {
-    const fps = Math.round((perf.frames * 1000) / (now - perf.at));
-    perf.text = `${renderer.kind === 'webgl' ? 'WebGL' : 'Canvas'} · ${fps} fps · ${(perf.ms / perf.frames).toFixed(1)} ms drawing`;
+    const secs = (now - perf.at) / 1000;
+    const fps = Math.round(perf.frames / secs);
+    const speed = Math.round((perf.updates / secs / 60) * 100);
+    perf.text = `${renderer.kind === 'webgl' ? 'WebGL' : 'Canvas'} · ${fps} fps · ${(perf.ms / perf.frames).toFixed(1)} ms drawing`
+      + (!state.paused && speed < 95 ? ` · game at ${speed}% speed` : '');
   }
   perf.at = now;
   perf.frames = 0;
   perf.ms = 0;
+  perf.updates = 0;
 }
 
 function matchOver(g) {

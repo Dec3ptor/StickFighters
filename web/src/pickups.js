@@ -5,6 +5,7 @@ import { BODY, ITEM_RESPAWN, ITEM_SIZE, RULES, MOTION, CRATES } from './config.j
 import { WEAPONS, CRATE_WEIGHTS } from './weapons.js';
 
 const CRATE_LIFE = 2400; // ticks a landed crate waits to be picked up
+const MAX_DROPPED = 150;  // dropped weapons lying around at once
 
 export class Pickups {
   constructor(map, game) {
@@ -20,6 +21,13 @@ export class Pickups {
 
   /** Drop a weapon where a soldier died. */
   drop(id, ammo, x, y, vx) {
+    // In huge games, the oldest dropped weapons go first (there'd be thousands).
+    let dropped = 0;
+    for (const it of this.items) if (it.dropped && it.type === 'weapon') dropped++;
+    if (dropped >= MAX_DROPPED) {
+      const i = this.items.findIndex(it => it.dropped && it.type === 'weapon');
+      this.items.splice(i, 1);
+    }
     this.items.push({ type: 'weapon', weapon: id, ammo, x, y, vx, vy: -MOTION.itemToss, active: true, dropped: true, life: RULES.droppedWeaponTicks, bob: 0 });
   }
 

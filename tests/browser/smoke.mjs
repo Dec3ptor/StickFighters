@@ -70,6 +70,30 @@ await page.keyboard.press('Escape');
 await page.waitForTimeout(200);
 await page.screenshot({ path: `${outDir}/pause.png` });
 
+// A huge battle, set up from the menu: 1,000 bots.
+await page.click('#quit');
+await page.waitForSelector('#menu:not(.hidden)');
+await page.click('#tabOffline');
+const steps = await page.$eval('#bots', el => +el.max);
+await page.$eval('#bots', (el, v) => { el.value = v; el.dispatchEvent(new Event('input')); }, String(steps - 4)); // 1,000
+const crowdLabel = await page.textContent('#botsOut');
+if (crowdLabel !== '1000') errors.push(`bots slider shows ${crowdLabel}, expected 1000`);
+if (!(await page.isVisible('#botsNote'))) errors.push('no slow-motion note for 1,000 bots');
+await page.click('#play');
+await page.waitForFunction(() => window.stickSoldiers.state.game?.soldiers.length === 1001, null, { timeout: 30000 });
+await page.waitForTimeout(5000);
+const crowd = await page.evaluate(() => {
+  const g = window.stickSoldiers.state.game;
+  return { soldiers: g.soldiers.length, alive: g.soldiers.filter(s => s.alive).length, tick: g.tick, kills: g.stats.kills };
+});
+if (crowd.tick < 60) errors.push(`1,000 bots: the game hardly moved (${crowd.tick} updates in 5 s)`);
+if (crowd.alive < 300) errors.push(`1,000 bots: only ${crowd.alive} on the map`);
+await page.keyboard.down('Tab');
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${outDir}/crowd-1000.png` });
+await page.keyboard.up('Tab');
+results.crowd = crowd;
+
 console.log(JSON.stringify({ results, errors }, null, 2));
 await browser.close();
 server.close();

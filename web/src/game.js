@@ -13,6 +13,7 @@ import { setGameSpeed } from './speed.js';
 import { WEAPONS } from './weapons.js';
 import { modeOf } from './modes.js';
 import { makeRng } from './util.js';
+import { SoldierGrid, GRID_MIN } from './grid.js';
 
 const IDLE = { move: 0 };
 
@@ -47,25 +48,92 @@ export class Game {
     this.over = false;
     this.winner = null;
     this.stats = { kills: 0, suicides: 0, falls: 0 };
+    this.grid = new SoldierGrid();
+  }
+
+  /** True when there are enough soldiers that looking them up by area is worth it. */
+  get crowded() { return this.soldiers.length > GRID_MIN; }
+
+  /**
+   * Soldiers that might be inside a box (callers check exactly). In small games
+   * that's simply every soldier; in big ones, those in the grid cells around it.
+   * The grid is rebuilt once per update, so boxes get a margin for movement since.
+   */
+  near(l, t, r, b) {
+    if (!this.crowded) return this.soldiers;
+    if (this.grid.tick !== this.tick) this.grid.rebuild(this.soldiers, this.tick);
+    const m = 32;
+    return this.grid.query(l - m, t - m, r + m, b + m);
+  }
+
+  /** Big games: the sheep (or other remote-controlled thing) each soldier has out, worked out once per update. */
+  remoteOf(s) {
+    if (this.remotesTick !== this.tick) {
+      this.remotesTick = this.tick;
+      this.remotes = new Map();
+      for (const p of this.projectiles) if (p.remote && !p.dead && p.owner && !this.remotes.has(p.owner)) this.remotes.set(p.owner, p);
+    }
+    const p = this.remotes.get(s);
+    return p && !p.dead ? p : null;
+  }
+
+  /** Big team games: how many bots on a team are going for each item, worked out once per update. */
+  claims(team) {
+    if (this.claimsTick !== this.tick) {
+      this.claimsTick = this.tick;
+      this.claimed = new Map();
+    }
+    let m = this.claimed.get(team);
+    if (!m) {
+      m = new Map();
+      for (const o of this.soldiers) {
+        if (!o.isBot || !o.alive || o.team !== team) continue;
+        const it = this.controllers.get(o)?.goalItem;
+        if (it) m.set(it, (m.get(it) || 0) + 1);
+      }
+      this.claimed.set(team, m);
+    }
+    return m;
+  }
+
+  /** A soldier appeared somewhere new mid-update (respawned, teleported): keep the grid right. */
+  moved(s) {
+    if (this.crowded && this.grid.tick === this.tick) this.grid.place(s);
+  }
+
+  /** The grid, up to date for this update (big games only). */
+  soldierGrid() {
+    if (this.grid.tick !== this.tick) this.grid.rebuild(this.soldiers, this.tick);
+    return this.grid;
   }
 
   addSoldier(opts, controller) {
     const s = new Soldier({ id: opts.id ?? this.nextSoldierId(), ...opts });
-    s.respawnTimer = 1 + this.soldiers.length * 4;
+    // Soldiers arrive a few at a time; with lots of them, in groups (all in within 2 seconds).
+    s.respawnTimer = 1 + (this.soldiers.length % 30) * 4;
     this.rules.setup(this, s);
     this.soldiers.push(s);
+    this.ids?.add(s.id);
     this.controllers.set(s, controller);
     return s;
   }
 
+  /** The lowest id no soldier has. */
   nextSoldierId() {
-    let id = 0;
-    while (this.soldiers.some(s => s.id === id)) id++;
+    // (Kept in a set, so adding thousands of bots doesn't check every soldier each time.)
+    if (!this.ids || this.ids.size !== this.soldiers.length) {
+      this.ids = new Set(this.soldiers.map(s => s.id));
+      this.freeId = 0;
+    }
+    let id = this.freeId;
+    while (this.ids.has(id)) id++;
+    this.freeId = id;
     return id;
   }
 
   removeSoldier(s) {
     this.soldiers = this.soldiers.filter(o => o !== s);
+    if (this.ids) { this.ids.delete(s.id); this.freeId = Math.min(this.freeId, s.id); }
     this.controllers.delete(s);
     for (const p of this.projectiles) if (p.owner === s) p.owner = null;
     for (const o of this.soldiers) { if (o.lastHurtBy === s) o.lastHurtBy = null; if (o.burnBy === s) o.burnBy = null; }
@@ -226,12 +294,16 @@ export class Game {
       if (mine.length) points = mine;
     }
     if (!points.length) return { x: 0, y: 0 };
+    const danger = this.crowded ? this.spawnDanger(points, s.team) : null;
     let best = points[0], bestScore = -Infinity;
-    for (const p of points) {
+    for (const [i, p] of points.entries()) {
       let near = 1000;
-      for (const o of this.soldiers) {
-        if (o === s || !o.alive || (this.rules.teams && o.team === s.team)) continue;
-        near = Math.min(near, Math.hypot(o.x - p.x, o.y - p.y));
+      if (danger) near = danger[i];
+      else {
+        for (const o of this.soldiers) {
+          if (o === s || !o.alive || (this.rules.teams && o.team === s.team)) continue;
+          near = Math.min(near, Math.hypot(o.x - p.x, o.y - p.y));
+        }
       }
       const score = near + this.rng() * 300;
       if (score > bestScore) { bestScore = score; best = p; }
@@ -239,9 +311,31 @@ export class Game {
     return best;
   }
 
+  /**
+   * Big games: how far the nearest enemy is from each spawn point, worked out
+   * once per update (lots of soldiers respawn each update).
+   */
+  spawnDanger(points, team) {
+    const key = this.rules.teams ? team : 0;
+    const c = (this.dangerCache ||= new Map()).get(key);
+    // (Refreshed every quarter second: good enough for picking a spawn point.)
+    if (c && this.tick - c.tick < 15 && this.tick >= c.tick && c.points === points) return c.near;
+    const near = points.map(p => {
+      let n = 1000;
+      for (const o of this.near(p.x - 1000, p.y - 1000, p.x + 1000, p.y + 1000)) {
+        if (!o.alive || (this.rules.teams && o.team === team)) continue;
+        n = Math.min(n, Math.hypot(o.x - p.x, o.y - p.y));
+      }
+      return n;
+    });
+    this.dangerCache.set(key, { tick: this.tick, points, near });
+    return near;
+  }
+
   respawn(s) {
     const p = this.pickSpawn(s);
     s.spawnAt(p);
+    this.moved(s);
     this.rules.spawnLoadout(this, s);
     this.fx?.ring(p.x, p.y - 4, s.team === 2 ? '#d33' : '#36c');
     this.sound('spawn', p.x, p.y);
