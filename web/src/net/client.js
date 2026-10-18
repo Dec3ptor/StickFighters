@@ -151,6 +151,8 @@ export class NetClient {
     this.recent.push(inp);
     if (this.recent.length > INPUT_REPEAT) this.recent.shift();
     this.link.send(encodeInputs(this.recent), false);
+    // Where to respawn (conquest), when the player changes it.
+    if (me.deployAt !== this.sentDeploy) { this.sentDeploy = me.deployAt; this.link.send({ t: 'deploy', at: me.deployAt || null }, true); }
 
     if (me.alive && !me.kamikaze) {
       if (inp.aimDist != null) me.aimDist = inp.aimDist;

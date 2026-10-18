@@ -246,6 +246,23 @@ test('conquest: soldiers can spawn on points their team holds', () => {
   for (let i = 0; i < 20; i++) assert.equal(game.pickSpawn(blue).x, -800);
 });
 
+test('conquest: players choose where they spawn: base, or a point their team holds', () => {
+  const game = arena('conquest', { fragLimit: 100 });
+  const blue = put(game, 'Blue', 1, 0);
+  run(game, 7 * SEC + 2);
+  const me = game.addSoldier({ name: 'Me', isBot: false, team: 1 }, null);
+  assert.deepEqual(game.rules.deployOptions(game, me).map(o => o.key), ['auto', 'base', 'B']);
+  me.deployAt = 'B';
+  for (let i = 0; i < 10; i++) { const p = game.pickSpawn(me); assert.ok(p.x > -100 && p.x < 100, 'on B'); }
+  me.deployAt = 'base';
+  for (let i = 0; i < 10; i++) assert.equal(game.pickSpawn(me).x, -800);
+  // A point lost (or under attack) can't be chosen: back to the usual choice.
+  me.deployAt = 'B';
+  put(game, 'Red', 2, 30);
+  for (let i = 0; i < 10; i++) assert.equal(game.pickSpawn(me).x, -800);
+  assert.ok(blue.alive);
+});
+
 test('rush: arm an M-COM, it blows, the next sector opens with fresh tickets; the last one wins', () => {
   const game = arena('rush', { fragLimit: 20 });
   const blue = put(game, 'Blue', 1, 200);

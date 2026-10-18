@@ -3,7 +3,7 @@
 import { WEAPONS, SLOTS } from './weapons.js';
 import { RULES } from './config.js';
 import { GUN_GAME_LADDER } from './modes.js';
-import { drawObjectiveHud } from './objdraw.js';
+import { drawObjectiveHud, drawMinimap, bigMap, drawDeploy } from './objdraw.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
@@ -50,6 +50,7 @@ export function drawHud(r, game, me, opts = {}) {
   drawScores(ctx, game, me, H, standings);
   drawFeed(ctx, game, W, opts.chat);
   drawTop(ctx, game, me, W, standings, r, H);
+  if (bigMap(game.map) && !game.over) drawMinimap(r, ctx, game, me, W);
 
   // Messages for the player ("You got the Sniper Rifle").
   const notes = game.over ? [] : game.notes.filter(n => (n.to == null || n.to === me.id) && game.tick - n.tick < 150).slice(-3);
@@ -69,6 +70,7 @@ export function drawHud(r, game, me, opts = {}) {
     ctx.fillStyle = '#222';
     if (game.rules.canRespawn(game, me)) {
       ctx.fillText(`Respawning in ${Math.max(1, Math.ceil(me.respawnTimer / game.tickRate))}...`, W / 2, H / 2 - 60);
+      if (game.rules.deployOptions) drawDeploy(ctx, game, me, W, H / 2 - 30);
     } else {
       ctx.fillText("You're out", W / 2, H / 2 - 70);
       if (opts.watching) {

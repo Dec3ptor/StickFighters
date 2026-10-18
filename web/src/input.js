@@ -113,6 +113,12 @@ export class PlayerController {
     inp.aim = Math.atan2(w.y - s.shoulderY, w.x - s.shoulderX);
     inp.aimDist = Math.hypot(w.x - s.shoulderX, w.y - s.shoulderY);
 
+    if (!s.alive && game.rules.deployOptions) {
+      // Waiting to respawn (conquest): number keys choose where.
+      for (let i = 0; i < 9; i++) {
+        if (k.took(SLOT_KEYS[i])) { const opt = game.rules.deployOptions(game, s)[i]; if (opt) s.deployAt = opt.key; }
+      }
+    }
     for (let i = 0; i < SLOT_KEYS.length; i++) {
       if (k.took(SLOT_KEYS[i])) { const id = s.slotChoice(i); if (id) inp.switchTo = id; }
     }

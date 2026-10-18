@@ -372,10 +372,24 @@ export function objectiveModes(base) {
       return null;
     },
 
+    /**
+     * Where a player can choose to spawn (number keys while waiting): 'auto' (near
+     * the fighting), 'base', or a point their team holds.
+     */
+    deployOptions(game, s) {
+      const st = game.modeState, pts = objectivesOf(game.map, 'point');
+      const held = pts.filter((z, i) => st?.points?.[i]?.own === s.team).map(z => ({ key: z.label, label: z.label }));
+      return [{ key: 'auto', label: 'Auto' }, { key: 'base', label: 'Base' }, ...held];
+    },
+
     /** Spawn on a point we hold (one near the fighting, usually), unless enemies are there. */
     spawnPoint(game, s) {
       const st = game.modeState, pts = objectivesOf(game.map, 'point');
       const safe = pts.filter((z, i) => st.points[i].own === s.team && !enemiesNear(game, z, s.team, 220));
+      // A player's choice, while it's still possible.
+      if (s.deployAt === 'base') return null;
+      const chosen = s.deployAt && safe.find(z => z.label === s.deployAt);
+      if (chosen) return spotIn(game, chosen);
       if (!safe.length || game.rng() < 0.2) return null;
       // The front: our safe point closest to a point we don't hold.
       const away = pts.filter((z, i) => st.points[i].own !== s.team);

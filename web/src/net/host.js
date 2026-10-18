@@ -158,6 +158,7 @@ export class NetHost {
     if (!data || typeof data !== 'object') return;
     switch (data.t) {
       case 'ready': p.ready = true; break;
+      case 'deploy': if (p.soldier) p.soldier.deployAt = data.at == null ? null : String(data.at).slice(0, 4); break;
       case 'roster?':
         // The player saw a soldier it doesn't know: send the list again (at most once a second).
         if (Date.now() - (p.rosterAt || 0) > 1000) { p.rosterAt = Date.now(); p.link.send({ t: 'roster', roster: this.roster() }, true); }

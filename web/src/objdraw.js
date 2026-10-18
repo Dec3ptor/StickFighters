@@ -341,7 +341,8 @@ export function drawObjectiveHud(r, ctx, game, me, W, H) {
       break;
     }
   }
-  for (const m of marks) edgeMarker(ctx, r, m, W, H);
+  const placed = [];
+  for (const m of marks) edgeMarker(ctx, r, m, W, H, placed);
 }
 
 /** A progress bar above the weapon bar (capturing, arming). */
@@ -359,14 +360,19 @@ function progress(ctx, W, H, text, frac, color) {
   ctx.fillText(text, W / 2, y - 8);
 }
 
-/** A marker at the edge of the screen pointing at something off it. */
-function edgeMarker(ctx, r, m, W, H) {
+/** A marker at the edge of the screen pointing at something off it (moved along a bit if it would cover another). */
+function edgeMarker(ctx, r, m, W, H, placed) {
   const sx = (m.x - r.cam.x) * r.scale + W / 2, sy = (m.y - r.cam.y) * r.scale + H / 2;
   const pad = 22, top = 70, bottom = 80;
   if (sx > pad && sx < W - pad && sy > top && sy < H - bottom) return;
   const cx = W / 2, cy = (top + H - bottom) / 2, dx = sx - cx, dy = sy - cy;
   const k = Math.min(Math.abs((W / 2 - pad) / (dx || 1e-9)), Math.abs(((H - top - bottom) / 2) / (dy || 1e-9)), 1);
-  const ex = cx + dx * k, ey = cy + dy * k;
+  let ex = cx + dx * k, ey = cy + dy * k;
+  const side = Math.abs(ex - pad) < 1 || Math.abs(ex - (W - pad)) < 1; // on the left or right edge: move up/down
+  for (let i = 0; i < 8 && placed.some(p => Math.hypot(p[0] - ex, p[1] - ey) < 22); i++) {
+    if (side) ey += ey > cy ? -24 : 24; else ex += ex > cx ? -24 : 24;
+  }
+  placed.push([ex, ey]);
   const a = Math.atan2(dy, dx);
   ctx.save();
   ctx.translate(ex, ey);
@@ -376,3 +382,101 @@ function edgeMarker(ctx, r, m, W, H) {
   ctx.restore();
   badge(ctx, ex, ey, 10, m.label, m.color);
 }
+
+// ---- Minimap (big maps) ------------------------------------------------------------------
+
+/** True for maps big enough to need a minimap. */
+export const bigMap = map => map.bounds.right - map.bounds.left > 2600 || map.bounds.bottom - map.bounds.top > 1700;
+
+/**
+ * A small picture of the whole map at the top right: platforms, the objectives,
+ * your team (dots), you, and what's on screen.
+ */
+export function drawMinimap(r, ctx, game, me, W) {
+  const b = game.map.bounds, mapW = b.right - b.left, mapH = b.bottom - b.top;
+  let w = Math.min(300, W * 0.26), h = w * mapH / mapW;
+  if (h > 150) { h = 150; w = h * mapW / mapH; }
+  const x0 = W - 12 - w, y0 = 106, k = w / mapW;
+  const X = x => x0 + (x - b.left) * k, Y = y => y0 + (y - b.top) * k;
+  ctx.fillStyle = 'rgba(255,255,255,0.82)';
+  ctx.fillRect(x0 - 3, y0 - 3, w + 6, h + 6);
+  ctx.strokeStyle = '#999';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x0 - 3, y0 - 3, w + 6, h + 6);
+  ctx.fillStyle = '#9a9a9a';
+  for (const p of game.map.solids) ctx.fillRect(X(p.l), Y(p.t), Math.max(1, (p.r - p.l) * k), Math.max(1, (p.b - p.t) * k));
+  // Objectives.
+  const st = game.modeState;
+  if (st && game.rules.objective) {
+    const dot = (x, y, color, label) => {
+      ctx.fillStyle = color;
+      ctx.fillRect(X(x) - 3, Y(y) - 3, 6, 6);
+      if (label) {
+        ctx.font = `bold 9px ${FONT}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(label, X(x), Y(y) - 3);
+      }
+    };
+    if (game.mode === 'koth') {
+      const z = objectivesOf(game.map, 'hill')[st.hill];
+      if (z) { ctx.fillStyle = TEAM[st.owner] || '#777'; ctx.globalAlpha = 0.6; ctx.fillRect(X(z.left), Y(z.top), (z.right - z.left) * k + 1, (z.bottom - z.top) * k + 1); ctx.globalAlpha = 1; dot((z.left + z.right) / 2, z.bottom - 30, TEAM[st.owner] || '#777', 'H'); }
+    } else if (game.mode === 'ctf') {
+      for (const f of st.flags || []) dot(f.x, f.y - 20, TEAM[f.team], 'F');
+    } else if (game.mode === 'conquest') {
+      objectivesOf(game.map, 'point').forEach((z, i) => dot((z.left + z.right) / 2, z.bottom - 30, TEAM[st.points?.[i]?.own] || '#666', z.label));
+    } else if (game.mode === 'rush') {
+      const mcoms = objectivesOf(game.map, 'mcom'), labels = mcomLabels(mcoms);
+      const sector = st.sectors?.[Math.min(st.sector, st.sectors.length - 1)];
+      mcoms.forEach((m, i) => { const o = st.mcoms?.[i]; if (o && m.sector === sector && o.s !== 2) dot(m.x, m.y - 12, o.s === 1 ? TEAM[2] : '#444', labels[i]); });
+    }
+  }
+  // Your team (in huge battles, some of them), then you.
+  const mates = game.soldiers.filter(s => s.alive && s !== me && (!game.rules.teams || s.team === me.team) && game.rules.teams);
+  const step = Math.max(1, Math.ceil(mates.length / 300));
+  ctx.fillStyle = TEAM[me.team] || '#555';
+  for (let i = 0; i < mates.length; i += step) ctx.fillRect(X(mates[i].x) - 1, Y(mates[i].y - 10) - 1, 2, 2);
+  if (me.alive) {
+    ctx.fillStyle = '#111';
+    ctx.fillRect(X(me.x) - 2.5, Y(me.y - 10) - 2.5, 5, 5);
+  }
+  // What's on screen.
+  const hw = r.w / 2 / r.scale, hh = r.h / 2 / r.scale;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.strokeRect(X(r.cam.x - hw), Y(r.cam.y - hh), hw * 2 * k, hh * 2 * k);
+  ctx.textBaseline = 'middle';
+}
+
+/** Conquest, while waiting to respawn: where you'll spawn, and the number keys to change it. */
+export function drawDeploy(ctx, game, me, W, y) {
+  const opts = game.rules.deployOptions(game, me);
+  const chosen = opts.some(o => o.key === me.deployAt) ? me.deployAt : 'auto';
+  const st = game.modeState, pts = objectivesOf(game.map, 'point');
+  const w = 58, gap = 8, total = opts.length * w + (opts.length - 1) * gap;
+  ctx.font = `12px ${FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#555';
+  ctx.fillText('Spawn at (press a number):', W / 2, y);
+  opts.forEach((o, i) => {
+    const x = W / 2 - total / 2 + i * (w + gap), by = y + 12;
+    const on = o.key === chosen;
+    ctx.fillStyle = on ? TEAM[me.team] : 'rgba(255,255,255,0.9)';
+    ctx.fillRect(x, by, w, 26);
+    ctx.strokeStyle = on ? TEAM[me.team] : '#888';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x, by, w, 26);
+    ctx.fillStyle = on ? '#fff' : '#333';
+    ctx.font = `bold 12px ${FONT}`;
+    ctx.fillText(`${i + 1}  ${o.label}`, x + w / 2, by + 13);
+    // A point under attack: say so.
+    const k = pts.findIndex(z => z.label === o.key);
+    if (k >= 0 && st?.points?.[k]?.c?.[other(me.team) - 1]) {
+      ctx.fillStyle = CONTESTED;
+      ctx.font = `10px ${FONT}`;
+      ctx.fillText('under attack', x + w / 2, by + 36);
+    }
+  });
+}
+
+const other = t => (t === 1 ? 2 : 1);

@@ -178,7 +178,7 @@ function buildMapCards(selected, { follow = false } = {}) {
   show('mapsNote', false);
   let cards = [];
   if (source === 'originals') {
-    cards = maps.index.map(m => ({ key: m.file, name: m.name, label: mapLabel(m), mode: m.mode, modes: m.modes, data: maps.data.get(m.file) }));
+    cards = maps.index.map(m => ({ key: m.file, name: m.name, label: mapLabel(m), mode: m.mode, modes: m.modes, players: m.players, data: maps.data.get(m.file) }));
   } else if (source === 'mine') {
     cards = listMaps().map(m => ({ key: `custom:${m.id}`, id: m.id, name: m.name, label: 'Your map', data: m.data }));
   } else {
@@ -203,6 +203,12 @@ function buildMapCards(selected, { follow = false } = {}) {
       state.selectedMap = c.key;
       // Maps made for other modes switch to the mode they're best for (team maps: team deathmatch).
       if (c.modes?.length ? !c.modes.includes($('mode').value) : c.mode === 'team' && $('mode').value === 'ffa') { $('mode').value = c.mode; modeFields(); }
+      // Big maps feel empty with a handful of bots: start at the map's smallest player count.
+      const least = parseInt(c.players, 10);
+      if (least > 1 && botsChosen() < least - 1) {
+        $('bots').value = BOT_STEPS.findIndex(n => n >= least - 1);
+        showBots();
+      }
       audio.unlock();
       audio.play('menuMove');
       rememberMenu();
