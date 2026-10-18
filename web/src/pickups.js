@@ -59,10 +59,10 @@ export class Pickups {
     const health = game.rng() < 0.18;
     this.items.push({
       type: 'crate', weapon: health ? null : pickCrateWeapon(game.rng), health,
-      x: spot.x, y: game.map.bounds.top - 40, vx: 0, vy: MOTION.crateFall,
+      x: spot.x, y: spot.top, vx: 0, vy: MOTION.crateFall,
       active: true, dropped: true, landed: false, life: 99999, bob: 0,
     });
-    game.sound('crate', spot.x, game.map.bounds.top);
+    game.sound('crate', spot.x, spot.top);
   }
 
   /** Give the soldier anything they're touching. */
@@ -89,15 +89,28 @@ function pickCrateWeapon(rng) {
   return ids[0];
 }
 
-/** Places a crate can land: the tops of platforms with room to stand. */
+/**
+ * Places a crate can land: next to the map's spawn points and pickups (which
+ * map makers put where players can get to), on floors with room to stand.
+ * Each spot says how high the crate starts: the sky, or just under the roof indoors.
+ */
 function crateSpots(map) {
-  const spots = [];
-  for (const s of map.solids) {
-    if (s.bounce || s.r - s.l < 20) continue;
-    for (let x = s.l + 12; x <= s.r - 12; x += 48) {
-      const y = s.t - BODY.bottom;
-      if (!map.overlap(x - BODY.halfW, y + BODY.top, x + BODY.halfW, y + BODY.bottom) &&
-          !map.overlap(x - 8, map.bounds.top - 40, x + 8, s.t - 1)) spots.push({ x, y: s.t });
+  const spots = [], seen = new Set();
+  const sources = [...map.spawns, ...map.items];
+  for (const src of sources) {
+    for (const off of [0, -40, 40]) {
+      const x = src.x + off;
+      const hit = map.raycast(x, src.y - 4, x, src.y + 260);
+      if (!hit || hit.ny >= 0 || hit.solid.bounce) continue;
+      const floor = hit.y;
+      if (map.overlap(x - BODY.halfW, floor - 34, x + BODY.halfW, floor - 1)) continue;
+      const roof = map.raycast(x, floor - 30, x, map.bounds.top - 60);
+      const top = roof ? roof.y + 10 : map.bounds.top - 40;
+      if (floor - top < 30) continue;
+      const key = `${Math.round(x / 12)},${Math.round(floor / 12)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      spots.push({ x, y: floor, top });
     }
   }
   return spots;

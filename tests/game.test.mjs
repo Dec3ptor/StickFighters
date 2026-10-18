@@ -272,6 +272,36 @@ for (const m of MAPS) {
   });
 }
 
+test('bots don\'t get stuck in loops or pile onto their teammates', () => {
+  // Two Towers used to trap bots: they ran off the small tower blocks before
+  // they could jump, fell back down and tried the same route forever, in a pile.
+  for (const m of MAPS) {
+    const { game } = botMatch(m.file, { bots: 6, mode: m.mode, seed: 11 });
+    let stuck = 0, stacked = 0;
+    const seen = new Map();
+    for (let t = 0; t < 7200; t++) {
+      game.update();
+      const alive = game.soldiers.filter(s => s.alive);
+      for (let i = 0; i < alive.length; i++) for (let j = i + 1; j < alive.length; j++) {
+        const a = alive[i], b = alive[j];
+        if (a.team && a.team === b.team && Math.abs(a.x - b.x) < 18 && Math.abs(a.y - b.y) < 30) stacked++;
+      }
+      // Every half second: has the bot stayed in one 50 px wide column for the last 4 seconds?
+      if (t % 30) continue;
+      for (const s of game.soldiers) {
+        const h = seen.get(s) || [];
+        h.push(s.alive ? s.x : NaN);
+        if (h.length > 8) h.shift();
+        seen.set(s, h);
+        if (h.length === 8 && h.every(Number.isFinite) && Math.max(...h) - Math.min(...h) <= 50) stuck++;
+      }
+    }
+    assert.ok(stuck < 120, `${m.name}: bots going nowhere for ${stuck} checks`);
+    assert.ok(stacked < 1500, `${m.name}: teammates piled up for ${stacked} ticks`);
+    assert.ok(game.stats.kills >= 25, `${m.name}: only ${game.stats.kills} frags in 2 minutes`);
+  }
+});
+
 test('team matches keep teams apart: no friendly fire', () => {
   const { game } = botMatch('ssteam1.json', { bots: 6, mode: 'team', seed: 2 });
   for (let i = 0; i < 3600; i++) game.update();

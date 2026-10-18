@@ -238,7 +238,8 @@ export class NavGraph {
       if (done[id]) continue;
       done[id] = 1;
       for (const l of this.nodes[id].links) {
-        const nc = c + l.cost;
+        // (penalty: extra cost bots add to moves that went wrong for them, see bot.js)
+        const nc = c + l.cost + (l.penalty || 0);
         if (nc < cost[l.to.id]) {
           cost[l.to.id] = nc;
           prev[l.to.id] = id;

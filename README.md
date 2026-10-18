@@ -141,7 +141,7 @@ GitHub Pages has to be switched on once: **Settings → Pages → Build and depl
 ## Design notes
 
 - **Jump height.** The original's physics constants are lost, so they were tuned against its maps. A jump reaches about 168 px and jump pads launch 2.05× their stored "bounce" value. Those are the smallest values that let you climb out of every pit and back up every tower in all 8 maps. A test checks that every map stays fully connected.
-- **Bots.** The bots' route planner finds every spot a soldier can stand on. It then tries walks, jumps (including mid-air direction changes) and drops from each spot with the same physics code the game uses, so every planned move is one the bot can actually perform.
+- **Bots.** The bots' route planner finds every spot a soldier can stand on. It then tries walks, jumps (including mid-air direction changes) and drops from each spot with the same physics code the game uses, so every planned move is one the bot can actually perform. In a real match a move can still go wrong (a bot lines up a jump slightly off, or lands on a jump pad), so a move that fails costs more to plan with next time and the bots find another way. A bot that hasn't got anywhere for a few seconds gives up on what it was doing and goes somewhere else, and teammates spread out over different pickups instead of piling onto the same one.
 - **Floating pickups.** Items sit exactly where the original map files put them, which is often 20–50 px above the floor. You may need to hop to grab some.
 - **Same game everywhere.** Offline, hosting and joining all run the same `Game` code. The host records every sound and effect as it happens and sends them on, and players draw trails (rocket smoke, jetpack flames) themselves, from what's in the snapshots.
 
