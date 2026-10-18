@@ -288,9 +288,9 @@ export function objectiveModes(base) {
         const c = byId(game, theirs.carrier);
         if (c && c !== s) return { zone: at(c.x, c.y + STAND, 90), moving: true };
       }
-      // Defenders stay around our flag; everyone else goes for theirs.
-      if (role < 0.35) return { zone: { left: stand.x - 260, top: stand.y - 220, right: stand.x + 260, bottom: stand.y + 4 }, hold: true };
-      if (theirs.carrier < 0) return { zone: at(theirs.x, theirs.y), moving: !theirs.home };
+      // Defenders stay around our flag; everyone else goes for theirs (most of them without stopping to fight).
+      if (role < 0.3) return { zone: { left: stand.x - 260, top: stand.y - 220, right: stand.x + 260, bottom: stand.y + 4 }, hold: true };
+      if (theirs.carrier < 0) return { zone: at(theirs.x, theirs.y), moving: !theirs.home, urgent: role < 0.75 };
       return null;
     },
   };

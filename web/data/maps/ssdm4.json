@@ -242,5 +242,88 @@
       "y": 467,
       "weapon": "Bazooka"
     }
+  ],
+  "objectives": [
+    {
+      "type": "hill",
+      "left": 300,
+      "top": 262,
+      "right": 500,
+      "bottom": 352
+    },
+    {
+      "type": "hill",
+      "left": 300,
+      "top": 142,
+      "right": 500,
+      "bottom": 232
+    },
+    {
+      "type": "hill",
+      "left": 304,
+      "top": 410,
+      "right": 496,
+      "bottom": 496
+    },
+    {
+      "type": "flag",
+      "team": 1,
+      "x": 720,
+      "y": 400
+    },
+    {
+      "type": "flag",
+      "team": 2,
+      "x": 80,
+      "y": 400
+    },
+    {
+      "type": "point",
+      "label": "A",
+      "left": 590,
+      "top": 304,
+      "right": 760,
+      "bottom": 400
+    },
+    {
+      "type": "point",
+      "label": "B",
+      "left": 300,
+      "top": 262,
+      "right": 500,
+      "bottom": 352
+    },
+    {
+      "type": "point",
+      "label": "C",
+      "left": 40,
+      "top": 304,
+      "right": 210,
+      "bottom": 400
+    },
+    {
+      "type": "mcom",
+      "sector": 1,
+      "x": 400,
+      "y": 200
+    },
+    {
+      "type": "mcom",
+      "sector": 1,
+      "x": 400,
+      "y": 496
+    },
+    {
+      "type": "mcom",
+      "sector": 2,
+      "x": 130,
+      "y": 304
+    },
+    {
+      "type": "mcom",
+      "sector": 2,
+      "x": 100,
+      "y": 504
+    }
   ]
 }

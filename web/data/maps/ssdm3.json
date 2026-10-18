@@ -223,5 +223,81 @@
       "y": 524,
       "weapon": "M4"
     }
+  ],
+  "objectives": [
+    {
+      "type": "hill",
+      "left": 304,
+      "top": 176,
+      "right": 497,
+      "bottom": 272
+    },
+    {
+      "type": "hill",
+      "left": 330,
+      "top": 440,
+      "right": 471,
+      "bottom": 528
+    },
+    {
+      "type": "flag",
+      "team": 1,
+      "x": 760,
+      "y": 384
+    },
+    {
+      "type": "flag",
+      "team": 2,
+      "x": 41,
+      "y": 384
+    },
+    {
+      "type": "point",
+      "label": "A",
+      "left": 584,
+      "top": 284,
+      "right": 764,
+      "bottom": 384
+    },
+    {
+      "type": "point",
+      "label": "B",
+      "left": 304,
+      "top": 176,
+      "right": 497,
+      "bottom": 272
+    },
+    {
+      "type": "point",
+      "label": "C",
+      "left": 37,
+      "top": 284,
+      "right": 217,
+      "bottom": 384
+    },
+    {
+      "type": "mcom",
+      "sector": 1,
+      "x": 360,
+      "y": 272
+    },
+    {
+      "type": "mcom",
+      "sector": 1,
+      "x": 400,
+      "y": 480
+    },
+    {
+      "type": "mcom",
+      "sector": 2,
+      "x": 220,
+      "y": 144
+    },
+    {
+      "type": "mcom",
+      "sector": 2,
+      "x": 60,
+      "y": 560
+    }
   ]
 }

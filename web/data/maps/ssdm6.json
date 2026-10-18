@@ -337,5 +337,81 @@
       "x": 72,
       "y": -288
     }
+  ],
+  "objectives": [
+    {
+      "type": "hill",
+      "left": -100,
+      "top": -354,
+      "right": 100,
+      "bottom": -264
+    },
+    {
+      "type": "hill",
+      "left": -110,
+      "top": 174,
+      "right": 110,
+      "bottom": 264
+    },
+    {
+      "type": "flag",
+      "team": 1,
+      "x": -540,
+      "y": -136
+    },
+    {
+      "type": "flag",
+      "team": 2,
+      "x": 540,
+      "y": -136
+    },
+    {
+      "type": "point",
+      "label": "A",
+      "left": -270,
+      "top": -150,
+      "right": -100,
+      "bottom": -56
+    },
+    {
+      "type": "point",
+      "label": "B",
+      "left": -110,
+      "top": -360,
+      "right": 110,
+      "bottom": -264
+    },
+    {
+      "type": "point",
+      "label": "C",
+      "left": 100,
+      "top": -150,
+      "right": 270,
+      "bottom": -56
+    },
+    {
+      "type": "mcom",
+      "sector": 1,
+      "x": 0,
+      "y": -312
+    },
+    {
+      "type": "mcom",
+      "sector": 1,
+      "x": 60,
+      "y": 264
+    },
+    {
+      "type": "mcom",
+      "sector": 2,
+      "x": 500,
+      "y": -136
+    },
+    {
+      "type": "mcom",
+      "sector": 2,
+      "x": 440,
+      "y": 264
+    }
   ]
 }

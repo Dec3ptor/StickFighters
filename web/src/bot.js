@@ -319,8 +319,11 @@ export class BotController {
     // The objective modes: where the mode wants this bot to be (a hill, a flag, a capture point...).
     const obj = game.rules.botGoal?.(game, s, this) || null;
     const inObj = obj && inZone(s, obj.zone);
-    // Pickups are worth less when there's somewhere to be (unless we're already there).
-    const detour = !obj || (inObj && obj.hold) ? 0 : obj.urgent ? 6 : 2;
+    // Pickups are worth less when there's somewhere to be (unless we're already there),
+    // and only ones close by are worth the detour.
+    const busy = obj && !(inObj && obj.hold);
+    const detour = !busy ? 0 : obj.urgent ? 6 : 2;
+    let pickupReach = busy ? (obj.urgent ? 90 : 150) : Infinity;
     const costTo = (x, y) => {
       const n = this.nav.nearest(x, y, 90);
       return n ? { n, c: search.cost[n.id] } : { n: null, c: Infinity };
@@ -365,7 +368,7 @@ export class BotController {
         // Only items a soldier standing at that spot could reach (not on a roof above it).
         if (!n || Math.abs(n.x - it.x) > 45 || it.y < n.y - 75 || it.y > n.y + 30) continue;
         const c = search.cost[n.id];
-        if (c === Infinity) continue;
+        if (c > pickupReach) continue;
         const v = value(it) - c / 60 - (claimed.has(it) ? 4 : 0) - detour;
         if (v > pv) { pv = v; pick = n; item = it; }
       }
@@ -381,6 +384,8 @@ export class BotController {
     if (!goal) {
       const owned = Object.keys(s.weapons).filter(id => s.has(id));
       const topValue = Math.max(...owned.map(id => weaponValue(id)));
+      // Just the pistol: a proper gun is worth a longer detour on the way.
+      if (busy && topValue < 3) pickupReach = Math.max(pickupReach, 300);
       const isWeapon = it => (it.type === 'weapon' || (it.type === 'crate' && it.landed && !it.health)) && WEAPONS[it.weapon];
       goal = best(
         it => isWeapon(it) && wants(s, it),
