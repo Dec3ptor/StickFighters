@@ -15,6 +15,7 @@ import { Editor } from './editor.js';
 import { listMaps, getMap, saveMap } from './mapstore.js';
 import { decodeShare, encodeShare, normalizeMap } from './custommaps.js';
 import { MODES } from './modes.js';
+import { seamsOf, fillSeams } from './map.js';
 import { Lobby, inviteCode, parseInvite } from './net/lobby.js';
 import { NetHost } from './net/host.js';
 import { NetClient } from './net/client.js';
@@ -371,10 +372,12 @@ function drawPreview(cv, data) {
   const e = 1.4 / s;
   ctx.fillStyle = '#111';
   for (const p of data.platforms) ctx.fillRect(p.left - e, p.top - e, p.right - p.left + 2 * e, p.bottom - p.top + 2 * e);
-  for (const p of data.platforms) {
-    ctx.fillStyle = p.bounce ? '#cfe0a8' : '#fff';
-    ctx.fillRect(p.left, p.top, p.right - p.left, p.bottom - p.top);
-  }
+  ctx.fillStyle = '#fff';
+  for (const p of data.platforms) ctx.fillRect(p.left, p.top, p.right - p.left, p.bottom - p.top);
+  // No hairlines where platforms just meet.
+  fillSeams(seamsOf(data.platforms.map(p => ({ l: p.left, t: p.top, r: p.right, b: p.bottom }))), e, (x, y, w, h) => ctx.fillRect(x, y, w, h));
+  ctx.fillStyle = '#cfe0a8';
+  for (const p of data.platforms) if (p.bounce) ctx.fillRect(p.left, p.top, p.right - p.left, p.bottom - p.top);
 }
 
 function show(id, on) { $(id).classList.toggle('hidden', !on); }

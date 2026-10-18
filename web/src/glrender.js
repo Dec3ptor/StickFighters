@@ -9,6 +9,7 @@
 import { Renderer } from './render.js';
 import { GLContext } from './glctx.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
+import { seamsOf, fillSeams } from './map.js';
 
 const INK = 0x111111;
 // Particles drawn as sprites (the rest are drawn as shapes, like on the canvas).
@@ -180,6 +181,8 @@ export class GLRenderer extends Renderer {
       for (const p of solids) g.rect(p.l - e, p.t - e, p.r - p.l + 2 * e, p.b - p.t + 2 * e);
       g.fill(INK);
       for (const p of solids) g.rect(p.l, p.t, p.r - p.l, p.b - p.t);
+      // No hairlines where blocks just meet.
+      fillSeams(game.map.seams ||= seamsOf(solids), e, (x, y, w, h) => g.rect(x, y, w, h));
       g.fill(0xffffff);
       if (solids.some(p => p.bounce)) {
         for (const p of solids) if (p.bounce) g.rect(p.l, p.t, p.r - p.l, p.b - p.t);

@@ -8,6 +8,7 @@ import { WEAPONS, PICKUP_WEAPONS, SLOTS } from './weapons.js';
 import { drawWeapon, drawHealth, drawArmour, drawJetpack } from './render.js';
 import { RULES } from './config.js';
 import { MODES } from './modes.js';
+import { platformSeams, fillSeams } from './map.js';
 
 const TOOLS = [
   { id: 'select', label: 'Select', key: 'KeyV', short: 'V', hint: 'Click to select. Drag to move, drag the corner squares to resize. Drag empty space to move the view.' },
@@ -1075,6 +1076,11 @@ export class Editor {
       ctx.fillStyle = p.bounce ? '#eef3e2' : '#fff';
       ctx.fillRect(p.left, p.top, p.right - p.left, p.bottom - p.top);
     }
+    // No hairlines where platforms just meet (as in the game).
+    ctx.fillStyle = '#fff';
+    fillSeams(platformSeams(m.platforms), e, (x, y, w, h) => ctx.fillRect(x, y, w, h));
+    ctx.fillStyle = '#eef3e2';
+    for (const p of m.platforms) if (p.bounce) ctx.fillRect(p.left, p.top, p.right - p.left, p.bottom - p.top);
     ctx.strokeStyle = '#7c9a3d';
     ctx.lineWidth = 1.5 * Math.max(1, px);
     for (const p of m.platforms) {

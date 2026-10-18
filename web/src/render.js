@@ -7,6 +7,7 @@ import { WEAPONS } from './weapons.js';
 import { clamp, lerp } from './util.js';
 import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate } from './sprites.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
+import { seamsOf, fillSeams } from './map.js';
 
 export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate };
 
@@ -157,6 +158,8 @@ export class Renderer {
     for (const p of game.map.solids) ctx.fillRect(p.l - e, p.t - e, p.r - p.l + 2 * e, p.b - p.t + 2 * e);
     ctx.fillStyle = '#fff';
     for (const p of game.map.solids) ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t);
+    // No hairlines where blocks just meet.
+    fillSeams(game.map.seams ||= seamsOf(game.map.solids), e, (x, y, w, h) => ctx.fillRect(x, y, w, h));
     this.drawPads(game, true);
   }
 

@@ -87,6 +87,54 @@ export class GameMap {
 }
 
 /**
+ * Where two boxes meet edge to edge, without overlapping: the shared part of
+ * the edge. Each box is drawn as a black outline under a white fill, and two
+ * fills that just meet never quite cover the pixels on the line between them
+ * (each only partly covers them), so a hairline of outline shows through.
+ * Drawing a thin white strip along each of these hides it.
+ * boxes: [{ l, t, r, b }]. Returns [{ x, t, b } (a vertical seam) or { y, l, r } (horizontal), max]
+ * where max is how far the strip can reach into either box (half the thinner one).
+ */
+export function seamsOf(boxes) {
+  const out = [];
+  const meet = (a, b) => Math.abs(a - b) < 0.05;
+  for (let i = 0; i < boxes.length; i++) {
+    const a = boxes[i];
+    for (let j = i + 1; j < boxes.length; j++) {
+      const c = boxes[j];
+      if (meet(a.r, c.l) || meet(c.r, a.l)) {
+        const t = Math.max(a.t, c.t), b = Math.min(a.b, c.b);
+        if (b - t > 0.5) out.push({ x: meet(a.r, c.l) ? a.r : a.l, t, b, max: Math.min(a.r - a.l, c.r - c.l) / 2 });
+      }
+      if (meet(a.b, c.t) || meet(c.b, a.t)) {
+        const l = Math.max(a.l, c.l), r = Math.min(a.r, c.r);
+        if (r - l > 0.5) out.push({ y: meet(a.b, c.t) ? a.b : a.t, l, r, max: Math.min(a.b - a.t, c.b - c.t) / 2 });
+      }
+    }
+  }
+  return out;
+}
+
+/** seamsOf() for map data platforms ({ left, top, right, bottom }), remembered while they don't change. */
+export function platformSeams(platforms) {
+  const key = platforms.map(p => `${p.left},${p.top},${p.right},${p.bottom}`).join('|');
+  if (platformSeams.key !== key) {
+    platformSeams.key = key;
+    platformSeams.seams = seamsOf(platforms.map(p => ({ l: p.left, t: p.top, r: p.right, b: p.bottom })));
+  }
+  return platformSeams.seams;
+}
+
+/** Fill the seams (see seamsOf) with strips reaching `w` into each box: calls rect(x, y, w, h). */
+export function fillSeams(seams, w, rect) {
+  for (const s of seams) {
+    const k = Math.min(w, s.max);
+    if (s.x !== undefined) rect(s.x - k, s.t, 2 * k, s.b - s.t);
+    else rect(s.l, s.y - k, s.r - s.l, 2 * k);
+  }
+}
+
+/**
  * Segment vs box (slab method). The segment starts at (x0,y0) and moves by (dx,dy).
  * Returns { t, nx, ny } for the entry point, or null. A segment starting inside the box hits at t = 0.
  */
