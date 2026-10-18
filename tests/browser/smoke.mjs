@@ -20,6 +20,8 @@ page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 
 await page.goto(url);
+// Wait for the game's script before clicking (on a slow machine the tabs aren't wired up yet).
+await page.waitForFunction(() => window.stickSoldiers);
 await page.click('#tabOffline');
 await page.waitForSelector('.map-card');
 await page.screenshot({ path: `${outDir}/menu.png` });

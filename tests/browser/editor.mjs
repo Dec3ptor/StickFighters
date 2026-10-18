@@ -26,6 +26,8 @@ function watch(page) {
 
 const page = watch(await browser.newPage({ viewport: { width: 1400, height: 820 } }));
 await page.goto(url);
+// Wait for the game's script before clicking (on a slow machine the tabs aren't wired up yet).
+await page.waitForFunction(() => window.stickSoldiers);
 await page.click('#tabOffline');
 await page.waitForSelector('.map-card');
 await page.click('#openEditor');
