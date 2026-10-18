@@ -38,5 +38,155 @@
     "file": "ssteam1.json",
     "name": "Two Towers",
     "mode": "team"
+  },
+  {
+    "file": "crossfire.json",
+    "name": "Crossfire",
+    "mode": "ctf",
+    "modes": [
+      "ctf",
+      "koth",
+      "conquest",
+      "team",
+      "ffa",
+      "rush"
+    ],
+    "size": "small",
+    "players": "4-12"
+  },
+  {
+    "file": "pitstop.json",
+    "name": "Pit Stop",
+    "mode": "koth",
+    "modes": [
+      "koth",
+      "ctf",
+      "conquest",
+      "team",
+      "ffa",
+      "rush"
+    ],
+    "size": "small",
+    "players": "4-12"
+  },
+  {
+    "file": "summit.json",
+    "name": "Summit",
+    "mode": "koth",
+    "modes": [
+      "koth",
+      "ctf",
+      "conquest",
+      "team",
+      "ffa",
+      "rush"
+    ],
+    "size": "small",
+    "players": "4-12"
+  },
+  {
+    "file": "twinkeeps.json",
+    "name": "Twin Keeps",
+    "mode": "ctf",
+    "modes": [
+      "ctf",
+      "conquest",
+      "koth",
+      "team",
+      "ffa",
+      "rush"
+    ],
+    "size": "small",
+    "players": "6-16"
+  },
+  {
+    "file": "foundry.json",
+    "name": "Foundry",
+    "mode": "conquest",
+    "modes": [
+      "conquest",
+      "ctf",
+      "koth",
+      "rush",
+      "team",
+      "ffa"
+    ],
+    "size": "medium",
+    "players": "8-24"
+  },
+  {
+    "file": "skyline.json",
+    "name": "Skyline",
+    "mode": "ctf",
+    "modes": [
+      "ctf",
+      "conquest",
+      "koth",
+      "team",
+      "ffa",
+      "rush"
+    ],
+    "size": "medium",
+    "players": "8-24"
+  },
+  {
+    "file": "citadel.json",
+    "name": "Citadel",
+    "mode": "rush",
+    "modes": [
+      "rush",
+      "conquest",
+      "koth",
+      "ctf",
+      "team",
+      "ffa"
+    ],
+    "size": "large",
+    "players": "16-64"
+  },
+  {
+    "file": "frontline.json",
+    "name": "Frontline",
+    "mode": "rush",
+    "modes": [
+      "rush",
+      "conquest",
+      "ctf",
+      "koth",
+      "team",
+      "ffa"
+    ],
+    "size": "large",
+    "players": "16-64"
+  },
+  {
+    "file": "harbor.json",
+    "name": "Harbor",
+    "mode": "conquest",
+    "modes": [
+      "conquest",
+      "rush",
+      "ctf",
+      "koth",
+      "team",
+      "ffa"
+    ],
+    "size": "large",
+    "players": "16-64"
+  },
+  {
+    "file": "valley.json",
+    "name": "Valley",
+    "mode": "conquest",
+    "modes": [
+      "conquest",
+      "rush",
+      "koth",
+      "ctf",
+      "team",
+      "ffa"
+    ],
+    "size": "large",
+    "players": "16-64"
   }
 ]

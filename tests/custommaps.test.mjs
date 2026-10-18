@@ -43,12 +43,13 @@ test('normalizeMap cleans up messy data and works out the bounds', () => {
   assert.deepEqual(computeBounds([], [], []), { left: -400, top: -300, right: 400, bottom: 300 });
 });
 
-test('share links round-trip every original map', async () => {
+test('share links round-trip every game map', async () => {
   for (const m of mapIndex()) {
     const original = normalizeMap(loadMap(m.file));
     const code = await encodeShare(original);
     assert.match(code, /^[A-Za-z0-9_-]+$/, 'URL-safe');
-    assert.ok(code.length < 3000, `${m.name} link is ${code.length} characters`);
+    // (The originals' links stay short; the big new maps have a lot more in them.)
+    assert.ok(code.length < (m.size ? 12000 : 3000), `${m.name} link is ${code.length} characters`);
     assert.deepEqual(await decodeShare(code), original);
   }
   await assert.rejects(decodeShare('not-a-map'), /damaged/);

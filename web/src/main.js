@@ -201,8 +201,9 @@ function buildMapCards(selected, { follow = false } = {}) {
     const pick = () => {
       for (const el of box.querySelectorAll('.map-card')) el.setAttribute('aria-checked', String(el === card));
       state.selectedMap = c.key;
-      // Maps made for other modes switch to the mode they're best for (team maps: team deathmatch).
-      if (c.modes?.length ? !c.modes.includes($('mode').value) : c.mode === 'team' && $('mode').value === 'ffa') { $('mode').value = c.mode; modeFields(); }
+      // New maps switch to the mode they're made for, unless it's already one of their best two
+      // (originals: team maps switch free-for-all to team deathmatch).
+      if (c.modes?.length ? !c.modes.slice(0, 2).includes($('mode').value) : c.mode === 'team' && $('mode').value === 'ffa') { $('mode').value = c.mode; modeFields(); }
       // Big maps feel empty with a handful of bots: start at the map's smallest player count.
       const least = parseInt(c.players, 10);
       if (least > 1 && botsChosen() < least - 1) {

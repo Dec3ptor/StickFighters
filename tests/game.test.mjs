@@ -22,8 +22,9 @@ function settle(body, map) {
   return body;
 }
 
-test('all 8 original maps load, with spawn points in open space', () => {
-  assert.equal(MAPS.length, 8);
+test('the 8 original maps and the new ones load, with spawn points in open space', () => {
+  assert.equal(MAPS.filter(m => !m.size).length, 8);
+  assert.ok(MAPS.filter(m => m.size).length >= 10, 'the new maps are listed');
   for (const m of MAPS) {
     const map = new GameMap(loadMap(m.file));
     assert.ok(map.solids.length > 10, m.name);
@@ -80,9 +81,11 @@ for (const speed of SPEEDS) test(`bots can get everywhere they can reach and bac
     assert.ok(spawnNodes.every(Boolean), `${m.name}: every spawn lands on a route spot`);
     const home = spawnNodes[0];
     const fromHome = nav.costsFrom(home).cost;
+    // Can get back = in the same group of spots that can all reach each other.
+    const { comp } = nav.groups();
     for (const n of nav.nodes) {
       if (fromHome[n.id] === Infinity) continue;
-      assert.ok(nav.costsFrom(n).cost[home.id] < Infinity, `${m.name}: stuck at ${n.x},${n.y}`);
+      assert.ok(comp[n.id] === comp[home.id], `${m.name}: stuck at ${n.x},${n.y}`);
     }
     for (const sn of spawnNodes) assert.ok(fromHome[sn.id] < Infinity, `${m.name}: spawn ${sn.x},${sn.y} unreachable`);
   }
@@ -256,9 +259,13 @@ test('first to the frag limit wins', () => {
   assert.ok(game.winner.soldier.frags >= 3);
 });
 
+// The originals are played as they came (6 bots, their own mode). The new maps are played in team
+// deathmatch with as many bots as they're made for (their objective modes have a test of their own).
+const playAs = m => (m.size ? { bots: Math.max(6, parseInt(m.players, 10)), mode: 'team' } : { bots: 6, mode: m.mode });
+
 for (const m of MAPS) {
   test(`bots play a full minute on ${m.name}`, () => {
-    const { game } = botMatch(m.file, { bots: 6, mode: m.mode, seed: 11 });
+    const { game } = botMatch(m.file, { ...playAs(m), seed: 11 });
     const moved = new Map();
     for (let i = 0; i < 3600; i++) {
       game.update();
@@ -267,8 +274,26 @@ for (const m of MAPS) {
         if (s.alive) moved.set(s, (moved.get(s) || 0) + Math.abs(s.x - s.prevX) + Math.abs(s.y - s.prevY));
       }
     }
-    assert.ok(game.stats.kills >= 10, `only ${game.stats.kills} frags`);
+    assert.ok(game.stats.kills >= (m.size ? 8 : 10), `only ${game.stats.kills} frags`);
     for (const s of game.soldiers) assert.ok(moved.get(s) > 1500, `${s.name} barely moved (${Math.round(moved.get(s))} px)`);
+  });
+}
+
+// Each new map in the mode it's made for: the bots get on with the objective.
+const DID = {
+  koth: (game, feed) => game.teamScore[1] + game.teamScore[2] >= 10,
+  ctf: (game, feed) => feed.some(t => / took the /.test(t)),
+  conquest: (game, feed) => feed.some(t => / captured [A-Z]/.test(t)),
+  rush: (game, feed) => feed.some(t => / armed an M-COM/.test(t)),
+};
+for (const m of MAPS.filter(m => m.size)) {
+  test(`bots play ${m.name} in ${m.mode}`, () => {
+    const { game } = botMatch(m.file, { bots: Math.max(6, parseInt(m.players, 10)), mode: m.mode, seed: 11, fragLimit: 0 });
+    const feed = [];
+    const add = game.addFeed.bind(game);
+    game.addFeed = e => { feed.push(e.text); add(e); };
+    for (let i = 0; i < 2 * 3600 && !game.over; i++) game.update();
+    assert.ok(DID[m.mode](game, feed), `${m.name} (${m.mode}): ${JSON.stringify(game.teamScore)} ${feed.filter(t => !/fragged|fell|knocked|blew|bang/.test(t)).join('; ')}`);
   });
 }
 
@@ -276,7 +301,8 @@ test('bots don\'t get stuck in loops or pile onto their teammates', () => {
   // Two Towers used to trap bots: they ran off the small tower blocks before
   // they could jump, fell back down and tried the same route forever, in a pile.
   for (const m of MAPS) {
-    const { game } = botMatch(m.file, { bots: 6, mode: m.mode, seed: 11 });
+    const { bots, mode } = playAs(m);
+    const { game } = botMatch(m.file, { bots, mode, seed: 11 });
     let stuck = 0, stacked = 0;
     const seen = new Map();
     for (let t = 0; t < 7200; t++) {
@@ -296,9 +322,10 @@ test('bots don\'t get stuck in loops or pile onto their teammates', () => {
         if (h.length === 8 && h.every(Number.isFinite) && Math.max(...h) - Math.min(...h) <= 50) stuck++;
       }
     }
-    assert.ok(stuck < 120, `${m.name}: bots going nowhere for ${stuck} checks`);
-    assert.ok(stacked < 1500, `${m.name}: teammates piled up for ${stacked} ticks`);
-    assert.ok(game.stats.kills >= 25, `${m.name}: only ${game.stats.kills} frags in 2 minutes`);
+    // (Scaled from 6 bots to however many play the map.)
+    assert.ok(stuck < 120 * bots / 6, `${m.name}: bots going nowhere for ${stuck} checks`);
+    assert.ok(stacked < 1500 * (bots / 6) ** 2, `${m.name}: teammates piled up for ${stacked} ticks`);
+    assert.ok(game.stats.kills >= (m.size ? 15 : 25), `${m.name}: only ${game.stats.kills} frags in 2 minutes`);
   }
 });
 

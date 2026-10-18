@@ -27,8 +27,9 @@ export default function () {
   const tunnel = (l, r, floorY) => {
     m.box(l, floorY - 8, r, floorY);
     m.box(l, floorY - CH, r, floorY - CH + 14);
-    m.box(l, floorY - CH + 14, l + 10, floorY - CH + 26);
-    m.box(r - 10, floorY - CH + 14, r, floorY - CH + 26);
+    // (Lintels thin enough to leave a soldier stepping onto the floor plate some headroom.)
+    m.box(l, floorY - CH + 14, l + 10, floorY - CH + 20);
+    m.box(r - 10, floorY - CH + 14, r, floorY - CH + 20);
   };
 
   // ---- Blue's ship (x -3700 .. -2400) ----------------------------------------------
@@ -90,7 +91,7 @@ export default function () {
   stack(-1160, -1020, -CH, 2);
 
   // ---- The slip (x -1020 .. -820): water, a broken pontoon and a high catwalk -------
-  m.floor(-1000, -935, 40, 12).floor(-905, -840, 40, 12);
+  m.floor(-1000, -840, 40, 12);                        // a pontoon (one piece: two left bots stranded at some game speeds)
   m.floor(-1020, -740, -3 * CH, 12);
 
   // ---- Crane yard (x -820 .. 0) --------------------------------------------------------
