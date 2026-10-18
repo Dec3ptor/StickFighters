@@ -260,7 +260,8 @@ button.danger { color: #b3261e; border-color: #b3261e; }
 .tabs { display: flex; gap: 0; margin: 16px 0 14px; border-bottom: 2px solid var(--line); }
 .tab { border: 2px solid var(--line); border-bottom: none; margin-right: -2px; padding: 9px 18px; background: var(--soft); }
 .tab[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
-#openEditor { margin-left: auto; margin-right: 0; background: var(--paper); }
+#openEditor { margin-left: auto; background: var(--paper); }
+#openSettings { margin-right: 0; background: var(--paper); }
 .muted-note { color: var(--muted); font-size: 13px; margin: 6px 0; }
 .online-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 button.big { font-size: 18px; padding: 13px 24px; letter-spacing: 0.04em; }

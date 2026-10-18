@@ -24,6 +24,7 @@
         <button type="button" class="tab" id="tabOnline" data-tab="online" aria-pressed="true">Play online</button>
         <button type="button" class="tab" id="tabOffline" data-tab="offline" aria-pressed="false">Play vs bots</button>
         <button type="button" class="tab" id="openEditor">Map maker</button>
+        <button type="button" class="tab" id="openSettings">Settings</button>
       </nav>
 
       <div id="online" class="tab-panel">
@@ -157,7 +158,37 @@
       <button id="restart">Restart match</button>
       <button id="toEditor" class="hidden">Back to map maker</button>
       <button id="quit">Quit to menu</button>
+      <button id="pauseSettings">Settings</button>
       <label class="check"><input type="checkbox" id="mute"> Mute sound</label>
+    </div>
+  </section>
+  <section id="settings" class="screen hidden" aria-label="Settings">
+    <div class="panel small">
+      <h2>Settings</h2>
+      <label class="field">Graphics
+        <select id="graphics">
+          <option value="auto">Auto</option>
+          <option value="webgl">WebGL (uses the graphics card)</option>
+          <option value="canvas">Canvas (works everywhere)</option>
+        </select>
+      </label>
+      <p id="graphicsNote" class="muted-note"></p>
+      <label class="field">Frame rate
+        <select id="fpsCap">
+          <option value="auto">Auto</option>
+          <option value="30">30 fps</option>
+          <option value="60">60 fps</option>
+          <option value="90">90 fps</option>
+          <option value="120">120 fps</option>
+          <option value="144">144 fps</option>
+          <option value="165">165 fps</option>
+          <option value="240">240 fps</option>
+        </select>
+      </label>
+      <p id="fpsNote" class="muted-note"></p>
+      <label class="check"><input type="checkbox" id="showFps"> Show frame rate</label>
+      <label class="check"><input type="checkbox" id="showPing"> Show ping in online games</label>
+      <button id="settingsDone" class="primary">Done</button>
     </div>
   </section>
   <section id="over" class="screen hidden overlay-low">

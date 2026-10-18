@@ -237,6 +237,25 @@ test('a player who somehow misses a roster update asks for it again', async () =
   assert.ok(c.game.soldiers.some(s => s.id === bot.id), 'bot came back');
 });
 
+test('pings: players measure theirs, and the host shares everyone\'s for the scoreboard', async () => {
+  const m = await onlineMatch({ players: 2, latency: 40 });
+  await m.step(30);
+  const [a, b] = m.clients;
+  a.sendPing(); b.sendPing();
+  await m.step(10);
+  assert.ok(a.ping > 60 && a.ping < 120, `ping about 80 ms with 40 ms each way (${a.ping})`);
+  // The next pings tell the host what they measured; the host passes them on.
+  a.sendPing(); b.sendPing();
+  await m.step(10);
+  m.host.sharePings(Date.now() + 60000);
+  await m.step(10);
+  const onHost = m.game.soldiers.find(s => s.id === a.me.id);
+  assert.ok(onHost.ping > 60 && onHost.ping < 120, `host knows a's ping (${onHost.ping})`);
+  const onB = b.game.soldiers.find(s => s.id === a.me.id);
+  assert.equal(onB.ping, onHost.ping, "b's scoreboard shows a's ping");
+  for (const c of m.clients) c.leave();
+});
+
 test('the host ending the game tells everyone why', async () => {
   const { host, clients, step } = await onlineMatch({ players: 1 });
   let why = null;

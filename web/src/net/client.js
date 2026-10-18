@@ -51,8 +51,13 @@ export class NetClient {
     this.ended = false;
     this.step = 1000 / TICK_RATE;
     this.clock = opts.clock || (() => performance.now());
-    this.pingTimer = setInterval(() => this.link.send({ t: 'ping', at: this.clock() }, false), 2000);
+    this.pingTimer = setInterval(() => this.sendPing(), 2000);
     this.pingTimer.unref?.(); // (in Node tests, don't keep the process alive)
+  }
+
+  /** Measure our ping (the host answers with 'pong'), and tell the host the last one, for everyone's scoreboard. */
+  sendPing() {
+    this.link.send({ t: 'ping', at: this.clock(), ms: this.ping == null ? null : Math.round(this.ping) }, false);
   }
 
   receive(data, reliable) {
@@ -69,6 +74,15 @@ export class NetClient {
     switch (data.t) {
       case 'welcome': this.start(data).catch(e => this.end(`Couldn't load the match: ${e.message}`)); break;
       case 'roster': if (this.game) { this.applyRoster(data.roster); this.opts.onRoster?.(); } break;
+      case 'pings':
+        // Everyone's ping, for the scoreboard: [[soldier id, ms], ...]
+        if (this.game && Array.isArray(data.list)) {
+          for (const [id, ms] of data.list) {
+            const s = this.game.soldiers.find(x => x.id === id);
+            if (s && s !== this.me && Number.isFinite(ms)) s.ping = Math.max(0, Math.min(9999, ms));
+          }
+        }
+        break;
       case 'ev':
         if (!this.game) break;
         this.events.push(data);

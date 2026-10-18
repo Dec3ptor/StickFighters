@@ -4,7 +4,7 @@
 // map is built once, and blood stains and most particles are sprites.
 //
 // createRenderer() picks WebGL when the graphics card can do it, and the plain
-// canvas otherwise (or with ?renderer=canvas / ?renderer=webgl in the address).
+// canvas otherwise (Settings -> Graphics, or ?renderer=canvas / webgl in the address).
 
 import { Renderer } from './render.js';
 import { GLContext } from './glctx.js';
@@ -13,21 +13,32 @@ const INK = 0x111111;
 // Particles drawn as sprites (the rest are drawn as shapes, like on the canvas).
 const SPRITE_PARTS = new Set(['blood', 'spark', 'ember', 'sparkle', 'shell', 'smoke', 'fire', 'boom']);
 
-/** The best renderer this browser can run: WebGL if the graphics card can do it, otherwise the canvas. */
-export async function createRenderer(canvas) {
-  const want = new URLSearchParams(location.search).get('renderer');
-  if (want !== 'canvas' && (want === 'webgl' || hardwareWebGL())) {
+/**
+ * A renderer for `canvas`. choice: 'webgl', 'canvas', or 'auto' (WebGL if the
+ * graphics card can run it). If WebGL fails, it draws with the canvas instead,
+ * on a new canvas element (one that has tried WebGL can't switch to 2D), which
+ * takes the old one's place in the page: use the renderer's `canvas`.
+ */
+export async function createRenderer(canvas, choice = 'auto') {
+  if (choice === 'webgl' || (choice === 'auto' && autoGraphics() === 'webgl')) {
     try {
       return await GLRenderer.create(canvas);
     } catch (err) {
       console.warn('WebGL unavailable, drawing with the canvas instead:', err);
-      // A canvas that has tried WebGL can't switch to 2D: use a fresh one.
       const fresh = canvas.cloneNode(false);
       canvas.replaceWith(fresh);
       canvas = fresh;
     }
   }
   return new Renderer(canvas);
+}
+
+let probed = null;
+
+/** What "auto" picks here: 'webgl' if WebGL runs on a graphics card, otherwise 'canvas'. */
+export function autoGraphics() {
+  probed ??= hardwareWebGL() ? 'webgl' : 'canvas';
+  return probed;
 }
 
 /**
@@ -108,6 +119,12 @@ export class GLRenderer extends Renderer {
   applySize() {
     // PixiJS sizes the canvas (in device pixels); its size on the page is set in resize().
     this.gl?.resize(this.pw, this.ph, 1);
+  }
+
+  destroy() {
+    super.destroy();
+    this.gl?.destroy(false);
+    this.gl = null;
   }
 
   clear() {

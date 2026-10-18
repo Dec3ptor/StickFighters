@@ -17,7 +17,12 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
 - **The original game's sound effects**, from the Stick Soldiers Python fan project (see [`web/sounds/CREDITS.md`](web/sounds/CREDITS.md)). The new weapons' sounds (sheep included) are generated in code. The original game had no music.
 - **Headshots** do double damage (2.5× with the sniper rifle, 2× with the bow), and you hear a hitmarker tick when you land one.
 - **Smooth on high refresh rate screens**: the game draws a frame every time your screen refreshes (60, 120, 144, 240 Hz...). It still updates 60 times a second, and everything moving (soldiers, bullets, rockets, particles, falling crates, running legs) is drawn part way between updates, while your gun follows the mouse on every frame.
-- **Drawn with WebGL** (through [PixiJS](https://pixijs.com/)) on computers with a graphics card, and with the plain 2D canvas on computers without one, where it's faster. Both draw exactly the same picture. Add `?fps` to the address to see which one you're on and your frame rate, and `?renderer=webgl` or `?renderer=canvas` to try the other.
+- **Drawn with WebGL** (through [PixiJS](https://pixijs.com/)) on computers with a graphics card, and with the plain 2D canvas on computers without one, where it's faster. Both draw exactly the same picture.
+- **Settings** (on the main menu and the pause menu):
+  - **Graphics**: Auto, WebGL or Canvas. Switches straight away, even mid-match.
+  - **Frame rate**: Auto, or a cap from 30 to 240 fps. Auto draws at your screen's refresh rate; if your computer can't keep up, it drops to an even fraction of it (144 → 72) so frames stay evenly spaced, and tries the full rate again later.
+  - **Show frame rate** and **show ping in online games**. The scoreboard (`Tab`) shows everyone's ping in online games.
+  - They're remembered between visits. `?renderer=webgl` / `?renderer=canvas` and `?fps` in the address override them.
 - **Game speed fixed at 75%** of the original tuning: movement, jumps, bullets, grenades and fire rates are slowed, while the game keeps updating 60 times a second. Jumps keep their height, so every map stays climbable. A hidden speed picker can be switched back on with `SHOW_SPEED_MENU` in `web/src/config.js`.
 
 ## Game modes
@@ -78,6 +83,7 @@ How it works, with no game server:
 - **Players connect directly** with WebRTC data channels. To find each other they use **public [Nostr](https://nostr.com/) relays**: hosts post a listing every 20 seconds, and a player who wants to join sends the host a connection offer, encrypted so only the host can read it. The relays used are in [`web/src/net/relays.js`](web/src/net/relays.js), picked by [`tools/probe-relays.mjs`](tools/probe-relays.mjs), which tests public relays from GitHub Actions (the *Probe Nostr relays* workflow).
 - **Limits.** If the host leaves, the game ends for everyone. A few networks (some mobile and office networks) block direct connections; joining then fails with a message saying so. Fixing that would need a TURN relay server, which you can add to `ICE_SERVERS` in `relays.js`.
 - **Hosting in the background works.** When the host switches tabs, a worker keeps the game running.
+- **Ping.** Each player measures their round trip to the host every 2 seconds and tells the host, which shares everyone's for the scoreboard.
 
 ## Map maker
 
@@ -107,7 +113,7 @@ npm run relay        # optional: a local Nostr relay at ws://localhost:7447, for
 npm test             # game logic: physics, bots, weapons, modes, netcode, lobby (through a local relay)
 npx playwright install chromium
 npm run test:browser # in Chromium: plays matches, uses the map maker, checks WebGL draws the same as the canvas,
-                     # checks smooth drawing above 60 fps, and plays online between three browsers
+                     # checks smooth drawing above 60 fps, the settings screen, and plays online between three browsers
 ```
 
 There's no build step: the game is plain JavaScript modules in `web/`, and the browser loads them directly. Two libraries are copied into `web/vendor/`: [PixiJS](https://pixijs.com/) 8.22 (`pixi.min.js`, MIT licence), for WebGL drawing, and [noble-secp256k1](https://github.com/paulmillr/noble-secp256k1), for signing relay messages. PixiJS is only downloaded on computers that draw with WebGL.
@@ -135,6 +141,7 @@ GitHub Pages has to be switched on once: **Settings → Pages → Build and depl
 | `web/src/stickman.js`, `sprites.js` | The stick figures, and drawings of weapons, animals and crates |
 | `web/src/render.js`, `hud.js` | Drawing the world and the HUD (with a 2D canvas, or anything that draws like one) |
 | `web/src/glrender.js`, `glctx.js` | WebGL drawing: picks WebGL or the canvas, and lets the drawing code above draw through PixiJS |
+| `web/src/framerate.js` | Frame rate: measures the screen's refresh rate, caps, and the auto setting |
 | `web/src/audio.js`, `input.js`, `main.js` | Sound, controls and page wiring |
 | `web/data/` | The 8 maps and the leg animations, decoded from the original game |
 | `web/sounds/` | The original game's sound effects ([credits](web/sounds/CREDITS.md)) |

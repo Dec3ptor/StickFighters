@@ -109,6 +109,19 @@ expect(j2.soldiers.length === h2.soldiers.length, `joiner sees everyone in the n
 expect(j2.soldiers.filter(s => s.bot).length === 2, 'joiner sees the bots');
 await joiner.screenshot({ path: `${outDir}/online-next-match.png` });
 
+// Pings: the joiner measures theirs, and the host shares it for everyone's scoreboard.
+await host.waitForFunction(() => Number.isFinite(window.stickSoldiers.state.game.soldiers.find(s => s.name === 'Joiner')?.ping), null, { timeout: 15000 }).catch(() => {});
+const pings = {
+  host: await host.evaluate(() => window.stickSoldiers.state.game.soldiers.find(s => s.name === 'Joiner')?.ping),
+  joiner: await joiner.evaluate(() => window.stickSoldiers.state.me?.ping),
+};
+expect(Number.isFinite(pings.host), `host's scoreboard has the joiner's ping (${pings.host})`);
+expect(Number.isFinite(pings.joiner), `joiner knows their ping (${pings.joiner})`);
+await joiner.keyboard.down('Tab');
+await joiner.waitForTimeout(200);
+await joiner.screenshot({ path: `${outDir}/online-scores-ping.png` });
+await joiner.keyboard.up('Tab');
+
 // 6. Quick match finds the same game.
 const third = await player('Quicky');
 await third.click('#quickMatch');
@@ -131,7 +144,7 @@ await joiner.waitForFunction(name => ![...document.querySelectorAll('.game-row b
 const after = await joiner.$$eval('.game-row b', els => els.map(e => e.textContent));
 expect(!after.includes(GAME), 'closed game is gone from the list');
 
-console.log(JSON.stringify({ listed, host: h1.soldiers.length, joinerMe: j1.me, chat: (await S(host)).chat, quick: t1.mode, toast, errors }, null, 2));
+console.log(JSON.stringify({ listed, pings, host: h1.soldiers.length, joinerMe: j1.me, chat: (await S(host)).chat, quick: t1.mode, toast, errors }, null, 2));
 await browser.close();
 server.close();
 await relay?.close();

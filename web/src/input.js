@@ -29,21 +29,34 @@ export class Input {
     window.addEventListener('keyup', e => this.keys.delete(e.code));
     window.addEventListener('blur', () => { this.keys.clear(); this.mouse.left = this.mouse.right = false; });
     window.addEventListener('mousemove', e => {
-      const r = canvas.getBoundingClientRect();
+      const r = this.canvas.getBoundingClientRect();
       this.mouse.x = e.clientX - r.left;
       this.mouse.y = e.clientY - r.top;
       this.mouse.moved = true;
-    });
-    canvas.addEventListener('mousedown', e => {
-      if (e.button === 0) this.mouse.left = true;
-      if (e.button === 2) this.mouse.right = true;
     });
     window.addEventListener('mouseup', e => {
       if (e.button === 0) this.mouse.left = false;
       if (e.button === 2) this.mouse.right = false;
     });
-    canvas.addEventListener('contextmenu', e => e.preventDefault());
-    canvas.addEventListener('wheel', e => { e.preventDefault(); this.wheel += Math.sign(e.deltaY); }, { passive: false });
+    this.onCanvas = {
+      mousedown: e => {
+        if (e.button === 0) this.mouse.left = true;
+        if (e.button === 2) this.mouse.right = true;
+      },
+      contextmenu: e => e.preventDefault(),
+      wheel: e => { e.preventDefault(); this.wheel += Math.sign(e.deltaY); },
+    };
+    this.canvas = null;
+    this.attach(canvas);
+  }
+
+  /** Listen to a (new) canvas: the game draws on a fresh one when Settings switches graphics. */
+  attach(canvas) {
+    for (const [type, fn] of Object.entries(this.onCanvas)) {
+      this.canvas?.removeEventListener(type, fn);
+      canvas.addEventListener(type, fn, type === 'wheel' ? { passive: false } : undefined);
+    }
+    this.canvas = canvas;
   }
 
   down(...codes) { return codes.some(c => this.keys.has(c)); }
@@ -66,9 +79,10 @@ export class Input {
 
 /** Drives the player's soldier from the keyboard and mouse. */
 export class PlayerController {
-  constructor(input, renderer) {
+  /** view: the renderer, or a function returning the current one (it can change in Settings). */
+  constructor(input, view) {
     this.in = input;
-    this.renderer = renderer;
+    this.view = typeof view === 'function' ? view : () => view;
     this.prevJump = false;
     this.prevFire = false;
     this.jetting = false;
@@ -95,7 +109,7 @@ export class PlayerController {
     else if (k.down('ShiftLeft', 'ShiftRight') || b.vy > -1.5 || this.jetting) this.jetting = true;
     inp.jet = this.jetting;
 
-    const w = this.renderer.screenToWorld(k.mouse.x, k.mouse.y);
+    const w = this.view().screenToWorld(k.mouse.x, k.mouse.y);
     inp.aim = Math.atan2(w.y - s.shoulderY, w.x - s.shoulderX);
     inp.aimDist = Math.hypot(w.x - s.shoulderX, w.y - s.shoulderY);
 

@@ -162,7 +162,10 @@ export class NetHost {
         // The player saw a soldier it doesn't know: send the list again (at most once a second).
         if (Date.now() - (p.rosterAt || 0) > 1000) { p.rosterAt = Date.now(); p.link.send({ t: 'roster', roster: this.roster() }, true); }
         break;
-      case 'ping': p.link.send({ t: 'pong', at: data.at }, false); break;
+      case 'ping':
+        p.link.send({ t: 'pong', at: data.at }, false);
+        if (Number.isFinite(data.ms)) p.ping = Math.max(0, Math.min(9999, Math.round(data.ms)));
+        break;
       case 'chat': {
         // At most 5 messages in 5 seconds each.
         const t = Date.now();
@@ -210,6 +213,7 @@ export class NetHost {
   afterTick() {
     const g = this.game;
     if (!g) return;
+    this.sharePings();
     if (g.tick === this.sentTick) {
       // The match is over and the clock has stopped: just refresh now and then.
       if (++this.idle % 30) return;
@@ -233,6 +237,17 @@ export class NetHost {
       }
     }
     this.resetEvents();
+  }
+
+  /** Every couple of seconds: everyone's ping, for the scoreboard. */
+  sharePings(now = Date.now()) {
+    if (now - (this.pingsAt || 0) < 2000 || !this.players.size) return;
+    this.pingsAt = now;
+    const list = [];
+    for (const p of this.players) {
+      if (p.soldier && p.ping != null) { p.soldier.ping = p.ping; list.push([p.soldier.id, p.ping]); }
+    }
+    if (list.length) this.broadcast({ t: 'pings', list });
   }
 
   /** End the game for everyone. */

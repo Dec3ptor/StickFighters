@@ -22,7 +22,13 @@ export class Renderer {
     this.cam = { x: 0, y: 0, zoom: 1 };
     this.shake = 0;
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+    this.onResize = () => this.resize();
+    window.addEventListener('resize', this.onResize);
+  }
+
+  /** Stop using this renderer (Settings switched to another). */
+  destroy() {
+    window.removeEventListener('resize', this.onResize);
   }
 
   resize() {

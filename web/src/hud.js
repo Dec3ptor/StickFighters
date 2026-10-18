@@ -7,7 +7,11 @@ import { GUN_GAME_LADDER } from './modes.js';
 const FONT = 'Arial, Helvetica, sans-serif';
 const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
 
-/** opts: { showScores, watching (soldier the camera follows when you're out), chat: [{ text, tick }], ping, perf (frame rate text) } */
+/**
+ * opts: { showScores, watching (soldier the camera follows when you're out), chat: [{ text, tick }],
+ *   online (show everyone's ping on the scoreboard), hostId (the host's soldier),
+ *   ping (your ping in ms, or a label like 'Host'), perf (frame rate text) }
+ */
 export function drawHud(r, game, me, opts = {}) {
   const ctx = r.ctx, d = r.dpr, W = r.w, H = r.h;
   ctx.setTransform(d, 0, 0, d, 0, 0);
@@ -73,10 +77,11 @@ export function drawHud(r, game, me, opts = {}) {
   }
 
   if (opts.ping != null) {
+    const ms = typeof opts.ping === 'number';
     ctx.textAlign = 'right';
     ctx.font = `10px ${FONT}`;
-    ctx.fillStyle = opts.ping > 200 ? '#c22' : '#999';
-    ctx.fillText(`${Math.round(opts.ping)} ms`, W - 12, H - 12);
+    ctx.fillStyle = ms && opts.ping > 200 ? '#c22' : '#999';
+    ctx.fillText(ms ? `Ping ${Math.round(opts.ping)} ms` : String(opts.ping), W - 12, H - 12);
   }
   if (opts.perf) {
     ctx.textAlign = 'right';
@@ -220,7 +225,19 @@ function drawTop(ctx, game, me, W) {
 function drawScoreboard(ctx, game, me, W, H, opts) {
   const list = game.standings();
   const rules = game.rules;
-  const w = 400, rowH = 22, h = 70 + list.length * rowH;
+  const extra = rules.scoreLabel !== 'Frags';
+  // Columns from the right: [heading, value(soldier), colour(soldier)?]
+  const cols = [];
+  if (opts.online) cols.push(['Ping', pingText, s => (s.ping > 200 && !s.isBot && s.id !== opts.hostId ? '#c22' : null)]);
+  cols.push(['Deaths', s => String(s.deaths)], ['Frags', s => String(s.frags)]);
+  if (extra) cols.push([rules.scoreLabel, s => String(rules.score(s))]);
+  function pingText(s) {
+    if (s.isBot) return '';
+    if (s.id === opts.hostId) return 'host';
+    return s.ping == null ? '–' : String(Math.round(s.ping));
+  }
+  const w = 300 + cols.length * 65, rowH = 22, h = 70 + list.length * rowH;
+  const colX = i => x + w - 20 - i * 65;
   const x = W / 2 - w / 2, y = Math.max(40, H / 2 - h / 2 - 40);
   ctx.fillStyle = 'rgba(255,255,255,0.94)';
   ctx.fillRect(x, y, w, h);
@@ -240,21 +257,20 @@ function drawScoreboard(ctx, game, me, W, H, opts) {
   ctx.textAlign = 'left';
   ctx.fillText('Name', x + 20, y + 48);
   ctx.textAlign = 'right';
-  const extra = rules.scoreLabel !== 'Frags';
-  if (extra) ctx.fillText(rules.scoreLabel, x + w - 150, y + 48);
-  ctx.fillText('Frags', x + w - 85, y + 48);
-  ctx.fillText('Deaths', x + w - 20, y + 48);
+  cols.forEach(([head], i) => ctx.fillText(head, colX(i), y + 48));
   list.forEach((s, i) => {
     const ry = y + 70 + i * rowH;
     ctx.font = `${s === me ? 'bold ' : ''}13px ${FONT}`;
-    ctx.fillStyle = rules.teams ? TEAM[s.team] : '#222';
+    const color = rules.teams ? TEAM[s.team] : '#222';
+    ctx.fillStyle = color;
     ctx.textAlign = 'left';
     ctx.fillText(s.name, x + 20, ry);
     const nameW = ctx.measureText(s.name).width;
     ctx.textAlign = 'right';
-    if (extra) ctx.fillText(String(rules.score(s)), x + w - 150, ry);
-    ctx.fillText(String(s.frags), x + w - 85, ry);
-    ctx.fillText(String(s.deaths), x + w - 20, ry);
+    cols.forEach(([, value, tint], c) => {
+      ctx.fillStyle = tint?.(s) || color;
+      ctx.fillText(value(s), colX(c), ry);
+    });
     if (s.isBot) { ctx.fillStyle = '#aaa'; ctx.font = `10px ${FONT}`; ctx.textAlign = 'left'; ctx.fillText('bot', x + 26 + nameW, ry); }
   });
 }

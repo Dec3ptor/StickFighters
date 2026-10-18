@@ -5,7 +5,8 @@ import { Game } from './game.js';
 import { NavGraph } from './nav.js';
 import { BotController, BOT_PROFILES } from './bot.js';
 import { Input, PlayerController } from './input.js';
-import { createRenderer } from './glrender.js';
+import { createRenderer, autoGraphics } from './glrender.js';
+import { FramePacer } from './framerate.js';
 import { drawHud } from './hud.js';
 import { SoundSystem } from './audio.js';
 import { setLegAnimations } from './stickman.js';
@@ -39,6 +40,10 @@ const state = {
 };
 let editor = null;
 let lobby = null;
+const pacer = new FramePacer();
+const params = new URLSearchParams(location.search);
+// The Settings screen's choices (saved with the other settings).
+const prefs = { graphics: 'auto', fpsCap: 'auto', showFps: false, showPing: true };
 let community = null;
 let watcher = null;
 
@@ -47,6 +52,8 @@ let watcher = null;
 const DEFAULTS = {
   name: 'Player', map: 'ssdm1.json', mode: 'ffa', bots: 5, difficulty: 'normal', fragLimit: 20, speed: DEFAULT_SPEED, muted: false,
   lives: 3, gunKills: 1, crates: 'normal', maxPlayers: 8, visibility: 'public', gameName: '', tab: 'online', mapSource: 'originals',
+  // Settings screen
+  graphics: 'auto', fpsCap: 'auto', showFps: false, showPing: true,
 };
 
 function loadSettings() {
@@ -324,7 +331,7 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const rng = makeRng((Math.random() * 2 ** 31) | 0);
 
   const team = game.rules.teams ? 1 : 0;
-  state.me = game.addSoldier({ name: settings.name, isBot: false, team }, new PlayerController(input, renderer));
+  state.me = game.addSoldier({ name: settings.name, isBot: false, team }, new PlayerController(input, () => renderer));
 
   if (online) {
     state.mode = 'host';
@@ -402,6 +409,64 @@ function setPaused(p) {
   state.menuOpen = p;
   show('pause', p);
   state.last = performance.now();
+}
+
+// ---- Settings screen -----------------------------------------------------------------
+
+function savePrefs() { saveSettings({ ...loadSettings(), ...prefs }); }
+
+function openSettings() {
+  $('graphics').value = prefs.graphics;
+  $('fpsCap').value = String(prefs.fpsCap);
+  $('showFps').checked = prefs.showFps;
+  $('showPing').checked = prefs.showPing;
+  settingsNotes();
+  show('settings', true);
+  $('settingsDone').focus();
+}
+
+function closeSettings() {
+  show('settings', false);
+}
+
+/** The notes under the settings: what's being used right now. */
+function settingsNotes() {
+  const auto = autoGraphics();
+  $('graphics').options[0].textContent = `Auto (${auto === 'webgl' ? 'WebGL' : 'Canvas'})`;
+  let g = renderer.kind === 'webgl' ? 'Drawing with WebGL, on the graphics card.' : 'Drawing with the canvas.';
+  if (prefs.graphics === 'webgl' && renderer.kind !== 'webgl') g += " WebGL isn't available in this browser.";
+  else if (prefs.graphics === 'auto' && auto === 'canvas') g += ' WebGL would run without a graphics card here, which is slower.';
+  $('graphicsNote').textContent = g;
+  const hz = pacer.refresh, target = Math.round(pacer.target);
+  $('fpsCap').options[0].textContent = pacer.mode === 'auto' ? `Auto (${target} fps)` : 'Auto';
+  let f = `Your screen refreshes ${hz} times a second, so that's the most it can show.`;
+  if (pacer.mode === 'auto') f += pacer.divisor > 1 ? ` Auto is drawing ${target} fps: your computer couldn't keep up with ${hz}, and it'll try again soon.` : ' Auto matches it.';
+  else if (pacer.mode > hz) f += ` ${pacer.mode} fps needs a faster screen.`;
+  $('fpsNote').textContent = f;
+}
+
+/** Switch between WebGL and canvas drawing (from Settings), even mid-match. */
+let switching = false, nextChoice = null;
+async function setGraphics(choice) {
+  if (switching) { nextChoice = choice; return; } // (picked again while switching: do that next)
+  const want = choice === 'auto' ? autoGraphics() : choice;
+  if (renderer.kind === want) { settingsNotes(); return; }
+  switching = true;
+  try {
+    const r = await createRenderer(canvas.cloneNode(false), want);
+    if (r.kind === renderer.kind) { r.destroy(); return; } // WebGL failed, and we're already on the canvas
+    r.cam = { ...renderer.cam };
+    r.shake = renderer.shake;
+    canvas.replaceWith(r.canvas);
+    renderer.destroy();
+    renderer = r;
+    canvas = r.canvas;
+    input.attach(canvas);
+  } finally {
+    switching = false;
+    settingsNotes();
+    if (nextChoice) { const c = nextChoice; nextChoice = null; setGraphics(c); }
+  }
 }
 
 // ---- Online ------------------------------------------------------------------------
@@ -545,7 +610,7 @@ function startClient(link) {
   const net = state.net = { role: 'client' };
   net.client = new NetClient({
     link,
-    controller: new PlayerController(input, renderer),
+    controller: new PlayerController(input, () => renderer),
     loadMap: async m => {
       if (m.map?.builtin && maps.data.has(m.map.builtin)) return maps.data.get(m.map.builtin);
       if (m.map?.code) return decodeShare(m.map.code);
@@ -635,9 +700,13 @@ function simulate(now) {
 // refreshes (60, 120, 144 Hz...), with everything drawn in between updates.
 function frame(now) {
   requestAnimationFrame(frame);
+  // The frame rate setting: skip this screen refresh if it's too soon to draw again.
+  if (!pacer.frame(now, !!state.game)) return;
+  const workStart = performance.now();
   const dt = Math.min(100, Math.max(0, now - (state.frameAt ?? now)));
   state.frameAt = now;
   simulate(now);
+  if (!$('settings').classList.contains('hidden') && now - (state.notesAt || 0) > 500) { state.notesAt = now; settingsNotes(); }
   const g = state.game;
   if (!g) {
     // Nothing playing: keep the canvas blank behind the menus.
@@ -666,14 +735,20 @@ function frame(now) {
   const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
   renderer.render(g, alpha, me);
+  if (client) me.ping = client.ping;
   drawHud(renderer, g, me, {
     showScores: input.down('Tab') && !state.chatOpen, watching, chat: state.chat,
-    ping: client ? client.ping : null, perf: perf.text,
+    online: state.mode !== 'offline',
+    hostId: state.mode === 'host' ? me.id : state.mode === 'client' ? g.soldiers.find(s => !s.isBot && !s.remote)?.id : null,
+    ping: !prefs.showPing ? null : client ? client.ping : state.mode === 'host' ? 'Host' : null,
+    perf: perf.on ? perf.text : null,
   });
   if (!state.menuOpen && !g.over && !state.chatOpen) renderer.drawCrosshair(input.mouse.x, input.mouse.y, sniping);
   renderer.present();
   if (aimed) { me.aim = aimed.aim; me.facing = aimed.facing; }
-  if (perf.on) countFrame(now, performance.now() - drawStart);
+  const end = performance.now();
+  if (perf.on) countFrame(now, end - drawStart);
+  pacer.drawn(now + (end - workStart), end - workStart);
   if (g.over) matchOver(g);
 }
 
@@ -692,8 +767,8 @@ function liveAim(me, x, y) {
   return saved;
 }
 
-// Frame rate readout, shown with ?fps in the address.
-const perf = { on: new URLSearchParams(location.search).has('fps'), text: null, at: 0, frames: 0, ms: 0 };
+// Frame rate readout (Settings -> Show frame rate, or ?fps in the address).
+const perf = { on: params.has('fps'), text: null, at: 0, frames: 0, ms: 0 };
 
 function countFrame(now, drawMs) {
   perf.frames++;
@@ -783,6 +858,13 @@ function wire() {
   $('toEditor').addEventListener('click', () => endMatch('editor'));
   $('again').addEventListener('click', () => { state.nextMatchAt = 0; nextMatch(); });
   $('toMenu').addEventListener('click', () => { if (state.mode !== 'offline') { leaveOnline(); endMatch('menu'); } else endMatch(); });
+  $('openSettings').addEventListener('click', openSettings);
+  $('pauseSettings').addEventListener('click', openSettings);
+  $('settingsDone').addEventListener('click', closeSettings);
+  $('graphics').addEventListener('change', () => { prefs.graphics = $('graphics').value; savePrefs(); setGraphics(prefs.graphics); });
+  $('fpsCap').addEventListener('change', () => { prefs.fpsCap = $('fpsCap').value; pacer.setMode(prefs.fpsCap); savePrefs(); settingsNotes(); });
+  $('showFps').addEventListener('change', () => { prefs.showFps = $('showFps').checked; perf.on = prefs.showFps || params.has('fps'); savePrefs(); });
+  $('showPing').addEventListener('change', () => { prefs.showPing = $('showPing').checked; savePrefs(); });
   $('mute').addEventListener('change', () => {
     audio.setMuted($('mute').checked);
     if (state.settings) { state.settings.muted = $('mute').checked; saveSettings({ ...loadSettings(), muted: $('mute').checked }); }
@@ -793,6 +875,10 @@ function wire() {
   window.addEventListener('keydown', e => {
     audio.unlock();
     if (state.chatOpen) return;
+    if (!$('settings').classList.contains('hidden')) {
+      if (e.code === 'Escape') { e.preventDefault(); closeSettings(); }
+      return;
+    }
     if (!state.game) {
       if (e.code === 'Enter' && !$('menu').classList.contains('hidden') && !$('setup').classList.contains('hidden') && !/^(BUTTON|INPUT|SELECT)$/.test(document.activeElement?.tagName)) {
         startMatch(readMenu(), { online: state.setupFor === 'host' });
@@ -807,7 +893,7 @@ function wire() {
       $('mute').checked = m;
     }
   });
-  canvas.addEventListener('mousedown', () => audio.unlock());
+  window.addEventListener('mousedown', () => audio.unlock());
   // Offline games pause when you switch away; online ones can't.
   window.addEventListener('blur', () => { if (state.game && !state.game.over && state.mode === 'offline') setPaused(true); });
   window.addEventListener('beforeunload', () => leaveOnline());
@@ -848,10 +934,14 @@ function takeInvite() {
 }
 
 async function boot() {
+  const settings = loadSettings();
+  for (const k in prefs) prefs[k] = settings[k];
+  pacer.setMode(prefs.fpsCap);
+  perf.on ||= prefs.showFps;
   const [index, legs, r] = await Promise.all([
     fetch('data/maps/index.json').then(r => r.json()),
     fetch('data/animations/legs.json').then(r => r.json()),
-    createRenderer(canvas),
+    createRenderer(canvas, params.get('renderer') || prefs.graphics),
   ]);
   renderer = r;
   canvas = renderer.canvas;
@@ -860,7 +950,6 @@ async function boot() {
   audio.preload();
   maps.index = index;
   await Promise.all(index.map(async m => maps.data.set(m.file, await fetch('data/maps/' + m.file).then(r => r.json()))));
-  const settings = loadSettings();
   state.tab = settings.tab === 'offline' ? 'offline' : 'online';
 
   editor = new Editor({
@@ -903,7 +992,7 @@ async function boot() {
     toast(result.text);
   });
   // For automated tests and debugging in the console.
-  window.stickSoldiers = { state, renderer, startMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab };
+  window.stickSoldiers = { state, get renderer() { return renderer; }, pacer, prefs, perf, setGraphics, startMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab };
 }
 
 boot().catch(err => {
