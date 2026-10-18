@@ -106,7 +106,13 @@ function buildMenu(settings) {
   $('mute').checked = settings.muted;
   audio.setMuted(settings.muted);
   $('bots').addEventListener('input', showBots);
-  $('mode').addEventListener('change', () => { modeFields(); rememberMenu(); });
+  $('mode').addEventListener('change', () => {
+    modeFields();
+    rememberMenu();
+    // The best maps for the new mode go to the top.
+    buildMapCards(selectedMap());
+    $('maps').scrollTop = 0;
+  });
   for (const r of document.querySelectorAll('input[name=mapSource]')) {
     r.checked = r.value === settings.mapSource;
     r.addEventListener('change', () => { buildMapCards(selectedMap()); rememberMenu(); });
@@ -178,7 +184,15 @@ function buildMapCards(selected, { follow = false } = {}) {
   show('mapsNote', false);
   let cards = [];
   if (source === 'originals') {
-    cards = maps.index.map(m => ({ key: m.file, name: m.name, label: mapLabel(m), mode: m.mode, modes: m.modes, players: m.players, data: maps.data.get(m.file) }));
+    // Best for the chosen mode first.
+    const mode = $('mode').value;
+    cards = maps.index
+      .map((m, i) => ({ m, i, fit: mapFit(m, mode) }))
+      .sort((a, b) => a.fit - b.fit || a.i - b.i)
+      .map(({ m }) => ({
+        key: m.file, name: m.name, label: mapLabel(m), mode: m.mode, modes: m.modes, players: m.players, data: maps.data.get(m.file),
+        madeFor: m.modes?.[0] === mode ? MODE_SHORT[mode] : null,
+      }));
   } else if (source === 'mine') {
     cards = listMaps().map(m => ({ key: `custom:${m.id}`, id: m.id, name: m.name, label: 'Your map', data: m.data }));
   } else {
@@ -197,7 +211,8 @@ function buildMapCards(selected, { follow = false } = {}) {
     card.setAttribute('aria-checked', String(c.key === state.selectedMap));
     const extra = c.id ? '<button type="button" class="edit">Edit</button>'
       : c.entry ? `<button type="button" class="save" title="${c.entry.mine ? 'Remove your upload' : 'Save a copy to your maps'}">${c.entry.mine ? 'Remove' : 'Save'}</button>` : '';
-    card.innerHTML = `<canvas width="300" height="116"></canvas><span>${esc(c.name)}</span><small class="by">${esc(c.label)}</small>${extra}`;
+    card.innerHTML = `<canvas width="300" height="116"></canvas><span>${esc(c.name)}</span><small class="by">${esc(c.label)}</small>${extra}` +
+      (c.madeFor ? `<b class="made-for">Made for ${esc(c.madeFor)}</b>` : '');
     const pick = () => {
       for (const el of box.querySelectorAll('.map-card')) el.setAttribute('aria-checked', String(el === card));
       state.selectedMap = c.key;
@@ -290,6 +305,30 @@ function mapLabel(m) {
   if (!m.size) return `Original · ${m.mode === 'team' ? 'team map' : 'deathmatch'}`;
   const best = (m.modes || []).slice(0, 2).map(id => MODE_SHORT[id]).join(', ');
   return `${m.size[0].toUpperCase()}${m.size.slice(1)} · ${m.players} players · ${best}`;
+}
+
+// How well each size of map suits each mode (lower is better): big maps for Rush and Conquest,
+// small ones for the rest. Originals are small arenas made for deathmatch.
+const SIZE_FIT = {
+  ffa: { original: 0, small: 0, medium: 1, large: 3 },
+  gungame: { original: 0, small: 0, medium: 1, large: 3 },
+  oitc: { original: 0, small: 0, medium: 1, large: 3 },
+  team: { original: 0, small: 0, medium: 0.5, large: 2 },
+  koth: { small: 0, medium: 1, original: 1.5, large: 2.5 },
+  ctf: { small: 0, medium: 1, original: 1.5, large: 2.5 },
+  conquest: { large: 0, medium: 1, small: 2.5, original: 3 },
+  rush: { large: 0, medium: 1, small: 2.5, original: 3 },
+};
+
+/** How well a game map suits a mode (lower is better), for ordering the map list. */
+function mapFit(m, mode) {
+  let fit = SIZE_FIT[mode]?.[m.size || 'original'] ?? 0;
+  if (m.modes) {
+    // Made for this mode, or it's a close second.
+    const i = m.modes.indexOf(mode);
+    fit += i === 0 ? -1 : i === 1 ? -0.5 : i < 0 ? 1 : 0;
+  } else if (m.mode === mode) fit -= 0.5; // (Two Towers, for team games)
+  return fit;
 }
 
 /** The match limit for the chosen mode: frags, or the objective modes' goal (0 = the mode's own). */

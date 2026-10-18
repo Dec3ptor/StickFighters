@@ -88,6 +88,15 @@ input[type="range"] { width: 100%; accent-color: var(--ink); }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 8px;
+  /* A scrolling box, so 18+ maps don't make the page long. */
+  max-height: min(560px, 62vh);
+  overflow-y: auto;
+  padding: 2px 6px 2px 2px;
+  align-content: start;
+}
+.map-card .made-for {
+  position: absolute; top: 5px; left: 5px; font-size: 10px; padding: 1px 6px;
+  background: var(--ink); color: var(--paper); letter-spacing: 0.02em;
 }
 .map-card {
   border: 1.5px solid #bbb;
