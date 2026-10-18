@@ -105,9 +105,11 @@ export function checkObjectives(data) {
     const row = { name: nameOf(o) };
     for (const team of [1, 2]) {
       // Rush: from that sector's spawns where there are some.
+      // Other modes: from the base spawns (the ones without a sector), as the game does.
       let list = from[team];
+      const base = list.filter(x => !x.s.sector);
       if (o.type === 'mcom' && list.some(x => x.s.sector === o.sector)) list = list.filter(x => x.s.sector === o.sector);
-      else if (o.type === 'mcom' && sectorSpawns) list = list.filter(x => !x.s.sector);
+      else if (base.length) list = base;
       const times = list.map(({ cost }) => Math.min(...(at.get(o) || []).map(n => cost[n.id]))).filter(Number.isFinite);
       row[team] = times.length ? Math.min(...times) / 60 : null;
     }

@@ -14,6 +14,7 @@ import { encodeWorld, encodeSnapshot, decodeSnapshot } from '../web/src/net/prot
 import { botMatch, loadMap } from './helpers.mjs';
 
 const SEC = 60;
+const ARM = 2 * SEC, DISARM = 7 * SEC, FUSE = 14 * SEC; // rush timings
 const OBJECTIVES = [
   { type: 'hill', left: -60, top: -90, right: 60, bottom: 0 },
   { type: 'flag', team: 1, x: -700, y: 0 },
@@ -270,17 +271,19 @@ test('rush: arm an M-COM, it blows, the next sector opens with fresh tickets; th
   run(game, 1);
   const st = game.modeState;
   assert.equal(game.teamScore[1], 20);
-  run(game, 3 * SEC);
-  assert.equal(st.mcoms[0].s, 1, 'armed after 3 seconds');
+  run(game, ARM - 2);
+  assert.equal(st.mcoms[0].s, 0, 'not armed yet');
+  run(game, 2);
+  assert.equal(st.mcoms[0].s, 1, 'armed after 2 seconds');
   game.kill(blue, red, 'M4');
   assert.equal(game.teamScore[1], 19, 'attackers pay a ticket per death');
-  run(game, 25 * SEC);
+  run(game, FUSE);
   assert.equal(st.mcoms[0].s, 2, 'destroyed when the fuse runs out');
   assert.equal(st.sector, 1, 'on to sector 2');
   assert.equal(game.teamScore[1], 20, 'tickets refilled');
   game.respawn(blue);
   place(blue, 600);
-  run(game, 3 * SEC + 25 * SEC + 2);
+  run(game, ARM + FUSE + 2);
   assert.equal(st.mcoms[1].s, 2);
   assert.ok(game.over && game.winner.team === 1, 'attackers win');
 });
@@ -289,13 +292,15 @@ test('rush: defenders disarm; attackers out of tickets stay down and lose', () =
   const game = arena('rush', { fragLimit: 2 });
   const blue = put(game, 'Blue', 1, 200);
   const red = put(game, 'Red', 2, -800);
-  run(game, 3 * SEC + 1);
+  run(game, ARM + 1);
   const m = game.modeState.mcoms[0];
   assert.equal(m.s, 1);
   place(blue, -500);
   place(red, 200);
-  run(game, 4 * SEC + 1);
-  assert.equal(m.s, 0, 'disarmed after 4 seconds');
+  run(game, DISARM - 2);
+  assert.equal(m.s, 1, 'not disarmed yet');
+  run(game, 3);
+  assert.equal(m.s, 0, 'disarmed after 7 seconds');
   game.kill(blue, red, 'M4');
   game.respawn(blue);
   place(blue, -500);
@@ -303,6 +308,22 @@ test('rush: defenders disarm; attackers out of tickets stay down and lose', () =
   assert.equal(game.teamScore[1], 0);
   assert.equal(game.rules.canRespawn(game, blue), false, 'no tickets, no respawn');
   assert.ok(game.over && game.winner.team === 2);
+});
+
+test("rush: an M-COM's blast can't end the round on tickets the next sector refills", () => {
+  const game = arena('rush', { fragLimit: 3 });
+  const blue = put(game, 'Blue', 1, 200);
+  const red = put(game, 'Red', 2, -800);
+  run(game, 1);
+  for (let i = 0; i < 2; i++) { game.kill(blue, red, 'M4'); game.respawn(blue); place(blue, 200); }
+  assert.equal(game.teamScore[1], 1);
+  run(game, ARM + 1);
+  // Blue's last ticket, standing right by the M-COM when it blows.
+  run(game, FUSE);
+  assert.equal(game.modeState.sector, 1, 'sector 2');
+  assert.ok(!blue.alive, 'caught in the blast');
+  assert.equal(game.teamScore[1], 2, 'that death costs a ticket from the refill');
+  assert.ok(!game.over, `the round goes on (${JSON.stringify(game.winner)})`);
 });
 
 test('rush: each sector uses its own spawn points', () => {

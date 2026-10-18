@@ -11,7 +11,7 @@
 //   A jump climbs about 168 px and carries about 186 px sideways.
 //   Soldiers walk up steps up to 10 px high without jumping.
 //   Soldiers are 34 px tall (12 crouching less), 12 px wide.
-//   A jump pad of strength 7 launches about 3.5x higher than a jump.
+//   Jump pads launch about 40 px (strength 3), 110 (5), 220 (7), 370 (9), 660 (12).
 //   Falling more than 160 px below the map's bounds kills.
 
 import { normalizeMap } from '../../web/src/custommaps.js';

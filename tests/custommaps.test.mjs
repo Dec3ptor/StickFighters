@@ -56,9 +56,11 @@ test('share links round-trip every original map', async () => {
 
 test('.ssm files round-trip, matching the original game format', () => {
   for (const m of mapIndex()) {
-    const original = normalizeMap(loadMap(m.file));
+    // (The original format has no objectives or Rush sectors: everything else comes back.)
+    const { objectives, ...original } = normalizeMap(loadMap(m.file));
+    original.spawns = original.spawns.map(({ sector, ...s }) => s);
     const bytes = encodeSSM(original);
-    assert.deepEqual(decodeSSM(bytes), original, m.name);
+    assert.deepEqual(decodeSSM(bytes), normalizeMap(original), m.name);
   }
   // A known layout: name, then 4 floats of bounds.
   const bytes = encodeSSM(SIMPLE);

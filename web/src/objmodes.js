@@ -21,9 +21,9 @@ const HILL_MOVES = 60 * SEC;   // king of the hill: the hill moves every minute 
 const FLAG_RETURN = 20 * SEC;  // a dropped flag goes home by itself after this
 const CAPTURE = 7 * SEC;       // conquest: one soldier takes a neutral point in 7 s
 const BLEED_EVERY = 5 * SEC;   // conquest: the team holding fewer points loses tickets this often
-const ARM = 3 * SEC;           // rush: standing at an M-COM this long arms it...
-const DISARM = 4 * SEC;        // ...and this long disarms it
-const FUSE = 25 * SEC;         // rush: an armed M-COM blows up after this
+const ARM = 2 * SEC;           // rush: standing at an M-COM this long arms it...
+const DISARM = 7 * SEC;        // ...and this long disarms it
+const FUSE = 14 * SEC;         // rush: an armed M-COM blows up after this
 const MCOM_BLAST = { radius: 150, damage: 260, knock: 12 };
 
 export const TEAM_NAME = { 1: 'Blue', 2: 'Red' };
@@ -433,7 +433,7 @@ export function objectiveModes(base) {
     ...common,
     name: 'Rush',
     blurb: 'Blue attacks, red defends. Blue arms the M-COM stations by standing at them; red disarms them the same way. Destroy every M-COM in a sector to push on to the next. Blue loses a ticket for every death and gets more with each sector taken.',
-    goal: { label: 'Attacker tickets', options: [0, 50, 75, 100, 150, 250], value: 0, auto: [30, 5] },
+    goal: { label: 'Attacker tickets', options: [0, 50, 75, 100, 150, 250], value: 0, auto: [60, 14] },
 
     begin(game) {
       const mcoms = objectivesOf(game.map, 'mcom');
@@ -455,6 +455,7 @@ export function objectiveModes(base) {
       if (st.won || !mcoms.length) return;
       const sector = this.current(game);
       let left = 0;
+      const blasts = [];
       mcoms.forEach((m, i) => {
         const o = st.mcoms[i];
         if (m.sector !== sector || o.s === 2) return;
@@ -492,31 +493,36 @@ export function objectiveModes(base) {
           if (o.fuse <= 0) {
             o.s = 2;
             o.p = 0;
-            const by = byId(game, o.by);
-            award(by, 10);
-            explode(game, m.x, m.y - 14, MCOM_BLAST, by, 'M-COM');
-            game.fx?.explosion(m.x, m.y - 30, 70);
-            game.addFeed({ text: 'An M-COM was destroyed!', tick: game.tick });
-            news(game, 1, 'destroyed', 'objBad');
+            blasts.push({ m, by: byId(game, o.by) });
             left--;
           }
         }
       });
+      for (const { by } of blasts) {
+        award(by, 10);
+        game.addFeed({ text: 'An M-COM was destroyed!', tick: game.tick });
+        news(game, 1, 'destroyed', 'objBad');
+      }
       if (left === 0) {
         if (st.sector >= st.sectors.length - 1) {
           st.won = 1;
           game.addFeed({ text: 'Every M-COM is destroyed: blue wins!', tick: game.tick });
-          game.checkWin();
-          return;
+        } else {
+          st.sector++;
+          game.teamScore[1] = st.start;
+          game.addFeed({ text: `Sector ${st.sector + 1}: the attack moves on`, tick: game.tick });
+          game.sound('sector', null, null);
+          tell(game, 1, `Sector taken! On to sector ${st.sector + 1}`);
+          tell(game, 2, `Sector lost! Fall back to sector ${st.sector + 1}`);
         }
-        st.sector++;
-        game.teamScore[1] = st.start;
-        game.addFeed({ text: `Sector ${st.sector + 1}: the attack moves on`, tick: game.tick });
-        game.sound('sector', null, null);
-        tell(game, 1, `Sector taken! On to sector ${st.sector + 1}`);
-        tell(game, 2, `Sector lost! Fall back to sector ${st.sector + 1}`);
       }
       game.teamScore[2] = mcoms.filter((m, i) => st.mcoms[i].s !== 2).length;
+      // The blasts go off once the sector's moved on (so they can't end the round on tickets the new sector refills).
+      for (const { m, by } of blasts) {
+        explode(game, m.x, m.y - 14, MCOM_BLAST, by, 'M-COM');
+        game.fx?.explosion(m.x, m.y - 30, 70);
+      }
+      if (st.won) game.checkWin();
     },
 
     onKill(game, victim) {
@@ -534,9 +540,8 @@ export function objectiveModes(base) {
       if (!st?.start) return null;
       if (st.won) return { team: 1 };
       if (game.teamScore[1] > 0) return null;
-      // Out of tickets: red wins once no M-COM is ticking and blue's last soldiers are down.
+      // Out of tickets: red wins, unless an M-COM is still ticking.
       if (st.mcoms.some(o => o.s === 1)) return null;
-      if (game.soldiers.some(s => s.alive && s.team === 1)) return null;
       return { team: 2 };
     },
 

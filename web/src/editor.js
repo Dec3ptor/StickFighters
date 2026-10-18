@@ -682,7 +682,10 @@ export class Editor {
       this.open(next || null);
     });
     this.$('#edExport').addEventListener('click', () => this.download(`${this.fileName()}.json`, 'application/json', JSON.stringify(normalizeMap(this.map), null, 2)));
-    this.$('#edExportSSM').addEventListener('click', () => this.download(`${this.fileName()}.ssm`, 'application/octet-stream', encodeSSM(this.map)));
+    this.$('#edExportSSM').addEventListener('click', () => {
+      if (this.map.objectives?.length && !confirm("The original game's .ssm format can't hold hills, flags, capture points, M-COMs or Rush sectors, so those won't be in the file. Export anyway?")) return;
+      this.download(`${this.fileName()}.ssm`, 'application/octet-stream', encodeSSM(this.map));
+    });
     this.$('#edImport').addEventListener('click', () => this.$('#edFile').click());
     this.$('#edFile').addEventListener('change', () => this.importFile(this.$('#edFile').files[0]));
     this.$('#edShare').addEventListener('click', () => this.shareLink());
@@ -779,7 +782,7 @@ export class Editor {
       if (this.tool === 'mcom') html += `<h3>Placing M-COMs</h3><label class="ed-field">Sector<select id="toolSector">${sectorOptions(this.sector)}</select></label><p class="ed-note">Blue attacks from sector 1 onward. Two per sector is usual.</p>`;
       if (AREA_TOOLS.has(this.tool)) html += `<h3>Drawing ${this.tool === 'hill' ? 'hills' : 'capture points'}</h3><p class="ed-note">Drag out the area soldiers stand in, or click for a standard size. It sits on the floor below.</p>`;
       if (this.tool === 'weapon') html += `<h3>Placing weapons</h3><label class="ed-field">Weapon<select id="toolWeapon">${weaponOptions(this.weapon)}</select></label>`;
-      if (this.tool === 'pad') html += `<h3>Drawing jump pads</h3><label class="ed-range">Strength <output>${this.padStrength || BOUNCE.standard}</output><input type="range" id="toolBounce" min="${BOUNCE.min}" max="${BOUNCE.max}" step="0.5" value="${this.padStrength || BOUNCE.standard}"></label><p class="ed-note">7 launches about twice as high as a jump.</p>`;
+      if (this.tool === 'pad') html += `<h3>Drawing jump pads</h3><label class="ed-range">Strength <output>${this.padStrength || BOUNCE.standard}</output><input type="range" id="toolBounce" min="${BOUNCE.min}" max="${BOUNCE.max}" step="0.5" value="${this.padStrength || BOUNCE.standard}"></label><p class="ed-note">7 launches a bit higher than a jump (about 220 px); 12 about four times as high (660 px).</p>`;
       const m = this.map, b = computeBounds(m.platforms, m.spawns, m.items, undefined, m.objectives);
       const blue = m.spawns.filter(s => s.team === 1).length;
       const ob = type => m.objectives.filter(o => o.type === type).length;
