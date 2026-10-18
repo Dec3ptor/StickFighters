@@ -10,6 +10,11 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
 - **Eight modes**: free-for-all, team deathmatch, **gun game** and **one in the chamber**, plus four objective modes for two teams: **king of the hill**, **capture the flag**, and Battlefield-style **Conquest** and **Rush**.
 - **35 weapons**: the original eight with their original numbers, plus Worms-style ones like sheep, the Holy Hand Grenade, air strikes and the ninja rope (full list below). **Supply crates** parachute in with random weapons.
 - **All 8 original maps**, decoded from the original game's files: Fire in the Hole, Habitat, King of the Hill, Fraghouse, Sniping Grounds, Fatality Zone, Hells Steeple and Two Towers.
+- **10 new maps**, from small to huge:
+  - **Small** (4–16 players): **Summit** (a stepped mountain, made for king of the hill) and **Pit Stop** (a garage with three rotating hills), and **Crossfire** (bunkers and three lanes) and **Twin Keeps** (two castles across a moat), made for capture the flag.
+  - **Medium** (8–24 players): **Foundry** (catwalks over molten pits) and **Skyline** (rooftops with deadly gaps).
+  - **Large** (16–64 players, up to 8,000 px wide): **Frontline** (trenches, a ruined village and the defenders' HQ) and **Citadel** (from the beach up to a hilltop keep), made for Rush, and **Harbor** (ships, container stacks and a gantry crane) and **Valley** (hills, caves and a river gorge, with 7 capture points), made for Conquest.
+  - Every map, the originals included, has hills, flags, capture points and M-COMs for all four objective modes. Picking a map in the setup switches to the mode it's made for and raises the bots to its smallest player count.
 - **A map maker** with mirror editing, spawn loadouts, test play, share links and **community maps** anyone can browse and play.
 - **Health, armour, jetpacks and jump pads**, placed where the original had them. Dead soldiers drop their weapon.
 - **Stick figures animated with the original game's leg animations**. Arms follow your aim at any angle, and the dead fall apart. No original art is used: everything is drawn in code.
