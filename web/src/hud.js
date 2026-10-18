@@ -3,6 +3,7 @@
 import { WEAPONS, SLOTS } from './weapons.js';
 import { RULES } from './config.js';
 import { GUN_GAME_LADDER } from './modes.js';
+import { drawObjectiveHud } from './objdraw.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
@@ -48,7 +49,7 @@ export function drawHud(r, game, me, opts = {}) {
   const standings = game.standings();
   drawScores(ctx, game, me, H, standings);
   drawFeed(ctx, game, W, opts.chat);
-  drawTop(ctx, game, me, W, standings);
+  drawTop(ctx, game, me, W, standings, r, H);
 
   // Messages for the player ("You got the Sniper Rifle").
   const notes = game.over ? [] : game.notes.filter(n => (n.to == null || n.to === me.id) && game.tick - n.tick < 150).slice(-3);
@@ -192,10 +193,11 @@ function drawFeed(ctx, game, W, chat = []) {
   ctx.globalAlpha = 1;
 }
 
-function drawTop(ctx, game, me, W, standings) {
+function drawTop(ctx, game, me, W, standings, r, H) {
+  const rules = game.rules;
+  if (rules.objective) { drawObjectiveHud(r, ctx, game, me, W, H); return; }
   ctx.textAlign = 'center';
   ctx.font = `bold 14px ${FONT}`;
-  const rules = game.rules;
   if (rules.teams) {
     ctx.fillStyle = TEAM[1];
     ctx.fillText(`Blue ${game.teamScore[1]}`, W / 2 - 50, 16);

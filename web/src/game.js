@@ -49,6 +49,9 @@ export class Game {
     this.winner = null;
     this.stats = { kills: 0, suicides: 0, falls: 0 };
     this.grid = new SoldierGrid();
+    // The objective modes' state (flags, capture points...): plain data, sent to online players.
+    this.modeState = null;
+    this.rules.begin?.(this);
   }
 
   /** True when there are enough soldiers that looking them up by area is worth it. */
@@ -132,6 +135,7 @@ export class Game {
   }
 
   removeSoldier(s) {
+    this.rules.onRemove?.(this, s);
     this.soldiers = this.soldiers.filter(o => o !== s);
     if (this.ids) { this.ids.delete(s.id); this.freeId = Math.min(this.freeId, s.id); }
     this.controllers.delete(s);
@@ -175,6 +179,7 @@ export class Game {
     }
     updateProjectiles(this);
     this.pickups.update(this);
+    if (!this.over) this.rules.tick?.(this);
     if (this.quake) this.updateQuake();
     this.fx?.update(this.map, MOTION.timeScale);
     if (this.feed.length > 6) this.feed.splice(0, this.feed.length - 6);
@@ -286,10 +291,12 @@ export class Game {
     for (const p of this.projectiles) if (p.onGround && this.rng() < 0.05) { p.onGround = false; p.vy = -2 * MOTION.timeScale; }
   }
 
-  /** Spawn point far from enemies (with some randomness). */
+  /** Spawn point far from enemies (with some randomness). Modes can choose instead (conquest's points, rush's sectors). */
   pickSpawn(s) {
-    let points = this.map.spawns;
-    if (this.rules.teams) {
+    const chosen = this.rules.spawnPoint?.(this, s);
+    if (chosen) return chosen;
+    let points = this.rules.spawnPoints ? this.rules.spawnPoints(this, s) : this.map.spawns;
+    if (this.rules.teams && !this.rules.spawnPoints) {
       const mine = points.filter(p => p.team === s.team);
       if (mine.length) points = mine;
     }
@@ -357,10 +364,12 @@ export class Game {
     victim.body.rope = null;
 
     let text;
-    const name = weapon ? WEAPONS[weapon]?.name : null;
+    const name = weapon ? WEAPONS[weapon]?.name ?? weapon : null;
+    // (In the objective modes, the objective decides the team score, not kills.)
+    const teamFrags = this.rules.teams && this.rules.killScore !== false;
     if (killer && killer !== victim) {
       killer.frags++;
-      if (this.rules.teams) this.teamScore[killer.team]++;
+      if (teamFrags) this.teamScore[killer.team]++;
       this.stats.kills++;
       const how = opts.fall ? 'knocked' : 'fragged';
       text = opts.fall ? `${killer.name} knocked ${victim.name} off the map` : `${killer.name} fragged ${victim.name}`;
@@ -370,7 +379,7 @@ export class Game {
       // Kamikaze is meant to kill you, so it doesn't cost a frag.
       if (weapon !== 'Kamikaze') {
         victim.frags--;
-        if (this.rules.teams) this.teamScore[victim.team]--;
+        if (teamFrags) this.teamScore[victim.team]--;
       }
       if (opts.fall) { this.stats.falls++; text = `${victim.name} fell off the map`; }
       else if (weapon === 'Kamikaze') text = `${victim.name} went out with a bang`;

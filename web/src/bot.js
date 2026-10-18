@@ -5,6 +5,7 @@ import { WEAPONS } from './weapons.js';
 import { jumpSteer, dropSteer } from './nav.js';
 import { angleDiff, clamp } from './util.js';
 import { CELL } from './grid.js';
+import { inZone } from './objectives.js';
 
 const SIGHT = 1300;  // how far bots look for enemies
 const LOOKS = 6;     // in big games, sight lines a bot checks each time it looks around
@@ -135,7 +136,7 @@ export class BotController {
     if (h.length < 8) return;
     const xs = h.map(p => p.x);
     const fighting = this.target && game.tick - (this.lastSeen?.tick ?? -1e9) < 60;
-    if (Math.max(...xs) - Math.min(...xs) > 50 || fighting || this.goalKind === 'fight') return;
+    if (Math.max(...xs) - Math.min(...xs) > 50 || fighting || this.goalKind === 'fight' || this.goalKind === 'hold') return;
     if (this.goalItem) this.ignore.set(this.goalItem, game.tick + 2400);
     this.goalItem = null;
     this.forceRoam = true;
@@ -315,6 +316,11 @@ export class BotController {
     }
     this.offGraph = null;
     const search = game.crowded ? this.nav.cachedCostsFrom(start, game.tick) : this.nav.costsFrom(start);
+    // The objective modes: where the mode wants this bot to be (a hill, a flag, a capture point...).
+    const obj = game.rules.botGoal?.(game, s, this) || null;
+    const inObj = obj && inZone(s, obj.zone);
+    // Pickups are worth less when there's somewhere to be (unless we're already there).
+    const detour = !obj || (inObj && obj.hold) ? 0 : obj.urgent ? 6 : 2;
     const costTo = (x, y) => {
       const n = this.nav.nearest(x, y, 90);
       return n ? { n, c: search.cost[n.id] } : { n: null, c: Infinity };
@@ -360,7 +366,7 @@ export class BotController {
         if (!n || Math.abs(n.x - it.x) > 45 || it.y < n.y - 75 || it.y > n.y + 30) continue;
         const c = search.cost[n.id];
         if (c === Infinity) continue;
-        const v = value(it) - c / 60 - (claimed.has(it) ? 4 : 0);
+        const v = value(it) - c / 60 - (claimed.has(it) ? 4 : 0) - detour;
         if (v > pv) { pv = v; pick = n; item = it; }
       }
       if (pv <= 0) return null;
@@ -388,7 +394,26 @@ export class BotController {
     const far = def.bot?.far ?? def.range ?? 400;
     const reach = def.kind === 'melee' ? far + 4 : ['rail', 'seeker', 'strike'].includes(def.kind) ? 1400 : Math.min(far * 0.9, 650);
     const inRange = this.target && Math.hypot(this.target.x - s.x, this.target.y - s.y) < reach;
-    if (!goal && this.target && !inRange) {
+    if (!goal && obj && (!inObj || obj.hold)) {
+      // On the way, an enemy in range sometimes makes the bot stop and fight (not when it's urgent).
+      const stopToFight = !inObj && inRange && !obj.urgent && this.rng() < 0.4;
+      if (!stopToFight) {
+        if (inObj && this.rng() * 40 < this.profile.camp) goal = start; // hold still here a while
+        else {
+          let pv = Infinity;
+          for (const n of this.zoneNodes(obj)) {
+            const c = search.cost[n.id];
+            if (c === Infinity || (obj.avoid && inZone(n, obj.avoid))) continue;
+            // Getting there: the quickest way in. Already there: move about inside, nearby.
+            const v = inObj ? Math.hypot(n.x - s.x, n.y - s.y) * 0.4 + this.rng() * 160 : c + this.rng() * 30;
+            if (v < pv) { pv = v; goal = n; }
+          }
+        }
+        if (goal) kind = inObj ? 'hold' : 'objective';
+        if (obj.moving || obj.urgent) this.thinkIn = 18 + Math.floor(this.rng() * 12);
+      }
+    }
+    if (!goal && this.target && !inRange && !obj) {
       goal = costTo(this.target.x, this.target.y + 4).n;
       kind = 'chase';
     }
@@ -427,6 +452,27 @@ export class BotController {
     this.path = this.nav.pathTo(search, goal) || [];
     this.li = 0;
     this.start = start;
+  }
+
+  /** Route map spots inside an objective's area (remembered, unless the area moves about). */
+  zoneNodes(obj) {
+    const z = obj.zone;
+    const key = `${Math.round(z.left)}|${Math.round(z.top)}|${Math.round(z.right)}|${Math.round(z.bottom)}`;
+    const cache = (this.nav.zoneCache ||= new Map());
+    let list = obj.moving ? null : cache.get(key);
+    if (!list) {
+      list = this.nav.nodesNear((z.left + z.right) / 2, (z.top + z.bottom) / 2, (z.right - z.left) / 2 + 2, (z.bottom - z.top) / 2 + 8).filter(n => inZone(n, z));
+      if (!list.length) {
+        // Nowhere to stand in it (a flag carried through the air): the nearest spot.
+        const n = this.nav.nearest((z.left + z.right) / 2, z.bottom - 12, 240);
+        list = n ? [n] : [];
+      }
+      if (!obj.moving) {
+        cache.set(key, list);
+        if (cache.size > 400) cache.delete(cache.keys().next().value);
+      }
+    }
+    return list;
   }
 
   // ---- Following the route --------------------------------------------------
@@ -496,7 +542,7 @@ export class BotController {
         return;
       }
       this.grabTicks = 0;
-      if (this.thinkIn > 8) this.thinkIn = 8;
+      if (this.thinkIn > 8 && this.goalKind !== 'hold') this.thinkIn = 8;
       this.watchStuck(game, s, inp);
       return;
     }
@@ -560,7 +606,7 @@ export class BotController {
   /** If the bot hasn't moved for a while, jump somewhere and rethink. */
   watchStuck(game, s, inp) {
     const n = this.nav.nodeAt(s.x, s.y, 14);
-    if (n && n === this.lastNode && this.goalKind !== 'fight') this.stuck++;
+    if (n && n === this.lastNode && this.goalKind !== 'fight' && this.goalKind !== 'hold') this.stuck++;
     else this.stuck = 0;
     this.lastNode = n;
     if (this.stuck > 150) {

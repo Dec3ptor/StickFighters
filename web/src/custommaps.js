@@ -5,9 +5,16 @@
 // Map format (same as the decoded originals in web/data/maps/):
 //   { name, bounds: {left, top, right, bottom},
 //     platforms: [{ left, top, right, bottom, bounce? }],   bounce < 0 makes a jump pad
-//     spawns: [{ x, y, team }],                              team 1 = blue, 2 = red
+//     spawns: [{ x, y, team, sector? }],                     team 1 = blue, 2 = red; sector: Rush (see below)
 //     items: [{ type: 'health'|'armour'|'jetpack'|'weapon', x, y, weapon? }],
-//     loadout?: { weapons: [ids], armour: 0-100, jetpack: bool } }      what everyone spawns with
+//     loadout?: { weapons: [ids], armour: 0-100, jetpack: bool },      what everyone spawns with
+//     objectives?: [                                         for the objective modes (see modes.js)
+//       { type: 'hill', left, top, right, bottom },           King of the hill: an area to hold
+//       { type: 'flag', team, x, y },                         Capture the flag: a team's flag stand (y = the floor)
+//       { type: 'point', label, left, top, right, bottom },   Conquest: an area to capture, labelled A, B, C...
+//       { type: 'mcom', sector, x, y } ] }                    Rush: a station to blow up (y = the floor); sectors
+//                                                            1, 2, 3... fall in order, and spawns with a sector
+//                                                            are used while that sector is being fought over
 
 import { GameMap } from './map.js';
 import { NavGraph } from './nav.js';
@@ -15,9 +22,11 @@ import { makeBody, stepBody } from './physics.js';
 import { BODY, RULES, DEFAULT_SPEED } from './config.js';
 import { WEAPONS, PICKUP_WEAPONS } from './weapons.js';
 import { setGameSpeed } from './speed.js';
+import { inZone, mcomZone, STAND } from './objectives.js';
 
 export const ITEM_TYPES = ['health', 'armour', 'jetpack', 'weapon'];
-export const LIMITS = { maxSize: 8000, maxPlatforms: 400, maxSpawns: 64, maxItems: 160, minSize: 4, nameLength: 32, loadoutWeapons: 12 };
+export const OBJECTIVE_TYPES = ['hill', 'flag', 'point', 'mcom'];
+export const LIMITS = { maxSize: 8000, maxPlatforms: 600, maxSpawns: 96, maxItems: 200, maxObjectives: 32, maxSectors: 8, minSize: 4, nameLength: 32, loadoutWeapons: 12 };
 export const BOUNCE = { min: 2, max: 12, standard: 7 }; // jump pad strength (stored as a negative bounce)
 const MARGIN = 40;
 
@@ -31,11 +40,15 @@ function number(v, what) {
 }
 
 /** The area a map takes up, with a margin, as the game expects in `bounds`. */
-export function computeBounds(platforms, spawns, items, margin = MARGIN) {
+export function computeBounds(platforms, spawns, items, margin = MARGIN, objectives = []) {
   const xs = [], ys = [];
   for (const p of platforms) { xs.push(p.left, p.right); ys.push(p.top, p.bottom); }
   for (const s of spawns) { xs.push(s.x - 10, s.x + 10); ys.push(s.y - 30, s.y + 15); }
   for (const i of items) { xs.push(i.x - 10, i.x + 10); ys.push(i.y - 10, i.y + 10); }
+  for (const o of Array.isArray(objectives) ? objectives : []) {
+    const x = Number(o.x ?? o.left), y = Number(o.y ?? o.top);
+    if (Number.isFinite(x) && Number.isFinite(y)) { xs.push(x); ys.push(y - 40); }
+  }
   if (!xs.length) return { left: -400, top: -300, right: 400, bottom: 300 };
   return {
     left: Math.floor(Math.min(...xs) - margin), top: Math.floor(Math.min(...ys) - margin),
@@ -59,9 +72,12 @@ export function normalizeMap(raw) {
     if (bounce) out.bounce = -Math.min(BOUNCE.max, Math.max(BOUNCE.min, Math.abs(round(bounce))));
     platforms.push(out);
   }
-  const spawns = (Array.isArray(raw.spawns) ? raw.spawns : []).slice(0, LIMITS.maxSpawns).map((s, i) => ({
-    x: number(s.x, `Spawn ${i + 1} x`), y: number(s.y, `Spawn ${i + 1} y`), team: Number(s.team) === 2 ? 2 : 1,
-  }));
+  const spawns = (Array.isArray(raw.spawns) ? raw.spawns : []).slice(0, LIMITS.maxSpawns).map((s, i) => {
+    const out = { x: number(s.x, `Spawn ${i + 1} x`), y: number(s.y, `Spawn ${i + 1} y`), team: Number(s.team) === 2 ? 2 : 1 };
+    const sector = Math.round(Number(s.sector));
+    if (sector >= 1 && sector <= LIMITS.maxSectors) out.sector = sector;
+    return out;
+  });
   const items = [];
   for (const [i, it] of (Array.isArray(raw.items) ? raw.items : []).slice(0, LIMITS.maxItems).entries()) {
     if (!ITEM_TYPES.includes(it.type)) continue;
@@ -71,13 +87,42 @@ export function normalizeMap(raw) {
     items.push(out);
   }
   const name = String(raw.name ?? '').replace(/\s+/g, ' ').trim().slice(0, LIMITS.nameLength) || 'Untitled map';
-  const bounds = computeBounds(platforms, spawns, items);
+  const bounds = computeBounds(platforms, spawns, items, MARGIN, raw.objectives);
   if (bounds.right - bounds.left > LIMITS.maxSize || bounds.bottom - bounds.top > LIMITS.maxSize) {
     throw new Error(`The map is too big (over ${LIMITS.maxSize} px across)`);
   }
   const out = { name, bounds, platforms, spawns, items };
   const loadout = normalizeLoadout(raw.loadout);
   if (loadout) out.loadout = loadout;
+  const objectives = normalizeObjectives(raw.objectives);
+  if (objectives.length) out.objectives = objectives;
+  return out;
+}
+
+/** Objectives for the objective modes: known types only, areas the right way round, labels and sectors tidied. */
+export function normalizeObjectives(raw) {
+  const out = [];
+  for (const [i, o] of (Array.isArray(raw) ? raw : []).slice(0, LIMITS.maxObjectives).entries()) {
+    if (!o || !OBJECTIVE_TYPES.includes(o.type)) continue;
+    const what = `Objective ${i + 1}`;
+    if (o.type === 'hill' || o.type === 'point') {
+      let l = number(o.left, `${what} left`), t = number(o.top, `${what} top`), r = number(o.right, `${what} right`), b = number(o.bottom, `${what} bottom`);
+      if (l > r) [l, r] = [r, l];
+      if (t > b) [t, b] = [b, t];
+      if (r - l < 16 || b - t < 16) continue;
+      const z = { type: o.type, left: l, top: t, right: r, bottom: b };
+      if (o.type === 'point') z.label = String(o.label ?? '').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase();
+      out.push(z);
+    } else if (o.type === 'flag') {
+      out.push({ type: 'flag', team: Number(o.team) === 2 ? 2 : 1, x: number(o.x, `${what} x`), y: number(o.y, `${what} y`) });
+    } else {
+      const sector = Math.max(1, Math.min(LIMITS.maxSectors, Math.round(Number(o.sector)) || 1));
+      out.push({ type: 'mcom', sector, x: number(o.x, `${what} x`), y: number(o.y, `${what} y`) });
+    }
+  }
+  // Capture points get letters in order where they have none (A, B, C...).
+  let n = 0;
+  for (const o of out) if (o.type === 'point') { if (!o.label) o.label = String.fromCharCode(65 + n); n++; }
   return out;
 }
 
@@ -99,7 +144,9 @@ function pack(map) {
     v: 1,
     n: map.name,
     p: map.platforms.map(p => (p.bounce ? [p.left, p.top, p.right, p.bottom, p.bounce] : [p.left, p.top, p.right, p.bottom])),
-    s: map.spawns.map(s => [s.x, s.y, s.team]),
+    s: map.spawns.map(s => (s.sector ? [s.x, s.y, s.team, s.sector] : [s.x, s.y, s.team])),
+    ...(map.objectives ? { o: map.objectives.map(o => (o.type === 'flag' ? ['f', o.x, o.y, o.team] : o.type === 'mcom' ? ['m', o.x, o.y, o.sector]
+      : [o.type === 'hill' ? 'h' : 'p', o.left, o.top, o.right, o.bottom, ...(o.label ? [o.label] : [])])) } : {}),
     i: map.items.map(it => (it.type === 'weapon' ? [it.type, it.x, it.y, it.weapon] : [it.type, it.x, it.y])),
     ...(map.loadout ? { l: [map.loadout.weapons, map.loadout.armour, map.loadout.jetpack ? 1 : 0] } : {}),
   };
@@ -110,7 +157,9 @@ function unpack(o) {
   return normalizeMap({
     name: o.n,
     platforms: (o.p || []).map(([left, top, right, bottom, bounce]) => ({ left, top, right, bottom, bounce })),
-    spawns: (o.s || []).map(([x, y, team]) => ({ x, y, team })),
+    spawns: (o.s || []).map(([x, y, team, sector]) => ({ x, y, team, sector })),
+    objectives: (o.o || []).map(([k, ...a]) => (k === 'f' ? { type: 'flag', x: a[0], y: a[1], team: a[2] } : k === 'm' ? { type: 'mcom', x: a[0], y: a[1], sector: a[2] }
+      : { type: k === 'h' ? 'hill' : 'point', left: a[0], top: a[1], right: a[2], bottom: a[3], label: a[4] })),
     items: (o.i || []).map(([type, x, y, weapon]) => ({ type, x, y, weapon })),
     loadout: Array.isArray(o.l) ? { weapons: o.l[0], armour: o.l[1], jetpack: !!o.l[2] } : null,
   });
@@ -279,6 +328,22 @@ export function checkMap(raw) {
   for (const it of data.items) {
     const n = nav.nearest(it.x, it.y + 12, 120);
     if (!n || fromMain[n.id] === Infinity) { add('warning', `This ${it.type === 'weapon' ? WEAPONS[it.weapon].name : it.type} can't be reached by walking or jumping.`, { x: it.x, y: it.y }); }
+  }
+  // Objectives: somewhere players can get to, to stand at each one.
+  const NAMES = { hill: 'hill', point: 'capture point', flag: 'flag', mcom: 'M-COM' };
+  for (const o of data.objectives || []) {
+    const at = o.type === 'hill' || o.type === 'point' ? n => inZone(n, o) : o.type === 'mcom' ? n => inZone(n, mcomZone(o))
+      : n => Math.abs(n.x - o.x) <= 14 && Math.abs(n.y - (o.y - STAND)) < 3;
+    if (!nav.nodes.some(n => comp[n.id] === main && at(n))) {
+      const x = o.x ?? (o.left + o.right) / 2, y = o.y ?? o.bottom;
+      add('warning', `Players can't get to this ${NAMES[o.type]}${o.type === 'point' ? ` (${o.label})` : ''}: it needs a floor to stand on that they can reach.`, { x, y: y - 20 });
+    }
+  }
+  const flags = (data.objectives || []).filter(o => o.type === 'flag');
+  if (flags.length === 1) add('warning', `Capture the flag needs a flag for each team (this map only has ${flags[0].team === 1 ? 'blue' : 'red'}'s; the game will place the other).`);
+  const sectors = new Set((data.objectives || []).filter(o => o.type === 'mcom').map(o => o.sector));
+  for (const sec of new Set(data.spawns.filter(s => s.sector).map(s => s.sector))) {
+    if (!sectors.has(sec)) add('warning', `Some spawn points are for Rush sector ${sec}, but there are no M-COMs in sector ${sec}.`);
   }
   if (!problems.some(p => p.level !== 'ok')) add('ok', 'Looks good: every spot can be reached and left again.');
   return { data, problems, spots };

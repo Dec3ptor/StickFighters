@@ -179,6 +179,39 @@ await page.waitForTimeout(600);
 const loadout = await page.evaluate(() => window.stickSoldiers.editor.record.data.loadout);
 expect(loadout && loadout.weapons.includes('Uzi') && loadout.armour === 100, `loadout saved: ${JSON.stringify(loadout)}`);
 
+// Objectives, with mirror editing still on: a flag for each team, a hill, capture points, an M-COM.
+await page.click('#edCanvas');
+await page.keyboard.press('KeyB');
+await page.click('#edProps label:has(input[name=toolTeam][value="1"])');
+await clickAt(-352, 150);
+await page.keyboard.press('KeyL');
+await drag([-64, 120], [64, 190]);
+await page.keyboard.press('KeyC');
+await clickAt(-250, 150);
+await page.keyboard.press('KeyR');
+await clickAt(150, 150);
+await page.waitForTimeout(600);
+const objectives = await page.evaluate(() => ({ editing: window.stickSoldiers.editor.map.objectives, saved: window.stickSoldiers.editor.record.data.objectives }));
+const ob = type => objectives.editing.filter(o => o.type === type);
+expect(ob('flag').length === 2 && ob('flag').some(f => f.team === 1 && f.x === -352 && f.y === 200) && ob('flag').some(f => f.team === 2 && f.x === 352), `flags, mirrored: ${JSON.stringify(ob('flag'))}`);
+expect(ob('hill').length === 1 && ob('hill')[0].left === -64 && ob('hill')[0].right === 64 && ob('hill')[0].bottom === 200, `hill on the floor: ${JSON.stringify(ob('hill'))}`);
+expect(ob('point').map(p => p.label).join() === 'A,B' && ob('point')[0].left === -ob('point')[1].right, `capture points, mirrored: ${JSON.stringify(ob('point'))}`);
+expect(ob('mcom').length === 1 && ob('mcom')[0].sector === 1 && ob('mcom')[0].y === 200, `one M-COM (not mirrored): ${JSON.stringify(ob('mcom'))}`);
+expect(objectives.saved?.length === 6, `objectives saved with the map: ${JSON.stringify(objectives.saved)}`);
+await page.screenshot({ path: `${outDir}/editor-objectives.png` });
+// Test play it as capture the flag.
+await page.selectOption('#edMode', 'ctf');
+await page.click('#edTest');
+await page.waitForFunction(() => window.stickSoldiers.state.game?.mode === 'ctf' && window.stickSoldiers.state.me.alive, null, { timeout: 15000 });
+await page.waitForTimeout(1500);
+const ctf = await page.evaluate(() => { const g = window.stickSoldiers.state.game; return { mode: g.mode, flags: g.map.objectives.filter(o => o.type === 'flag').map(f => [f.team, f.x]).sort() }; });
+expect(ctf.mode === 'ctf' && ctf.flags[0][1] === -352 && ctf.flags[1][1] === 352, `test play as CTF uses the map's flags: ${JSON.stringify(ctf)}`);
+await page.screenshot({ path: `${outDir}/editor-ctf.png` });
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+await page.click('#toEditor');
+await page.waitForSelector('#editor:not(.hidden)');
+
 // Upload it to the community maps, then find it in the menu's Community tab.
 await page.fill('#edName', 'Mirror Test Arena');
 await page.waitForTimeout(500);
@@ -194,7 +227,7 @@ const communityCards = await page.$$eval('.map-card span', els => els.map(e => e
 expect(communityCards.includes('Mirror Test Arena'), `community tab lists the upload (${communityCards})`);
 await page.screenshot({ path: `${outDir}/menu-community.png` });
 
-console.log(JSON.stringify({ uploadStatus, communityCards, mirrored, loadout, built, moves: { before, moved, undone, redone }, report, playing, shared, again, broken, errors }, null, 2));
+console.log(JSON.stringify({ objectives, ctf, uploadStatus, communityCards, mirrored, loadout, built, moves: { before, moved, undone, redone }, report, playing, shared, again, broken, errors }, null, 2));
 await browser.close();
 server.close();
 await relay.close();

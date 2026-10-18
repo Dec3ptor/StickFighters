@@ -7,6 +7,7 @@ import { NavGraph } from '../web/src/nav.js';
 import { BotController, BOT_PROFILES } from '../web/src/bot.js';
 import { makeRng } from '../web/src/util.js';
 import { DEFAULT_SPEED } from '../web/src/config.js';
+import { modeOf } from '../web/src/modes.js';
 
 const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
 
@@ -21,7 +22,7 @@ export function botMatch(file, { bots = 6, mode = 'ffa', difficulty = 'normal', 
   const rng = makeRng(seed * 31 + 1);
   for (let i = 0; i < bots; i++) {
     const profile = BOT_PROFILES[i % BOT_PROFILES.length];
-    game.addSoldier({ name: profile.name, isBot: true, team: mode === 'team' ? 1 + (i % 2) : 0, profile },
+    game.addSoldier({ name: profile.name, isBot: true, team: modeOf(mode).teams ? 1 + (i % 2) : 0, profile },
       new BotController(nav, difficulty, profile, rng));
   }
   return { game, nav };

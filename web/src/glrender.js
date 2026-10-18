@@ -8,6 +8,7 @@
 
 import { Renderer } from './render.js';
 import { GLContext } from './glctx.js';
+import { drawObjectives, drawCarried } from './objdraw.js';
 
 const INK = 0x111111;
 // Particles drawn as sprites (the rest are drawn as shapes, like on the canvas).
@@ -156,10 +157,12 @@ export class GLRenderer extends Renderer {
 
     this.drawMap(game);
     this.drawStains(game);
+    drawObjectives(this, game);
     this.drawPickups(game);
     this.drawProjectiles(game, false);
     const shown = this.shownSoldiers(game, viewer);
     for (const sol of shown.soldiers) this.drawSoldier(game, sol, alpha, viewer);
+    drawCarried(this, game);
     this.drawProjectiles(game, true);
     this.drawEffects(game);
     for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);

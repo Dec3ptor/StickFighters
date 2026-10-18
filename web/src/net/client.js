@@ -207,6 +207,7 @@ export class NetClient {
       this.link.send({ t: 'roster?' }, true);
     }
     g.teamScore = snap.teamScore;
+    if (snap.mode) g.modeState = snap.mode;
     g.over = snap.over;
     if (snap.winner) g.winner = snap.winner >= 100 ? { team: snap.winner - 100 } : { soldier: g.soldiers.find(s => s.id === snap.winner - 1) || this.me };
     else g.winner = null;
@@ -222,7 +223,7 @@ export class NetClient {
     const wasAlive = me.alive;
     me.alive = s.alive;
     me.health = s.health; me.armour = s.armour;
-    me.frags = s.frags; me.deaths = s.deaths; me.level = s.level; me.lives = s.lives;
+    me.frags = s.frags; me.deaths = s.deaths; me.points = s.points; me.level = s.level; me.lives = s.lives;
     me.respawnTimer = s.respawnTimer;
     me.spawnProtect = s.protected ? 1 : 0;
     me.burnTicks = a.burnTicks;
@@ -301,7 +302,7 @@ export class NetClient {
       s.facing = src.facing;
       s.health = sb.health; s.armour = sb.armour;
       s.current = sb.current;
-      s.frags = sb.frags; s.deaths = sb.deaths; s.level = sb.level; s.lives = sb.lives;
+      s.frags = sb.frags; s.deaths = sb.deaths; s.points = sb.points; s.level = sb.level; s.lives = sb.lives;
       s.respawnTimer = sb.respawnTimer;
       s.spawnProtect = sb.protected ? 1 : 0;
       s.burnTicks = sb.burning ? 1 : 0;

@@ -6,6 +6,7 @@ import { laserEnd } from './combat.js';
 import { WEAPONS } from './weapons.js';
 import { clamp, lerp } from './util.js';
 import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate } from './sprites.js';
+import { drawObjectives, drawCarried } from './objdraw.js';
 
 export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate };
 
@@ -116,10 +117,12 @@ export class Renderer {
 
     this.drawMap(game);
     this.drawStains(game);
+    drawObjectives(this, game);
     this.drawPickups(game);
     this.drawProjectiles(game, false);
     const shown = this.shownSoldiers(game, viewer);
     for (const sol of shown.soldiers) this.drawSoldier(game, sol, alpha, viewer);
+    drawCarried(this, game);
     this.drawProjectiles(game, true);
     this.drawEffects(game);
     for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);

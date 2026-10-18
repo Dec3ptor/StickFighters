@@ -7,7 +7,7 @@
 
 import { WEAPONS } from '../weapons.js';
 
-export const PROTOCOL = 3;            // bump when the messages change; older versions can't join
+export const PROTOCOL = 4;            // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -28,6 +28,9 @@ const u16ToAngle = v => (v / 65535) * TAU;
 const clampI16 = v => Math.max(-32768, Math.min(32767, Math.round(v)));
 const clampU16 = v => Math.max(0, Math.min(65535, Math.round(v)));
 const clampU8 = v => Math.max(0, Math.min(255, Math.round(v)));
+const TEXT = new TextEncoder(), UNTEXT = new TextDecoder(), NONE = new Uint8Array(0);
+// Mode state numbers to 3 decimal places (they're progress bars and positions).
+const short = (k, v) => (typeof v === 'number' && !Number.isInteger(v) ? Math.round(v * 1000) / 1000 : v);
 
 // ---- Byte writer / reader -------------------------------------------------------------
 
@@ -117,6 +120,10 @@ export function encodeWorld(game) {
   w.u8(game.quake ? 1 : 0);
   // Who won (soldier id + 1, or team + 100), 0 if nobody yet.
   w.u8(game.winner ? (game.winner.team ? 100 + game.winner.team : game.winner.soldier.id + 1) : 0);
+  // The objective modes' state (flags, capture points, M-COMs), as JSON.
+  const mode = game.modeState ? TEXT.encode(JSON.stringify(game.modeState, short)) : NONE;
+  w.u16(mode.length);
+  w.bytes(mode);
 
   w.u8(game.soldiers.length);
   for (const s of game.soldiers) {
@@ -132,7 +139,7 @@ export function encodeWorld(game) {
     w.u8(weaponIndex(s.current));
     const a = s.anim;
     w.u8(clampU8(a.run * 255)); w.u8(clampU8(a.flip * 255)); w.u8(clampU8(a.land * 20)); w.u8(clampU8(a.recoil * 40)); w.u8(clampU8(a.swing * 255));
-    w.i16(s.frags); w.u16(clampU16(s.deaths));
+    w.i16(s.frags); w.u16(clampU16(s.deaths)); w.i16(s.points || 0);
     w.u8(clampU8(s.level ?? 0)); w.u8(clampU8(s.lives ?? 0));
     w.u16(clampU16(s.respawnTimer));
     w.u8(clampU8(b.fuel));
@@ -224,6 +231,12 @@ export function decodeSnapshot(data) {
   snap.teamScore = { 1: r.i16(), 2: r.i16() };
   snap.quake = !!r.u8();
   snap.winner = r.u8();
+  const ml = r.u16();
+  snap.mode = null;
+  if (ml) {
+    try { snap.mode = JSON.parse(UNTEXT.decode(new Uint8Array(r.view.buffer, r.view.byteOffset + r.o, ml))); } catch { /* ignore a bad one */ }
+    r.o += ml;
+  }
   const ns = r.u8();
   snap.soldiers = [];
   for (let i = 0; i < ns; i++) {
@@ -237,7 +250,7 @@ export function decodeSnapshot(data) {
     s.health = r.u8(); s.armour = r.u8();
     s.current = weaponAt(r.u8()) || 'Platinum';
     s.anim = { run: r.u8() / 255, flip: r.u8() / 255, land: r.u8() / 20, recoil: r.u8() / 40, swing: r.u8() / 255 };
-    s.frags = r.i16(); s.deaths = r.u16();
+    s.frags = r.i16(); s.deaths = r.u16(); s.points = r.i16();
     s.level = r.u8(); s.lives = r.u8();
     s.respawnTimer = r.u16();
     s.fuel = r.u8();

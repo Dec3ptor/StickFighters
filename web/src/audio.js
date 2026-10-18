@@ -29,7 +29,8 @@ export const SAMPLES = {
 };
 
 // Sounds that aren't placed in the world (always full volume, centred).
-const UI_SOUNDS = new Set(['hitmarker', 'gameover', 'click', 'menuMove', 'menuSelect', 'levelUp', 'chat']);
+const UI_SOUNDS = new Set(['hitmarker', 'gameover', 'click', 'menuMove', 'menuSelect', 'levelUp', 'chat',
+  'objGood', 'objBad', 'flagTaken', 'flagReturned', 'captured', 'alarm', 'pointTaken', 'pointLost', 'hillMoved', 'armed', 'disarmed', 'destroyed', 'sector']);
 
 export class SoundSystem {
   constructor(base = 'sounds/') {
@@ -80,12 +81,16 @@ export class SoundSystem {
     if (this.master) this.master.gain.value = m ? 0 : this.volume;
   }
 
-  /** Play the game's queued sounds, louder when close to the listener. `me` = the listener's soldier id. */
-  playQueue(queue, lx, ly, me = null) {
+  /**
+   * Play the game's queued sounds, louder when close to the listener. `me` = the
+   * listener's soldier id, `team` their team (a sound's `to` is a soldier id, or
+   * minus a team number for a sound only that team hears).
+   */
+  playQueue(queue, lx, ly, me = null, team = 0) {
     if (!this.ctx || this.muted) return;
     const seen = new Set();
     for (const s of queue) {
-      if (s.to != null && s.to !== me) continue;
+      if (s.to != null && s.to !== me && !(s.to < 0 && -s.to === team)) continue;
       const key = s.name + Math.round((s.x ?? 0) / 64);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -242,4 +247,23 @@ const SOUNDS = {
   swing: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.12, freq: 1600, sweepTo: 500, q: 1.4, gain: 0.15 }); return 0.13; },
   crate: (a, o, t) => { a.tone(o, t, { dur: 0.1, from: 523, type: 'square', gain: 0.05 }); a.tone(o, t + 0.12, { dur: 0.16, from: 659, type: 'square', gain: 0.05 }); return 0.3; },
   levelUp: (a, o, t) => { [523, 784, 1046].forEach((f, i) => a.tone(o, t + i * 0.07, { dur: 0.12, from: f, type: 'square', gain: 0.07 })); return 0.3; },
+
+  // ---- Objective modes (good news for one team, bad news for the other) ----
+  objGood: (a, o, t) => { [587, 784].forEach((f, i) => a.tone(o, t + i * 0.09, { dur: 0.16, from: f, type: 'triangle', gain: 0.22 })); return 0.3; },
+  objBad: (a, o, t) => { [523, 392].forEach((f, i) => a.tone(o, t + i * 0.11, { dur: 0.2, from: f, type: 'triangle', gain: 0.22 })); return 0.35; },
+  flagTaken: (a, o, t) => { [659, 880, 1046].forEach((f, i) => a.tone(o, t + i * 0.07, { dur: 0.12, from: f, type: 'square', gain: 0.06 })); return 0.3; },
+  flagReturned: (a, o, t) => { [784, 659, 784].forEach((f, i) => a.tone(o, t + i * 0.08, { dur: 0.12, from: f, type: 'triangle', gain: 0.2 })); return 0.3; },
+  captured: (a, o, t) => {
+    [523, 659, 784, 1046].forEach((f, i) => a.tone(o, t + i * 0.12, { dur: i === 3 ? 0.5 : 0.16, from: f, type: 'triangle', gain: 0.26 }));
+    [262, 330, 392].forEach(f => a.tone(o, t + 0.36, { dur: 0.6, from: f, type: 'sine', gain: 0.1 }));
+    return 1;
+  },
+  alarm: (a, o, t) => { for (let i = 0; i < 3; i++) a.tone(o, t + i * 0.18, { dur: 0.12, from: 880, to: 660, type: 'square', gain: 0.07 }); return 0.55; },
+  pointTaken: (a, o, t) => { [440, 554, 659].forEach((f, i) => a.tone(o, t + i * 0.08, { dur: 0.18, from: f, type: 'triangle', gain: 0.22 })); return 0.4; },
+  pointLost: (a, o, t) => { a.tone(o, t, { dur: 0.35, from: 520, to: 300, type: 'triangle', gain: 0.2 }); return 0.4; },
+  hillMoved: (a, o, t) => { a.tone(o, t, { dur: 0.25, from: 300, to: 900, type: 'triangle', gain: 0.18 }); a.tone(o, t + 0.25, { dur: 0.25, from: 900, to: 600, type: 'triangle', gain: 0.15 }); return 0.5; },
+  armed: (a, o, t) => { for (let i = 0; i < 4; i++) a.tone(o, t + i * 0.1, { dur: 0.07, from: 1500, type: 'square', gain: 0.06 }); return 0.45; },
+  disarmed: (a, o, t) => { a.tone(o, t, { dur: 0.3, from: 1200, to: 400, type: 'triangle', gain: 0.2 }); return 0.3; },
+  destroyed: (a, o, t) => { [392, 523, 659].forEach((f, i) => a.tone(o, t + i * 0.1, { dur: 0.2, from: f, type: 'square', gain: 0.07 })); return 0.4; },
+  sector: (a, o, t) => { [392, 494, 587, 784].forEach((f, i) => a.tone(o, t + i * 0.14, { dur: 0.22, from: f, type: 'triangle', gain: 0.2 })); return 0.8; },
 };

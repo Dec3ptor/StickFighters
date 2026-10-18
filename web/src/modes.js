@@ -3,6 +3,7 @@
 // adding an entry here (and it shows up in the menus).
 
 import { WEAPONS, STARTING_WEAPONS } from './weapons.js';
+import { objectiveModes } from './objmodes.js';
 
 /** Gun game: every kill moves you one weapon along. A kill with the last one wins. */
 export const GUN_GAME_LADDER = [
@@ -188,7 +189,9 @@ const oitc = {
   scoreLabel: 'Lives',
 };
 
-export const MODES = { ffa: deathmatch, team, gungame, oitc };
+const { koth, ctf, conquest, rush } = objectiveModes(team);
+
+export const MODES = { ffa: deathmatch, team, gungame, oitc, koth, ctf, conquest, rush };
 export const MODE_IDS = Object.keys(MODES);
 
 export const modeOf = id => MODES[id] || MODES.ffa;

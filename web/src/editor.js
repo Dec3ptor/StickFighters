@@ -1,11 +1,13 @@
-// The map maker: draw platforms and jump pads, place spawn points and pickups,
-// check the map, and play it with bots. Maps save automatically in the browser.
+// The map maker: draw platforms and jump pads, place spawn points and pickups
+// and the objective modes' hills, flags, capture points and M-COMs, check the
+// map, and play it with bots. Maps save automatically in the browser.
 
 import { normalizeMap, computeBounds, checkMap, encodeShare, encodeSSM, decodeSSM, BOUNCE, LIMITS } from './custommaps.js';
 import { listMaps, getMap, saveMap, deleteMap } from './mapstore.js';
 import { WEAPONS, PICKUP_WEAPONS, SLOTS } from './weapons.js';
 import { drawWeapon, drawHealth, drawArmour, drawJetpack } from './render.js';
 import { RULES } from './config.js';
+import { MODES } from './modes.js';
 
 const TOOLS = [
   { id: 'select', label: 'Select', key: 'KeyV', short: 'V', hint: 'Click to select. Drag to move, drag the corner squares to resize. Drag empty space to move the view.' },
@@ -16,8 +18,17 @@ const TOOLS = [
   { id: 'health', label: 'Health', key: 'KeyH', short: 'H', hint: 'Click to place a health pack.' },
   { id: 'armour', label: 'Armour', key: 'KeyA', short: 'A', hint: 'Click to place armour.' },
   { id: 'jetpack', label: 'Jetpack', key: 'KeyK', short: 'K', hint: 'Click to place a jetpack.' },
+  { id: 'hill', label: 'Hill', key: 'KeyL', short: 'L', hint: 'King of the hill: drag to draw a hill. A team scores while it has the hill to itself. Several hills take turns, a minute each.' },
+  { id: 'point', label: 'Capture point', key: 'KeyC', short: 'C', hint: 'Conquest: drag to draw a capture point. Points are lettered A, B, C… (change a letter on the right).' },
+  { id: 'flag', label: 'Flag', key: 'KeyB', short: 'B', hint: "Capture the flag: click to place a team's flag stand. Pick blue or red on the right." },
+  { id: 'mcom', label: 'M-COM', key: 'KeyR', short: 'R', hint: 'Rush: click to place an M-COM station for blue to blow up. Sector 1 falls first: pick the sector on the right.' },
 ];
 const ITEM_TOOLS = new Set(['weapon', 'health', 'armour', 'jetpack']);
+const AREA_TOOLS = new Set(['hill', 'point']);
+const OBJECTIVE_NAMES = { hill: 'Hill', point: 'Capture point', flag: 'Flag', mcom: 'M-COM' };
+const SECTORS = [1, 2, 3, 4, 5, 6, 7, 8];
+/** Platforms, hills and capture points are boxes; everything else is a point. */
+const isBox = o => o && o.left !== undefined;
 const GRIDS = [8, 16, 32, 0];
 const TEAM_COLORS = { 1: '#2f6fdb', 2: '#d33b2f' };
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -50,6 +61,8 @@ export class Editor {
     this.tool = 'select';
     this.team = 1;
     this.weapon = 'M4';
+    this.sector = 1;        // for new M-COMs
+    this.spawnSector = 0;   // for new spawn points (0: not tied to a Rush sector)
     this.grid = 8;
     this.sitOnFloor = true;
     this.sel = null;
@@ -66,6 +79,9 @@ export class Editor {
     this.mirror = { on: false, x: 0, swapTeams: true, placed: false };
     this.loadoutOpen = false;
     this.buildToolbar();
+    // The mode "Test play" uses.
+    const modes = this.$('#edMode');
+    modes.innerHTML = Object.entries(MODES).map(([id, m]) => `<option value="${id}">Test as: ${m.name}</option>`).join('');
     this.wire();
     new ResizeObserver(() => this.resize()).observe(this.canvas.parentElement);
   }
@@ -75,7 +91,10 @@ export class Editor {
   open(record) {
     if (!record) record = this.createRecord(blankMap());
     this.record = record;
-    this.map = JSON.parse(JSON.stringify({ name: record.data.name, platforms: record.data.platforms, spawns: record.data.spawns, items: record.data.items, loadout: record.data.loadout || null }));
+    this.map = JSON.parse(JSON.stringify({
+      name: record.data.name, platforms: record.data.platforms, spawns: record.data.spawns, items: record.data.items,
+      objectives: record.data.objectives || [], loadout: record.data.loadout || null,
+    }));
     this.mirror.placed = false;
     if (this.mirror.on) this.centreMirror();
     this.undoStack = [];
@@ -173,7 +192,7 @@ export class Editor {
 
   /** Zoom to show the whole map. */
   fit() {
-    const b = computeBounds(this.map.platforms, this.map.spawns, this.map.items, 60);
+    const b = computeBounds(this.map.platforms, this.map.spawns, this.map.items, 60, this.map.objectives);
     this.view.x = (b.left + b.right) / 2;
     this.view.y = (b.top + b.bottom) / 2;
     this.view.zoom = Math.max(0.15, Math.min(2.5, Math.min(this.w / (b.right - b.left), this.h / (b.bottom - b.top))));
@@ -218,6 +237,11 @@ export class Editor {
     for (let i = its.length - 1; i >= 0; i--) if (Math.abs(its[i].x - wx) <= r && Math.abs(its[i].y - wy) <= r) return { kind: 'item', i };
     const sp = this.map.spawns;
     for (let i = sp.length - 1; i >= 0; i--) if (Math.abs(sp[i].x - wx) <= r && wy >= sp[i].y - 24 && wy <= sp[i].y + 12) return { kind: 'spawn', i };
+    const ob = this.map.objectives;
+    for (let i = ob.length - 1; i >= 0; i--) {
+      const o = ob[i];
+      if (!isBox(o) && Math.abs(o.x - wx) <= Math.max(r, 10) && wy >= o.y - (o.type === 'flag' ? 44 : 30) && wy <= o.y + 4) return { kind: 'objective', i };
+    }
     const pl = this.map.platforms;
     const e = 2 / this.view.zoom;
     for (const wantPad of [true, false]) {
@@ -226,6 +250,11 @@ export class Editor {
         if (!!p.bounce !== wantPad) continue;
         if (wx >= p.left - e && wx <= p.right + e && wy >= p.top - e && wy <= p.bottom + e) return { kind: 'platform', i };
       }
+    }
+    // Hills and capture points: anywhere inside them that isn't a platform.
+    for (let i = ob.length - 1; i >= 0; i--) {
+      const o = ob[i];
+      if (isBox(o) && wx >= o.left && wx <= o.right && wy >= o.top && wy <= o.bottom) return { kind: 'objective', i };
     }
     return null;
   }
@@ -236,8 +265,9 @@ export class Editor {
   }
 
   handleAt(sx, sy) {
-    if (this.sel?.kind !== 'platform') return null;
-    const pts = this.handlePoints(this.map.platforms[this.sel.i]);
+    const o = this.selected();
+    if (!isBox(o)) return null;
+    const pts = this.handlePoints(o);
     for (const h of HANDLES) {
       const [hx, hy] = this.toScreen(...pts[h]);
       if (Math.abs(hx - sx) <= 6 && Math.abs(hy - sy) <= 6) return h;
@@ -247,8 +277,7 @@ export class Editor {
 
   selected() {
     if (!this.sel) return null;
-    const list = { platform: this.map.platforms, spawn: this.map.spawns, item: this.map.items }[this.sel.kind];
-    return list[this.sel.i] || null;
+    return this.listOf(this.sel.kind)[this.sel.i] || null;
   }
 
   // ---- Editing -----------------------------------------------------------------
@@ -274,8 +303,9 @@ export class Editor {
     this.remember();
     const step = this.grid || 16;
     const copy = JSON.parse(JSON.stringify(o));
-    if (this.sel.kind === 'platform') { copy.left += step * 2; copy.right += step * 2; copy.top += step * 2; copy.bottom += step * 2; }
+    if (isBox(copy)) { copy.left += step * 2; copy.right += step * 2; copy.top += step * 2; copy.bottom += step * 2; }
     else { copy.x += step * 2; }
+    if (copy.type === 'point') copy.label = this.nextLabel();
     const list = this.listOf(this.sel.kind);
     const twin = this.selectedTwin();
     list.push(copy);
@@ -290,21 +320,57 @@ export class Editor {
     if (!o) return;
     this.remember();
     const twin = this.selectedTwin();
-    if (this.sel.kind === 'platform') { o.left += dx; o.right += dx; o.top += dy; o.bottom += dy; }
+    if (isBox(o)) { o.left += dx; o.right += dx; o.top += dy; o.bottom += dy; }
     else { o.x += dx; o.y += dy; }
     this.syncTwin(twin);
     this.changed();
   }
 
+  /** The next free capture point letter. */
+  nextLabel() {
+    const used = new Set(this.map.objectives.filter(o => o.type === 'point').map(o => o.label));
+    for (let i = 0; i < 26; i++) if (!used.has(String.fromCharCode(65 + i))) return String.fromCharCode(65 + i);
+    return 'Z';
+  }
+
+  /** Where a click puts a flag stand or M-COM: on the floor below, if there's one. */
+  floorAt(wx, wy) {
+    const x = this.snap(wx);
+    let y = this.snap(wy);
+    if (this.sitOnFloor) { const floor = this.floorBelow(x, y - 20); if (floor !== null) y = floor; }
+    return [x, y];
+  }
+
   placePoint(wx, wy) {
     const tool = this.tool;
+    if (tool === 'flag' || tool === 'mcom') {
+      if (this.map.objectives.length >= LIMITS.maxObjectives) return this.setStatus(`At most ${LIMITS.maxObjectives} objectives`, true);
+      const [x, y] = this.floorAt(wx, wy);
+      this.remember();
+      const o = tool === 'flag' ? { type: 'flag', team: this.team, x, y } : { type: 'mcom', sector: this.sector, x, y };
+      if (tool === 'flag') {
+        // One flag per team: placing another moves it.
+        const old = this.map.objectives.findIndex(q => q.type === 'flag' && q.team === this.team);
+        if (old >= 0) this.map.objectives.splice(old, 1);
+        if (this.mirror.on && x !== this.mirror.x) {
+          const other = this.map.objectives.findIndex(q => q.type === 'flag' && q.team === 3 - this.team);
+          if (other >= 0) this.map.objectives.splice(other, 1);
+        }
+      }
+      this.map.objectives.push(o);
+      this.sel = { kind: 'objective', i: this.map.objectives.length - 1 };
+      if (tool === 'flag' && this.mirror.on && x !== this.mirror.x) this.map.objectives.push(this.mirrored('objective', o));
+      this.changed();
+      return;
+    }
     if (tool === 'spawn') {
       if (this.map.spawns.length >= LIMITS.maxSpawns) return this.setStatus(`At most ${LIMITS.maxSpawns} spawn points`, true);
       const [x, y] = this.placeAt(wx, wy, 'spawn');
       this.remember();
-      this.map.spawns.push({ x, y, team: this.team });
+      const sp = this.spawnSector ? { x, y, team: this.team, sector: this.spawnSector } : { x, y, team: this.team };
+      this.map.spawns.push(sp);
       this.sel = { kind: 'spawn', i: this.map.spawns.length - 1 };
-      if (this.mirror.on && x !== this.mirror.x) this.map.spawns.push(this.mirrored('spawn', { x, y, team: this.team }));
+      if (this.mirror.on && x !== this.mirror.x) this.map.spawns.push(this.mirrored('spawn', sp));
     } else {
       if (this.map.items.length >= LIMITS.maxItems) return this.setStatus(`At most ${LIMITS.maxItems} items`, true);
       const [x, y] = this.placeAt(wx, wy, 'item');
@@ -320,7 +386,7 @@ export class Editor {
 
   // ---- Mirror editing --------------------------------------------------------------
 
-  listOf(kind) { return { platform: this.map.platforms, spawn: this.map.spawns, item: this.map.items }[kind]; }
+  listOf(kind) { return { platform: this.map.platforms, spawn: this.map.spawns, item: this.map.items, objective: this.map.objectives }[kind]; }
 
   mx(x) { return 2 * this.mirror.x - x; }
 
@@ -328,7 +394,18 @@ export class Editor {
   mirrored(kind, o) {
     if (kind === 'platform') return { ...o, left: this.mx(o.right), right: this.mx(o.left) };
     if (kind === 'spawn') return { ...o, x: this.mx(o.x), team: this.mirror.swapTeams ? 3 - o.team : o.team };
+    if (kind === 'objective') {
+      if (isBox(o)) return { ...o, left: this.mx(o.right), right: this.mx(o.left), ...(o.type === 'point' ? { label: this.mirrorLabel(o) } : {}) };
+      if (o.type === 'flag') return { ...o, x: this.mx(o.x), team: 3 - o.team };
+    }
     return { ...o, x: this.mx(o.x) };
+  }
+
+  /** A mirrored capture point's letter: its twin's if it has one, else the next free one. */
+  mirrorLabel(o) {
+    const l = this.mx(o.right), r = this.mx(o.left);
+    const twin = this.map.objectives.find(q => q.type === 'point' && Math.abs(q.left - l) < 0.6 && Math.abs(q.right - r) < 0.6 && Math.abs(q.top - o.top) < 0.6);
+    return twin ? twin.label : this.nextLabel();
   }
 
   /** Index of the object mirroring list[i]: i itself if it sits across the line, -1 if it has no twin. */
@@ -337,9 +414,10 @@ export class Editor {
     if (!o) return -1;
     const m = this.mirrored(kind, o);
     const near = (a, b) => Math.abs(a - b) < 0.6;
-    const same = q => kind === 'platform'
-      ? near(q.left, m.left) && near(q.right, m.right) && near(q.top, m.top) && near(q.bottom, m.bottom) && !!q.bounce === !!o.bounce
-      : near(q.x, m.x) && near(q.y, m.y) && (kind === 'spawn' || (q.type === o.type && q.weapon === o.weapon));
+    if (kind === 'objective' && o.type === 'mcom') return -1; // (M-COMs aren't mirrored: Rush goes one way)
+    const same = q => isBox(o)
+      ? isBox(q) && near(q.left, m.left) && near(q.right, m.right) && near(q.top, m.top) && near(q.bottom, m.bottom) && !!q.bounce === !!o.bounce && q.type === o.type
+      : !isBox(q) && near(q.x, m.x) && near(q.y, m.y) && (kind === 'spawn' || (q.type === o.type && q.weapon === o.weapon));
     if (same(o)) return i;
     return list.findIndex((q, j) => j !== i && same(q));
   }
@@ -354,7 +432,7 @@ export class Editor {
     if (!this.sel || twin < 0) return;
     const kind = this.sel.kind, list = this.listOf(kind), o = list[this.sel.i];
     if (twin === this.sel.i) {
-      if (kind === 'platform') {
+      if (isBox(o)) {
         if (handle?.includes('w')) o.right = this.mx(o.left);
         else if (handle?.includes('e')) o.left = this.mx(o.right);
         else { const w = o.right - o.left; o.left = this.mirror.x - w / 2; o.right = this.mirror.x + w / 2; }
@@ -362,12 +440,12 @@ export class Editor {
       } else o.x = this.mirror.x;
       return;
     }
-    list[twin] = this.mirrored(kind, o);
+    list[twin] = { ...this.mirrored(kind, o), ...(o.type === 'point' ? { label: list[twin].label } : {}) };
   }
 
   /** Put the mirror line in the middle of the map (on the grid). */
   centreMirror() {
-    const b = computeBounds(this.map.platforms, this.map.spawns, this.map.items, 0);
+    const b = computeBounds(this.map.platforms, this.map.spawns, this.map.items, 0, this.map.objectives);
     this.mirror.x = this.map.platforms.length ? this.snap((b.left + b.right) / 2) : 0;
     this.mirror.placed = true;
   }
@@ -383,6 +461,7 @@ export class Editor {
     const o = this.selected();
     if (!o) return;
     if (!this.mirror.placed) this.centreMirror();
+    if (this.sel.kind === 'objective' && o.type === 'mcom') return this.setStatus("M-COMs aren't mirrored: Rush goes one way");
     if (this.twinIndex(this.sel.kind, this.sel.i) >= 0) return this.setStatus('Already mirrored');
     this.remember();
     const list = this.listOf(this.sel.kind);
@@ -415,6 +494,17 @@ export class Editor {
       }
       if (kind === 'spawn') this.map.spawns = out; else this.map.items = out;
     }
+    // Objectives: flags, hills and capture points like everything else (M-COMs stay put: Rush goes one way).
+    const obs = [];
+    for (const o of this.map.objectives) {
+      if (o.type === 'mcom') { obs.push(o); continue; }
+      const [a, b] = isBox(o) ? [o.left, o.right] : [o.x, o.x];
+      if (a <= m && b >= m && isBox(o)) { obs.push({ ...o, left: Math.min(a, this.mx(b)), right: Math.max(b, this.mx(a)) }); continue; }
+      if (fromLeft ? b <= m : a >= m) obs.push(o, this.mirrored('objective', o));
+    }
+    // Flags: one per team. Capture points: lettered left to right again.
+    this.map.objectives = obs.filter((o, i) => o.type !== 'flag' || obs.findIndex(q => q.type === 'flag' && q.team === o.team) === i);
+    this.map.objectives.filter(o => o.type === 'point').sort((a, b) => a.left - b.left).forEach((o, i) => { o.label = String.fromCharCode(65 + i); });
     this.sel = null;
     this.changed();
     this.setStatus(`Copied the ${fromLeft ? 'left' : 'right'} side to the ${fromLeft ? 'right' : 'left'}`);
@@ -459,8 +549,9 @@ export class Editor {
           this.select(null);
           this.drag = { mode: 'pan', sx, sy, vx: this.view.x, vy: this.view.y };
         }
-      } else if (this.tool === 'platform' || this.tool === 'pad') {
-        if (this.map.platforms.length >= LIMITS.maxPlatforms) return this.setStatus(`At most ${LIMITS.maxPlatforms} platforms`, true);
+      } else if (this.tool === 'platform' || this.tool === 'pad' || AREA_TOOLS.has(this.tool)) {
+        if (AREA_TOOLS.has(this.tool) && this.map.objectives.length >= LIMITS.maxObjectives) return this.setStatus(`At most ${LIMITS.maxObjectives} objectives`, true);
+        if (!AREA_TOOLS.has(this.tool) && this.map.platforms.length >= LIMITS.maxPlatforms) return this.setStatus(`At most ${LIMITS.maxPlatforms} platforms`, true);
         this.drag = { mode: 'create', x0: this.snap(wx), y0: this.snap(wy), x1: this.snap(wx), y1: this.snap(wy) };
       } else {
         this.placePoint(wx, wy);
@@ -487,7 +578,7 @@ export class Editor {
         d.x1 = this.snap(wx); d.y1 = this.snap(wy);
       } else if (d.mode === 'move') {
         const o = this.selected(), dx = wx - d.wx, dy = wy - d.wy;
-        if (this.sel.kind === 'platform') {
+        if (isBox(o)) {
           const nl = this.snap(d.orig.left + dx), nt = this.snap(d.orig.top + dy);
           o.left = nl; o.top = nt; o.right = nl + (d.orig.right - d.orig.left); o.bottom = nt + (d.orig.bottom - d.orig.top);
         } else {
@@ -513,6 +604,7 @@ export class Editor {
       this.drag = null;
       if (d.mode === 'create') {
         const l = Math.min(d.x0, d.x1), r = Math.max(d.x0, d.x1), t = Math.min(d.y0, d.y1), b = Math.max(d.y0, d.y1);
+        if (AREA_TOOLS.has(this.tool)) { this.addArea(l, t, r, b); return; }
         if (r - l < 4 || b - t < 4) return;
         this.remember();
         const p = { left: l, top: t, right: r, bottom: b };
@@ -598,6 +690,25 @@ export class Editor {
     this.$('#edOpenDialog').addEventListener('close', () => this.canvas.focus());
   }
 
+  /** A hill or capture point drawn from (l, t) to (r, b): standing on the floor below, if there's one. */
+  addArea(l, t, r, b) {
+    if (r - l < 40) { const c = (l + r) / 2; l = c - 80; r = c + 80; }      // a click: a standard size
+    if (b - t < 40) t = b - 90;
+    if (this.sitOnFloor) {
+      const floor = this.floorBelow((l + r) / 2, b - 40, 120);
+      if (floor !== null) { t += floor - b; b = floor; }
+    }
+    this.remember();
+    const o = { type: this.tool, left: l, top: t, right: r, bottom: b };
+    if (this.tool === 'point') o.label = this.nextLabel();
+    const m = this.mirror.x;
+    if (this.mirror.on && l < m && r > m) { o.left = Math.min(l, this.mx(r)); o.right = Math.max(r, this.mx(l)); }
+    this.map.objectives.push(o);
+    this.sel = { kind: 'objective', i: this.map.objectives.length - 1 };
+    if (this.mirror.on && !(o.left < m && o.right > m)) this.map.objectives.push(this.mirrored('objective', o));
+    this.changed();
+  }
+
   setTool(id) {
     this.tool = id;
     for (const b of this.root.querySelectorAll('[data-tool]')) b.setAttribute('aria-pressed', String(b.dataset.tool === id));
@@ -624,6 +735,8 @@ export class Editor {
       const ids = PICKUP_WEAPONS.filter(id => WEAPONS[id].slot === i);
       return ids.length ? `<optgroup label="${slot.key}: ${slot.name}">${ids.map(id => `<option value="${id}"${id === sel ? ' selected' : ''}>${WEAPONS[id].name}</option>`).join('')}</optgroup>` : '';
     }).join('');
+    const sectorOptions = (sel, none = false) => (none ? `<option value="0"${!sel ? ' selected' : ''}>None (team base)</option>` : '') +
+      SECTORS.map(n => `<option value="${n}"${n === sel ? ' selected' : ''}>Sector ${n}</option>`).join('');
     const teamButtons = (name, team) => `<div class="seg ed-team"><label><input type="radio" name="${name}" value="1"${team === 1 ? ' checked' : ''}> Blue team</label><label><input type="radio" name="${name}" value="2"${team === 2 ? ' checked' : ''}> Red team</label></div>`;
 
     if (o && this.sel.kind === 'platform') {
@@ -634,7 +747,22 @@ export class Editor {
         ${pad ? `<label class="ed-range">Strength <output>${-o.bounce}</output><input type="range" id="pBounce" min="${BOUNCE.min}" max="${BOUNCE.max}" step="0.5" value="${-o.bounce}"></label>` : ''}`;
     } else if (o && this.sel.kind === 'spawn') {
       html += `<h3>Spawn point</h3>${teamButtons('sTeam', o.team)}<div class="ed-grid">${num('sX', 'X', o.x)}${num('sY', 'Y', o.y)}</div>
-        <p class="ed-note">Free-for-all uses every spawn point. Team games use each team's own.</p>`;
+        <label class="ed-field">Rush sector<select id="sSector">${sectorOptions(o.sector || 0, true)}</select></label>
+        <p class="ed-note">Free-for-all uses every spawn point. Team games use each team's own. In Rush, spawn points with a sector are used while that sector is being fought over.</p>`;
+    } else if (o && this.sel.kind === 'objective') {
+      if (isBox(o)) {
+        html += `<h3>${OBJECTIVE_NAMES[o.type]}</h3>
+          ${o.type === 'point' ? `<label class="ed-field">Letter<input id="oLabel" maxlength="2" value="${esc(o.label || '')}" autocomplete="off" spellcheck="false"></label>` : ''}
+          <div class="ed-grid">${num('oX', 'X', o.left)}${num('oY', 'Y', o.top)}${num('oW', 'Width', o.right - o.left)}${num('oH', 'Height', o.bottom - o.top)}</div>
+          <p class="ed-note">${o.type === 'hill' ? 'King of the hill: a team scores every second it has the hill to itself. With several hills, they take turns.' : 'Conquest: stand in it to capture it. Teams spawn on points they hold.'}</p>`;
+      } else if (o.type === 'flag') {
+        html += `<h3>Flag</h3>${teamButtons('oTeam', o.team)}<div class="ed-grid">${num('oPX', 'X', o.x)}${num('oPY', 'Y', o.y)}</div>
+          <p class="ed-note">Capture the flag: one per team, at its base. Y is the floor the stand is on.</p>`;
+      } else {
+        html += `<h3>M-COM</h3><label class="ed-field">Sector<select id="oSector">${sectorOptions(o.sector)}</select></label>
+          <div class="ed-grid">${num('oPX', 'X', o.x)}${num('oPY', 'Y', o.y)}</div>
+          <p class="ed-note">Rush: blue arms M-COMs and red defends them. Once every M-COM in a sector is destroyed, the next sector opens. Y is the floor it stands on.</p>`;
+      }
     } else if (o && this.sel.kind === 'item') {
       html += `<h3>Pickup</h3>
         <label class="ed-field">Type<select id="iType">${['weapon', 'health', 'armour', 'jetpack'].map(t => `<option value="${t}"${t === o.type ? ' selected' : ''}>${t[0].toUpperCase() + t.slice(1)}</option>`).join('')}</select></label>
@@ -646,12 +774,19 @@ export class Editor {
         <div class="ed-row"><button type="button" id="selMirror">Mirror to other side</button></div>`;
     } else {
       // Tool options and map summary.
-      if (this.tool === 'spawn') html += `<h3>Placing spawn points</h3>${teamButtons('toolTeam', this.team)}`;
+      if (this.tool === 'spawn') html += `<h3>Placing spawn points</h3>${teamButtons('toolTeam', this.team)}<label class="ed-field">Rush sector<select id="toolSpawnSector">${sectorOptions(this.spawnSector, true)}</select></label>`;
+      if (this.tool === 'flag') html += `<h3>Placing flags</h3>${teamButtons('toolTeam', this.team)}<p class="ed-note">One flag per team: placing another moves it.</p>`;
+      if (this.tool === 'mcom') html += `<h3>Placing M-COMs</h3><label class="ed-field">Sector<select id="toolSector">${sectorOptions(this.sector)}</select></label><p class="ed-note">Blue attacks from sector 1 onward. Two per sector is usual.</p>`;
+      if (AREA_TOOLS.has(this.tool)) html += `<h3>Drawing ${this.tool === 'hill' ? 'hills' : 'capture points'}</h3><p class="ed-note">Drag out the area soldiers stand in, or click for a standard size. It sits on the floor below.</p>`;
       if (this.tool === 'weapon') html += `<h3>Placing weapons</h3><label class="ed-field">Weapon<select id="toolWeapon">${weaponOptions(this.weapon)}</select></label>`;
       if (this.tool === 'pad') html += `<h3>Drawing jump pads</h3><label class="ed-range">Strength <output>${this.padStrength || BOUNCE.standard}</output><input type="range" id="toolBounce" min="${BOUNCE.min}" max="${BOUNCE.max}" step="0.5" value="${this.padStrength || BOUNCE.standard}"></label><p class="ed-note">7 launches about twice as high as a jump.</p>`;
-      const m = this.map, b = computeBounds(m.platforms, m.spawns, m.items);
+      const m = this.map, b = computeBounds(m.platforms, m.spawns, m.items, undefined, m.objectives);
       const blue = m.spawns.filter(s => s.team === 1).length;
-      html += `<h3>Map</h3><p class="ed-stats">${count(m.platforms.length, 'platform')} &middot; ${count(m.spawns.length, 'spawn')} (${blue} blue, ${m.spawns.length - blue} red) &middot; ${count(m.items.length, 'pickup')}<br>${Math.round(b.right - b.left)} &times; ${Math.round(b.bottom - b.top)} px</p>`;
+      const ob = type => m.objectives.filter(o => o.type === type).length;
+      const sectors = new Set(m.objectives.filter(o => o.type === 'mcom').map(o => o.sector)).size;
+      html += `<h3>Map</h3><p class="ed-stats">${count(m.platforms.length, 'platform')} &middot; ${count(m.spawns.length, 'spawn')} (${blue} blue, ${m.spawns.length - blue} red) &middot; ${count(m.items.length, 'pickup')}<br>${Math.round(b.right - b.left)} &times; ${Math.round(b.bottom - b.top)} px</p>
+        <p class="ed-stats">Objectives: ${count(ob('hill'), 'hill')} &middot; ${count(ob('flag'), 'flag')} &middot; ${count(ob('point'), 'capture point')} &middot; ${count(ob('mcom'), 'M-COM')}${sectors ? ` in ${count(sectors, 'sector')}` : ''}</p>
+        <p class="ed-note">Modes whose objectives you leave out get some worked out from the layout.</p>`;
       html += this.loadoutPanel();
     }
     const mir = this.mirror;
@@ -663,7 +798,7 @@ export class Editor {
         <div class="ed-row"><button type="button" id="mirLR">Copy left &rarr; right</button><button type="button" id="mirRL">Copy right &rarr; left</button></div>` : ''}`;
     html += `<h3>Placing</h3>
       <label class="ed-field">Snap to grid<select id="gridSize">${GRIDS.map(g => `<option value="${g}"${g === this.grid ? ' selected' : ''}>${g ? g + ' px' : 'Off'}</option>`).join('')}</select></label>
-      <label class="check"><input type="checkbox" id="sitFloor"${this.sitOnFloor ? ' checked' : ''}> Drop pickups and spawns onto the floor</label>`;
+      <label class="check"><input type="checkbox" id="sitFloor"${this.sitOnFloor ? ' checked' : ''}> Drop pickups, spawns and objectives onto the floor</label>`;
     box.innerHTML = html;
     this.wirePanel();
     this.renderReport();
@@ -693,7 +828,10 @@ export class Editor {
     const set = (id, v) => { const el = this.$('#' + id); if (el && document.activeElement !== el) el.value = Math.round(v * 10) / 10; };
     if (this.sel.kind === 'platform') { set('pX', o.left); set('pY', o.top); set('pW', o.right - o.left); set('pH', o.bottom - o.top); }
     else if (this.sel.kind === 'spawn') { set('sX', o.x); set('sY', o.y); }
-    else { set('iX', o.x); set('iY', o.y); }
+    else if (this.sel.kind === 'objective') {
+      if (isBox(o)) { set('oX', o.left); set('oY', o.top); set('oW', o.right - o.left); set('oH', o.bottom - o.top); }
+      else { set('oPX', o.x); set('oPY', o.y); }
+    } else { set('iX', o.x); set('iY', o.y); }
   }
 
   wirePanel() {
@@ -711,6 +849,27 @@ export class Editor {
     on('sY', 'change', edit(el => { o.y = +el.value || 0; }));
     on('iX', 'change', edit(el => { o.x = +el.value || 0; }));
     on('iY', 'change', edit(el => { o.y = +el.value || 0; }));
+    on('sSector', 'change', edit(el => { if (+el.value) o.sector = +el.value; else delete o.sector; }));
+    on('oX', 'change', edit(el => { const w = o.right - o.left; o.left = +el.value || 0; o.right = o.left + w; }));
+    on('oY', 'change', edit(el => { const h = o.bottom - o.top; o.top = +el.value || 0; o.bottom = o.top + h; }));
+    on('oW', 'change', edit(el => { o.right = o.left + Math.max(16, +el.value || 16); }));
+    on('oH', 'change', edit(el => { o.bottom = o.top + Math.max(16, +el.value || 16); }));
+    on('oPX', 'change', edit(el => { o.x = +el.value || 0; }));
+    on('oPY', 'change', edit(el => { o.y = +el.value || 0; }));
+    on('oLabel', 'change', edit(el => { o.label = el.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || this.nextLabel(); }));
+    on('oSector', 'change', edit(el => { o.sector = +el.value || 1; this.sector = o.sector; }));
+    for (const r of this.root.querySelectorAll('input[name=oTeam]')) r.addEventListener('change', () => {
+      this.remember();
+      const twin = this.selectedTwin();
+      // One flag per team: the other team's flag swaps over.
+      const other = this.map.objectives.find(q => q !== o && q.type === 'flag' && q.team === +r.value);
+      if (other) other.team = o.team;
+      o.team = +r.value;
+      this.syncTwin(twin);
+      this.changed();
+    });
+    on('toolSector', 'change', el => { this.sector = +el.value || 1; });
+    on('toolSpawnSector', 'change', el => { this.spawnSector = +el.value || 0; });
     on('iType', 'change', edit(el => { o.type = el.value; if (o.type === 'weapon') o.weapon = o.weapon || this.weapon; else delete o.weapon; }));
     on('iWeapon', 'change', edit(el => { o.weapon = el.value; this.weapon = el.value; }));
     for (const r of this.root.querySelectorAll('input[name=sTeam]')) r.addEventListener('change', () => { this.remember(); const twin = this.selectedTwin(); o.team = +r.value; this.team = o.team; this.syncTwin(twin); this.changed(); });
@@ -861,7 +1020,7 @@ export class Editor {
     const mine = listMaps();
     const list = dlg.querySelector('.ed-list');
     list.innerHTML = `<h3>Your maps</h3>` + (mine.length ? mine.map(m => `<div class="ed-list-row"><span>${esc(m.name)}<small>${new Date(m.updated).toLocaleString()}</small></span><button type="button" data-open="${m.id}">Open</button></div>`).join('') : '<p class="ed-note">None yet.</p>')
-      + `<h3>Start from an original map</h3>` + this.opts.originals.map((o, i) => `<div class="ed-list-row"><span>${esc(o.name)}</span><button type="button" data-orig="${i}">Copy &amp; edit</button></div>`).join('');
+      + `<h3>Start from a game map</h3>` + this.opts.originals.map((o, i) => `<div class="ed-list-row"><span>${esc(o.name)}</span><button type="button" data-orig="${i}">Copy &amp; edit</button></div>`).join('');
     for (const b of list.querySelectorAll('[data-open]')) b.addEventListener('click', () => { dlg.close(); this.open(getMap(b.dataset.open)); });
     for (const b of list.querySelectorAll('[data-orig]')) b.addEventListener('click', () => {
       dlg.close();
@@ -889,7 +1048,7 @@ export class Editor {
     // World transform
     ctx.setTransform(d * z, 0, 0, d * z, d * (this.w / 2 - this.view.x * z), d * (this.h / 2 - this.view.y * z));
     const m = this.map;
-    const b = computeBounds(m.platforms, m.spawns, m.items);
+    const b = computeBounds(m.platforms, m.spawns, m.items, undefined, m.objectives);
     const px = 1 / z;
 
     // Map edge and the line below which players die.
@@ -941,6 +1100,9 @@ export class Editor {
       }
     }
 
+    // Objectives.
+    for (const o of m.objectives) drawObjective(ctx, o, px);
+
     // Spawn points: small stick figures in team colours.
     for (const s of m.spawns) drawSpawn(ctx, s);
 
@@ -957,18 +1119,19 @@ export class Editor {
 
     // Hover and selection.
     const outline = (sel, color, width) => {
-      const o = sel && ({ platform: m.platforms, spawn: m.spawns, item: m.items }[sel.kind] || [])[sel.i];
+      const o = sel && (this.listOf(sel.kind) || [])[sel.i];
       if (!o) return;
       ctx.strokeStyle = color;
       ctx.lineWidth = width * px;
-      if (sel.kind === 'platform') ctx.strokeRect(o.left - 2 * px, o.top - 2 * px, o.right - o.left + 4 * px, o.bottom - o.top + 4 * px);
+      if (isBox(o)) ctx.strokeRect(o.left - 2 * px, o.top - 2 * px, o.right - o.left + 4 * px, o.bottom - o.top + 4 * px);
+      else if (sel.kind === 'objective') ctx.strokeRect(o.x - 11, o.y - (o.type === 'flag' ? 46 : 30), 22, (o.type === 'flag' ? 48 : 32));
       else if (sel.kind === 'spawn') ctx.strokeRect(o.x - 9, o.y - 26, 18, 40);
       else ctx.strokeRect(o.x - 11, o.y - 9, 22, 18);
     };
     if (!this.drag) outline(this.hover, 'rgba(47,111,219,0.45)', 1.5);
     outline(this.sel, '#2f6fdb', 2);
-    if (this.sel?.kind === 'platform' && this.tool === 'select') {
-      const pts = this.handlePoints(this.map.platforms[this.sel.i]);
+    if (isBox(this.selected()) && this.tool === 'select') {
+      const pts = this.handlePoints(this.selected());
       ctx.fillStyle = '#fff';
       ctx.strokeStyle = '#2f6fdb';
       ctx.lineWidth = 1.5 * px;
@@ -983,7 +1146,7 @@ export class Editor {
     const dr = this.drag;
     if (dr?.mode === 'create') {
       const l = Math.min(dr.x0, dr.x1), t = Math.min(dr.y0, dr.y1);
-      ctx.fillStyle = this.tool === 'pad' ? 'rgba(124,154,61,0.25)' : 'rgba(0,0,0,0.08)';
+      ctx.fillStyle = this.tool === 'pad' ? 'rgba(124,154,61,0.25)' : this.tool === 'hill' ? 'rgba(150,70,200,0.18)' : this.tool === 'point' ? 'rgba(215,170,20,0.2)' : 'rgba(0,0,0,0.08)';
       ctx.fillRect(l, t, Math.abs(dr.x1 - dr.x0), Math.abs(dr.y1 - dr.y0));
       ctx.setLineDash([4 * px, 3 * px]);
       ctx.strokeStyle = '#111';
@@ -1013,6 +1176,17 @@ export class Editor {
           ctx.restore();
         }
       });
+      ctx.globalAlpha = 1;
+    }
+
+    if (!dr && this.mouse.inside && (this.tool === 'flag' || this.tool === 'mcom')) {
+      const [gx, gy] = this.floorAt(this.mouse.wx, this.mouse.wy);
+      ctx.globalAlpha = 0.45;
+      drawObjective(ctx, this.tool === 'flag' ? { type: 'flag', team: this.team, x: gx, y: gy } : { type: 'mcom', sector: this.sector, x: gx, y: gy }, px);
+      if (this.tool === 'flag' && this.mirror.on && gx !== this.mirror.x) {
+        ctx.globalAlpha = 0.3;
+        drawObjective(ctx, { type: 'flag', team: 3 - this.team, x: this.mx(gx), y: gy }, px);
+      }
       ctx.globalAlpha = 1;
     }
 
@@ -1054,6 +1228,43 @@ export class Editor {
   }
 }
 
+/** A hill, capture point, flag stand or M-COM, as the map maker shows them. */
+function drawObjective(ctx, o, px) {
+  ctx.save();
+  if (isBox(o)) {
+    const color = o.type === 'hill' ? '150,70,200' : '200,150,10';
+    ctx.fillStyle = `rgba(${color},0.12)`;
+    ctx.fillRect(o.left, o.top, o.right - o.left, o.bottom - o.top);
+    ctx.setLineDash([6 * px, 4 * px]);
+    ctx.strokeStyle = `rgba(${color},0.9)`;
+    ctx.lineWidth = 1.5 * px;
+    ctx.strokeRect(o.left, o.top, o.right - o.left, o.bottom - o.top);
+    ctx.setLineDash([]);
+    ctx.fillStyle = `rgb(${color})`;
+    ctx.font = `bold ${o.type === 'hill' ? 11 : 16}px Arial, sans-serif`;
+    ctx.textBaseline = 'top';
+    ctx.fillText(o.type === 'hill' ? 'HILL' : o.label || '?', o.left + 4, o.top + 4);
+  } else if (o.type === 'flag') {
+    ctx.fillStyle = '#111';
+    ctx.fillRect(o.x - 10, o.y - 3, 20, 3);
+    ctx.fillRect(o.x - 0.7, o.y - 44, 1.4, 41);
+    ctx.fillStyle = TEAM_COLORS[o.team];
+    ctx.beginPath(); ctx.moveTo(o.x + 0.7, o.y - 44); ctx.lineTo(o.x + 17, o.y - 39); ctx.lineTo(o.x + 0.7, o.y - 33); ctx.closePath(); ctx.fill();
+  } else {
+    ctx.fillStyle = '#111';
+    ctx.fillRect(o.x - 9, o.y - 25, 18, 25);
+    ctx.fillStyle = '#6a7079';
+    ctx.fillRect(o.x - 8, o.y - 24, 16, 23);
+    ctx.fillStyle = '#9fd39b';
+    ctx.fillRect(o.x - 5.5, o.y - 21, 11, 7);
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 10px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Sector ${o.sector}`, o.x, o.y - 30);
+  }
+  ctx.restore();
+}
+
 function drawSpawn(ctx, s) {
   const c = TEAM_COLORS[s.team] || TEAM_COLORS[1];
   ctx.strokeStyle = c;
@@ -1068,4 +1279,10 @@ function drawSpawn(ctx, s) {
   ctx.stroke();
   ctx.fillStyle = '#fff';
   ctx.beginPath(); ctx.arc(s.x, s.y - 18, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  if (s.sector) {
+    // Rush sector.
+    ctx.fillStyle = c;
+    ctx.font = 'bold 9px Arial, sans-serif';
+    ctx.fillText(String(s.sector), s.x + 7, s.y - 16);
+  }
 }

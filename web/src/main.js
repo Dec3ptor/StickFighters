@@ -52,6 +52,8 @@ let watcher = null;
 const DEFAULTS = {
   name: 'Player', map: 'ssdm1.json', mode: 'ffa', bots: 5, difficulty: 'normal', fragLimit: 20, speed: DEFAULT_SPEED, muted: false,
   lives: 3, gunKills: 1, crates: 'normal', maxPlayers: 8, visibility: 'public', gameName: '', tab: 'online', mapSource: 'originals',
+  // Objective modes: the goal chosen for each (points, captures, tickets), and which team you're on.
+  goals: {}, side: 1,
   // Settings screen
   graphics: 'auto', fpsCap: 'auto', showFps: false, showPing: true,
 };
@@ -100,6 +102,7 @@ function buildMenu(settings) {
   $('speed').value = String(SPEEDS.includes(settings.speed) ? settings.speed : DEFAULT_SPEED);
   $('speedField').classList.toggle('hidden', !SHOW_SPEED_MENU);
   $('mode').value = settings.mode;
+  $('side').value = String(settings.side === 2 ? 2 : 1);
   $('mute').checked = settings.muted;
   audio.setMuted(settings.muted);
   $('bots').addEventListener('input', showBots);
@@ -108,7 +111,7 @@ function buildMenu(settings) {
     r.checked = r.value === settings.mapSource;
     r.addEventListener('change', () => { buildMapCards(selectedMap()); rememberMenu(); });
   }
-  for (const id of ['difficulty', 'fragLimit', 'lives', 'gunKills', 'crates', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
+  for (const id of ['difficulty', 'fragLimit', 'goal', 'side', 'lives', 'gunKills', 'crates', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
   $('bots').addEventListener('change', rememberMenu);
   modeFields();
   buildMapCards(settings.map, { follow: true });
@@ -120,6 +123,17 @@ function modeFields() {
   const mode = $('mode').value, m = MODES[mode];
   $('modeBlurb').textContent = m.blurb;
   show('fragField', m.limit === 'frags');
+  show('goalField', m.limit === 'goal');
+  if (m.goal) {
+    // Points to win, captures or tickets: the choice last made for this mode.
+    const saved = loadSettings().goals?.[mode];
+    $('goalLabel').textContent = m.goal.label;
+    $('goal').innerHTML = m.goal.options.map(v => `<option value="${v}">${v === 0 ? 'Auto' : v}</option>`).join('');
+    $('goal').value = String(m.goal.options.includes(saved) ? saved : m.goal.value);
+  }
+  show('sideField', !!m.teams);
+  $('side').options[0].textContent = mode === 'rush' ? 'Blue (attack)' : 'Blue';
+  $('side').options[1].textContent = mode === 'rush' ? 'Red (defend)' : 'Red';
   show('livesField', mode === 'oitc');
   show('gunField', mode === 'gungame');
   show('crateField', m.crates);
@@ -164,7 +178,7 @@ function buildMapCards(selected, { follow = false } = {}) {
   show('mapsNote', false);
   let cards = [];
   if (source === 'originals') {
-    cards = maps.index.map(m => ({ key: m.file, name: m.name, label: m.mode === 'team' ? 'Team map' : 'Deathmatch', mode: m.mode, data: maps.data.get(m.file) }));
+    cards = maps.index.map(m => ({ key: m.file, name: m.name, label: mapLabel(m), mode: m.mode, modes: m.modes, data: maps.data.get(m.file) }));
   } else if (source === 'mine') {
     cards = listMaps().map(m => ({ key: `custom:${m.id}`, id: m.id, name: m.name, label: 'Your map', data: m.data }));
   } else {
@@ -187,8 +201,8 @@ function buildMapCards(selected, { follow = false } = {}) {
     const pick = () => {
       for (const el of box.querySelectorAll('.map-card')) el.setAttribute('aria-checked', String(el === card));
       state.selectedMap = c.key;
-      // Team maps default to team mode.
-      if (c.mode === 'team' && $('mode').value === 'ffa') { $('mode').value = 'team'; modeFields(); }
+      // Maps made for other modes switch to the mode they're best for (team maps: team deathmatch).
+      if (c.modes?.length ? !c.modes.includes($('mode').value) : c.mode === 'team' && $('mode').value === 'ffa') { $('mode').value = c.mode; modeFields(); }
       audio.unlock();
       audio.play('menuMove');
       rememberMenu();
@@ -264,8 +278,20 @@ async function mapDataFor(key) {
   return { data: maps.data.get(file), navKey: file, name: maps.index.find(m => m.file === file)?.name || file, builtin: file };
 }
 
+/** What a game map's card says: the original's kind, or a new map's size, players and best modes. */
+function mapLabel(m) {
+  if (!m.size) return `Original · ${m.mode === 'team' ? 'team map' : 'deathmatch'}`;
+  const best = (m.modes || []).slice(0, 2).map(id => MODE_SHORT[id]).join(', ');
+  return `${m.size[0].toUpperCase()}${m.size.slice(1)} · ${m.players} players · ${best}`;
+}
+
+/** The match limit for the chosen mode: frags, or the objective modes' goal (0 = the mode's own). */
+const limitOf = s => (MODES[s.mode]?.limit === 'goal' ? (s.goal ?? 0) : s.fragLimit);
+
 function readMenu() {
   const mode = $('mode').value;
+  const goals = { ...(loadSettings().goals || {}) };
+  if (MODES[mode]?.goal) goals[mode] = +$('goal').value;
   return {
     name: playerName(),
     map: selectedMap() || maps.index[0]?.file,
@@ -273,6 +299,9 @@ function readMenu() {
     bots: botsChosen(),
     difficulty: $('difficulty').value,
     fragLimit: +$('fragLimit').value,
+    goal: MODES[mode]?.goal ? +$('goal').value : 0,
+    goals,
+    side: +$('side').value === 2 ? 2 : 1,
     lives: +$('lives').value,
     gunKills: +$('gunKills').value,
     crates: $('crates').value,
@@ -331,7 +360,7 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   // Let the loading message paint before building the bots' route map.
   await new Promise(r => setTimeout(r, 30));
   const options = { lives: settings.lives, gunGameKills: settings.gunKills, crates: settings.crates };
-  const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: settings.fragLimit, speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
+  const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
   // Route maps depend on the map version and the speed's move timings.
   const navKey = `${map.navKey}@${settings.speed}`;
@@ -339,7 +368,7 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const nav = maps.nav.get(navKey);
   const rng = makeRng((Math.random() * 2 ** 31) | 0);
 
-  const team = game.rules.teams ? 1 : 0;
+  const team = game.rules.teams ? (settings.side === 2 ? 2 : 1) : 0;
   state.me = game.addSoldier({ name: settings.name, isBot: false, team }, new PlayerController(input, () => renderer));
 
   if (online) {
@@ -392,6 +421,7 @@ function showMenu() {
 function openEditor(record) {
   stopWatching();
   show('menu', false);
+  $('edMode').value = readMenu().mode;
   editor.open(record);
 }
 
@@ -503,7 +533,10 @@ function startWatching() {
 
 function stopWatching() { watcher?.stop(); watcher = null; }
 
-const MODE_SHORT = { ffa: 'Free-for-all', team: 'Team', gungame: 'Gun game', oitc: 'One in the chamber' };
+const MODE_SHORT = {
+  ffa: 'Free-for-all', team: 'Team', gungame: 'Gun game', oitc: 'One in the chamber',
+  koth: 'King of the hill', ctf: 'Capture the flag', conquest: 'Conquest', rush: 'Rush',
+};
 
 function renderGameList(list) {
   const box = $('gameList');
@@ -537,7 +570,7 @@ async function hostMatch(game, settings, map, nav, rng) {
   const net = state.net?.role === 'host' ? state.net : (state.net = { role: 'host' });
   net.settings = settings;
   net.matchInfo = {
-    mode: settings.mode, fragLimit: settings.fragLimit, speed: settings.speed, mapName: map.name,
+    mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, mapName: map.name,
     options: game.options,
     map: map.builtin ? { builtin: map.builtin } : { code: await encodeShare(map.data) },
   };
@@ -738,7 +771,7 @@ function frame(now) {
     if (watching) view = watching;
   }
 
-  audio.playQueue(g.sounds, view.x, view.y, me.id);
+  audio.playQueue(g.sounds, view.x, view.y, me.id, me.team);
   g.sounds.length = 0;
 
   const sniping = me.alive && me.current === 'SR' && input.mouse.right && !state.menuOpen && !state.chatOpen;
@@ -978,7 +1011,10 @@ async function boot() {
       showTab('offline');
       buildMapCards(key, { follow: true });
     },
-    onTestPlay: record => startMatch({ ...readMenu(), map: `custom:${record.id}`, name: playerName() }, { returnTo: 'editor' }),
+    onTestPlay: record => {
+      const s = readMenu(), mode = $('edMode').value || s.mode;
+      startMatch({ ...s, mode, goal: mode === s.mode ? s.goal : 0, map: `custom:${record.id}`, name: playerName() }, { returnTo: 'editor' });
+    },
     onUpload: async record => {
       community ||= new Community();
       const res = await community.publish(normalizeMap(record.data), playerName(), record.communitySlot);

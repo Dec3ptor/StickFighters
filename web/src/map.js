@@ -10,10 +10,12 @@ export class GameMap {
     this.solids = data.platforms.map((p, i) => ({
       id: i, l: p.left, t: p.top, r: p.right, b: p.bottom, bounce: p.bounce || 0,
     }));
-    this.spawns = data.spawns.map(s => ({ x: s.x, y: s.y, team: s.team }));
+    this.spawns = data.spawns.map(s => (s.sector ? { x: s.x, y: s.y, team: s.team, sector: s.sector } : { x: s.x, y: s.y, team: s.team }));
     this.items = data.items.map(it => ({ type: it.type, weapon: it.weapon || null, x: it.x, y: it.y }));
     // What everyone spawns with on this map (custom maps): { weapons: [ids], armour, jetpack }.
     this.loadout = data.loadout || null;
+    // Hills, flags, capture points and M-COMs for the objective modes (see objectives.js).
+    this.objectives = (data.objectives || []).map(o => ({ ...o }));
     this._buildGrid();
   }
 

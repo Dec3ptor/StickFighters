@@ -230,7 +230,7 @@ export class NetHost {
         const id = p.soldier.id;
         p.link.send({
           t: 'ev', tick: g.tick,
-          s: e.s.filter(x => x[3] == null || x[3] === id).map(x => x.slice(0, 3)),
+          s: e.s.filter(x => x[3] == null || x[3] === id || x[3] === -p.soldier.team).map(x => x.slice(0, 3)),
           fx: e.fx, k: e.k, sh: e.sh,
           n: e.n.filter(x => x[1] === id).map(x => x[0]),
         }, true);

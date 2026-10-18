@@ -29,6 +29,7 @@ export class Soldier {
     this.profile = profile;
     this.frags = 0;
     this.deaths = 0;
+    this.points = 0;        // the objective modes' score (captures, holding the hill...)
     this.alive = false;
     this.respawnTimer = 0;
     this.body = makeBody(0, 0);
