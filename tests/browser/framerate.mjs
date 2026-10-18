@@ -52,7 +52,7 @@ const r = await page.evaluate(async () => {
   const render = renderer.render.bind(renderer);
   renderer.render = (game, alpha, viewer) => {
     const p = game.projectiles.find(q => q.id === 99999);
-    if (p) frames.push({ t: performance.now(), tick: game.tick, rocket: between(p, alpha).x, me: lerp(me.prevX, me.x, alpha), moving: Math.abs(me.body.vx) > 1 });
+    if (p) frames.push({ t: performance.now(), clock: state.last, tick: game.tick, rocket: between(p, alpha).x, me: lerp(me.prevX, me.x, alpha), moving: Math.abs(me.body.vx) > 1 });
     return render(game, alpha, viewer);
   };
   await new Promise(res => setTimeout(res, 2000));
@@ -62,6 +62,8 @@ const r = await page.evaluate(async () => {
   const fps = ((frames.length - 1) * 1000) / (frames[frames.length - 1].t - frames[0].t);
   let rocketStill = 0, meStill = 0, runFrames = 0;
   for (let i = 1; i < frames.length; i++) {
+    // (Uncapped, two frames can come with the same timestamp: no time passed, so nothing should move.)
+    if (frames[i].clock === frames[i - 1].clock) continue;
     if (Math.abs(frames[i].rocket - frames[i - 1].rocket) < 1e-9) rocketStill++;
     if (frames[i].moving && frames[i - 1].moving) {
       runFrames++;
