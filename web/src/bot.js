@@ -92,6 +92,9 @@ function approach(dx, vx) {
 
 // Moves that keep going wrong in practice cost more to plan, so bots find another way.
 const FAIL_COST = 45, MAX_PENALTY = 270;
+// Racing for items: a bot gives up on one when someone else will clearly get there first
+// (by this many updates), or a player is standing this close to it.
+const RACE_MARGIN = 15, NEAR_ITEM = 90;
 
 export class BotController {
   constructor(nav, difficulty, profile, rng) {
@@ -104,6 +107,15 @@ export class BotController {
     this.phase = [rng() * 10, rng() * 10];
     this.prevFire = false;
     this.reset();
+  }
+
+  /** The item this bot is going for (the item keeps a list of the bots going for it). */
+  get goalItem() { return this._goalItem; }
+  set goalItem(it) {
+    if (it === this._goalItem) return;
+    this._goalItem?.racers.delete(this);
+    this._goalItem = it;
+    if (it) (it.racers ||= new Set()).add(this);
   }
 
   reset() {
@@ -152,6 +164,7 @@ export class BotController {
   }
 
   onSpawn(game, s) {
+    this.me = s;
     this.reset();
     this.aim = s.facing < 0 ? Math.PI : 0;
     this.thinkIn = 5 + Math.floor(this.rng() * 10);
@@ -166,6 +179,7 @@ export class BotController {
   }
 
   input(game, s) {
+    this.me = s;
     const inp = { move: 0, jump: false, jumpPressed: false, aim: this.aim ?? s.aim, fire: false, aimDist: 200 };
     if (!s.alive) return inp;
     // (In huge games, look around a little less often.)
@@ -176,6 +190,11 @@ export class BotController {
     const it = this.goalItem;
     if (it && (!it.active || (it.dropped && it.life <= 0) || !wants(s, it))) {
       // Someone else took it, or we picked up the same thing elsewhere: find something else to do.
+      this.goalItem = null;
+      this.grabTicks = 0;
+      this.thinkIn = Math.min(this.thinkIn, 3);
+    } else if (it && game.tick % 12 === s.id % 12 && this.beaten(game, s, it, this.routeLeft())) {
+      // Someone else is going to get there first: don't waste the trip.
       this.goalItem = null;
       this.grabTicks = 0;
       this.thinkIn = Math.min(this.thinkIn, 3);
@@ -336,6 +355,39 @@ export class BotController {
 
   // ---- Choosing where to go -------------------------------------------------
 
+  /** Roughly how many updates until this bot gets to the end of its route. */
+  routeLeft() {
+    const p = this.path;
+    if (!p) return Infinity;
+    let c = 0;
+    for (let i = this.li; i < p.length; i++) c += p[i].cost + (p[i].penalty || 0);
+    return c;
+  }
+
+  /**
+   * Will someone else get to item `it` first, if this bot is `eta` updates away?
+   * Another bot already on its way there with less of its route left (an even
+   * race goes to one of them), or a player right next to it who wants it.
+   * There's no point racing them for it.
+   */
+  beaten(game, s, it, eta) {
+    // (Bots that only know what they see don't know where enemies out of sight are.)
+    const sight = game.options.botVision === 'sight';
+    const knows = o => !sight || (game.rules.teams && o.team === s.team) || (this.inView(game, s, o) && this.canSee(game, s, o));
+    for (const c of it.racers || []) {
+      const o = c.me;
+      if (!o || o === s || !o.alive || game.controllers.get(o) !== c) continue;
+      const theirs = c.routeLeft();
+      if ((theirs < eta - RACE_MARGIN || (theirs <= eta + RACE_MARGIN && o.id < s.id)) && knows(o)) return true;
+    }
+    for (const o of game.near(it.x - NEAR_ITEM, it.y - NEAR_ITEM, it.x + NEAR_ITEM, it.y + NEAR_ITEM)) {
+      if (o.isBot || !o.alive || o === s) continue;
+      const d = Math.hypot(o.x - it.x, o.y - it.y);
+      if (d < NEAR_ITEM && d / PHYS.runSpeed < eta - RACE_MARGIN && wants(o, it) && knows(o)) return true;
+    }
+    return false;
+  }
+
   think(game, s) {
     this.thinkIn = 35 + Math.floor(this.rng() * 25);
     const start = this.nav.nodeAt(s.x, s.y, 10);
@@ -377,21 +429,6 @@ export class BotController {
       }
     }
     const items = game.pickups.items.filter(it => it.active && !((this.ignore.get(it) || 0) > game.tick));
-    // Items teammates are already going for are worth less: spread out instead of crowding.
-    // (In a free-for-all, racing someone to a weapon is fine: they'll fight over it.)
-    const claimed = new Set();
-    if (!game.rules.teams) {
-      // (Free-for-all: no teammates to share with.)
-    } else if (game.crowded) {
-      // (Big games: everyone's claims are counted once per update.)
-      for (const [it, n] of game.claims(s.team)) if (n > (it === this.goalItem ? 1 : 0)) claimed.add(it);
-    } else {
-      for (const o of game.soldiers) {
-        if (o === s || !o.isBot || !o.alive || !game.rules.teams || o.team !== s.team) continue;
-        const it = game.controllers.get(o)?.goalItem;
-        if (it) claimed.add(it);
-      }
-    }
     let goalItem = null;
     const best = (filter, value) => {
       let pick = null, pv = -Infinity, item = null;
@@ -402,8 +439,9 @@ export class BotController {
         if (!n || Math.abs(n.x - it.x) > 45 || it.y < n.y - 75 || it.y > n.y + 30) continue;
         const c = search.cost[n.id];
         if (c > pickupReach) continue;
-        const v = value(it) - c / 60 - (claimed.has(it) ? 4 : 0) - detour;
-        if (v > pv) { pv = v; pick = n; item = it; }
+        const v = value(it) - c / 60 - detour;
+        // (Not one someone else will get to first.)
+        if (v > pv && !this.beaten(game, s, it, c)) { pv = v; pick = n; item = it; }
       }
       if (pv <= 0) return null;
       goalItem = item;

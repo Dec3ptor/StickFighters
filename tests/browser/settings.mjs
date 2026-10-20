@@ -36,6 +36,13 @@ expect(autoLabel === 'Auto (Canvas)', `auto says what it picks (${autoLabel})`);
 expect(/canvas/i.test(await page.textContent('#graphicsNote')), 'note says it draws with the canvas');
 expect(/refreshes \d+ times a second/.test(await page.textContent('#fpsNote')), 'note gives the screen refresh rate');
 await page.screenshot({ path: `${outDir}/settings-menu.png` });
+expect(await page.inputValue('#graphics') === 'canvas', 'draws with the canvas by default');
+expect(await kind() === 'canvas', 'the canvas is in use');
+// Experimental options: the same as the game setup's.
+expect(await visible('#setBotVision') && await visible('#setFog'), 'experimental options in settings');
+await page.selectOption('#setFog', 'on');
+expect(await page.inputValue('#fog') === 'on', 'fog of war chosen in settings shows in the game setup');
+await page.selectOption('#setFog', 'off');
 await page.keyboard.press('Escape');
 expect(!(await visible('#settings')), 'Esc closes settings');
 

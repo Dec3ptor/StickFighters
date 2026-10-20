@@ -44,7 +44,7 @@ let lobby = null;
 const pacer = new FramePacer();
 const params = new URLSearchParams(location.search);
 // The Settings screen's choices (saved with the other settings).
-const prefs = { graphics: 'auto', fpsCap: 'auto', showFps: false, showPing: true };
+const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true };
 let community = null;
 let watcher = null;
 
@@ -58,7 +58,8 @@ const DEFAULTS = {
   // Experimental: what bots notice ('classic' | 'sight') and fog of war ('off' | 'on').
   botVision: 'classic', fog: 'off',
   // Settings screen
-  graphics: 'auto', fpsCap: 'auto', showFps: false, showPing: true,
+  // (graphicsPicked: graphics was chosen in Settings, not just the default saved.)
+  graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true,
 };
 
 function loadSettings() {
@@ -67,6 +68,9 @@ function loadSettings() {
   catch { s = { ...DEFAULTS }; }
   if (!SHOW_SPEED_MENU) s.speed = DEFAULT_SPEED; // ignore speeds saved before the picker was hidden
   if (!MODES[s.mode]) s.mode = 'ffa';
+  // Draw with the canvas unless WebGL or Auto was picked in Settings (earlier visits
+  // saved the old default, Auto, without anyone choosing it).
+  if (!s.graphicsPicked) s.graphics = 'canvas';
   return s;
 }
 function saveSettings(s) {
@@ -108,8 +112,6 @@ function buildMenu(settings) {
   $('side').value = String(settings.side === 2 ? 2 : 1);
   $('botVision').value = settings.botVision === 'sight' ? 'sight' : 'classic';
   $('fog').value = settings.fog === 'on' ? 'on' : 'off';
-  // Keep the experimental options open if any is in use.
-  $('experimental').open = settings.botVision === 'sight' || settings.fog === 'on';
   $('mute').checked = settings.muted;
   audio.setMuted(settings.muted);
   $('bots').addEventListener('input', showBots);
@@ -515,6 +517,9 @@ function setPaused(p) {
 function savePrefs() { saveSettings({ ...loadSettings(), ...prefs }); }
 
 function openSettings() {
+  // Experimental: the same choices as the game setup's.
+  $('setBotVision').value = $('botVision').value;
+  $('setFog').value = $('fog').value;
   $('graphics').value = prefs.graphics;
   $('fpsCap').value = String(prefs.fpsCap);
   $('showFps').checked = prefs.showFps;
@@ -974,10 +979,13 @@ function wire() {
   $('openSettings').addEventListener('click', openSettings);
   $('pauseSettings').addEventListener('click', openSettings);
   $('settingsDone').addEventListener('click', closeSettings);
-  $('graphics').addEventListener('change', () => { prefs.graphics = $('graphics').value; savePrefs(); setGraphics(prefs.graphics); });
+  $('graphics').addEventListener('change', () => { prefs.graphics = $('graphics').value; prefs.graphicsPicked = true; savePrefs(); setGraphics(prefs.graphics); });
   $('fpsCap').addEventListener('change', () => { prefs.fpsCap = $('fpsCap').value; pacer.setMode(prefs.fpsCap); savePrefs(); settingsNotes(); });
   $('showFps').addEventListener('change', () => { prefs.showFps = $('showFps').checked; perf.on = prefs.showFps || params.has('fps'); savePrefs(); });
   $('showPing').addEventListener('change', () => { prefs.showPing = $('showPing').checked; savePrefs(); });
+  // Experimental (the same choices as the game setup's, for the next game started or hosted).
+  $('setBotVision').addEventListener('change', () => { $('botVision').value = $('setBotVision').value; rememberMenu(); });
+  $('setFog').addEventListener('change', () => { $('fog').value = $('setFog').value; rememberMenu(); });
   $('mute').addEventListener('change', () => {
     audio.setMuted($('mute').checked);
     if (state.settings) { state.settings.muted = $('mute').checked; saveSettings({ ...loadSettings(), muted: $('mute').checked }); }

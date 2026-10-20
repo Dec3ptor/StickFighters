@@ -107,8 +107,8 @@
                 <option value="hard">Hard</option>
               </select>
             </label>
-            <details class="experimental" id="experimental">
-              <summary>Experimental</summary>
+            <div class="experimental" id="experimental">
+              <h3 class="exp-head">Experimental</h3>
               <div class="field-pair">
                 <label class="field">Bot vision
                   <select id="botVision">
@@ -120,8 +120,8 @@
                   <select id="fog"><option value="off">Off</option><option value="on">On</option></select>
                 </label>
               </div>
-              <p class="muted-note"><b>Only what they see or hear</b>: bots spot you only on their screen, in front of them and in a clear line; behind them, they only hear you (shots, explosions, jetpacks, landings, running close by; creeping along crouched is silent). <b>Fog of war</b>: you only see what your soldier can see; the rest is greyed out, enemies there are hidden, and sounds from there show as orange ripples (or arrows at the screen's edge).</p>
-            </details>
+              <p class="muted-note"><b>Only what they see or hear</b>: bots spot you only on their screen, in front of them and in a clear line; behind them, they only hear you (shots, explosions, jetpacks, landings, running close by; creeping along crouched is silent). <b>Fog of war</b>: you only see what your soldier can see; the rest is greyed out, enemies there are hidden, and sounds from there show as orange ripples (or arrows at the screen's edge). Also in Settings.</p>
+            </div>
             <!-- Hidden unless SHOW_SPEED_MENU is true in src/config.js -->
             <label class="field hidden" id="speedField">Game speed
               <select id="speed">
@@ -199,7 +199,7 @@
         <select id="graphics">
           <option value="auto">Auto</option>
           <option value="webgl">WebGL (uses the graphics card)</option>
-          <option value="canvas">Canvas (works everywhere)</option>
+          <option value="canvas">Canvas (the default)</option>
         </select>
       </label>
       <p id="graphicsNote" class="muted-note"></p>
@@ -218,6 +218,19 @@
       <p id="fpsNote" class="muted-note"></p>
       <label class="check"><input type="checkbox" id="showFps"> Show frame rate</label>
       <label class="check"><input type="checkbox" id="showPing"> Show ping in online games</label>
+      <h3 class="exp-head">Experimental</h3>
+      <div class="field-pair">
+        <label class="field">Bot vision
+          <select id="setBotVision">
+            <option value="classic">See everyone nearby</option>
+            <option value="sight">Only what they see or hear</option>
+          </select>
+        </label>
+        <label class="field">Fog of war
+          <select id="setFog"><option value="off">Off</option><option value="on">On</option></select>
+        </label>
+      </div>
+      <p class="muted-note">For the next game you start or host (a match already running keeps its own). The same choices are in the game setup.</p>
       <button id="settingsDone" class="primary">Done</button>
     </div>
   </section>

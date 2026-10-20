@@ -84,25 +84,6 @@ export class Game {
     return p && !p.dead ? p : null;
   }
 
-  /** Big team games: how many bots on a team are going for each item, worked out once per update. */
-  claims(team) {
-    if (this.claimsTick !== this.tick) {
-      this.claimsTick = this.tick;
-      this.claimed = new Map();
-    }
-    let m = this.claimed.get(team);
-    if (!m) {
-      m = new Map();
-      for (const o of this.soldiers) {
-        if (!o.isBot || !o.alive || o.team !== team) continue;
-        const it = this.controllers.get(o)?.goalItem;
-        if (it) m.set(it, (m.get(it) || 0) + 1);
-      }
-      this.claimed.set(team, m);
-    }
-    return m;
-  }
-
   /** A soldier appeared somewhere new mid-update (respawned, teleported): keep the grid right. */
   moved(s) {
     if (this.crowded && this.grid.tick === this.tick) this.grid.place(s);

@@ -11,6 +11,10 @@ import { makeBody, stepBody } from './physics.js';
 const NODE_STEP = 12;
 const NODE_CELL = 64; // grid cells for finding the nearest node
 const MAX_SIM = 320;
+// What a jump costs on top of the time it takes (in updates at full speed). A jump
+// along a flat floor is about as quick as running, and bots jumping about for no
+// reason look odd, so they only jump when it saves real time, or to get somewhere.
+const JUMP_COST = 40;
 
 // Jump moves: wait `delay` ticks, steer `dir` for `hold` ticks, then steer `then`.
 const JUMPS = [
@@ -189,7 +193,7 @@ export class NavGraph {
       const walkR = a.links.some(l => l.type === 'walk' && l.dir > 0);
       for (const j of this.jumps) {
         const r = this._simulate(a, t => ({ move: jumpSteer(j, t), jump: true, jumpPressed: t === 0 }));
-        if (r) this._addLink(a, r.node, { type: 'jump', move: j, cost: r.ticks + 6 });
+        if (r) this._addLink(a, r.node, { type: 'jump', move: j, cost: r.ticks + JUMP_COST / this.timeScale });
       }
       for (const d of this.drops) {
         if ((d.dir < 0 && walkL) || (d.dir > 0 && walkR)) continue;
