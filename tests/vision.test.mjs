@@ -98,13 +98,14 @@ test('running is heard close by, creeping along crouched is silent (bot vision s
   assert.equal(heard({}, false), 0, 'classic bots: no noises needed');
 });
 
-test('fog of war: you see what your soldier can see, your team, and hear the rest', () => {
+test('fog of war: you see what your soldier can see (teammates too), and hear the rest', () => {
   const game = arena({ fog: true });
   const me = soldier(game, 'Me', 1, 0);
-  const mate = soldier(game, 'Mate', 1, 700);
+  const mate = soldier(game, 'Mate', 1, 700), nearMate = soldier(game, 'Near', 1, 200);
   const front = soldier(game, 'Front', 2, 300), hidden = soldier(game, 'Hidden', 2, 700);
   const fog = new Fog().update(game, me, 1);
-  assert.ok(fog.shows(me) && fog.shows(mate), 'you and your teammates');
+  assert.ok(fog.shows(me) && fog.shows(nearMate), 'you, and a teammate in sight');
+  assert.ok(!fog.shows(mate), 'a teammate behind the wall');
   assert.ok(fog.shows(front), 'an enemy in plain sight');
   assert.ok(!fog.shows(hidden), 'an enemy behind the wall');
   assert.ok(!fog.sees(700, -50) && fog.sees(300, -50));

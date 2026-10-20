@@ -1,6 +1,6 @@
 // Fog of war (an experimental match option): you only see what your soldier
 // could see from where they stand. Places hidden behind walls are greyed
-// out, and enemies (and what they fire) there aren't drawn. Sounds from
+// out, and soldiers (and what they fire) there aren't drawn. Sounds from
 // places you can't see show up as ripples where they came from, or as
 // arrows at the screen's edge, so you know where to look.
 //
@@ -45,10 +45,13 @@ export class Fog {
     return this.map.clearLine(this.eye.x, this.eye.y, x, y);
   }
 
-  /** Should soldier `o` be drawn? You, your team, and enemies you can see some of. */
+  /**
+   * Should soldier `o` be drawn? You, and anyone you can see some of: teammates
+   * out of sight are hidden too (the minimap still shows them).
+   */
   shows(o) {
     const v = this.viewer;
-    if (o === v || (this.game.rules.teams && o.team === v.team)) return true;
+    if (o === v) return true;
     let r = this.seen.get(o);
     if (r === undefined) {
       r = this.sees(o.x, o.y - 18) || this.sees(o.x, o.y - 4) || this.sees(o.x, o.y + 10);
