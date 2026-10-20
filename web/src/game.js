@@ -8,7 +8,7 @@ import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
 import { fire, updateProjectiles, damage, explode, soldierBox, canHurt } from './combat.js';
 import { buildPose } from './stickman.js';
-import { RULES, TICK_RATE, MOTION, PHYS, LOW_JUMP } from './config.js';
+import { RULES, TICK_RATE, MOTION, PHYS } from './config.js';
 import { setGameSpeed } from './speed.js';
 import { WEAPONS } from './weapons.js';
 import { modeOf } from './modes.js';
@@ -16,21 +16,22 @@ import { makeRng } from './util.js';
 import { SoldierGrid, GRID_MIN } from './grid.js';
 
 const IDLE = { move: 0 };
+// Holding self-destruct this many updates (a second) blows you up: the way out of a pit you can't climb out of.
+export const SELF_DESTRUCT_TICKS = 60;
 
 export class Game {
   /**
    * options: { lives (one in the chamber), gunGameKills (kills per weapon), crates: 'off'|'normal'|'lots',
    *   botVision: 'classic' (bots see everyone nearby in a clear line) | 'sight' (only what's on their
-   *   screen in front of them, plus what they hear), fog: true (players only see what's in their line of sight),
-   *   jump: 'normal' | 'low' (jumps reach LOW_JUMP of their usual height) }
+   *   screen in front of them, plus what they hear), fog: true (players only see what's in their line of sight) }
    */
   constructor({ mapData, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1, options = {} }) {
     // Speed rescales shared constants, so set it before anything reads them.
-    setGameSpeed(speed, { jump: options.jump === 'low' ? LOW_JUMP : 1 });
+    setGameSpeed(speed);
     this.map = new GameMap(mapData);
     this.mode = mode;
     this.rules = modeOf(mode);
-    this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, jump: 'normal', ...options };
+    this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, ...options };
     // Noises bots can hear (with bot vision 'sight'): { x, y, r (how far it carries), by, tick }.
     this.noises = [];
     this.fragLimit = fragLimit;
@@ -142,6 +143,51 @@ export class Game {
     this.recorder?.sound(name, x, y, to);
   }
 
+  /**
+   * The bots' route map, once it's built: it tells the game which spots are in a
+   * pit nobody can climb out of (no spawning there; players stuck there are told
+   * how to get out).
+   */
+  useNav(nav) {
+    this.nav = nav;
+    this.spawnSets = null;
+  }
+
+  /**
+   * The map's spawn points, less any in a pit nobody can climb out of (once the
+   * route map is known), unless that's all a team has.
+   */
+  get spawns() {
+    if (!this.nav) return this.map.spawns;
+    if (this.spawnsFor !== this.nav) {
+      const trapped = this.nav.trapped();
+      const inPit = p => { const n = this.nav.landing(p.x, p.y); return !!n && trapped[n.id] === 1; };
+      const all = this.map.spawns;
+      this.pitTeams = new Set();
+      for (const team of new Set(all.map(p => p.team))) {
+        if (all.every(p => p.team !== team || inPit(p))) this.pitTeams.add(team);
+      }
+      this.okSpawns = all.filter(p => !inPit(p) || this.pitTeams.has(p.team));
+      this.spawnsFor = this.nav;
+    }
+    return this.okSpawns;
+  }
+
+  /** True if dying would get s out of a pit: they'd respawn somewhere that isn't one. */
+  respawnEscapes(s) {
+    if (!this.nav) return false;
+    void this.spawns; // (works out pitTeams)
+    const teams = this.rules.teams && this.map.spawns.some(p => p.team === s.team) ? [s.team] : [...new Set(this.map.spawns.map(p => p.team))];
+    return teams.some(t => !this.pitTeams.has(t));
+  }
+
+  /** True if soldier s is standing in a pit they can't climb out of (when the route map is known). */
+  trapped(s) {
+    if (!this.nav || !s.body.onGround) return false;
+    const n = this.nav.nodeAt(s.x, s.y, 14);
+    return !!n && this.nav.trapped()[n.id] === 1;
+  }
+
   notify(s, text) {
     if (!s || s.isBot) return;
     this.notes.push({ text, tick: this.tick, to: s.id });
@@ -198,6 +244,12 @@ export class Game {
     if (!input.fire || !def.spinup) s.spin = Math.max(0, s.spin - 1);
     const move = def.heavy && s.spin > 0 ? { ...input, move: (input.move || 0) * def.heavy } : input;
 
+    // Self-destruct (held for a second): the way out of a pit you can't climb out of.
+    if (input.selfDestruct) {
+      s.destructHold = (s.destructHold || 0) + 1;
+      if (s.destructHold >= SELF_DESTRUCT_TICKS) { this.selfDestruct(s); return; }
+    } else s.destructHold = 0;
+
     s.move(move, this.map);
     const b = s.body;
     if (b.bounced) this.sound('bounce', s.x, s.y);
@@ -230,6 +282,20 @@ export class Game {
 
     this.pickups.touch(this, s);
     this.checkFall(s);
+    // Players who end up in a pit with no way out are told how to get out.
+    if (!s.isBot && this.tick % 30 === s.id % 30) {
+      const stuck = this.trapped(s) && this.respawnEscapes(s);
+      if (stuck && !s.toldTrapped) this.notify(s, "There's no way out of here: hold K to self-destruct");
+      s.toldTrapped = stuck;
+    }
+  }
+
+  /** Blow up (no harm to anyone else). Counts as a suicide, or as a kill for whoever hurt you just before. */
+  selfDestruct(s) {
+    s.destructHold = 0;
+    this.fx?.explosion?.(s.x, s.y - 10, 26);
+    this.sound('explosionSmall', s.x, s.y);
+    this.kill(s, null, null, { explosive: true, selfDestruct: true });
   }
 
   checkFall(s) {
@@ -292,7 +358,7 @@ export class Game {
   pickSpawn(s) {
     const chosen = this.rules.spawnPoint?.(this, s);
     if (chosen) return chosen;
-    let points = this.rules.spawnPoints ? this.rules.spawnPoints(this, s) : this.map.spawns;
+    let points = this.rules.spawnPoints ? this.rules.spawnPoints(this, s) : this.spawns;
     if (this.rules.teams && !this.rules.spawnPoints) {
       const mine = points.filter(p => p.team === s.team);
       if (mine.length) points = mine;
@@ -383,6 +449,7 @@ export class Game {
       }
       if (opts.fall) { this.stats.falls++; text = `${victim.name} fell off the map`; }
       else if (weapon === 'Kamikaze') text = `${victim.name} went out with a bang`;
+      else if (opts.selfDestruct) { this.stats.suicides++; text = `${victim.name} self-destructed`; }
       else { this.stats.suicides++; text = `${victim.name} blew themselves up`; }
     }
     this.addFeed({ text, tick: this.tick, killer, victim, weapon: name });

@@ -95,6 +95,8 @@ const FAIL_COST = 45, MAX_PENALTY = 270;
 // Racing for items: a bot gives up on one when someone else will clearly get there first
 // (by this many updates), or a player is standing this close to it.
 const RACE_MARGIN = 15, NEAR_ITEM = 90;
+// A bot that gives way on an item leaves it alone this long (4 seconds).
+const YIELD_TICKS = 240;
 
 export class BotController {
   constructor(nav, difficulty, profile, rng) {
@@ -135,6 +137,8 @@ export class BotController {
     this.grabTicks = 0;
     this.history = [];
     this.forceRoam = false;
+    this.destructing = false;
+    this.idleTrapped = 0;
     this.airTicks = 0;
     this.bounces = 0;
     this.ignore = this.ignore || new Map();
@@ -194,7 +198,9 @@ export class BotController {
       this.grabTicks = 0;
       this.thinkIn = Math.min(this.thinkIn, 3);
     } else if (it && game.tick % 12 === s.id % 12 && this.beaten(game, s, it, this.routeLeft())) {
-      // Someone else is going to get there first: don't waste the trip.
+      // Someone else is going to get there first: don't waste the trip (and leave it to
+      // them for a few seconds, rather than taking it back the moment they look away).
+      this.ignore.set(it, game.tick + YIELD_TICKS);
       this.goalItem = null;
       this.grabTicks = 0;
       this.thinkIn = Math.min(this.thinkIn, 3);
@@ -203,6 +209,8 @@ export class BotController {
     this.steer(game, s, inp);
     this.fight(game, s, inp);
     this.detonate(game, s, inp);
+    // Stuck in a pit with nothing left to do there: self-destruct (held until it goes off).
+    if (this.destructing) inp.selfDestruct = true;
     inp.firePressed = inp.fire && !this.prevFire;
     this.prevFire = inp.fire;
     return inp;
@@ -400,6 +408,9 @@ export class BotController {
       return;
     }
     this.offGraph = null;
+    // Pits nobody can climb out of: only go into one if already in it.
+    const trapped = this.nav.trapped(), inPit = trapped[start.id] === 1;
+    const ok = n => !!n && (inPit || !trapped[n.id]);
     const search = game.crowded ? this.nav.cachedCostsFrom(start, game.tick) : this.nav.costsFrom(start);
     // The objective modes: where the mode wants this bot to be (a hill, a flag, a capture point...).
     const obj = game.rules.botGoal?.(game, s, this) || null;
@@ -411,14 +422,14 @@ export class BotController {
     let pickupReach = busy ? (obj.urgent ? 90 : 150) : Infinity;
     const costTo = (x, y) => {
       const n = this.nav.nearest(x, y, 90);
-      return n ? { n, c: search.cost[n.id] } : { n: null, c: Infinity };
+      return ok(n) ? { n, c: search.cost[n.id] } : { n: null, c: Infinity };
     };
 
     let goal = null, kind = null;
     if (this.forceRoam) {
       // Just got unstuck: go somewhere well away from here first.
       this.forceRoam = false;
-      const far = this.nav.nodes.filter(n => search.cost[n.id] < Infinity && Math.hypot(n.x - s.x, n.y - s.y) > 250);
+      const far = this.nav.nodes.filter(n => search.cost[n.id] < Infinity && ok(n) && Math.hypot(n.x - s.x, n.y - s.y) > 250);
       if (far.length) {
         this.goalKind = 'roam';
         this.goalItem = null;
@@ -436,10 +447,13 @@ export class BotController {
         if (!filter(it)) continue;
         const n = nodeFor(this.nav, it);
         // Only items a soldier standing at that spot could reach (not on a roof above it).
-        if (!n || Math.abs(n.x - it.x) > 45 || it.y < n.y - 75 || it.y > n.y + 30) continue;
+        if (!ok(n) || Math.abs(n.x - it.x) > 45 || it.y < n.y - 75 || it.y > n.y + 30) continue;
         const c = search.cost[n.id];
-        if (c > pickupReach) continue;
-        const v = value(it) - c / 60 - detour;
+        // Stick with the item already on the way to (a reach judged afresh each time
+        // would flip a bot back and forth between an item and its objective).
+        const mine = it === this.goalItem;
+        if (c > (mine ? pickupReach * 2 + 60 : pickupReach)) continue;
+        const v = value(it) - c / 60 - detour + (mine ? 1.5 : 0);
         // (Not one someone else will get to first.)
         if (v > pv && !this.beaten(game, s, it, c)) { pv = v; pick = n; item = it; }
       }
@@ -460,7 +474,8 @@ export class BotController {
       const isWeapon = it => (it.type === 'weapon' || (it.type === 'crate' && it.landed && !it.health)) && WEAPONS[it.weapon];
       goal = best(
         it => isWeapon(it) && wants(s, it),
-        it => (s.weapons[it.weapon] ? 1.5 : weaponValue(it.weapon) + 2) + (topValue < 3 ? 6 : 0) - (this.target ? 3 : 0) + (it.type === 'crate' ? 1.5 : 0),
+        // (In a fight, a new gun is worth less, unless it's the one we're already going for.)
+        it => (s.weapons[it.weapon] ? 1.5 : weaponValue(it.weapon) + 2) + (topValue < 3 ? 6 : 0) - (this.target && it !== this.goalItem ? 3 : 0) + (it.type === 'crate' ? 1.5 : 0),
       );
       kind = 'weapon';
     }
@@ -479,7 +494,7 @@ export class BotController {
           let pv = Infinity;
           for (const n of this.zoneNodes(obj)) {
             const c = search.cost[n.id];
-            if (c === Infinity || (obj.avoid && inZone(n, obj.avoid))) continue;
+            if (c === Infinity || !ok(n) || (obj.avoid && inZone(n, obj.avoid))) continue;
             // Getting there: the quickest way in. Already there: move about inside, nearby.
             const v = inObj ? Math.hypot(n.x - s.x, n.y - s.y) * 0.4 + this.rng() * 160 : c + this.rng() * 30;
             if (v < pv) { pv = v; goal = n; }
@@ -498,7 +513,7 @@ export class BotController {
       kind = 'fight';
       if (this.rng() * 40 < this.profile.camp) goal = start;
       else {
-        const near = this.nav.nodesNear(s.x, s.y, 140, 120).filter(n => search.cost[n.id] < 110);
+        const near = this.nav.nodesNear(s.x, s.y, 140, 120).filter(n => search.cost[n.id] < 110 && ok(n));
         goal = near.length ? near[Math.floor(this.rng() * near.length)] : start;
       }
     }
@@ -517,7 +532,7 @@ export class BotController {
         goal = costTo(f.x, f.y + 4).n;
         kind = 'hunt';
       }
-      if (!goal || search.cost[goal.id] === Infinity) {
+      for (let i = 0; i < 8 && (!goal || search.cost[goal.id] === Infinity || !ok(goal)); i++) {
         goal = this.nav.nodes[Math.floor(this.rng() * this.nav.nodes.length)];
         kind = 'roam';
       }
@@ -527,6 +542,10 @@ export class BotController {
     if (kind === 'chase' && def.kind === 'melee' && this.target) goal = costTo(this.target.x, this.target.y + 4).n || goal;
     this.goalKind = kind;
     this.goalItem = ['health', 'weapon', 'armour'].includes(kind) ? goalItem : null;
+    // In a pit with no way out, nobody to fight and nothing to pick up: after a few
+    // seconds of that, self-destruct to respawn.
+    this.idleTrapped = inPit && !this.target && !this.goalItem ? this.idleTrapped + 1 : 0;
+    if (this.idleTrapped >= 3 && game.respawnEscapes(s)) this.destructing = true;
     this.path = this.nav.pathTo(search, goal) || [];
     this.li = 0;
     this.start = start;
@@ -596,7 +615,8 @@ export class BotController {
 
     if (this.offGraph) {
       const n = this.offGraph, dx = n.x - s.x;
-      inp.move = Math.abs(dx) > 2 ? Math.sign(dx) : 0;
+      // Right above it (on a jump pad's raised edge, say): step off to one side to drop down to it.
+      inp.move = Math.abs(dx) > 2 ? Math.sign(dx) : n.y > s.y + 4 ? (this.offDir ||= this.rng() < 0.5 ? -1 : 1) : 0;
       if (n.y < s.y - 4) { inp.jump = true; inp.jumpPressed = true; }
       return;
     }

@@ -107,9 +107,9 @@ export function objectiveModes(base) {
       const sets = (game.spawnSets ||= new Map());
       const key = `base${s.team}`;
       if (!sets.has(key)) {
-        const mine = game.map.spawns.filter(p => p.team === s.team);
+        const mine = game.spawns.filter(p => p.team === s.team);
         const base = mine.filter(p => !p.sector);
-        sets.set(key, base.length ? base : mine.length ? mine : game.map.spawns);
+        sets.set(key, base.length ? base : mine.length ? mine : game.spawns);
       }
       return sets.get(key);
     },
@@ -587,7 +587,7 @@ export function objectiveModes(base) {
       const sets = (game.spawnSets ||= new Map());
       const key = `${s.team}:${sector}`;
       if (!sets.has(key)) {
-        const here = game.map.spawns.filter(p => p.team === s.team && p.sector === sector);
+        const here = game.spawns.filter(p => p.team === s.team && p.sector === sector);
         sets.set(key, here.length ? here : common.spawnPoints(game, s));
       }
       return sets.get(key);

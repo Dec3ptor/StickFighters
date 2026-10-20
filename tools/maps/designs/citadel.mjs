@@ -53,12 +53,14 @@ export default function () {
   const groundPad = (l, r, y, strength) => { g(l, y + 12); g(r, y); m.pad(l, r, y, strength); };
   /**
    * A gatehouse from x0 to x1 on the ground at y, facing left: a passage under the guardroom
-   * (an arrow slit facing left, a murder hole at `hole`, a balcony and a step up to the roof out
-   * the back), the roof with battlements and a turret. The portcullis hangs half raised.
+   * (an arrow slit facing left, a murder hole at `hole` with a heap of rubble under it to jump up
+   * through, a balcony and a step up to the roof out the back), the roof with battlements and a
+   * turret. The portcullis hangs half raised.
    */
   const gatehouse = (x0, x1, y, hole) => {
     m.box(x0, y - 80, x0 + 12, y - 44);                 // portcullis
     slab(x0, hole, y - 100); slab(hole + 34, x1 + 34, y - 100);   // guardroom floor and balcony
+    m.box(hole - 10, y - 10, hole + 44, y); m.box(hole, y - 20, hole + 34, y - 10);   // rubble (80 px below the guardroom floor)
     m.box(x0, y - 250, x0 + 34, y - 156);               // west wall above the slit...
     m.box(x0, y - 130, x0 + 34, y - 100);               // ...and below it
     slab(x0, x1, y - 250, 24);                          // roof
@@ -71,8 +73,8 @@ export default function () {
   g(0, SEA);                                // the shallows
   slope(520, SEA, 700, 0);                  // up the sand
   g(1250, -120);                            // the seawall and the dune
-  // The cliff face: the goat path's ledges.
-  g(1700, -250); g(1760, -380); g(1830, -510); g(1900, GLACIS);
+  // The cliff face: the goat path's ledges, a jump (80 px) apart, from the bunker roof to the glacis.
+  g(1700, -250); g(1740, -330); g(1780, -410); g(1820, -490); g(1860, -570); g(1900, GLACIS);
   // The casemate in the seawall: a door onto the beach and a stairwell up to the dune at the back.
   hollow(1250, -50, 1290, 0); hollow(1290, -90, 1520, 0); hollow(1450, -120, 1520, -90);
   // The smugglers' cave: in from the bunker at the foot of the cliff, then up a shaft to the glacis.
@@ -114,21 +116,23 @@ export default function () {
   m.box(W, -2100, W + 40, BASE);
 
   // ---- The landing (x 0-700) -----------------------------------------------------------------
-  // Landing craft: hull, wheelhouse and the lowered bow.
-  m.box(80, 30, 300, SEA);  m.box(80, -20, 120, 30);  bags(284, 300, 30);
+  // Landing craft: hull, wheelhouse and the lowered bow. The first one's wheelhouse stands back
+  // from its stern, leaving a deck to climb onto (60 px) from the shallows behind it.
+  m.box(80, 30, 300, SEA);  m.box(100, -20, 140, 30); bags(284, 300, 30);
   m.box(350, 30, 500, SEA); m.box(350, -20, 390, 30); bags(484, 500, 30);
 
   // ---- Sector 1: the beach defences (x 700-1700) ---------------------------------------------
   bags(860, 890, 0, 30); bags(1020, 1050, 0, 30); bags(1160, 1190, 0, 30);   // hedgehogs
   m.box(1480, -45, 1520, 0);               // casemate: a step up to the stairwell
   bags(1290, 1310, -120);                  // dune parapet
-  // The gun bunker on the dune, against the cliff (the cave opens at its back); a jump pad
-  // in its roof flings you up the cliff.
-  m.box(1560, -215, 1590, -170);           // west wall over the door
-  slab(1560, 1600, -240, 25); m.pad(1600, 1640, -240, 11); m.box(1600, -228, 1640, -215);
-  slab(1640, 1700, -240, 25);
-  // The smugglers' shaft: ledges to climb.
-  slab(1960, 1995, -250); slab(2005, 2040, -380); slab(1960, 1995, -510);
+  // The gun bunker on the dune, against the cliff (the cave opens at its back): low enough
+  // (80 px) to jump onto its roof from the dune, and a jump pad in the roof flings you up the cliff.
+  m.box(1560, -188, 1590, -170);           // west wall over the door
+  slab(1560, 1650, -200, 12); m.pad(1650, 1690, -200, 11);
+  slab(1690, 1700, -200, 12);
+  // The smugglers' shaft: ledges to climb, on alternate sides, a jump (70-80 px) apart.
+  slab(2005, 2040, -200); slab(1960, 1995, -280); slab(2005, 2040, -360);
+  slab(1960, 1995, -440); slab(2005, 2040, -520); slab(1960, 1995, -590);
 
   // ---- Sector 2: the outer wall (x 2050-2880) ----------------------------------------------
   m.box(2190, -600, 2215, -550);           // sally tunnel steps
@@ -150,12 +154,15 @@ export default function () {
   slab(3530, 3700, -880);
   slab(3560, 3750, -1010);
   m.box(3640, -1090, 3680, -1010);         // clock tower...
-  slab(3680, 3770, -1210);                 // ...and its gallery
-  // The cathedral: door, gallery, roof with a gable, and the scaffold bridge to the inner wall.
+  slab(3680, 3770, -1170);                 // ...and its gallery
+  // The cathedral: door, gallery (climbed from the altar), roof with a gable, scaffolding up its
+  // west front (onto its roof or the town hall's), and the scaffold bridge to the inner wall.
   m.box(3880, -1080, 3906, -900);
   slab(3906, 4020, -980);
+  bags(4040, 4080, -850, 50);              // altar
   slab(3880, 4150, -1100);
   slab(3950, 4090, -1180);
+  slab(3800, 3850, -930, 14); slab(3830, 3880, -1015, 14);   // west front scaffolding
   slab(4190, 4340, -1150, 14);             // scaffold
 
   // ---- The inner gatehouse (x 4380-4620) -------------------------------------------------------
@@ -164,22 +171,27 @@ export default function () {
   // ---- Sector 4: the upper ward and the keep (x 4620-6400) -------------------------------------
   slab(4680, 4870, -1080); slab(4710, 4900, -1210);   // barracks
   bags(5150, 5180, WARD, 30);              // a water trough
-  // The siege tower against the keep: up to the breach in the keep's third floor.
-  slab(5330, 5420, -1230); slab(5290, 5370, -1360); slab(5350, 5450, -1490);
-  // The keep: a door and windows facing the town, three floors, the roof and turret.
+  // The siege tower against the keep: five decks, a jump (70-80 px) apart, zigzagging up to the
+  // breach in the keep's third floor.
+  slab(5340, 5420, -1180); slab(5270, 5350, -1260); slab(5350, 5430, -1340);
+  slab(5270, 5350, -1420); slab(5350, 5450, -1490);
+  // The keep: a door and windows facing the town, three floors, the roof and turret. Each floor
+  // is climbed from a crate under a stair hole (70 px up onto the crate, 80 px up through the hole).
   m.box(5450, -1250, 5490, -1150);         // over the door
   m.box(5450, -1376, 5490, -1250);         // first floor wall, window above
   m.box(5450, -1550, 5490, -1402);         // second floor wall (the breach is above it)
   m.box(5450, -1700, 5490, -1610);         // third floor wall
   slab(5490, 6060, -1250); slab(6110, 6150, -1250);
-  bags(6080, 6130, WARD, 50);              // crate under the first stair hole
+  bags(6080, 6130, WARD, 70);              // crate under the first stair hole
+  slab(6160, 6210, -1325);                 // outside landing: the first floor's ledge up to the second floor
   slab(5540, 6150, -1400);
-  bags(5495, 5545, -1250, 50);             // crate under the second stair hole
+  bags(5495, 5545, -1250, 70);             // crate under the second stair hole
   slab(5490, 6060, -1550); slab(6110, 6190, -1550);
-  bags(6075, 6125, -1400, 50);             // crate under the third stair hole
+  bags(6075, 6125, -1400, 70);             // crate under the third stair hole
+  bags(6130, 6190, -1550, 70);             // crate on the third floor's ledge, up onto the roof
   slab(5450, 6110, -1700);                 // roof
   bags(5450, 5470, -1700, 26); bags(5640, 5660, -1700, 26);   // battlements
-  slab(5990, 6110, -1830); slab(6030, 6110, -1960);   // turret
+  slab(5990, 6110, -1780); slab(6030, 6110, -1860);   // turret
   // Red's courtyard: the stable (red flag underneath).
   slab(6230, 6400, -1230);
 
@@ -205,23 +217,23 @@ export default function () {
 
   // ---- Spawns ---------------------------------------------------------------------------------
   // Bases (every mode but Rush): blue on the landing craft, red in the keep and courtyard.
-  for (const x of [140, 180, 220, 260, 410, 440, 470]) m.spawn(x, 30, 1);
+  for (const x of [155, 190, 225, 260, 410, 440, 470]) m.spawn(x, 30, 1);
   for (const x of [20, 50, 320, 520]) m.spawn(x, SEA, 1);
-  for (const x of [100, 370]) m.spawn(x, -20, 1);
+  for (const x of [120, 370]) m.spawn(x, -20, 1);
   for (const x of [600, 650, 700]) m.spawn(x, x < 640 ? 30 : x < 680 ? 20 : 0, 1);
   for (const x of [6180, 6220, 6260, 6300, 6360]) m.spawn(x, WARD, 2);
   for (const x of [6260, 6320, 6380]) m.spawn(x, -1230, 2);
   for (const x of [5950, 6020]) m.spawn(x, WARD, 2);
   for (const x of [5900, 6000]) m.spawn(x, -1250, 2);
   for (const x of [5900, 6000]) m.spawn(x, -1400, 2);
-  m.spawn(6150, -1550, 2);
+  m.spawn(5960, -1550, 2);
   // Rush, sector 1: blue on the boats and the sand; red at the top of the cliff.
   for (const x of [400, 450, 600, 650, 700, 740]) m.spawn(x, x < 500 ? 30 : x < 640 ? 30 : x < 680 ? 20 : 0, 1, 1);
   for (const x of [1940, 2060, 2100, 2150, 2170]) m.spawn(x, GLACIS, 2, 1);
   m.spawn(1920, GLACIS, 2, 1);
   // Sector 2: blue on the dune; red on the first terrace of the town.
   for (const x of [1330, 1400, 1550, 1600]) m.spawn(x, -120, 1, 2);
-  m.spawn(1730, -250, 1, 2); m.spawn(1790, -380, 1, 2);
+  m.spawn(1730, -250, 1, 2); m.spawn(1800, -410, 1, 2);
   for (const x of [3320, 3360, 3460, 3500]) m.spawn(x, -750, 2, 2);
   for (const x of [3440, 3480]) m.spawn(x, -750, 2, 2);
   // Sector 3: blue in the outer bailey; red behind the inner gate.
@@ -237,13 +249,13 @@ export default function () {
 
   // ---- Items ------------------------------------------------------------------------------------
   // The landing.
-  m.item('M4', 200, 30); m.item('Shotgun', 250, 30); m.item('health', 420, 30); m.item('armour', 100, -20);
+  m.item('M4', 200, 30); m.item('Shotgun', 250, 30); m.item('health', 420, 30); m.item('armour', 120, -20);
   m.item('jetpack', 370, -20); m.item('jetpack', 30, SEA); m.item('NinjaRope', 540, 80);
   m.item('GrenadeLauncher', 460, 30); m.item('M4', 660, 20);
   // The beach.
   m.item('health', 950, 0); m.item('Bazooka', 1035, -30); m.item('Shotgun', 1180, -30);
   m.item('Flamer', 1330, 0); m.item('health', 1430, 0); m.item('M4', 1340, -120);
-  m.item('Minigun', 1620, -240); m.item('health', 1660, -120); m.item('GrenadeLauncher', 1800, -120);
+  m.item('Minigun', 1620, -200); m.item('health', 1660, -120); m.item('GrenadeLauncher', 1800, -120);
   m.item('M4', 1730, -250); m.item('health', 2020, -120);
   // The glacis and outer wall.
   m.item('SR', 2380, -1000); m.item('health', 2080, GLACIS); m.item('M4', 2150, GLACIS);
@@ -253,18 +265,18 @@ export default function () {
   // The town.
   m.item('Shotgun', 3000, -780); m.item('health', 3060, -910); m.item('M4', 3150, -680);
   m.item('jetpack', 3405, -776); m.item('HolyHandGrenade', 3460, -750);
-  m.item('health', 3620, -880); m.item('M4', 3700, -1010); m.item('SR', 3740, -1210);
-  m.item('GrenadeLauncher', 3800, -800); m.item('armour', 3960, -980); m.item('health', 4050, -850);
+  m.item('health', 3620, -880); m.item('M4', 3700, -1010); m.item('SR', 3740, -1170);
+  m.item('GrenadeLauncher', 3800, -800); m.item('armour', 3960, -980); m.item('health', 4060, -900);
   m.item('Bazooka', 4020, -1180); m.item('NinjaRope', 4260, -1150); m.item('M4', 4200, -900);
   // The inner gatehouse and the upper ward.
   m.item('health', 4480, -950); m.item('Minigun', 4440, -1200); m.item('Shotgun', 4560, -1050);
   m.item('M4', 4780, -1080); m.item('health', 4800, -1210); m.item('Mine', 4950, -1000);
-  m.item('AirStrike', 5170, -1130); m.item('health', 5380, -1230); m.item('Flamer', 5330, -1360);
+  m.item('AirStrike', 5170, -1130); m.item('health', 5380, -1180); m.item('Flamer', 5300, -1420);
   // The keep and courtyard.
   m.item('M4', 5600, WARD); m.item('health', 5900, WARD); m.item('Shotgun', 5700, -1250);
   m.item('armour', 5800, -1400); m.item('health', 5600, -1550); m.item('GrenadeLauncher', 6000, -1550);
-  m.item('SR', 5550, -1700); m.item('Bazooka', 6070, -1960);
+  m.item('SR', 5550, -1700); m.item('Bazooka', 6070, -1860);
   m.item('M4', 6200, WARD); m.item('health', 6260, WARD); m.item('jetpack', 6380, WARD);
-  m.item('jetpack', 6300, -1230); m.item('armour', 6380, -1230); m.item('NinjaRope', 6160, -1550);
+  m.item('jetpack', 6300, -1230); m.item('armour', 6380, -1230); m.item('NinjaRope', 6160, -1620);
   return m;
 }

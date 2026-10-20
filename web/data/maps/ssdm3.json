@@ -233,13 +233,6 @@
       "bottom": 272
     },
     {
-      "type": "hill",
-      "left": 330,
-      "top": 440,
-      "right": 471,
-      "bottom": 528
-    },
-    {
       "type": "flag",
       "team": 1,
       "x": 760,
@@ -283,21 +276,9 @@
     },
     {
       "type": "mcom",
-      "sector": 1,
-      "x": 400,
-      "y": 480
-    },
-    {
-      "type": "mcom",
       "sector": 2,
       "x": 220,
       "y": 144
-    },
-    {
-      "type": "mcom",
-      "sector": 2,
-      "x": 60,
-      "y": 560
     }
   ]
 }

@@ -19,6 +19,7 @@ export function botMatch(file, { bots = 6, mode = 'ffa', difficulty = 'normal', 
   const mapData = loadMap(file);
   const game = new Game({ mapData, mode, fragLimit, seed, effects: false, speed });
   const nav = new NavGraph(game.map);
+  game.useNav(nav);
   const rng = makeRng(seed * 31 + 1);
   for (let i = 0; i < bots; i++) {
     const profile = BOT_PROFILES[i % BOT_PROFILES.length];

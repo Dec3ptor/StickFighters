@@ -54,7 +54,8 @@ export default function () {
   m.box(-2440, FC + T, -2400, VD - 70);
   // Cargo on deck: cover.
   m.box(-3180, MD - 32, -3120, MD).box(-2860, MD - 32, -2800, MD);
-  // Bridge tower at the stern.
+  // Bridge tower at the stern: its levels are 140 apart, so each has a 70 px step
+  // up to the next (a jump climbs about 97).
   const L1 = -320, L2 = -460, RF = -600;
   m.box(-3650, MD + 70, -3590, MD + 82);               // landing under the tower hatch
   m.floor(-3660, -3430, L1);
@@ -62,10 +63,15 @@ export default function () {
   m.floor(-3660, -3430, RF);
   m.box(-3364, L1, -3340, MD - 70);                    // lintel over the bridge door
   m.box(-3364, RF, -3340, L2 - 70);                    // wheelhouse wall above the windows
+  m.box(-3425, MD - 70, -3395, MD);                    // step: main deck up to L1 (inside the door)
+  m.box(-3660, L1 - 70, -3630, L1);                    // step: L1 up to L2 (by the stern plate)
+  m.box(-3425, L2 - 70, -3400, L2);                    // chart table: L2 up to the wheelhouse roof
   m.box(-3600, RF - 140, -3500, RF);                   // funnel (sniper perch)
+  m.box(-3630, RF - 70, -3600, RF).box(-3500, RF - 70, -3470, RF); // and steps up to it on each side
   m.box(-3330, L2 + T + 16, -3250, L2 + T + 46);       // lifeboat under the bridge wing
   m.box(-2620, FC - 140, -2530, FC - 124);             // crow's nest over the forecastle
-  m.box(-2579, FC - 260, -2571, FC - 140);             // and its mast
+  m.box(-2700, FC - 70, -2670, FC);                    // a ventilator to climb up to it
+  m.box(-2579, FC - 220, -2571, FC - 140);             // and its mast
 
   // ---- The water at the bow and the warehouse (x -2260 .. -1700) --------------------
   const W = { l: -2260, r: -1700 };
@@ -74,9 +80,13 @@ export default function () {
   m.floor(-2400, W.l, F2, 16);                         // high gangway from the forecastle
   m.box(W.l, F2 + T, W.l + 24, -90);                   // left wall (doors below and above)
   m.box(W.l, ROOF, W.l + 24, F2 - 70);
+  // Floors are 130-140 apart, so a crate or step halfway up leads to each.
   m.floor(W.l + 24, -1800, F1);                        // first floor (gap on the right)
+  m.box(-1790, -65, -1750, 0);                         // crate in the gap: up to the first floor
   m.floor(W.l + 24, -2140, F2).floor(-2060, W.r, F2);  // second floor (gap for the stairs)
-  m.floor(W.l, -1800, ROOF).floor(-1760, W.r, ROOF);   // roof (gap on the right)
+  m.box(-2120, F1 - 65, -2080, F1);                    // stair landing under the gap
+  m.floor(W.l, -1810, ROOF).floor(-1750, W.r, ROOF);   // roof (gap on the right)
+  m.box(-1800, F2 - 70, -1760, F2);                    // step under the roof gap
   m.box(-2080, ROOF - 60, -1880, ROOF);                // roof ridge
   m.box(W.r - 24, ROOF + T, W.r, F2 - 70);             // right wall: windows on each floor
   m.box(W.r - 24, F2 + T, W.r, F1 - 70);
@@ -96,22 +106,34 @@ export default function () {
 
   // ---- Crane yard (x -820 .. 0) --------------------------------------------------------
   m.box(-820, 0, 0, BOT);                              // quay (to the middle; mirrored)
+  // Two walk-through containers from the slip into the crane yard, two more stacked
+  // on the first (level with the catwalk), and a crate on the second as a step
+  // between them (the yard is a pit otherwise).
   tunnel(-740, -600, 0);
   stack(-740, -600, -CH, 2);
-  stack(-600, -520, 0, 1);
-  // Left leg of the gantry crane: a column with ladder rungs on its outer side.
+  tunnel(-600, -520, 0);
+  m.box(-600, -2 * CH, -575, -CH);
+  // Left leg of the gantry crane: a column with ladder rungs on its outer side,
+  // zig-zagging 80 px apart from the quay up to the portal beam.
   const BEAM = -640, HOUSE = -780, BOOM = -920;
   m.box(-380, BEAM + 32, -350, -60);
-  m.floor(-460, -380, -128, 16).floor(-520, -440, -256, 16).floor(-460, -380, -384, 16).floor(-520, -440, -512, 16);
+  for (let i = 1; i <= 7; i++) {
+    if (i % 2) m.floor(-440, -380, -80 * i, 16);
+    else m.floor(-520, -450, -80 * i, 16);
+  }
   m.floor(-400, 400, BEAM, 32);                        // portal beam
   m.box(-180, HOUSE, 180, BEAM);                       // machinery house
+  // Steps up its side to the hole in the boom (70 px each).
+  m.box(-260, BEAM - 70, -230, BEAM).box(-230, HOUSE, -180, BEAM).box(-200, HOUSE - 70, -170, HOUSE);
   // Boom, with holes over the house and over the hanging container.
   m.floor(-1000, -820, BOOM).floor(-760, -260, BOOM).floor(-140, 140, BOOM);
   m.box(-60, BOOM - 140, 60, BOOM);                    // lookout on the boom
-  m.box(-30, BOOM - 280, 30, BOOM - 140);              // apex of the A-frame
+  m.box(-90, BOOM - 70, -60, BOOM);                    // a step up to it
+  m.box(-30, BOOM - 210, 30, BOOM - 140);              // apex of the A-frame
   m.box(-560, BOOM + T, -470, BOOM + 70);              // operator's cab
   stack(-860, -720, HOUSE + CH, 1);                    // container hanging from the spreader
-  m.pad(-720, -684, -3 * CH, 12, 12);                  // pad on the stack, up to it
+  m.box(-805, HOUSE - 70, -775, HOUSE);                // the spreader (a step up through the boom's hole)
+  m.pad(-720, -684, -3 * CH, 12, 12);                  // pad on the stack, up to the container
   // Centre: a walk-through container and crates.
   tunnel(-90, 90, 0);
   stack(-260, -140, 0, 1);
@@ -119,7 +141,7 @@ export default function () {
   // ---- Spawns, items, flags (blue; mirrored for red) -----------------------------------
   for (const x of [-3620, -3540, -3460, -3380, -3300, -3080, -3000, -2920]) m.spawn(x, VD, 1);
   for (const x of [-3600, -3400, -3000, -2700]) m.spawn(x, HOLD, 1);
-  for (const x of [-3620, -3420, -3280, -3060]) m.spawn(x, MD, 1);
+  for (const x of [-3620, -3460, -3280, -3060]) m.spawn(x, MD, 1);
   for (const x of [-3620, -3500]) m.spawn(x, L1, 1);
   for (const x of [-3480, -3380]) m.spawn(x, L2, 1);
   m.flag(1, -2600, FC);
@@ -129,7 +151,7 @@ export default function () {
   m.item('NinjaRope', -2300, 0);
   m.item('Shotgun', -1400, 0).item('health', -1150, -3 * CH).item('armour', -1620, -2 * CH).item('M4', -1360, -2 * CH);
   m.item('health', -630, -3 * CH).item('Bazooka', -300, BEAM).item('Uzi', -600, 0).item('jetpack', -940, 40);
-  m.item('Minigun', 0, 0).item('SR', 0, BOOM - 280).item('HolyHandGrenade', -700, BOOM);
+  m.item('Minigun', 0, 0).item('SR', 0, BOOM - 210).item('HolyHandGrenade', -700, BOOM);
 
   m.mirror(0);
 
@@ -148,9 +170,9 @@ export default function () {
   m.mcom(2, 300, 0).mcom(2, 670, -8);
   m.mcom(3, 2000, 0).mcom(3, 2880, VD);
   for (const x of [-3100, -3000, -2900, -2800, -2700, -2600]) m.spawn(x, VD, 1, 1);
-  for (const [x, y] of [[-580, -CH], [-540, -CH], [-490, 0], [-430, 0], [-330, 0], [-300, 0]]) m.spawn(x, y, 2, 1);
-  for (const [x, y] of [[-800, 0], [-780, 0], [-580, -CH], [-540, -CH], [-490, 0], [-430, 0]]) m.spawn(x, y, 1, 2);
-  for (const x of [1960, 2020, 2080, 2140, 2180, 2220]) m.spawn(x, F1, 2, 2);
+  for (const [x, y] of [[-560, -CH], [-540, -CH], [-490, 0], [-430, 0], [-330, 0], [-300, 0]]) m.spawn(x, y, 2, 1);
+  for (const [x, y] of [[-800, 0], [-780, 0], [-560, -CH], [-540, -CH], [-490, 0], [-430, 0]]) m.spawn(x, y, 1, 2);
+  for (const x of [1960, 2020, 2050, 2140, 2180, 2220]) m.spawn(x, F1, 2, 2); // (clear of the stair landing)
   for (const [x, y] of [[1280, -2 * CH], [1330, -2 * CH], [1400, -2 * CH], [1580, -2 * CH], [1620, -2 * CH], [1660, -2 * CH]]) m.spawn(x, y, 1, 3);
   for (const x of [3620, 3540, 3460, 3380, 3300, 3220]) m.spawn(x, VD, 2, 3);
   return m;

@@ -143,7 +143,12 @@ function muzzlePoint(game, s, def) {
   return { x, y, dx, dy };
 }
 
-function aimed(game, s, spread, speed) {
+// Crouched on the ground, shots spread this much less (a shotgun's pellets less so).
+const CROUCH_SPREAD = 0.5, CROUCH_PELLETS = 0.75;
+
+/** A shot's velocity: aimed, give or take the weapon's spread (`crouched`: the share of it left when crouching). */
+function aimed(game, s, spread, speed, crouched = CROUCH_SPREAD) {
+  if (s.body.crouching && s.body.onGround) spread *= crouched;
   const a = s.aim + (game.rng() - 0.5) * spread;
   return [Math.cos(a) * speed, Math.sin(a) * speed];
 }
@@ -158,7 +163,7 @@ const LAUNCH = {
   bullet(game, s, def, id, m) {
     const n = def.pellets || 1;
     for (let i = 0; i < n; i++) {
-      const [vx, vy] = aimed(game, s, def.spread, def.speed * (n > 1 ? 0.85 + game.rng() * 0.3 : 1));
+      const [vx, vy] = aimed(game, s, def.spread, def.speed * (n > 1 ? 0.85 + game.rng() * 0.3 : 1), n > 1 ? CROUCH_PELLETS : CROUCH_SPREAD);
       spawn(game, { kind: 'bullet', sprite: def.damage >= 40 ? 'slug' : 'bullet', x: m.x, y: m.y, vx, vy, owner: s, weapon: id, life: def.range / def.speed, damage: def.damage, knock: def.knock });
     }
     if (n === 1) game.fx?.shell(s.shoulderX + m.dx * 6, s.shoulderY + m.dy * 6, s.facing);
@@ -214,7 +219,7 @@ const LAUNCH = {
 
   flame(game, s, def, id, m) {
     for (let i = 0; i < 2; i++) {
-      const [vx, vy] = aimed(game, s, def.spread, def.speed * (0.8 + game.rng() * 0.4));
+      const [vx, vy] = aimed(game, s, def.spread, def.speed * (0.8 + game.rng() * 0.4), 1); // (flames spray just the same)
       spawn(game, { kind: 'flame', sprite: 'flame', x: m.x, y: m.y, vx: vx + s.body.vx * 0.5, vy: vy + s.body.vy * 0.3, owner: s, weapon: id, life: def.life * (0.8 + game.rng() * 0.4), hit: new Set() });
     }
     return true;

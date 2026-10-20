@@ -15,13 +15,14 @@ import { loadMap } from './helpers.mjs';
 test('inputs survive the trip (and silly values are clamped)', () => {
   const inputs = [
     { seq: 41, move: -1, jump: true, jumpPressed: true, aim: 1.25, aimDist: 300, fire: true, firePressed: true, switchTo: 'Sheep' },
-    { seq: 42, move: 0.5, crouch: true, jet: true, aim: -2, aimDist: 99999, cycle: -1 },
+    { seq: 42, move: 0.5, crouch: true, jet: true, selfDestruct: true, aim: -2, aimDist: 99999, cycle: -1 },
   ];
   const out = decodeInputs(encodeInputs(inputs));
   assert.equal(out.length, 2);
   assert.deepEqual(out.map(i => i.seq), [41, 42]);
   assert.equal(out[0].move, -1);
-  assert.ok(out[0].jump && out[0].jumpPressed && out[0].fire && out[0].firePressed);
+  assert.ok(out[0].jump && out[0].jumpPressed && out[0].fire && out[0].firePressed && !out[0].selfDestruct);
+  assert.ok(out[1].selfDestruct, 'self-destruct (held K)');
   assert.equal(out[0].switchTo, 'Sheep');
   assert.ok(Math.abs(out[0].aim - 1.25) < 0.001);
   assert.equal(out[1].aimDist, 65535);

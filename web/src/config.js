@@ -10,8 +10,6 @@ export const DEFAULT_SPEED = 0.75;     // the game's speed
 // The speed picker is hidden and everyone plays at DEFAULT_SPEED.
 // Set this to true to show the "Game speed" menu again (its code is all still there).
 export const SHOW_SPEED_MENU = false;
-// Experimental "low jump" option: jumps reach this share of their usual height.
-export const LOW_JUMP = 0.6;
 
 // The original game ran at 800x600 and showed the map at 1:1.
 export const VIEW_W = 800;
@@ -27,7 +25,7 @@ export const PHYS = {
   crouchSpeed: 1.4,
   groundAccel: 1.2,
   airAccel: 0.5,
-  jumpSpeed: 12.3,      // about 168 px: high enough to climb out of every pit in the original maps
+  jumpSpeed: 9.53,      // about 97 px high (60% of the first tuning, 12.3, which reached 162 px)
   jumpCut: 3.5,         // letting go of jump early caps upward speed (short hops)
   bounceScale: 2.05,    // jump pad launch speed = map bounce value x this
   stepUp: 10,           // walk up ledges this high without jumping

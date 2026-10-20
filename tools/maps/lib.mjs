@@ -8,7 +8,7 @@
 // `node tools/maps/preview.mjs <name>`.
 //
 // Handy numbers (the game's physics, see web/src/config.js):
-//   A jump climbs about 168 px and carries about 186 px sideways.
+//   A jump climbs about 97 px and carries about 137 px sideways.
 //   Soldiers walk up steps up to 10 px high without jumping.
 //   Soldiers are 34 px tall (12 crouching less), 12 px wide.
 //   Jump pads launch about 40 px (strength 3), 110 (5), 220 (7), 370 (9), 660 (12).

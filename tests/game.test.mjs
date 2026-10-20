@@ -7,7 +7,7 @@ import { makeBody, stepBody } from '../web/src/physics.js';
 import { NavGraph } from '../web/src/nav.js';
 import { Game } from '../web/src/game.js';
 import { WEAPONS } from '../web/src/weapons.js';
-import { BODY, PHYS, SPEEDS, DEFAULT_SPEED, SHOW_SPEED_MENU, LOW_JUMP } from '../web/src/config.js';
+import { BODY, PHYS, SPEEDS, DEFAULT_SPEED, SHOW_SPEED_MENU } from '../web/src/config.js';
 import { setGameSpeed } from '../web/src/speed.js';
 import fs from 'node:fs';
 
@@ -35,7 +35,7 @@ test('the 8 original maps and the new ones load, with spawn points in open space
   }
 });
 
-test('soldiers land on floors, jump about 168 px, and jump pads launch higher', () => {
+test('soldiers land on floors, jump about 97 px, and jump pads launch higher', () => {
   const map = new GameMap(loadMap('ssteam1.json'));
   const body = settle(makeBody(map.spawns[0].x, map.spawns[0].y), map);
   assert.ok(body.onGround);
@@ -44,7 +44,7 @@ test('soldiers land on floors, jump about 168 px, and jump pads launch higher', 
   let top = body.y;
   for (let i = 0; i < 200 && !body.onGround; i++) { stepBody(body, { move: 0, jump: true }, map); top = Math.min(top, body.y); }
   const height = floorY - top;
-  assert.ok(height > 160 && height < 175, `jump height ${height}`);
+  assert.ok(height > 92 && height < 102, `jump height ${height}`);
   assert.ok(Math.abs(body.y - floorY) < 0.01, 'lands back on the same floor');
 
   const steeple = new GameMap(loadMap('ssdm7.json'));
@@ -68,26 +68,36 @@ test('walls stop soldiers', () => {
   assert.ok(Math.abs(body.x - (200 - BODY.halfW)) < 0.01, `stopped at ${body.x}`);
 });
 
+// King of the Hill's pit (the bottom floor and the mound, below the side floors) is a
+// deliberate trap: you can drop in but not climb out.
+const PITS = { 'ssdm3.json': n => n.y > 420 };
+
 for (const speed of SPEEDS) test(`bots can get everywhere they can reach and back, on every map, at ${speed * 100}% speed`, () => {
   setGameSpeed(speed);
   for (const m of MAPS) {
     const map = new GameMap(loadMap(m.file));
     const nav = new NavGraph(map);
+    const pit = PITS[m.file] || (() => false);
     // Every spot reachable from a spawn must be able to get back to that spawn.
-    const spawnNodes = map.spawns.map(s => {
+    const landed = map.spawns.map(s => {
       const b = settle(makeBody(s.x, s.y), map);
       return nav.nodeAt(b.x, b.y, 12);
     });
-    assert.ok(spawnNodes.every(Boolean), `${m.name}: every spawn lands on a route spot`);
+    assert.ok(landed.every(Boolean), `${m.name}: every spawn lands on a route spot`);
+    const spawnNodes = landed.filter(n => !pit(n));
     const home = spawnNodes[0];
     const fromHome = nav.costsFrom(home).cost;
     // Can get back = in the same group of spots that can all reach each other.
     const { comp } = nav.groups();
     for (const n of nav.nodes) {
-      if (fromHome[n.id] === Infinity) continue;
+      if (fromHome[n.id] === Infinity || pit(n)) continue;
       assert.ok(comp[n.id] === comp[home.id], `${m.name}: stuck at ${n.x},${n.y}`);
     }
     for (const sn of spawnNodes) assert.ok(fromHome[sn.id] < Infinity, `${m.name}: spawn ${sn.x},${sn.y} unreachable`);
+    // The route map knows exactly which spots are traps.
+    const trapped = nav.nodes.filter(n => nav.trapped()[n.id]);
+    assert.ok(trapped.every(pit), `${m.name}: unexpected trap at ${trapped.find(n => !pit(n))?.x},${trapped.find(n => !pit(n))?.y}`);
+    if (PITS[m.file]) assert.ok(trapped.length > 20, `${m.name}: the pit is a trap`);
   }
 });
 
@@ -181,26 +191,6 @@ test('lower game speeds keep jumps the same height but slower, at 60 updates a s
   assert.equal(WEAPONS.M4.rof, 16, 'fire delay doubles at half speed');
   assert.equal(WEAPONS.M4.speed, 17, 'bullets fly half as fast');
 });
-test('the experimental low jump reaches 60% as high, at any speed, and only in that match', () => {
-  const jump = (speed, options) => {
-    const g = new Game({ mapData: loadMap('ssteam1.json'), effects: false, speed, options });
-    const body = settle(makeBody(g.map.spawns[0].x, g.map.spawns[0].y), g.map);
-    const floorY = body.y;
-    stepBody(body, { move: 0, jump: true, jumpPressed: true }, g.map);
-    let top = body.y;
-    for (let i = 0; i < 400 && !body.onGround; i++) { stepBody(body, { move: 0, jump: true }, g.map); top = Math.min(top, body.y); }
-    return floorY - top;
-  };
-  const normal = jump(1);
-  for (const speed of [1, DEFAULT_SPEED]) {
-    const low = jump(speed, { jump: 'low' });
-    assert.ok(Math.abs(low / normal - LOW_JUMP) < 0.03, `low jump at ${speed}: ${low.toFixed(0)} px vs ${normal.toFixed(0)}`);
-  }
-  // The next match without it jumps as usual again.
-  assert.ok(Math.abs(jump(DEFAULT_SPEED) - normal) < 4);
-  assert.equal(new Game({ mapData: loadMap('ssteam1.json'), effects: false }).options.jump, 'normal');
-});
-
 test('the pistol keeps reloading and firing at the real game speed', () => {
   const map = { name: 'range', bounds: { left: -600, top: -300, right: 600, bottom: 200 }, spawns: [], items: [],
     platforms: [{ left: -600, top: 0, right: 600, bottom: 40 }] };
@@ -384,6 +374,6 @@ test('the menu offers exactly the game speeds the game supports', () => {
 });
 
 test('physics constants still match the tuned values the route planner was tested with', () => {
-  assert.equal(PHYS.jumpSpeed, 12.3);
+  assert.equal(PHYS.jumpSpeed, 9.53);
   assert.equal(PHYS.gravity, 0.45);
 });

@@ -7,7 +7,7 @@
 
 import { WEAPONS } from '../weapons.js';
 
-export const PROTOCOL = 5;            // bump when the messages change; older versions can't join
+export const PROTOCOL = 6;            // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -71,7 +71,7 @@ export const messageType = data => (data instanceof Uint8Array ? data : new Uint
 
 // ---- Inputs ----------------------------------------------------------------------------
 
-/** A player's inputs: the newest last. Each is { seq, move, jump, jumpPressed, crouch, jet, fire, firePressed, alt, aim, aimDist, switchTo, cycle }. */
+/** A player's inputs: the newest last. Each is { seq, move, jump, jumpPressed, crouch, jet, fire, firePressed, alt, selfDestruct, aim, aimDist, switchTo, cycle }. */
 export function encodeInputs(inputs) {
   const w = new Writer(16 + inputs.length * 12);
   w.u8(MSG.input);
@@ -79,7 +79,7 @@ export function encodeInputs(inputs) {
   w.u8(inputs.length);
   for (const i of inputs) {
     w.i8(Math.round((i.move || 0) * 100));
-    w.u8((i.jump ? 1 : 0) | (i.jumpPressed ? 2 : 0) | (i.crouch ? 4 : 0) | (i.jet ? 8 : 0) | (i.fire ? 16 : 0) | (i.firePressed ? 32 : 0) | (i.alt ? 64 : 0));
+    w.u8((i.jump ? 1 : 0) | (i.jumpPressed ? 2 : 0) | (i.crouch ? 4 : 0) | (i.jet ? 8 : 0) | (i.fire ? 16 : 0) | (i.firePressed ? 32 : 0) | (i.alt ? 64 : 0) | (i.selfDestruct ? 128 : 0));
     w.u16(angleToU16(i.aim ?? 0));
     w.u16(clampU16(i.aimDist ?? 200));
     w.u8(i.switchTo ? weaponIndex(i.switchTo) + 1 : 0);
@@ -103,7 +103,7 @@ export function decodeInputs(data) {
     const cycle = Math.sign(r.i8());
     out.push({
       seq: last - (n - 1 - k), move, jump: !!(f & 1), jumpPressed: !!(f & 2), crouch: !!(f & 4), jet: !!(f & 8),
-      fire: !!(f & 16), firePressed: !!(f & 32), alt: !!(f & 64), aim, aimDist,
+      fire: !!(f & 16), firePressed: !!(f & 32), alt: !!(f & 64), selfDestruct: !!(f & 128), aim, aimDist,
       switchTo: sw ? weaponAt(sw - 1) : null, cycle: cycle || 0,
     });
   }

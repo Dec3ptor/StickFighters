@@ -52,19 +52,18 @@ export const OBJECTIVES = {
   ],
 
   // King of the Hill: mirrored about x 400.5, blue on the right. The hill on
-  // top of the middle structure, and the mound underneath.
+  // top of the middle structure. The pit underneath (the bottom floor and the
+  // mound) is a deliberate trap: you can drop in but not climb out, so nothing
+  // anyone needs is down there (and nobody spawns there).
   ssdm3: [
     hill(304, 497, 272, 96),              // the hill (with its two posts and the slab above)
-    hill(330, 471, 528, 88),              // the mound below
     flag(1, 760, 384),
     flag(2, 41, 384),
     point('A', 584, 764, 384),            // blue's floor
     point('B', 304, 497, 272, 96),        // the hill
     point('C', 37, 217, 384),             // red's floor
     mcom(1, 360, 272),                    // on the hill, red's side
-    mcom(1, 400, 480),                    // top of the mound
     mcom(2, 220, 144),                    // red's upper ledge
-    mcom(2, 60, 560),                     // bottom floor, red's corner
   ],
 
   // Fraghouse: mirrored about x 400, blue on the right. Three hills stacked in

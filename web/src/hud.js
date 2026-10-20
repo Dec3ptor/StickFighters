@@ -66,6 +66,19 @@ export function drawHud(r, game, me, opts = {}) {
   });
   ctx.globalAlpha = 1;
 
+  if (me.alive && opts.selfDestruct > 0) {
+    // Holding K: how long until it goes off.
+    const w = 160, x = W / 2 - w / 2, y = H / 2 - 70;
+    ctx.textAlign = 'center';
+    ctx.font = `bold 14px ${FONT}`;
+    ctx.fillStyle = '#c22';
+    ctx.fillText('Self-destructing...', W / 2, y - 8);
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillRect(x, y, w, 6);
+    ctx.fillStyle = '#c22';
+    ctx.fillRect(x, y, w * Math.min(1, opts.selfDestruct), 6);
+  }
+
   if (!me.alive && !game.over) {
     ctx.textAlign = 'center';
     ctx.font = `bold 20px ${FONT}`;

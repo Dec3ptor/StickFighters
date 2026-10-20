@@ -8,6 +8,8 @@ import { BotController, BOT_PROFILES } from '../web/src/bot.js';
 import { makeRng } from '../web/src/util.js';
 import { DEFAULT_SPEED } from '../web/src/config.js';
 import { WEAPONS } from '../web/src/weapons.js';
+import { botMatch } from './helpers.mjs';
+import { SELF_DESTRUCT_TICKS } from '../web/src/game.js';
 
 // A long floor with a Shotgun lying on it at x 0.
 function arena(mode = 'ffa', options = {}) {
@@ -84,4 +86,84 @@ test('bots walk along flat floors instead of hopping', () => {
   assert.ok(path.length > 100);
   assert.deepEqual([...new Set(path.map(l => l.type))], ['walk']);
   assert.ok(game.map);
+});
+
+test("King of the Hill's pit is a trap: nobody spawns in it, bots keep out, and a bot stuck in it self-destructs", () => {
+  const { game, nav } = botMatch('ssdm3.json', { bots: 6, mode: 'ffa', seed: 3 });
+  const trapped = nav.trapped();
+  // Its two spawn points down there aren't used.
+  assert.equal(game.map.spawns.length - game.spawns.length, 2);
+  const fresh = game.addSoldier({ name: 'Fresh', isBot: false }, { input: () => ({ move: 0 }) });
+  for (let i = 0; i < 100; i++) {
+    const p = game.pickSpawn(fresh);
+    const n = nav.landing(p.x, p.y);
+    assert.ok(n && !trapped[n.id], `spawned in the pit at ${p.x},${p.y}`);
+  }
+  game.removeSoldier(fresh);
+  // A bot dropped into the pit with nothing to do there blows itself up and respawns up top.
+  const feed = [];
+  const add = game.addFeed.bind(game);
+  game.addFeed = e => { feed.push(e.text); add(e); };
+  const stuck = game.soldiers[0];
+  for (const o of game.soldiers) if (o !== stuck) game.kill(o, stuck); // nobody to fight for a while
+  stuck.spawnAt({ x: 164, y: 528 }, 0);
+  game.controllers.get(stuck).onSpawn(game, stuck);
+  let t = 0;
+  while (stuck.alive && t++ < 900) game.update();
+  assert.ok(!stuck.alive && t < 600, `still in the pit after ${t} updates`);
+  assert.ok(feed.some(f => f === `${stuck.name} self-destructed`), feed.join('; '));
+  // Bots playing normally only end up down there by accident, and don't stay.
+  let inPit = 0;
+  for (let i = 0; i < 3600; i++) {
+    game.update();
+    if (i % 30 === 0) inPit += game.soldiers.filter(o => o.alive && game.trapped(o)).length;
+  }
+  assert.ok(inPit < 40, `bots spent ${inPit / 2} bot-seconds in the pit`);
+});
+
+test('holding self-destruct for a second blows you up (a suicide, or a kill for whoever just hurt you)', () => {
+  const { game } = arena();
+  let held = true;
+  const you = game.addSoldier({ name: 'You', isBot: false }, { input: () => ({ move: 0, selfDestruct: held }) });
+  you.spawnAt({ x: 0, y: -12 }, 0);
+  for (let i = 0; i < SELF_DESTRUCT_TICKS - 5; i++) game.update();
+  held = false;
+  game.update();
+  held = true;
+  for (let i = 0; i < SELF_DESTRUCT_TICKS - 5; i++) game.update();
+  assert.ok(you.alive, 'letting go starts the count again');
+  for (let i = 0; i < 10; i++) game.update();
+  assert.ok(!you.alive);
+  assert.equal(you.frags, -1, 'counts as a suicide');
+  // Hurt by someone just before: it's their kill.
+  const other = game.addSoldier({ name: 'Other', isBot: false }, { input: () => ({ move: 0 }) });
+  other.spawnAt({ x: 300, y: -12 }, 0);
+  you.spawnAt({ x: 0, y: -12 }, 0);
+  you.lastHurtBy = other;
+  you.lastHurtTick = game.tick;
+  for (let i = 0; i < SELF_DESTRUCT_TICKS + 2; i++) game.update();
+  assert.ok(!you.alive);
+  assert.equal(other.frags, 1);
+});
+
+test("a team walled into its own part of the map doesn't self-destruct over and over", () => {
+  // Two closed rooms, one per team (a broken map): dying wouldn't get anyone out.
+  const room = x => [
+    { left: x, top: 0, right: x + 400, bottom: 40 }, { left: x - 40, top: -300, right: x, bottom: 40 },
+    { left: x + 400, top: -300, right: x + 440, bottom: 40 }, { left: x - 40, top: -340, right: x + 440, bottom: -300 },
+  ];
+  const map = {
+    name: 'rooms', bounds: { left: -1200, top: -600, right: 1200, bottom: 200 }, items: [],
+    platforms: [...room(-900), ...room(500)],
+    spawns: [{ x: -700, y: -30, team: 1 }, { x: -600, y: -30, team: 1 }, { x: 700, y: -30, team: 2 }],
+  };
+  const game = new Game({ mapData: map, mode: 'team', effects: false, seed: 2, speed: DEFAULT_SPEED });
+  const nav = new NavGraph(game.map);
+  game.useNav(nav);
+  const feed = [];
+  const add = game.addFeed.bind(game);
+  game.addFeed = e => { feed.push(e.text); add(e); };
+  for (let i = 0; i < 4; i++) game.addSoldier({ name: `B${i}`, isBot: true, team: 1 + (i % 2) }, new BotController(nav, 'normal', BOT_PROFILES[i], makeRng(i + 1)));
+  for (let i = 0; i < 1800; i++) game.update();
+  assert.deepEqual(feed.filter(t => /self-destructed/.test(t)), []);
 });

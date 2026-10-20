@@ -96,6 +96,8 @@ export class PlayerController {
       jump,
       jumpPressed: jump && !this.prevJump,
       crouch: k.down('KeyS', 'ArrowDown'),
+      // Hold K to self-destruct (to get out of a pit you can't climb out of).
+      selfDestruct: k.down('KeyK'),
       fire: k.mouse.left,
       firePressed: k.mouse.left && !this.prevFire,
       alt: k.mouse.right,

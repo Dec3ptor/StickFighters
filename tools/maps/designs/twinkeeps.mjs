@@ -9,7 +9,7 @@
 //   - the rope line, sagging from one keep's battlement to the other's.
 //
 // Levels (y, down is +): stones 150, ground 0, bridge -90 (crown -130),
-// rampart -330, rope -440 (middle) to -700 (keeps), keep battlement -700.
+// rampart -280, rope -440 (middle) to -700 (keeps), keep battlement -700.
 import { MapBuilder, T } from '../lib.mjs';
 
 export const info = { modes: ['ctf', 'conquest', 'koth', 'team', 'ffa', 'rush'], size: 'small', players: '6-16' };
@@ -33,24 +33,29 @@ export default function () {
 
   // The keep: an outer wall (its top a lookout over the battlement), an inner wall
   // with a door at the bottom, ledges zig-zagging up inside, and the battlement on top.
+  // Seven ledges, left and right in turn, each about 88 px above the last (a jump),
+  // the top one under the hatch.
   m.box(-1348, -780, -1324, 0);           // outer wall
   m.box(-1124, -676, -1100, -150);        // inner wall (door below)
-  m.floor(-1324, -1244, -125);            // L1
-  m.floor(-1204, -1124, -250);            // R1
-  m.floor(-1324, -1244, -375);            // L2
-  m.floor(-1204, -1124, -500);            // R2
-  m.floor(-1324, -1262, -610);            // L3
+  m.floor(-1324, -1252, -88, 16);         // L1
+  m.floor(-1196, -1124, -175, 16);        // R1
+  m.floor(-1324, -1252, -263, 16);        // L2
+  m.floor(-1196, -1124, -350, 16);        // R2
+  m.floor(-1324, -1252, -438, 16);        // L3
+  m.floor(-1196, -1124, -525, 16);        // R3
+  m.floor(-1324, -1262, -613, 16);        // L4, under the hatch
   m.floor(-1250, -1100, -700);            // battlement (the gap to its left is the hatch)
   m.box(-1196, -730, -1176, -700);        // merlon: crouch behind it to snipe
 
   // Courtyard: the flag, a cart for cover, scaffolding up to the rampart.
+  // Cart, scaffold and rampart are a jump apart each (80-85 px).
   m.box(-990, -30, -930, 0);              // cart
   m.floor(-880, -810, -110);              // scaffold
-  m.floor(-810, -762, -220);
+  m.floor(-810, -762, -195);
   // Gatehouse: the gate passage below, the rampart on top with merlons facing the moat.
-  m.box(-740, -330, -520, -140);
-  m.box(-544, -360, -520, -330);
-  m.box(-640, -356, -620, -330);
+  m.box(-740, -280, -520, -140);
+  m.box(-544, -310, -520, -280);
+  m.box(-640, -306, -620, -280);
   m.box(-552, -140, -536, -64);           // the portcullis, half raised: cover in the gate
 
   // The moat: stepping stones (pillars rising out of the deep) under the bridge.
@@ -65,15 +70,15 @@ export default function () {
   // Items.
   m.item('M4', -1225, -700);
   m.item('Longbow', -1160, -700);
-  m.item('health', -1290, -375);
-  m.item('Uzi', -1160, -250);
-  m.item('armour', -1295, -610);
+  m.item('health', -1290, -438);
+  m.item('Uzi', -1160, -175);
+  m.item('armour', -1295, -613);
   m.item('Shotgun', -960, -30);
   m.item('health', -845, -110);
   m.item('Flamer', -660, 80);            // in the tunnel
   m.item('M4', -630, 0);
-  m.item('NinjaRope', -590, -330);
-  m.item('GrenadeLauncher', -700, -330);
+  m.item('NinjaRope', -590, -280);
+  m.item('GrenadeLauncher', -700, -280);
   m.item('health', -330, 150);
   m.item('Shotgun', -380, -90);
   m.item('armour', -165, 150);
@@ -114,7 +119,7 @@ export default function () {
   m.mcom(1, 330, -90);                    // the bridge, behind the parapet
   m.mcom(1, 490, 0);                      // red's bank, under the rampart
   m.mcom(2, 960, 0);                      // red courtyard
-  m.mcom(2, 690, -330);                   // red rampart
+  m.mcom(2, 690, -280);                   // red rampart
   for (const x of [-560, -510, -480, -455]) m.spawn(x, 0, 1, 1);   // blue gate and bank
   for (const x of [1070, 1150, 1180, 1260]) m.spawn(x, 0, 2, 1);  // red keep and courtyard
   for (const x of [160, 240, 360]) m.spawn(x, -90, 1, 2);          // the bridge

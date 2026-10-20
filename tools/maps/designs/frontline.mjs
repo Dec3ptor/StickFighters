@@ -115,16 +115,19 @@ export default function () {
   m.box(W, TOP, W + 40, BASE);
 
   // ---- Blue's rear lines (x 0-1100) -------------------------------------------------------
-  // Command bunker (blue flag): roof with a hatch, door on the right, a crate to climb.
+  // Command bunker (blue flag): roof with a hatch (a way down, too high to climb), door on the
+  // right opening onto a strip of clear ground, then a crate to climb (64 high, 76 more to the roof).
   slab(0, 170, -140, 24); slab(240, 420, -140, 24);
   m.box(396, -116, 420, -46);
-  bags(420, 456, 0, 64);
-  bags(480, 520, 0, 40);                // supply dump
-  // Field gun: carriage, shield and barrel; the observation post above it.
+  bags(450, 486, 0, 64);
+  bags(486, 526, 0, 40);                // supply dump: a step up to the crate
+  // Field gun: carriage, shield and barrel; the observation post above it, with a ladder rung
+  // on its right (barrel 76 high, rung 115, post 200).
   bags(880, 960, 0, 40);
   m.box(940, -86, 956, -40);
   slab(956, 1040, -76, 14);
   slab(980, 1080, -200);
+  slab(1088, 1128, -115, 12);           // the observation post's ladder rung
   bags(1080, 1116, 0);                  // the jump-off trench's back wall
 
   // ---- No-man's land (x 1100-1960) -----------------------------------------------------------
@@ -142,64 +145,84 @@ export default function () {
   m.box(2880, 0, 2990, 24);            // support trench: timber cover
 
   // ---- The village (x 3060-4400) ----------------------------------------------------------
-  // House A: two floors, the west end of the roof fallen in.
+  // Floors are 130 apart, more than a jump, so each storey has a step halfway: a fallen beam
+  // (high enough to walk under, so the street stays clear) or the top of a broken wall.
+  // House A: two floors, the west end of the roof fallen in. A fallen beam (66 up) is the way to
+  // the first floor; the broken west wall (80 above it) is the way on up to the roof.
   slab(3090, 3250, -130); slab(3170, 3330, -260);
-  m.box(3090, -210, 3108, -130);       // what's left of the west wall
+  slab(3252, 3288, -66, 12);           // a fallen beam: a step up to the first floor
+  m.box(3090, -210, 3114, -130);       // what's left of the west wall
   m.box(3310, -300, 3330, -260);       // chimney
   bags(3380, 3430, 0, 30);              // a wrecked cart in the street
-  // House B: three floors, half collapsed.
+  // House B: three floors, half collapsed. A beam under the stair hole, the broken east wall
+  // (80 above the first floor) up to the second, and the top floor sagging to 85 above that.
   slab(3460, 3540, -130); slab(3590, 3650, -130);
   slab(3460, 3570, -260);
-  slab(3460, 3520, -390);
+  slab(3460, 3520, -345);
+  slab(3548, 3582, -66, 12);           // a beam under the stair hole
   m.box(3460, -110, 3480, -46);        // west wall over the door
   m.box(3460, -200, 3480, -130);       // west wall, first floor
-  m.box(3632, -166, 3650, -130);       // a stub of the east wall
+  m.box(3626, -210, 3650, -130);       // a stub of the east wall
   bags(3710, 3750, 0, 26);              // the well in the square
-  // The church: nave with a gallery and a shell-holed roof.
+  // The church: nave with a gallery and a shell-holed roof (the way to both is up the tower:
+  // its fourth floor steps out onto the roof, and the hole drops onto the gallery).
   m.box(3810, -280, 3836, -50);        // west wall over the door
   slab(3836, 3950, -150);              // gallery
   slab(3810, 3880, -300); slab(3940, 4040, -300);
   m.box(3940, 0, 4160, 40);            // crypt ceiling (the church floor)
-  // Bell tower: floors climbing in a zigzag up to the belfry, then the spire.
-  slab(4090, 4140, -130); slab(4040, 4090, -260); slab(4090, 4140, -390);
-  m.box(4140, -420, 4160, -60);        // east wall (open underneath)
+  // Bell tower: floors climbing in a zigzag (about 87 apart) up to the belfry, then the spire.
+  slab(4090, 4140, -87); slab(4040, 4090, -173); slab(4090, 4140, -260);
+  slab(4040, 4090, -347); slab(4100, 4140, -433);
+  m.box(4140, -450, 4160, -60);        // east wall (open underneath)
   slab(4020, 4100, -520);              // belfry floor
-  slab(4050, 4120, -650);              // belfry roof
-  m.box(4078, -720, 4092, -650);       // spire
-  // The barn: hayloft and roof.
+  slab(4050, 4120, -605);              // belfry roof
+  m.box(4078, -675, 4092, -605);       // spire
+  // The barn: hayloft and roof. A ladder rung (72 up, walk under it) up to the loft; the broken
+  // west gable (65 above the loft) up to the roof.
   slab(4250, 4360, -150); slab(4290, 4420, -280);
-  slab(4520, 4600, -320);              // a shell-shattered tree on the slope: a way over the parapet
+  slab(4368, 4400, -72, 12);           // the hayloft ladder's rung
+  m.box(4226, -215, 4250, -130);       // the west gable
+  slab(4520, 4600, -320);              // a shell-shattered tree on the slope (from the barn roof): a way over the parapet
 
   // ---- Sector 2: the ridge (x 4400-5460) ----------------------------------------------------
   m.box(4870, RIDGE, 4950, RIDGE + 24); // gun pit cover
-  // Blockhouse: doors front and back, two storeys and a roof.
+  // Blockhouse: doors front and back, two storeys and a roof. A crate (70 high) under the stair
+  // hole leads up to the first floor (80 more); sandbags on its east end (60) lead up to the
+  // roof (80 more).
   m.box(5040, -310, 5070, -240);       // west wall over the door
   bags(5110, 5135, RIDGE);              // sandbags inside
-  bags(5250, 5300, RIDGE, 50);          // crate under the stair hole
+  bags(5250, 5300, RIDGE, 70);          // crate under the stair hole
   slab(5040, 5230, -330); slab(5280, 5370, -330);
   m.box(5340, -310, 5370, -240);       // east wall over the back door
+  bags(5345, 5370, -330, 60);           // sandbags on the first floor: a step up to the roof
   slab(5070, 5320, -470, 26);          // roof (a hill)
   bags(5390, 5440, RIDGE, 60);          // crates by the back
 
   // ---- The farm (x 5460-6040) ----------------------------------------------------------------
-  bags(5520, 5560, -100, 40);           // haystack
+  // The farmhouse: haystack (50) up to the first floor (80 more), then the second floor and the
+  // roof, 85 apart (the first floor is also a bridge over the dip, from the east).
+  bags(5520, 5560, -100, 50);           // haystack
   slab(5590, 5810, -230);
   m.box(5590, -210, 5608, -150);       // walls over the doors
   m.box(5792, -210, 5810, -150);
-  slab(5620, 5780, -350); slab(5660, 5740, -430);
+  slab(5620, 5780, -315); slab(5660, 5740, -400);
 
   // ---- Sector 3: HQ (x 6040-7400) ----------------------------------------------------------
   // Chateau: west wall with a door and windows, three floors, roof with battlements, radio mast.
+  // Floors are 150 apart; crates (70 high, then 80 more) are the stairs from floor to floor and
+  // up to the roof, and a ladder rung (65, then 65 more) leads up to the radio mast's platform.
   m.box(6630, -770, 6660, -690);
   m.box(6630, -664, 6660, -540);
   m.box(6630, -514, 6660, -390);
   m.box(6760, PLAT, 6920, PLAT + 40);   // cellar ceiling (the ground floor)
-  bags(7060, 7110, PLAT, 50);           // crate under the first stair hole
+  bags(7060, 7110, PLAT, 70);           // crate under the first stair hole
   slab(6660, 7040, -490); slab(7090, 7160, -490);
-  bags(6780, 6830, -490, 50);           // crate under the second stair hole
+  bags(6780, 6830, -490, 70);           // crate under the second stair hole
   slab(6660, 6760, -640); slab(6810, 7110, -640);
+  bags(7084, 7110, -640, 70);           // crate up to the roof
   slab(6630, 7060, -790);              // roof
   bags(6630, 6650, -790, 26); bags(6780, 6800, -790, 26);  // battlements
+  slab(6914, 6948, -855, 12);          // the mast's ladder rung (walk under it)
   slab(6960, 7030, -920);              // radio mast platform
   m.box(6990, -1060, 7000, -920);
   // The arsenal in red's courtyard (red flag underneath).
@@ -247,7 +270,7 @@ export default function () {
   m.spawn(4300, -150, 1, 2);
   for (const x of [5760, 5850]) m.spawn(x, -100, 2, 2);
   for (const x of [5940, 5990, 6030]) m.spawn(x, RIDGE, 2, 2);
-  for (const x of [5700, 5770]) m.spawn(x, -230, 2, 2); m.spawn(5700, -350, 2, 2);
+  for (const x of [5700, 5770]) m.spawn(x, -230, 2, 2); m.spawn(5700, -315, 2, 2);
   // Sector 3 (blue at the farm; red in the courtyard).
   for (const x of [5580, 5620, 5680, 5740, 5860]) m.spawn(x, -100, 1, 3);
   for (const x of [5960, 6000]) m.spawn(x, RIDGE, 1, 3); m.spawn(5610, -230, 1, 3);
@@ -269,7 +292,7 @@ export default function () {
   m.item('health', 2850, 100); m.item('armour', 2960, 100); m.item('GrenadeLauncher', 3010, 50);
   // The village.
   m.item('Shotgun', 3200, -130); m.item('health', 3250, -260); m.item('M4', 3400, -30);
-  m.item('NinjaRope', 3490, -390); m.item('health', 3610, -130);
+  m.item('NinjaRope', 3490, -345); m.item('health', 3610, -130);
   m.item('jetpack', 3680, 0); m.item('armour', 3900, -150); m.item('M4', 3990, 0);
   m.item('HolyHandGrenade', 4050, 150); m.item('health', 4120, 150);
   m.item('SR', 4040, -520); m.item('Dynamite', 4300, -150); m.item('M4', 4340, -280);
@@ -278,7 +301,7 @@ export default function () {
   m.item('Shotgun', 5160, -180); m.item('armour', 5100, -330); m.item('AirStrike', 5200, -470);
   m.item('health', 5410, -240);
   // The farm.
-  m.item('M4', 5540, -140); m.item('health', 5700, -100); m.item('jetpack', 5700, -430);
+  m.item('M4', 5540, -150); m.item('health', 5700, -100); m.item('jetpack', 5700, -400);
   m.item('Mine', 5640, -230); m.item('Shotgun', 5850, -100);
   // Sector 3.
   m.item('health', 6300, PLAT); m.item('M4', 6480, PLAT + 80);

@@ -120,10 +120,7 @@
                   <select id="fog"><option value="off">Off</option><option value="on">On</option></select>
                 </label>
               </div>
-              <label class="field">Jump height
-                <select id="jump"><option value="normal">Normal</option><option value="low">Low (60%)</option></select>
-              </label>
-              <p class="muted-note"><b>Only what they see or hear</b>: bots spot you only on their screen, in front of them and in a clear line; behind them, they only hear you (shots, explosions, jetpacks, landings, running close by; creeping along crouched is silent). <b>Fog of war</b>: you only see what your soldier can see; the rest is greyed out, enemies there are hidden, and sounds from there show as orange ripples (or arrows at the screen's edge). <b>Low jump</b>: jumps reach 60% as high; the maps aren't made for it yet, so some have spots you can't climb back out of. Also in Settings.</p>
+              <p class="muted-note"><b>Only what they see or hear</b>: bots spot you only on their screen, in front of them and in a clear line; behind them, they only hear you (shots, explosions, jetpacks, landings, running close by; creeping along crouched is silent). <b>Fog of war</b>: you only see what your soldier can see; the rest is greyed out, enemies there are hidden, and sounds from there show as orange ripples (or arrows at the screen's edge). Also in Settings.</p>
             </div>
             <!-- Hidden unless SHOW_SPEED_MENU is true in src/config.js -->
             <label class="field hidden" id="speedField">Game speed
@@ -153,11 +150,12 @@
                 <tr><td>Move</td><td><kbd>A</kbd> <kbd>D</kbd></td></tr>
                 <tr><td>Jump (hold for higher)</td><td><kbd>W</kbd> or <kbd>Space</kbd></td></tr>
                 <tr><td>Jetpack</td><td>hold jump in the air, or <kbd>Shift</kbd></td></tr>
-                <tr><td>Crouch</td><td><kbd>S</kbd></td></tr>
+                <tr><td>Crouch (steadier aim)</td><td><kbd>S</kbd></td></tr>
                 <tr><td>Aim / fire</td><td>mouse / left click (mouse distance sets throw strength)</td></tr>
                 <tr><td>Sniper zoom</td><td>right click</td></tr>
                 <tr><td>Weapons</td><td><kbd>1</kbd>&ndash;<kbd>0</kbd>, melee <kbd>F</kbd>; press again to cycle; <kbd>Q</kbd> <kbd>E</kbd>, wheel</td></tr>
                 <tr><td>Sheep, rope</td><td>click again to explode / let go</td></tr>
+                <tr><td>Self-destruct</td><td>hold <kbd>K</kbd> (to get out of a pit you can't climb out of)</td></tr>
                 <tr><td>Chat (online)</td><td><kbd>Enter</kbd> or <kbd>T</kbd></td></tr>
                 <tr><td>Scores / pause / mute</td><td><kbd>Tab</kbd> / <kbd>Esc</kbd> / <kbd>M</kbd></td></tr>
               </table>
@@ -233,9 +231,6 @@
           <select id="setFog"><option value="off">Off</option><option value="on">On</option></select>
         </label>
       </div>
-      <label class="field">Jump height
-        <select id="setJump"><option value="normal">Normal</option><option value="low">Low (60%)</option></select>
-      </label>
       <p class="muted-note">For the next game you start or host (a match already running keeps its own). The same choices are in the game setup.</p>
       <button id="settingsDone" class="primary">Done</button>
     </div>

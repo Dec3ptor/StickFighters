@@ -125,7 +125,8 @@ export async function playMode(data, mode, { bots = 16, seconds = 120, seed = 3 
   const { BotController, BOT_PROFILES } = await import('../../web/src/bot.js');
   const { makeRng } = await import('../../web/src/util.js');
   if (!MODES[mode]) return { mode, skipped: `no mode called ${mode}` };
-  const game = new Game({ mapData: data, mode, fragLimit: 0, seed, effects: false, speed: DEFAULT_SPEED });
+  // (Objective modes: 0 = the mode's usual goal. Frag modes: no frag limit, so the match runs its length.)
+  const game = new Game({ mapData: data, mode, fragLimit: MODES[mode].goal ? 0 : 9999, seed, effects: false, speed: DEFAULT_SPEED });
   const nav = new NavGraph(game.map);
   const rng = makeRng(seed);
   for (let i = 0; i < bots; i++) {

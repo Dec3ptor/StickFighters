@@ -55,8 +55,8 @@ const DEFAULTS = {
   lives: 3, gunKills: 1, crates: 'normal', maxPlayers: 8, visibility: 'public', gameName: '', tab: 'online', mapSource: 'originals',
   // Objective modes: the goal chosen for each (points, captures, tickets), and which team you're on.
   goals: {}, side: 1,
-  // Experimental: what bots notice ('classic' | 'sight'), fog of war ('off' | 'on') and jump height ('normal' | 'low').
-  botVision: 'classic', fog: 'off', jump: 'normal',
+  // Experimental: what bots notice ('classic' | 'sight') and fog of war ('off' | 'on').
+  botVision: 'classic', fog: 'off',
   // Settings screen
   // (graphicsPicked: graphics was chosen in Settings, not just the default saved.)
   graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true,
@@ -112,7 +112,6 @@ function buildMenu(settings) {
   $('side').value = String(settings.side === 2 ? 2 : 1);
   $('botVision').value = settings.botVision === 'sight' ? 'sight' : 'classic';
   $('fog').value = settings.fog === 'on' ? 'on' : 'off';
-  $('jump').value = settings.jump === 'low' ? 'low' : 'normal';
   $('mute').checked = settings.muted;
   audio.setMuted(settings.muted);
   $('bots').addEventListener('input', showBots);
@@ -127,7 +126,7 @@ function buildMenu(settings) {
     r.checked = r.value === settings.mapSource;
     r.addEventListener('change', () => { buildMapCards(selectedMap()); rememberMenu(); });
   }
-  for (const id of ['difficulty', 'fragLimit', 'goal', 'side', 'botVision', 'fog', 'jump', 'lives', 'gunKills', 'crates', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
+  for (const id of ['difficulty', 'fragLimit', 'goal', 'side', 'botVision', 'fog', 'lives', 'gunKills', 'crates', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
   $('bots').addEventListener('change', rememberMenu);
   modeFields();
   buildMapCards(settings.map, { follow: true });
@@ -360,7 +359,6 @@ function readMenu() {
     side: +$('side').value === 2 ? 2 : 1,
     botVision: $('botVision').value,
     fog: $('fog').value,
-    jump: $('jump').value,
     lives: +$('lives').value,
     gunKills: +$('gunKills').value,
     crates: $('crates').value,
@@ -423,14 +421,14 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const options = {
     lives: settings.lives, gunGameKills: settings.gunKills, crates: settings.crates,
     botVision: settings.botVision === 'sight' ? 'sight' : 'classic', fog: settings.fog === 'on',
-    jump: settings.jump === 'low' ? 'low' : 'normal',
   };
   const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
-  // Route maps depend on the map version and the moves soldiers can make (speed, jump height).
-  const navKey = `${map.navKey}@${settings.speed}/${options.jump}`;
+  // Route maps depend on the map version and the speed's move timings.
+  const navKey = `${map.navKey}@${settings.speed}`;
   if (!maps.nav.has(navKey)) maps.nav.set(navKey, new NavGraph(game.map));
   const nav = maps.nav.get(navKey);
+  game.useNav(nav);
   const rng = makeRng((Math.random() * 2 ** 31) | 0);
 
   const team = game.rules.teams ? (settings.side === 2 ? 2 : 1) : 0;
@@ -523,7 +521,6 @@ function openSettings() {
   // Experimental: the same choices as the game setup's.
   $('setBotVision').value = $('botVision').value;
   $('setFog').value = $('fog').value;
-  $('setJump').value = $('jump').value;
   $('graphics').value = prefs.graphics;
   $('fpsCap').value = String(prefs.fpsCap);
   $('showFps').checked = prefs.showFps;
@@ -854,7 +851,11 @@ function frame(now) {
   renderer.fogFrom = view;
   renderer.render(g, alpha, me);
   if (client) me.ping = client.ping;
+  // Holding K to self-destruct: shown as it counts down (it goes off after a second).
+  const holdingK = me.alive && input.down('KeyK') && !state.menuOpen && !state.chatOpen;
+  state.destructSince = holdingK ? state.destructSince ?? now : null;
   drawHud(renderer, g, me, {
+    selfDestruct: holdingK ? (now - state.destructSince) / 1000 : 0,
     showScores: input.down('Tab') && !state.chatOpen, watching, chat: state.chat,
     online: state.mode !== 'offline',
     hostId: state.mode === 'host' ? me.id : state.mode === 'client' ? g.soldiers.find(s => !s.isBot && !s.remote)?.id : null,
@@ -990,7 +991,6 @@ function wire() {
   // Experimental (the same choices as the game setup's, for the next game started or hosted).
   $('setBotVision').addEventListener('change', () => { $('botVision').value = $('setBotVision').value; rememberMenu(); });
   $('setFog').addEventListener('change', () => { $('fog').value = $('setFog').value; rememberMenu(); });
-  $('setJump').addEventListener('change', () => { $('jump').value = $('setJump').value; rememberMenu(); });
   $('mute').addEventListener('change', () => {
     audio.setMuted($('mute').checked);
     if (state.settings) { state.settings.muted = $('mute').checked; saveSettings({ ...loadSettings(), muted: $('mute').checked }); }

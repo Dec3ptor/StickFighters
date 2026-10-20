@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { Game } from '../web/src/game.js';
 import { WEAPONS, WEAPON_ORDER, SLOTS, CRATE_WEIGHTS, PICKUP_WEAPONS } from '../web/src/weapons.js';
 import { lobAngle } from '../web/src/bot.js';
+import { fire } from '../web/src/combat.js';
 import { DEFAULT_SPEED } from '../web/src/config.js';
 
 const FLOOR = [{ left: -900, top: 0, right: 900, bottom: 40 }];
@@ -331,4 +332,31 @@ test('Game speed rescales the new weapons too: speeds and fuses, not sizes or da
   assert.ok(Math.abs(WEAPONS.Sheep.fuse - 480 / DEFAULT_SPEED) < 1e-9);
   assert.ok(Math.abs(WEAPONS.ClusterBomb.cluster.blast.knock - 6 * DEFAULT_SPEED) < 1e-9);
   assert.ok(Math.abs(WEAPONS.Longbow.gravity - 0.16 * DEFAULT_SPEED ** 2) < 1e-9);
+});
+
+test('crouching on the ground makes guns more accurate (shotguns a bit, flamethrowers not)', () => {
+  // How far shots stray from the aim: the spread of their angles over many shots.
+  const spreadOf = (id, crouch) => {
+    const game = arena({ seed: 5 });
+    const s = put(game, 'A', 0, -12, () => ({ move: 0, crouch, aim: 0 }));
+    for (let i = 0; i < 5; i++) game.update(); // settle, crouch down
+    arm(s, id, 999);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < 40; i++) {
+      game.projectiles.length = 0;
+      s.cooldown = 0;
+      s.reloadTimer = 0;
+      s.spin = 99;
+      s.aim = 0;
+      if (s.weapons[id].mag !== undefined) s.weapons[id].mag = 99;
+      fire(game, s);
+      for (const p of game.projectiles) { const a = Math.atan2(p.vy, p.vx); lo = Math.min(lo, a); hi = Math.max(hi, a); }
+    }
+    return hi - lo;
+  };
+  for (const [id, share] of [['M4', 0.5], ['Shotgun', 0.75], ['Flamer', 1]]) {
+    const stand = spreadOf(id, false), crouch = spreadOf(id, true);
+    assert.ok(stand > 0, `${id} spreads`);
+    assert.ok(Math.abs(crouch / stand - share) < 0.12, `${id}: crouched ${crouch.toFixed(3)} vs standing ${stand.toFixed(3)}`);
+  }
 });

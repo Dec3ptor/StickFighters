@@ -31,7 +31,7 @@ export default function () {
 }
 ```
 
-Physics to design around: a jump climbs about 168 px and carries about 186 px
+Physics to design around: a jump climbs about 97 px and carries about 137 px
 across; soldiers step up 10 px without jumping; they're 34 px tall and 12 wide;
 jump pads launch about 40 px (strength 3), 110 (5), 220 (7), 370 (9) or 660 (12). Soldiers run
 about 150 px a second, so a 7,000 px map takes 45 seconds to cross on foot.

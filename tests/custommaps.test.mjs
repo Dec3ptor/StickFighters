@@ -14,13 +14,13 @@ const SIMPLE = {
   name: 'Test Arena',
   platforms: [
     { left: -400, top: 200, right: 400, bottom: 240 },
-    { left: -250, top: 80, right: -120, bottom: 100 },
-    { left: 120, top: 80, right: 250, bottom: 100 },
+    { left: -250, top: 120, right: -120, bottom: 140 },
+    { left: 120, top: 120, right: 250, bottom: 140 },
     { left: -30, top: 180, right: 30, bottom: 200, bounce: -7 },
-    { left: -60, top: -60, right: 60, bottom: -40 },
+    { left: -60, top: 40, right: 60, bottom: 60 },
   ],
-  spawns: [{ x: -300, y: 160, team: 1 }, { x: 300, y: 160, team: 2 }, { x: -180, y: 40, team: 1 }, { x: 180, y: 40, team: 2 }],
-  items: [{ type: 'weapon', x: 0, y: -80, weapon: 'SR' }, { type: 'health', x: -330, y: 176 }, { type: 'weapon', x: 330, y: 176, weapon: 'Shotgun' }],
+  spawns: [{ x: -300, y: 160, team: 1 }, { x: 300, y: 160, team: 2 }, { x: -180, y: 80, team: 1 }, { x: 180, y: 80, team: 2 }],
+  items: [{ type: 'weapon', x: 0, y: 20, weapon: 'SR' }, { type: 'health', x: -330, y: 176 }, { type: 'weapon', x: 330, y: 176, weapon: 'Shotgun' }],
 };
 
 test('normalizeMap cleans up messy data and works out the bounds', () => {
@@ -109,10 +109,16 @@ test('the map check passes good maps and catches broken ones', () => {
   assert.ok(pit.spots.some(s => s.kind === 'ok' && s.y < 200), 'upper floor is fine');
 });
 
+// King of the Hill's pit (below its side floors) is a deliberate trap: you can drop in but not climb out.
+const PITS = { 'ssdm3.json': p => p.y > 420 };
+
 test('every original map passes the map check', () => {
   for (const m of mapIndex()) {
     const r = checkMap(loadMap(m.file));
-    const serious = r.problems.filter(p => p.level === 'error' || /trap|cut off/.test(p.text));
+    const pit = PITS[m.file];
+    if (pit) assert.ok(r.spots.filter(p => p.kind === 'trap').every(pit), `${m.name}: traps outside the pit`);
+    const serious = r.problems.filter(p => (p.level === 'error' || /trap|cut off/.test(p.text)) &&
+      !(pit && (/spots are traps/.test(p.text) || (/cut off/.test(p.text) && pit(p)))));
     assert.deepEqual(serious, [], `${m.name}: ${JSON.stringify(serious)}`);
   }
 });

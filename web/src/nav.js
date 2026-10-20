@@ -180,7 +180,8 @@ export class NavGraph {
     for (const a of this.nodes) {
       for (let dy = -PHYS.stepUp; dy <= PHYS.stepUp; dy++) {
         for (const b of this.rows.get(Math.round(a.y) + dy) || []) {
-          if (b === a || Math.abs(b.x - a.x) > NODE_STEP + 1.5) continue;
+          // (Spots where two floors meet can be a little further apart than usual.)
+          if (b === a || Math.abs(b.x - a.x) > NODE_STEP + 4) continue;
           const dir = Math.sign(b.x - a.x);
           if (dir && this._walkReaches(a, b, dir)) {
             this._addLink(a, b, { type: 'walk', dir, cost: Math.abs(b.x - a.x) / PHYS.runSpeed + 1 });
@@ -260,6 +261,38 @@ export class NavGraph {
     const sizes = new Map();
     for (const c of comp) sizes.set(c, (sizes.get(c) || 0) + 1);
     return { comp, sizes };
+  }
+
+  /**
+   * Spots with no way back to the main part of the map (the group of spots that
+   * can all reach each other holding the most spawn points, or the biggest): pits
+   * you can drop into but not climb out of. Uint8Array, 1 = trapped (remembered).
+   */
+  trapped() {
+    if (this._trapped) return this._trapped;
+    const n = this.nodes.length;
+    const { comp, sizes } = this.groups();
+    const spawnsIn = new Map();
+    for (const p of this.map.spawns || []) {
+      const at = this.landing(p.x, p.y);
+      if (at) spawnsIn.set(comp[at.id], (spawnsIn.get(comp[at.id]) || 0) + 1);
+    }
+    let main = -1, most = -1;
+    for (const [c, k] of spawnsIn.size ? spawnsIn : sizes) if (k > most) { most = k; main = c; }
+    // Work back from the main group: every spot with a way into it can get back.
+    const into = Array.from({ length: n }, () => []);
+    for (const a of this.nodes) for (const l of a.links) into[l.to.id].push(a.id);
+    const back = new Uint8Array(n), queue = [];
+    for (let i = 0; i < n; i++) if (comp[i] === main) { back[i] = 1; queue.push(i); }
+    while (queue.length) for (const j of into[queue.pop()]) if (!back[j]) { back[j] = 1; queue.push(j); }
+    this._trapped = back.map(b => 1 - b);
+    return this._trapped;
+  }
+
+  /** The spot a soldier dropped at (x, y) lands on (null: none, a pit or a jump pad). */
+  landing(x, y) {
+    const hit = this.map.raycast(x, y, x, y + 3000);
+    return hit && hit.ny < 0 ? this.nodeAt(x, hit.y - BODY.bottom, 14) : null;
   }
 
   /** Cheapest cost from `start` to every node: { cost: Float64Array, prev: Int32Array, via: [] }. */
