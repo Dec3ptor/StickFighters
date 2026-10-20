@@ -447,12 +447,17 @@ export function drawMinimap(r, ctx, game, me, W) {
   ctx.textBaseline = 'middle';
 }
 
-/** Conquest, while waiting to respawn: where you'll spawn, and the number keys to change it. */
+/** While waiting to respawn (conquest, spawn beacons): where you'll spawn, and the number keys to change it. */
 export function drawDeploy(ctx, game, me, W, y) {
-  const opts = game.rules.deployOptions(game, me);
+  // (Conquest's points, and spawn beacons with classes on.)
+  const opts = game.deployOptions(me);
+  if (!opts) return;
   const chosen = opts.some(o => o.key === me.deployAt) ? me.deployAt : 'auto';
   const st = game.modeState, pts = objectivesOf(game.map, 'point');
-  const w = 58, gap = 8, total = opts.length * w + (opts.length - 1) * gap;
+  // (Wider boxes for longer names: spawn beacons.)
+  ctx.font = `bold 12px ${FONT}`;
+  const w = Math.max(58, ...opts.map((o, i) => ctx.measureText(`${i + 1}  ${o.label}`).width + 14));
+  const gap = 8, total = opts.length * w + (opts.length - 1) * gap;
   ctx.font = `12px ${FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

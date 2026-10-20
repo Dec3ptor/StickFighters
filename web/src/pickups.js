@@ -1,8 +1,12 @@
 // Health, armour, jetpacks and weapons lying on the map, weapons dropped by
-// the dead, and supply crates that parachute in with a random weapon.
+// the dead, and supply crates that parachute in with a random weapon. With
+// classes on, the map's weapons aren't there (everyone has a kit), and medkits,
+// armour packs and ammo boxes dropped with gadgets (gadgets.js) lie around too.
 
 import { BODY, ITEM_RESPAWN, ITEM_SIZE, RULES, MOTION, CRATES } from './config.js';
 import { WEAPONS, CRATE_WEIGHTS } from './weapons.js';
+import { weaponFor } from './classes.js';
+import { takeSupply } from './gadgets.js';
 
 const CRATE_LIFE = 2400; // ticks a landed crate waits to be picked up
 const MAX_DROPPED = 150;  // dropped weapons lying around at once
@@ -10,8 +14,9 @@ const MAX_DROPPED = 150;  // dropped weapons lying around at once
 export class Pickups {
   constructor(map, game) {
     const rules = game?.rules;
+    const kits = !!game?.classesOn;
     this.items = rules && !rules.pickups ? [] : map.items
-      .filter(it => it.type !== 'weapon' || (WEAPONS[it.weapon] && !WEAPONS[it.weapon].hidden))
+      .filter(it => it.type !== 'weapon' || (WEAPONS[it.weapon] && !WEAPONS[it.weapon].hidden && !kits))
       .map(it => ({ ...it, active: true, timer: 0, dropped: false, bob: Math.random() * 6 }));
     const crates = game && rules?.crates ? CRATES[game.options.crates] : null;
     this.crates = crates || null;
@@ -159,12 +164,15 @@ function give(game, s, it) {
       return giveWeapon(game, s, it.weapon, null, it, true);
     case 'weapon':
       return giveWeapon(game, s, it.weapon, it.ammo, it, false);
+    case 'medkit': case 'repair': case 'ammo':
+      return takeSupply(game, s, it);
   }
   return false;
 }
 
 function giveWeapon(game, s, id, ammo, it, crate) {
-  const def = WEAPONS[id];
+  // (With the soldier's upgrade: Extended mag carries more.)
+  const def = weaponFor(s, id);
   if (!def) return false;
   const inv = s.weapons[id];
   const amount = ammo ?? def.ammo;

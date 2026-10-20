@@ -4,6 +4,8 @@ import { WEAPONS, SLOTS } from './weapons.js';
 import { RULES } from './config.js';
 import { GUN_GAME_LADDER } from './modes.js';
 import { drawObjectiveHud, drawMinimap, bigMap, drawDeploy } from './objdraw.js';
+import { CLASSES, weaponFor } from './classes.js';
+import { GADGETS, rechargeTicks } from './gadgets.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
@@ -11,7 +13,10 @@ const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
 /**
  * opts: { showScores, watching (soldier the camera follows when you're out), chat: [{ text, tick }],
  *   online (show everyone's ping on the scoreboard), hostId (the host's soldier),
- *   ping (your ping in ms, or a label like 'Host'), perf (frame rate text) }
+ *   ping (your ping in ms, or a label like 'Host'), perf (frame rate text),
+ *   xp (classes on: XP pop-ups showing, [{ text, age (0-1) }]), picking (the class picker is open) }
+ * With classes on, while you wait to respawn this sets r.classButton (screen px) to the
+ * "change class" box, so a click on it can open the class picker.
  */
 export function drawHud(r, game, me, opts = {}) {
   const ctx = r.ctx, d = r.dpr, W = r.w, H = r.h;
@@ -56,13 +61,17 @@ export function drawHud(r, game, me, opts = {}) {
     ctx.fillRect(x, y, w * Math.min(1, opts.selfDestruct), 6);
   }
 
+  r.classButton = null;
   if (!me.alive && !game.over) {
     ctx.textAlign = 'center';
     ctx.font = `bold 20px ${FONT}`;
     ctx.fillStyle = '#222';
     if (game.rules.canRespawn(game, me)) {
-      ctx.fillText(`Respawning in ${Math.max(1, Math.ceil(me.respawnTimer / game.tickRate))}...`, W / 2, H / 2 - 60);
-      if (game.rules.deployOptions) drawDeploy(ctx, game, me, W, H / 2 - 30);
+      const waiting = me.holdSpawn > 0 || opts.picking;
+      ctx.fillText(waiting ? 'Choosing a class…' : `Respawning in ${Math.max(1, Math.ceil(me.respawnTimer / game.tickRate))}...`, W / 2, H / 2 - 60);
+      const deploy = game.deployOptions(me);
+      if (deploy) drawDeploy(ctx, game, me, W, H / 2 - 30);
+      if (game.classesOn) r.classButton = drawClassChoice(ctx, me, W, deploy ? H / 2 + 34 : H / 2 - 30);
     } else {
       ctx.fillText("You're out", W / 2, H / 2 - 70);
       if (opts.watching) {
@@ -71,6 +80,8 @@ export function drawHud(r, game, me, opts = {}) {
       }
     }
   }
+
+  if (opts.xp?.length && !game.over) drawXp(ctx, opts.xp, W, H);
 
   if (opts.ping != null) {
     const ms = typeof opts.ping === 'number';
@@ -96,6 +107,8 @@ const BAR_COLORS = {
   fuel: ['#2f74d0', '#163a6b'],
   stamina: ['#2fb3a0', 'rgba(0,0,0,0.18)'],
   winded: ['#d8862a', 'rgba(0,0,0,0.18)'],
+  gadget: ['#6d4fc2', '#2e2352'],
+  gadgetReady: ['#8c62e8', '#2e2352'],
 };
 
 // The weapon bar's boxes (drawWeaponBar), and where it sits: centred at the bottom,
@@ -124,7 +137,8 @@ function drawStatus(ctx, game, me, W, H) {
   // The main row: health on the left, the weapon in hand on the right.
   let y = -11 - h;
   bar(ctx, -half - gap / 2, y, half, h, me.health / RULES.maxHealth, 'health', `Health ${Math.max(0, Math.ceil(me.health))}%`, true);
-  const def = WEAPONS[me.current], inv = me.weapons[me.current];
+  // (With the soldier's upgrade: Extended mag holds more.)
+  const def = weaponFor(me, me.current), inv = me.weapons[me.current];
   if (def && inv) {
     let frac = 1, label = def.name;
     if (def.mag) {
@@ -136,8 +150,10 @@ function drawStatus(ctx, game, me, W, H) {
     }
     bar(ctx, gap / 2, y, half, h, frac, 'ammo', label, true);
   }
-  // Anything else, in pairs above it: armour, jet fuel, the minigun spinning up.
+  // Anything else, in pairs above it: your class and gadget (classes on), armour, jet fuel, the minigun spinning up.
   const extra = [];
+  const gadget = game.classesOn && gadgetBar(game, me);
+  if (gadget) extra.push(gadget);
   if (me.armour > 0) extra.push([me.armour / RULES.maxArmour, 'armour', `Armour ${Math.ceil(me.armour)}%`]);
   if (b.hasJetpack) extra.push([b.fuel / 100, 'fuel', `Jet fuel ${Math.round(b.fuel)}%`]);
   if (def?.spinup && me.spin > 0 && me.spin < def.spinup) extra.push([me.spin / def.spinup, 'fuel', 'Spinning up…']);
@@ -153,6 +169,48 @@ function drawStatus(ctx, game, me, W, H) {
     ctx.fillText('On fire! Find health', 0, y - 12);
   }
   ctx.restore();
+}
+
+/** Classes on: your class, and your gadget's charge ("Assault · Medkit (G)" when it's ready). */
+function gadgetBar(game, me) {
+  const c = CLASSES[me.cls];
+  const g = c && GADGETS[c.gadget];
+  if (!g) return null;
+  const total = rechargeTicks(game, g), left = Math.max(0, me.gadgetCharge || 0);
+  if (left > 0) return [1 - left / total, 'gadget', `${c.name} · ${g.name} ${Math.floor(100 * (1 - left / total))}%`];
+  const up = c.gadget === 'beacon' && game.beacons?.some(b => b.owner === me.id);
+  return [1, 'gadgetReady', `${c.name} · ${up ? 'Move beacon' : g.name} (G)`];
+}
+
+/** Waiting to respawn with classes on: your class, and how to change it (a box you can click). */
+function drawClassChoice(ctx, me, W, y) {
+  const now = CLASSES[me.cls]?.name, next = CLASSES[me.pickCls]?.name;
+  const text = next && next !== now ? `Next life: ${next}` : `Class: ${now || next || '?'}`;
+  ctx.font = `bold 13px ${FONT}`;
+  const label = `${text}   ·   C to change`;
+  const w = ctx.measureText(label).width + 28, h = 26, x = W / 2 - w / 2;
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, w, h);
+  ctx.fillStyle = '#222';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, W / 2, y + h / 2 + 1);
+  return { x, y, w, h };
+}
+
+/** XP pop-ups ("+100 Kill") under the middle of the screen, fading out. */
+function drawXp(ctx, list, W, H) {
+  ctx.textAlign = 'center';
+  list.forEach((p, i) => {
+    const newest = i === list.length - 1;
+    ctx.globalAlpha = Math.max(0, Math.min(1, (1 - p.age) / 0.3));
+    ctx.font = `bold ${newest ? 16 : 13}px ${FONT}`;
+    ctx.fillStyle = '#b8860b';
+    ctx.fillText(p.text, W / 2, H / 2 + 84 - (list.length - 1 - i) * 19 - p.age * 8);
+  });
+  ctx.globalAlpha = 1;
 }
 
 /** A bar like the original's: bright fill on a dark track, white label on top (bold: bigger). */
@@ -295,6 +353,7 @@ function drawScoreboard(ctx, game, me, W, H, opts, standings) {
   if (opts.online) cols.push(['Ping', pingText, s => (s.ping > 200 && !s.isBot && s.id !== opts.hostId ? '#c22' : null)]);
   cols.push(['Deaths', s => String(s.deaths)], ['Frags', s => String(s.frags)]);
   if (extra) cols.push([rules.scoreLabel, s => String(rules.score(s))]);
+  if (game.classesOn) cols.push(['Class', s => CLASSES[s.cls]?.name ?? '']);
   function pingText(s) {
     if (s.isBot) return '';
     if (s.id === opts.hostId) return 'host';

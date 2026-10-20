@@ -15,6 +15,9 @@ import { modeOf } from './modes.js';
 import { makeRng } from './util.js';
 import { SoldierGrid, GRID_MIN } from './grid.js';
 import { objectivesOf } from './objectives.js';
+import { setupClass, applyKit, weaponFor } from './classes.js';
+import { useGadget, updateGadgets, removeGadgets, blastGadgets, beaconSpawn, beaconSpawned, beaconOptions, classChanged, botDeploy } from './gadgets.js';
+import { XP } from './progression.js';
 
 const IDLE = { move: 0 };
 // Holding self-destruct this many updates (a second) blows you up: the way out of a pit you can't climb out of.
@@ -28,7 +31,8 @@ export class Game {
    * options: { lives (one in the chamber), gunGameKills (kills per weapon), crates: 'off'|'normal'|'lots',
    *   botVision: 'classic' (bots see everyone nearby in a clear line) | 'sight' (only what's on their
    *   screen in front of them, plus what they hear), fog: true (players only see what's in their line of sight),
-   *   destruction: true (explosions blow holes in the map) }
+   *   destruction: true (explosions blow holes in the map),
+   *   classes: true (everyone spawns with a class's kit, uses gadgets and earns XP: classes.js) }
    */
   constructor({ mapData, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1, options = {} }) {
     // Speed rescales shared constants, so set it before anything reads them.
@@ -36,7 +40,7 @@ export class Game {
     this.map = new GameMap(mapData);
     this.mode = mode;
     this.rules = modeOf(mode);
-    this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, destruction: false, ...options };
+    this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, destruction: false, classes: false, ...options };
     // Destructible maps: every hole blown so far ([x, y, radius]; online players repeat them).
     this.carves = [];
     if (this.options.destruction) this.protectFloors();
@@ -65,8 +69,15 @@ export class Game {
     this.grid = new SoldierGrid();
     // The objective modes' state (flags, capture points...): plain data, sent to online players.
     this.modeState = null;
+    // Classes on: spawn beacons (gadgets.js), and XP handed out (read by the player's page, or sent to them online).
+    this.beacons = [];
+    this.xpLog = [];
+    this.xpCount = 0;
     this.rules.begin?.(this);
   }
+
+  /** True if this match has classes, kits and gadgets (a match option; not in gun game or one in the chamber). */
+  get classesOn() { return !!this.options.classes && this.rules.classes !== false; }
 
   /** True when there are enough soldiers that looking them up by area is worth it. */
   get crowded() { return this.soldiers.length > GRID_MIN; }
@@ -110,6 +121,7 @@ export class Game {
     // Soldiers arrive a few at a time; with lots of them, in groups (all in within 2 seconds).
     s.respawnTimer = 1 + (this.soldiers.length % 30) * 4;
     this.rules.setup(this, s);
+    if (this.classesOn) setupClass(this, s);
     this.soldiers.push(s);
     this.ids?.add(s.id);
     this.controllers.set(s, controller);
@@ -131,6 +143,7 @@ export class Game {
 
   removeSoldier(s) {
     this.rules.onRemove?.(this, s);
+    if (this.classesOn) removeGadgets(this, s);
     this.soldiers = this.soldiers.filter(o => o !== s);
     if (this.ids) { this.ids.delete(s.id); this.freeId = Math.min(this.freeId, s.id); }
     this.controllers.delete(s);
@@ -208,6 +221,9 @@ export class Game {
       if (p.x < area.l - 8 || p.x > area.r + 8 || p.y < area.t - 16 || p.y > area.b + 8) continue;
       if (p.stuck) p.dead = true;
       else if (p.onGround) p.onGround = false;
+    }
+    for (const it of this.pickups.items) {
+      if (it.dropped && it.vy === null && it.x >= area.l - 4 && it.x <= area.r + 4 && it.y >= area.t - 16 && it.y <= area.b) it.vy = 0;
     }
     if (this.nav) {
       this.navDirty = this.navDirty
@@ -293,6 +309,7 @@ export class Game {
     updateProjectiles(this);
     if (this.navDirty && this.tick >= this.navPatchAt) this.patchNav();
     this.pickups.update(this);
+    if (this.classesOn) updateGadgets(this);
     if (!this.over) this.rules.tick?.(this);
     if (this.quake) this.updateQuake();
     this.fx?.update(this.map, MOTION.timeScale);
@@ -300,10 +317,13 @@ export class Game {
     // (Bots listen every few updates: keep the last few updates' noises.)
     if (this.noises.length) this.noises = this.noises.filter(n => this.tick - n.tick < 8);
     if (this.notes.length > 20) this.notes.splice(0, this.notes.length - 20);
+    if (this.xpLog.length > 200) this.xpLog.splice(0, this.xpLog.length - 200);
   }
 
   updateSoldier(s, input) {
     if (!s.alive) {
+      // (Choosing a class holds the respawn for a while.)
+      if (s.holdSpawn > 0) { s.holdSpawn--; return; }
       if (this.rules.canRespawn(this, s) && --s.respawnTimer <= 0) this.respawn(s);
       return;
     }
@@ -340,13 +360,15 @@ export class Game {
 
     if (s.cooldown > 0) s.cooldown--;
     // Timers aren't whole numbers at reduced game speed, so count down to <= 0.
+    // (Magazines refill to the soldier's size: Extended mag makes them bigger.)
     if (s.reloadTimer > 0 && (s.reloadTimer -= 1) <= 0) {
       s.reloadTimer = 0;
       const inv = s.weapons[s.current];
-      if (WEAPONS[s.current].mag && inv) inv.mag = WEAPONS[s.current].mag;
-      for (const id in s.weapons) if (WEAPONS[id].mag) s.weapons[id].mag = WEAPONS[id].mag;
+      if (WEAPONS[s.current].mag && inv) inv.mag = weaponFor(s, s.current).mag;
+      for (const id in s.weapons) if (WEAPONS[id].mag) s.weapons[id].mag = weaponFor(s, id).mag;
       if (WEAPONS[s.current].mag) this.sound('reload', s.x, s.y);
     }
+    if (input.gadget && this.classesOn) useGadget(this, s);
     if (input.fire) fire(this, s, input);
 
     if (s.burnTicks > 0) {
@@ -407,6 +429,7 @@ export class Game {
       s.kamikaze = null;
       const x = wall ? wall.x - k.dx * 4 : s.x, y = wall ? wall.y - k.dy * 4 : s.y - 6;
       explode(this, x, y, k.cfg.blast, s, 'Kamikaze', victim);
+      blastGadgets(this, x, y, k.cfg.blast, s);
       if (s.alive) this.kill(s, s, 'Kamikaze', { explosive: true });
       return;
     }
@@ -432,6 +455,9 @@ export class Game {
 
   /** Spawn point far from enemies (with some randomness). Modes can choose instead (conquest's points, rush's sectors). */
   pickSpawn(s) {
+    // Classes on: a spawn beacon the soldier picked ({ x, y, beacon }).
+    const beacon = this.classesOn ? beaconSpawn(this, s) : null;
+    if (beacon) return beacon;
     const chosen = this.rules.spawnPoint?.(this, s);
     if (chosen) return chosen;
     let points = this.rules.spawnPoints ? this.rules.spawnPoints(this, s) : this.spawns;
@@ -482,7 +508,14 @@ export class Game {
     const p = this.pickSpawn(s);
     s.spawnAt(p);
     this.moved(s);
-    this.rules.spawnLoadout(this, s);
+    if (this.classesOn) {
+      // The class's kit instead of the mode's loadout.
+      const was = s.cls;
+      applyKit(this, s);
+      s.spawnedAt = this.tick;
+      if (s.cls !== was) classChanged(this, s);
+      if (p.beacon) beaconSpawned(this, s, p.beacon);
+    } else this.rules.spawnLoadout(this, s);
     this.fx?.ring(p.x, p.y - 4, s.team === 2 ? '#d33' : '#36c');
     this.sound('spawn', p.x, p.y);
     this.controllers.get(s)?.onSpawn?.(this, s);
@@ -517,6 +550,8 @@ export class Game {
       text = opts.fall ? `${killer.name} knocked ${victim.name} off the map` : `${killer.name} fragged ${victim.name}`;
       if (!killer.isBot) this.notify(killer, `You ${how} ${victim.name}${opts.headshot ? ' (headshot!)' : ''}`);
       if (!victim.isBot) this.notify(victim, `You were fragged by ${killer.name}`);
+      this.xp(killer, XP.kill, 'kill', weapon);
+      if (opts.headshot) this.xp(killer, XP.headshot, 'headshot', weapon);
     } else {
       // Kamikaze is meant to kill you, so it doesn't cost a frag.
       if (weapon !== 'Kamikaze') {
@@ -530,6 +565,8 @@ export class Game {
     }
     this.addFeed({ text, tick: this.tick, killer, victim, weapon: name });
     this.rules.onKill(this, victim, killer, weapon, opts);
+    // Classes on: bots choose where to respawn (their beacon, now and then a teammate's).
+    if (this.classesOn && victim.isBot) victim.deployAt = botDeploy(this, victim, this.rng);
 
     // Drop the weapon in hand.
     const inv = victim.weapons[victim.current];
@@ -558,7 +595,34 @@ export class Game {
       this.over = true;
       this.winner = w;
       this.sound('gameover', null, null);
+      // XP for everyone who played to the end, and more for the winners.
+      for (const s of this.soldiers) {
+        this.xp(s, XP.finish, 'finish');
+        if (w.team ? s.team === w.team : w.soldier === s) this.xp(s, XP.win, 'win');
+      }
     }
+  }
+
+  /**
+   * Classes on: `n` XP for player s, for `why` (one of progression.js's XP
+   * reasons; `weapon` for kills). Read by the player's page, or sent to them online.
+   */
+  xp(s, n, why, weapon = null) {
+    if (!s || s.isBot || !n || !this.classesOn) return;
+    const e = { id: ++this.xpCount, to: s.id, n, why, w: weapon || null, c: s.cls || null, tick: this.tick };
+    this.xpLog.push(e);
+    this.recorder?.xp?.(e);
+  }
+
+  /**
+   * Where a soldier waiting to respawn can choose to spawn (number keys): conquest's
+   * points, and spawn beacons (classes on). Null when there's no choice.
+   */
+  deployOptions(s) {
+    const mode = this.rules.deployOptions?.(this, s) || null;
+    const beacons = this.classesOn ? beaconOptions(this, s) : [];
+    if (!beacons.length) return mode;
+    return [...(mode || [{ key: 'auto', label: 'Base' }]), ...beacons];
   }
 
   /** Soldiers in order: best first. */

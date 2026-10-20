@@ -3,7 +3,7 @@
 
 const GAME_KEYS = new Set([
   'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab',
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyF', 'KeyK', 'ShiftLeft', 'ShiftRight',
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyF', 'KeyK', 'KeyG', 'ShiftLeft', 'ShiftRight',
 ]);
 // Ctrl / Cmd are crouch keys too (as in most shooters). Held with a game key, they'd
 // otherwise open browser shortcuts (Ctrl+D bookmarks, Ctrl+S saves...), and the game
@@ -12,7 +12,8 @@ const MODIFIERS = new Set(['ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight
 
 // Number keys 1-9 and 0 pick weapon slots 0-9; F picks melee (slot 10).
 const SLOT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'KeyF'];
-const QUEUED = new Set([...SLOT_KEYS, 'KeyQ', 'KeyE']);
+// (G uses your class's gadget: one press, one use.)
+const QUEUED = new Set([...SLOT_KEYS, 'KeyQ', 'KeyE', 'KeyG']);
 
 export class Input {
   constructor(canvas) {
@@ -144,12 +145,14 @@ export class PlayerController {
     inp.aim = Math.atan2(w.y - s.shoulderY, w.x - s.shoulderX);
     inp.aimDist = Math.hypot(w.x - s.shoulderX, w.y - s.shoulderY);
 
-    if (!s.alive && game.rules.deployOptions) {
-      // Waiting to respawn (conquest): number keys choose where.
+    const deploy = s.alive ? null : game.deployOptions(s);
+    if (deploy) {
+      // Waiting to respawn (conquest's points, spawn beacons): number keys choose where.
       for (let i = 0; i < 9; i++) {
-        if (k.took(SLOT_KEYS[i])) { const opt = game.rules.deployOptions(game, s)[i]; if (opt) s.deployAt = opt.key; }
+        if (k.took(SLOT_KEYS[i])) { const opt = deploy[i]; if (opt) s.deployAt = opt.key; }
       }
     }
+    if (k.took('KeyG')) inp.gadget = true;
     for (let i = 0; i < SLOT_KEYS.length; i++) {
       if (k.took(SLOT_KEYS[i])) { const id = s.slotChoice(i); if (id) inp.switchTo = id; }
     }

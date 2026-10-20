@@ -369,3 +369,60 @@ export function drawCrate(ctx, crate, t) {
     ctx.fillText('?', 0, 0.5);
   }
 }
+
+const SUPPLY_TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
+
+/** Gadget drops (classes on): a medkit, an armour pack or an ammo box, edged in its team's colour. */
+export function drawSupply(ctx, type, team) {
+  const edge = SUPPLY_TEAM[team] || '#333';
+  ctx.lineWidth = 1.2;
+  if (type === 'medkit') {
+    ctx.fillStyle = '#f4f4f4';
+    ctx.strokeStyle = edge;
+    ctx.beginPath(); ctx.rect(-6.5, -5, 13, 10); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#2e9a3e';
+    ctx.fillRect(-1.4, -3.6, 2.8, 7.2);
+    ctx.fillRect(-3.6, -1.4, 7.2, 2.8);
+    ctx.strokeStyle = '#555';
+    ctx.beginPath(); ctx.moveTo(-2.5, -5); ctx.lineTo(-2.5, -7); ctx.lineTo(2.5, -7); ctx.lineTo(2.5, -5); ctx.stroke();
+  } else if (type === 'repair') {
+    ctx.fillStyle = '#8d8d8d';
+    ctx.strokeStyle = edge;
+    ctx.beginPath();
+    ctx.moveTo(-6, -5); ctx.lineTo(6, -5); ctx.lineTo(5, 3); ctx.lineTo(0, 6); ctx.lineTo(-5, 3); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#eee';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(-3, -1); ctx.lineTo(3, -1); ctx.moveTo(0, -3.5); ctx.lineTo(0, 2); ctx.stroke();
+  } else {
+    ctx.fillStyle = '#6b6b3a';
+    ctx.strokeStyle = edge;
+    ctx.beginPath(); ctx.rect(-7, -4.5, 14, 9); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#d9b44a';
+    for (const x of [-4, -1, 2]) ctx.fillRect(x, -3, 2, 4);
+    ctx.fillStyle = '#3d3d20';
+    ctx.fillRect(-7, 2, 14, 1.2);
+  }
+}
+
+/** A spawn beacon: a little tripod with a blinking light in its team's colour (and its health, once hit). */
+export function drawBeacon(ctx, b, t, hpFrac = 1) {
+  const color = SUPPLY_TEAM[b.team] || '#333';
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(-4, 0); ctx.lineTo(0, -9); ctx.lineTo(4, 0);
+  ctx.moveTo(0, -9); ctx.lineTo(0, -13);
+  ctx.stroke();
+  ctx.fillStyle = '#555';
+  ctx.fillRect(-2.5, -11, 5, 3);
+  const on = Math.floor(t / 20) % 2 === 0;
+  ctx.fillStyle = on ? color : '#ccc';
+  ctx.beginPath(); ctx.arc(0, -14, 1.8, 0, Math.PI * 2); ctx.fill();
+  if (hpFrac < 1) {
+    ctx.fillStyle = '#ddd';
+    ctx.fillRect(-6, -19, 12, 1.6);
+    ctx.fillStyle = hpFrac > 0.4 ? '#555' : '#c22';
+    ctx.fillRect(-6, -19, 12 * Math.max(0, hpFrac), 1.6);
+  }
+}

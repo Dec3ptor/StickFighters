@@ -3,6 +3,8 @@
 // events of the match (sounds, effects, the kill feed, messages).
 
 import { encodeWorld, encodeSnapshot, decodeInputs, messageType, PROTOCOL, SNAPSHOT_EVERY } from './protocol.js';
+import { cleanClass, cleanLoadouts } from '../classes.js';
+import { holdSpawn } from '../gadgets.js';
 
 // Effects every player draws for themselves from what they can see (rocket
 // smoke, jetpack flames, burning soldiers), so they aren't sent.
@@ -28,6 +30,7 @@ export class RemoteController {
       next.firePressed ||= old.firePressed;
       next.switchTo ||= old.switchTo;
       next.cycle ||= old.cycle;
+      next.gadget ||= old.gadget;
     }
   }
 
@@ -35,7 +38,7 @@ export class RemoteController {
     const next = this.queue.shift();
     if (next) { this.last = next; this.ackSeq = next.seq; return next; }
     // Nothing new arrived in time: keep doing the same thing (but don't repeat clicks).
-    return { ...this.last, jumpPressed: false, firePressed: false, switchTo: null, cycle: 0 };
+    return { ...this.last, jumpPressed: false, firePressed: false, switchTo: null, cycle: 0, gadget: false };
   }
 }
 
@@ -58,7 +61,7 @@ export class NetHost {
     this.resetEvents();
   }
 
-  resetEvents() { this.events = { s: [], fx: [], k: [], n: [], sh: [] }; }
+  resetEvents() { this.events = { s: [], fx: [], k: [], n: [], sh: [], x: [] }; }
 
   get humans() { return 1 + this.players.size; }
 
@@ -106,6 +109,12 @@ export class NetHost {
     const s = g.addSoldier({ name, isBot: false, team }, p.ctl);
     s.remote = true;
     s.respawnTimer = 20;
+    // Classes on: their class and loadouts (sent by their browser). Until those arrive,
+    // a new player waits to spawn (for at most a few seconds).
+    if (g.classesOn) {
+      if (p.kit) this.useKit(s, p.kit);
+      else s.holdSpawn = 300;
+    }
     // Joining one in the chamber late: no more lives than the players still in.
     if (g.mode === 'oitc') {
       const others = g.soldiers.filter(o => o !== s && o.lives > 0).map(o => o.lives);
@@ -160,13 +169,22 @@ export class NetHost {
     if (!data || typeof data !== 'object') return;
     switch (data.t) {
       case 'ready': p.ready = true; break;
-      case 'deploy': if (p.soldier) p.soldier.deployAt = data.at == null ? null : String(data.at).slice(0, 4); break;
+      case 'deploy': if (p.soldier) p.soldier.deployAt = data.at == null ? null : String(data.at).slice(0, 8); break;
       case 'carves?': {
         // The player is missing some of the holes blown in the map: send them (at most once a second).
         const from = Math.max(0, Math.floor(Number(data.from) || 0));
         if (Date.now() - (p.carvesAt || 0) > 1000) { p.carvesAt = Date.now(); p.link.send({ t: 'carves', from, list: this.game.carves.slice(from) }, true); }
         break;
       }
+      case 'kit':
+        // Their class (for their next spawn) and loadouts. (Unlocks are kept in the player's own
+        // browser, so the host can only check the choices make sense, not that they're earned.)
+        p.kit = { cls: cleanClass(data.cls) || 'assault', loadouts: cleanLoadouts(data.loadouts) };
+        if (p.soldier && this.game?.classesOn) {
+          this.useKit(p.soldier, p.kit);
+          holdSpawn(p.soldier, !!data.hold);
+        }
+        break;
       case 'roster?':
         // The player saw a soldier it doesn't know: send the list again (at most once a second).
         if (Date.now() - (p.rosterAt || 0) > 1000) { p.rosterAt = Date.now(); p.link.send({ t: 'roster', roster: this.roster() }, true); }
@@ -186,6 +204,12 @@ export class NetHost {
       }
       case 'bye': p.link.close('left'); break;
     }
+  }
+
+  /** A player's class and loadouts on their soldier (used from their next spawn). */
+  useKit(s, kit) {
+    s.pickCls = kit.cls;
+    s.loadouts = kit.loadouts;
   }
 
   /** Send a chat message from `name` to everyone. */
@@ -216,6 +240,7 @@ export class NetHost {
   note(text, to) { this.events.n.push([text, to]); }
   shake(x, y, amount) { this.events.sh.push([round(x), round(y), amount]); }
   feed(e) { this.events.k.push([e.text, e.weapon || null, e.killer?.id ?? null, e.victim?.id ?? null]); }
+  xp(e) { if (this.events.x.length < 200) this.events.x.push([e.to, e.n, e.why, e.w, e.c]); }
   fxCall(method, args) { if (!FX_SKIP.has(method) && this.events.fx.length < 300) this.events.fx.push([method, ...round(args)]); }
 
   /** Call after every game update: sends snapshots and events every few ticks. */
@@ -226,7 +251,7 @@ export class NetHost {
     if (g.tick === this.sentTick) {
       // The match is over and the clock has stopped: just refresh now and then.
       if (++this.idle % 30) return;
-    } else if (g.tick % SNAPSHOT_EVERY !== 0) return;
+    } else if (g.tick % SNAPSHOT_EVERY !== 0 && !g.over) return; // (the moment it ends goes out at once)
     this.sentTick = g.tick;
     const ready = [...this.players].filter(p => p.ready);
     if (ready.length) {
@@ -235,7 +260,7 @@ export class NetHost {
       // New holes in the map (destructible maps), numbered so players can tell if they missed any.
       const cv = g.carves.length > this.carvesSent ? { from: this.carvesSent, list: g.carves.slice(this.carvesSent) } : null;
       this.carvesSent = g.carves.length;
-      const any = e.s.length || e.fx.length || e.k.length || e.n.length || e.sh.length || cv;
+      const any = e.s.length || e.fx.length || e.k.length || e.n.length || e.sh.length || e.x.length || cv;
       for (const p of ready) {
         p.link.send(encodeSnapshot(g, p.soldier, p.ctl.ackSeq, world), false);
         if (!any) continue;
@@ -245,6 +270,8 @@ export class NetHost {
           s: e.s.filter(x => x[3] == null || x[3] === id || x[3] === -p.soldier.team).map(x => x.slice(0, 3)),
           fx: e.fx, k: e.k, sh: e.sh, cv,
           n: e.n.filter(x => x[1] === id).map(x => x[0]),
+          // XP: only the player's own ([amount, reason, weapon, class]).
+          x: e.x.filter(x => x[0] === id).map(x => x.slice(1)),
         }, true);
       }
     }

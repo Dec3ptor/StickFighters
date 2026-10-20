@@ -5,7 +5,8 @@ import { buildPose } from './stickman.js';
 import { laserEnd } from './combat.js';
 import { WEAPONS } from './weapons.js';
 import { clamp, lerp } from './util.js';
-import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate } from './sprites.js';
+import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate, drawSupply, drawBeacon } from './sprites.js';
+import { BEACON_HP } from './gadgets.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
 import { fillSeams, hatch } from './map.js';
 import { Fog } from './fog.js';
@@ -242,7 +243,15 @@ export class Renderer {
         case 'armour': drawArmour(ctx); break;
         case 'jetpack': drawJetpack(ctx); break;
         case 'weapon': drawWeapon(ctx, WEAPONS[it.weapon], true); break;
+        case 'medkit': case 'repair': case 'ammo': drawSupply(ctx, it.type, it.team); break;
       }
+      ctx.restore();
+    }
+    // Spawn beacons (classes on).
+    for (const b of game.beacons || []) {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      drawBeacon(ctx, b, t, b.hp / BEACON_HP);
       ctx.restore();
     }
   }
