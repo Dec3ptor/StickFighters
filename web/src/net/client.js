@@ -245,6 +245,7 @@ export class NetClient {
     Object.assign(b, {
       x: a.x, y: a.y, vx: a.vx, vy: a.vy, onGround: a.onGround, crouching: a.crouching, padLaunch: a.padLaunch,
       hasJetpack: a.hasJetpack, fuel: a.fuel, momentum: a.momentum, rope: a.rope ? { ...a.rope } : null,
+      stamina: a.stamina, winded: a.winded, sprinting: a.sprinting,
     });
     for (const inp of this.pending) stepBody(b, this.heavy(inp), this.game.map);
     if (!wasAlive) { me.prevX = b.x; me.prevY = b.y; me.drawDX = me.drawDY = 0; return; }

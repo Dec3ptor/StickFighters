@@ -43,6 +43,11 @@ expect(await visible('#setBotVision') && await visible('#setFog'), 'experimental
 await page.selectOption('#setFog', 'on');
 expect(await page.inputValue('#fog') === 'on', 'fog of war chosen in settings shows in the game setup');
 await page.selectOption('#setFog', 'off');
+// Sprint: hold (the default) or toggle.
+expect(await page.inputValue('#sprintMode') === 'hold', 'sprint is hold-to-sprint by default');
+await page.selectOption('#sprintMode', 'toggle');
+expect(await page.evaluate(() => window.stickSoldiers.prefs.sprint) === 'toggle', 'sprint toggle chosen');
+await page.selectOption('#sprintMode', 'hold');
 await page.keyboard.press('Escape');
 expect(!(await visible('#settings')), 'Esc closes settings');
 

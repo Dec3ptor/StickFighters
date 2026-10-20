@@ -19,30 +19,7 @@ export function drawHud(r, game, me, opts = {}) {
   ctx.textBaseline = 'middle';
 
   if (me.alive) {
-    let y = 12;
-    bar(ctx, 12, y, 150, 15, me.health / RULES.maxHealth, 'health', `Health: ${Math.max(0, Math.ceil(me.health))}%`);
-    y += 19;
-    if (me.armour > 0) { bar(ctx, 12, y, 150, 15, me.armour / RULES.maxArmour, 'armour', `Armour: ${Math.ceil(me.armour)}%`); y += 19; }
-    const def = WEAPONS[me.current], inv = me.weapons[me.current];
-    if (def && inv) {
-      if (def.mag) {
-        const label = me.reloadTimer > 0 ? `${def.name}: reloading` : `${def.name}: ${inv.mag}/${def.mag}`;
-        bar(ctx, 12, y, 150, 15, me.reloadTimer > 0 ? 1 - me.reloadTimer / def.reload : inv.mag / def.mag, 'ammo', label);
-      } else if (inv.ammo === Infinity || game.rules.infiniteAmmo) {
-        bar(ctx, 12, y, 150, 15, 1, 'ammo', def.name);
-      } else {
-        bar(ctx, 12, y, 150, 15, inv.ammo / (def.maxAmmo || def.ammo || 1), 'ammo', `${def.name}: ${inv.ammo}`);
-      }
-      y += 19;
-    }
-    if (me.body.hasJetpack) { bar(ctx, 12, y, 150, 15, me.body.fuel / 100, 'fuel', `Jet fuel: ${Math.round(me.body.fuel)}%`); y += 19; }
-    if (def?.spinup && me.spin > 0 && me.spin < def.spinup) { bar(ctx, 12, y, 150, 15, me.spin / def.spinup, 'fuel', 'Spinning up…'); y += 19; }
-    if (me.burnTicks > 0) {
-      ctx.font = `bold 13px ${FONT}`;
-      ctx.fillStyle = '#e5641a';
-      ctx.textAlign = 'left';
-      ctx.fillText('On fire! Find health', 12, y + 8);
-    }
+    drawStatus(ctx, game, me, W, H);
     drawWeaponBar(ctx, me, W, H);
   }
 
@@ -117,16 +94,76 @@ const BAR_COLORS = {
   armour: ['#3f9a3a', '#1c4a1a'],
   ammo: ['#a39a1f', '#4a4510'],
   fuel: ['#2f74d0', '#163a6b'],
+  stamina: ['#2fb3a0', 'rgba(0,0,0,0.18)'],
+  winded: ['#d8862a', 'rgba(0,0,0,0.18)'],
 };
 
-/** A bar like the original's: bright fill on a dark track, white label on top. */
-function bar(ctx, x, y, w, h, frac, kind, label) {
+// The weapon bar's boxes (drawWeaponBar), and where it sits: centred at the bottom,
+// shrunk to fit narrow screens.
+const SLOT_SIZE = 46, SLOT_GAP = 4;
+function weaponBarScale(W) {
+  const total = SLOTS.length * SLOT_SIZE + (SLOTS.length - 1) * SLOT_GAP;
+  return Math.min(1, (W - 24) / total);
+}
+
+/**
+ * Health, armour, ammo, jet fuel and stamina: just above the weapon bar, in the
+ * middle at the bottom of the screen, where your eyes are anyway.
+ */
+function drawStatus(ctx, game, me, W, H) {
+  const k = weaponBarScale(W);
+  const half = 172, gap = 8, h = 20;
+  ctx.save();
+  ctx.translate(W / 2, H - (SLOT_SIZE + 10) * k - 6 * k);
+  ctx.scale(k, k);
+  // Stamina: a thin strip right above the weapon bar, shown while it isn't full.
+  const b = me.body;
+  if (b.stamina < 100 || b.sprinting) {
+    bar(ctx, -half - gap / 2, -5, half * 2 + gap, 5, b.stamina / 100, b.winded ? 'winded' : 'stamina', '');
+  }
+  // The main row: health on the left, the weapon in hand on the right.
+  let y = -11 - h;
+  bar(ctx, -half - gap / 2, y, half, h, me.health / RULES.maxHealth, 'health', `Health ${Math.max(0, Math.ceil(me.health))}%`, true);
+  const def = WEAPONS[me.current], inv = me.weapons[me.current];
+  if (def && inv) {
+    let frac = 1, label = def.name;
+    if (def.mag) {
+      frac = me.reloadTimer > 0 ? 1 - me.reloadTimer / def.reload : inv.mag / def.mag;
+      label = me.reloadTimer > 0 ? `${def.name}: reloading` : `${def.name}  ${inv.mag}/${def.mag}`;
+    } else if (inv.ammo !== Infinity && !game.rules.infiniteAmmo) {
+      frac = inv.ammo / (def.maxAmmo || def.ammo || 1);
+      label = `${def.name}  ${inv.ammo}`;
+    }
+    bar(ctx, gap / 2, y, half, h, frac, 'ammo', label, true);
+  }
+  // Anything else, in pairs above it: armour, jet fuel, the minigun spinning up.
+  const extra = [];
+  if (me.armour > 0) extra.push([me.armour / RULES.maxArmour, 'armour', `Armour ${Math.ceil(me.armour)}%`]);
+  if (b.hasJetpack) extra.push([b.fuel / 100, 'fuel', `Jet fuel ${Math.round(b.fuel)}%`]);
+  if (def?.spinup && me.spin > 0 && me.spin < def.spinup) extra.push([me.spin / def.spinup, 'fuel', 'Spinning up…']);
+  for (let i = 0; i < extra.length; i++) {
+    if (i % 2 === 0) y -= 18;
+    const [frac, kind, label] = extra[i];
+    bar(ctx, i % 2 === 0 ? -half - gap / 2 : gap / 2, y, half, 15, frac, kind, label);
+  }
+  if (me.burnTicks > 0) {
+    ctx.font = `bold 13px ${FONT}`;
+    ctx.fillStyle = '#e5641a';
+    ctx.textAlign = 'center';
+    ctx.fillText('On fire! Find health', 0, y - 12);
+  }
+  ctx.restore();
+}
+
+/** A bar like the original's: bright fill on a dark track, white label on top (bold: bigger). */
+function bar(ctx, x, y, w, h, frac, kind, label, bold = false) {
   const [fg, bg] = BAR_COLORS[kind];
   ctx.fillStyle = bg;
   ctx.fillRect(x, y, w, h);
   ctx.fillStyle = fg;
   ctx.fillRect(x, y, w * Math.max(0, Math.min(1, frac)), h);
-  ctx.font = `11px ${FONT}`;
+  if (!label) return;
+  ctx.font = bold ? `bold 12px ${FONT}` : `11px ${FONT}`;
   ctx.textAlign = 'left';
   ctx.fillStyle = '#fff';
   ctx.fillText(label, x + 6, y + h / 2 + 1);
@@ -134,9 +171,9 @@ function bar(ctx, x, y, w, h, frac, kind, label) {
 
 /** One box per slot (1-9, 0, F): what you hold from it, and how many weapons you have there. */
 function drawWeaponBar(ctx, me, W, H) {
-  const size = 46, gap = 4, n = SLOTS.length;
+  const size = SLOT_SIZE, gap = SLOT_GAP, n = SLOTS.length;
   const total = n * size + (n - 1) * gap;
-  const scale = Math.min(1, (W - 24) / total);
+  const scale = weaponBarScale(W);
   ctx.save();
   ctx.translate(W / 2 - (total * scale) / 2, H - (size + 10) * scale);
   ctx.scale(scale, scale);

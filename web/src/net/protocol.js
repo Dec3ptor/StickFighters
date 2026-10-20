@@ -7,7 +7,7 @@
 
 import { WEAPONS } from '../weapons.js';
 
-export const PROTOCOL = 6;            // bump when the messages change; older versions can't join
+export const PROTOCOL = 7;            // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -71,15 +71,16 @@ export const messageType = data => (data instanceof Uint8Array ? data : new Uint
 
 // ---- Inputs ----------------------------------------------------------------------------
 
-/** A player's inputs: the newest last. Each is { seq, move, jump, jumpPressed, crouch, jet, fire, firePressed, alt, selfDestruct, aim, aimDist, switchTo, cycle }. */
+/** A player's inputs: the newest last. Each is { seq, move, jump, jumpPressed, crouch, jet, fire, firePressed, alt, selfDestruct, sprint, aim, aimDist, switchTo, cycle }. */
 export function encodeInputs(inputs) {
-  const w = new Writer(16 + inputs.length * 12);
+  const w = new Writer(16 + inputs.length * 13);
   w.u8(MSG.input);
   w.u32(inputs.length ? inputs[inputs.length - 1].seq : 0);
   w.u8(inputs.length);
   for (const i of inputs) {
     w.i8(Math.round((i.move || 0) * 100));
     w.u8((i.jump ? 1 : 0) | (i.jumpPressed ? 2 : 0) | (i.crouch ? 4 : 0) | (i.jet ? 8 : 0) | (i.fire ? 16 : 0) | (i.firePressed ? 32 : 0) | (i.alt ? 64 : 0) | (i.selfDestruct ? 128 : 0));
+    w.u8(i.sprint ? 1 : 0);
     w.u16(angleToU16(i.aim ?? 0));
     w.u16(clampU16(i.aimDist ?? 200));
     w.u8(i.switchTo ? weaponIndex(i.switchTo) + 1 : 0);
@@ -94,16 +95,16 @@ export function decodeInputs(data) {
   if (r.u8() !== MSG.input) return [];
   const last = r.u32(), n = Math.min(r.u8(), 8);
   const out = [];
-  for (let k = 0; k < n && r.left >= 8; k++) {
+  for (let k = 0; k < n && r.left >= 9; k++) {
     const move = Math.max(-1, Math.min(1, r.i8() / 100));
-    const f = r.u8();
+    const f = r.u8(), f2 = r.u8();
     const aim = u16ToAngle(r.u16());
     const aimDist = r.u16();
     const sw = r.u8();
     const cycle = Math.sign(r.i8());
     out.push({
       seq: last - (n - 1 - k), move, jump: !!(f & 1), jumpPressed: !!(f & 2), crouch: !!(f & 4), jet: !!(f & 8),
-      fire: !!(f & 16), firePressed: !!(f & 32), alt: !!(f & 64), selfDestruct: !!(f & 128), aim, aimDist,
+      fire: !!(f & 16), firePressed: !!(f & 32), alt: !!(f & 64), selfDestruct: !!(f & 128), sprint: !!(f2 & 1), aim, aimDist,
       switchTo: sw ? weaponAt(sw - 1) : null, cycle: cycle || 0,
     });
   }
@@ -190,8 +191,8 @@ export function encodeSnapshot(game, me, ackSeq, world) {
   if (me) {
     const b = me.body;
     w.f32(b.x); w.f32(b.y); w.f32(b.vx); w.f32(b.vy);
-    w.u8((b.onGround ? 1 : 0) | (b.crouching ? 2 : 0) | (b.padLaunch ? 4 : 0) | (b.hasJetpack ? 8 : 0));
-    w.f32(b.fuel); w.u8(clampU8(b.momentum));
+    w.u8((b.onGround ? 1 : 0) | (b.crouching ? 2 : 0) | (b.padLaunch ? 4 : 0) | (b.hasJetpack ? 8 : 0) | (b.winded ? 16 : 0) | (b.sprinting ? 32 : 0));
+    w.f32(b.fuel); w.u8(clampU8(b.momentum)); w.f32(b.stamina);
     if (b.rope) { w.u8(1); w.f32(b.rope.x); w.f32(b.rope.y); w.f32(b.rope.len); } else w.u8(0);
     const owned = Object.keys(me.weapons).filter(id => WEAPON_INDEX.has(id));
     w.u8(owned.length);
@@ -215,7 +216,8 @@ export function decodeSnapshot(data) {
     const me = { x: r.f32(), y: r.f32(), vx: r.f32(), vy: r.f32() };
     const f = r.u8();
     me.onGround = !!(f & 1); me.crouching = !!(f & 2); me.padLaunch = !!(f & 4); me.hasJetpack = !!(f & 8);
-    me.fuel = r.f32(); me.momentum = r.u8();
+    me.winded = !!(f & 16); me.sprinting = !!(f & 32);
+    me.fuel = r.f32(); me.momentum = r.u8(); me.stamina = r.f32();
     me.rope = r.u8() ? { x: r.f32(), y: r.f32(), len: r.f32() } : null;
     me.weapons = {};
     const n = r.u8();

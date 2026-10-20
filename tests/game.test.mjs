@@ -60,6 +60,36 @@ test('soldiers land on floors, jump about 97 px, and jump pads launch higher', (
   assert.ok(low - high > height, `pad launch ${low - high} should beat a normal jump`);
 });
 
+test('sprinting is faster, uses up stamina, and leaves you winded until it partly refills', () => {
+  const map = new GameMap({ name: 'flat', bounds: { left: -3000, top: -300, right: 3000, bottom: 200 }, spawns: [], items: [],
+    platforms: [{ left: -3000, top: 0, right: 3000, bottom: 40 }] });
+  setGameSpeed(DEFAULT_SPEED);
+  const run = (sprint, ticks, body = settle(makeBody(-2500, -40), map)) => {
+    const x0 = body.x;
+    for (let i = 0; i < ticks; i++) stepBody(body, { move: 1, sprint }, map);
+    return { body, dist: body.x - x0 };
+  };
+  const walk = run(false, 60), dash = run(true, 60);
+  assert.ok(dash.dist > walk.dist * 1.3, `sprint ${dash.dist.toFixed(0)} px vs run ${walk.dist.toFixed(0)} px in a second`);
+  assert.equal(walk.body.stamina, 100, 'running costs nothing');
+  assert.ok(dash.body.stamina < 85 && dash.body.stamina > 60, `a second's sprint uses a quarter (stamina ${dash.body.stamina})`);
+  // Keep going until it runs out: winded, back to running speed.
+  const { body } = run(true, 260);
+  assert.ok(body.winded && !body.sprinting);
+  assert.ok(Math.abs(body.vx - PHYS.runSpeed) < 0.01, 'winded: running speed');
+  // It comes back while not sprinting, and you can sprint again once it's partly back.
+  run(false, 30, body);
+  assert.ok(body.winded, 'still winded at first');
+  run(false, 200, body);
+  assert.ok(!body.winded || body.stamina < PHYS.sprintRecover);
+  stepBody(body, { move: 1, sprint: true }, map);
+  assert.ok(body.sprinting, 'sprinting again');
+  // No sprinting crouched.
+  const low = settle(makeBody(0, -40), map);
+  for (let i = 0; i < 30; i++) stepBody(low, { move: 1, sprint: true, crouch: true }, map);
+  assert.ok(!low.sprinting && low.stamina === 100);
+});
+
 test('walls stop soldiers', () => {
   const map = new GameMap({ name: 'box', bounds: { left: 0, top: 0, right: 400, bottom: 200 }, spawns: [], items: [],
     platforms: [{ left: 0, top: 100, right: 400, bottom: 120 }, { left: 200, top: 0, right: 220, bottom: 100 }] });

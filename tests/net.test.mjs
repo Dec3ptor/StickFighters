@@ -14,7 +14,7 @@ import { loadMap } from './helpers.mjs';
 
 test('inputs survive the trip (and silly values are clamped)', () => {
   const inputs = [
-    { seq: 41, move: -1, jump: true, jumpPressed: true, aim: 1.25, aimDist: 300, fire: true, firePressed: true, switchTo: 'Sheep' },
+    { seq: 41, move: -1, jump: true, jumpPressed: true, aim: 1.25, aimDist: 300, fire: true, firePressed: true, switchTo: 'Sheep', sprint: true },
     { seq: 42, move: 0.5, crouch: true, jet: true, selfDestruct: true, aim: -2, aimDist: 99999, cycle: -1 },
   ];
   const out = decodeInputs(encodeInputs(inputs));
@@ -23,6 +23,7 @@ test('inputs survive the trip (and silly values are clamped)', () => {
   assert.equal(out[0].move, -1);
   assert.ok(out[0].jump && out[0].jumpPressed && out[0].fire && out[0].firePressed && !out[0].selfDestruct);
   assert.ok(out[1].selfDestruct, 'self-destruct (held K)');
+  assert.ok(out[0].sprint && !out[1].sprint, 'sprint (Shift)');
   assert.equal(out[0].switchTo, 'Sheep');
   assert.ok(Math.abs(out[0].aim - 1.25) < 0.001);
   assert.equal(out[1].aimDist, 65535);
@@ -134,8 +135,9 @@ test('a player joins: same soldiers on both sides, bots make room, prediction ma
   // (If a bot has just got me, wait until I'm back: both sides then agree I'm alive.)
   for (let i = 0; i < 600 && !(mine.alive && c.me.alive); i++) await step(1);
   assert.ok(mine.alive && c.me.alive, 'alive on the host and on my screen');
-  // No lag: what I predict is where the host has me, plus the one input it hasn't used yet (a tick of running).
-  assert.ok(Math.hypot(c.me.x - mine.x, c.me.y - mine.y) < 4, `prediction off by ${Math.hypot(c.me.x - mine.x, c.me.y - mine.y).toFixed(1)} px`);
+  // No lag: what I predict is where the host has me, plus the one input it hasn't used yet (a tick of moving).
+  const ahead = Math.hypot(mine.body.vx, mine.body.vy) + 2;
+  assert.ok(Math.hypot(c.me.x - mine.x, c.me.y - mine.y) < ahead, `prediction off by ${Math.hypot(c.me.x - mine.x, c.me.y - mine.y).toFixed(1)} px`);
   for (const s of c.game.soldiers) assert.ok(Number.isFinite(s.x));
   host.close();
 });
@@ -145,6 +147,8 @@ test('with lag and packet loss, my soldier still ends up where the host has it',
   const c = clients[0];
   await step(900);
   const mine = game.soldiers.find(s => s.remote);
+  // (If a bot has just got me, wait until I'm back.)
+  for (let i = 0; i < 600 && !(mine.alive && c.me.alive); i++) await step(1);
   assert.ok(mine.alive && c.me.alive);
   // Let the last inputs reach the host, standing still.
   c.opts.controller = { input: () => ({ move: 0, aim: 0 }) };
@@ -157,6 +161,25 @@ test('with lag and packet loss, my soldier still ends up where the host has it',
     const h = game.soldiers.find(x => x.id === s.id);
     if (h.alive) assert.ok(Math.hypot(s.x - h.x, s.y - h.y) < 150, `${s.name} is ${Math.hypot(s.x - h.x, s.y - h.y).toFixed(0)} px off`);
   }
+});
+
+test('sprinting online: my screen predicts the speed and stamina the host has', async () => {
+  const sprinter = { input: g => ({ move: Math.sin(g.tick / 90) > 0 ? 1 : -1, sprint: g.tick % 400 < 300, aim: 0, aimDist: 200 }) };
+  const { game, clients, step } = await onlineMatch({ players: 1, controllers: [sprinter] });
+  const c = clients[0];
+  await step(600);
+  const mine = game.soldiers.find(s => s.remote);
+  for (let i = 0; i < 600 && !(mine.alive && c.me.alive); i++) await step(1);
+  let sprinted = false;
+  for (let i = 0; i < 200; i++) {
+    await step(1);
+    if (!mine.alive || !c.me.alive) continue;
+    sprinted ||= mine.body.sprinting;
+    // (My screen runs one input ahead of the host.)
+    assert.ok(Math.abs(c.me.body.stamina - mine.body.stamina) <= 1, `stamina ${c.me.body.stamina} vs ${mine.body.stamina}`);
+    assert.ok(Math.hypot(c.me.x - mine.x, c.me.y - mine.y) < Math.hypot(mine.body.vx, mine.body.vy) + 2);
+  }
+  assert.ok(sprinted, 'sprinted on the host');
 });
 
 test('players hear the host\'s sounds, see the feed, and can chat', async () => {

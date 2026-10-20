@@ -15,6 +15,7 @@ import { Editor } from './editor.js';
 import { listMaps, getMap, saveMap } from './mapstore.js';
 import { decodeShare, encodeShare, normalizeMap } from './custommaps.js';
 import { MODES } from './modes.js';
+import { WEAPONS } from './weapons.js';
 import { seamsOf, fillSeams } from './map.js';
 import { Lobby, inviteCode, parseInvite } from './net/lobby.js';
 import { NetHost } from './net/host.js';
@@ -44,7 +45,7 @@ let lobby = null;
 const pacer = new FramePacer();
 const params = new URLSearchParams(location.search);
 // The Settings screen's choices (saved with the other settings).
-const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true };
+const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold' };
 let community = null;
 let watcher = null;
 
@@ -60,6 +61,7 @@ const DEFAULTS = {
   // Settings screen
   // (graphicsPicked: graphics was chosen in Settings, not just the default saved.)
   graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true,
+  sprint: 'hold', // Shift: 'hold' to sprint, or 'toggle' it on and off
 };
 
 function loadSettings() {
@@ -80,6 +82,12 @@ function rememberMenu() {
   const s = { ...loadSettings(), ...readMenu(), tab: state.tab, mapSource: mapSource() };
   saveSettings(s);
 }
+
+// Guns with at least this many updates between shots (about half a second) show the reload ring between them.
+const SLOW_GUN = 35;
+
+// The player's controls follow the Settings screen (read each update, so changes apply mid-match).
+const playerOptions = { sprintMode: () => prefs.sprint };
 
 const playerName = () => ($('name').value.trim() || 'Player').slice(0, 14);
 
@@ -432,7 +440,7 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const rng = makeRng((Math.random() * 2 ** 31) | 0);
 
   const team = game.rules.teams ? (settings.side === 2 ? 2 : 1) : 0;
-  state.me = game.addSoldier({ name: settings.name, isBot: false, team }, new PlayerController(input, () => renderer));
+  state.me = game.addSoldier({ name: settings.name, isBot: false, team }, new PlayerController(input, () => renderer, playerOptions));
 
   if (online) {
     state.mode = 'host';
@@ -522,6 +530,7 @@ function openSettings() {
   $('setBotVision').value = $('botVision').value;
   $('setFog').value = $('fog').value;
   $('graphics').value = prefs.graphics;
+  $('sprintMode').value = prefs.sprint === 'toggle' ? 'toggle' : 'hold';
   $('fpsCap').value = String(prefs.fpsCap);
   $('showFps').checked = prefs.showFps;
   $('showPing').checked = prefs.showPing;
@@ -718,7 +727,7 @@ function startClient(link) {
   const net = state.net = { role: 'client' };
   net.client = new NetClient({
     link,
-    controller: new PlayerController(input, () => renderer),
+    controller: new PlayerController(input, () => renderer, playerOptions),
     loadMap: async m => {
       if (m.map?.builtin && maps.data.has(m.map.builtin)) return maps.data.get(m.map.builtin);
       if (m.map?.code) return decodeShare(m.map.code);
@@ -862,7 +871,17 @@ function frame(now) {
     ping: !prefs.showPing ? null : client ? client.ping : state.mode === 'host' ? 'Host' : null,
     perf: perf.on ? perf.text : null,
   });
-  if (!state.menuOpen && !g.over && !state.chatOpen) renderer.drawCrosshair(input.mouse.x, input.mouse.y, sniping);
+  if (!state.menuOpen && !g.over && !state.chatOpen) {
+    // Reloading: a ring round the crosshair fills up, complete when the gun's ready. That's
+    // the pistol's magazine, and the wait between shots of slow guns (sniper rifle, rockets...).
+    const gun = WEAPONS[me.current];
+    let reload = null;
+    if (me.alive && gun) {
+      if (gun.mag && me.reloadTimer > 0) reload = 1 - me.reloadTimer / gun.reload;
+      else if (gun.rof >= SLOW_GUN && me.cooldown > 0) reload = 1 - me.cooldown / gun.rof;
+    }
+    renderer.drawCrosshair(input.mouse.x, input.mouse.y, sniping, reload);
+  }
   renderer.present();
   if (aimed) { me.aim = aimed.aim; me.facing = aimed.facing; }
   const end = performance.now();
@@ -988,6 +1007,11 @@ function wire() {
   $('fpsCap').addEventListener('change', () => { prefs.fpsCap = $('fpsCap').value; pacer.setMode(prefs.fpsCap); savePrefs(); settingsNotes(); });
   $('showFps').addEventListener('change', () => { prefs.showFps = $('showFps').checked; perf.on = prefs.showFps || params.has('fps'); savePrefs(); });
   $('showPing').addEventListener('change', () => { prefs.showPing = $('showPing').checked; savePrefs(); });
+  $('sprintMode').addEventListener('change', () => { prefs.sprint = $('sprintMode').value === 'toggle' ? 'toggle' : 'hold'; savePrefs(); });
+  // Mid-match, closing or leaving the page (Ctrl+W, say) asks first.
+  window.addEventListener('beforeunload', e => {
+    if (state.game && !state.game.over) { e.preventDefault(); e.returnValue = ''; }
+  });
   // Experimental (the same choices as the game setup's, for the next game started or hosted).
   $('setBotVision').addEventListener('change', () => { $('botVision').value = $('setBotVision').value; rememberMenu(); });
   $('setFog').addEventListener('change', () => { $('fog').value = $('setFog').value; rememberMenu(); });

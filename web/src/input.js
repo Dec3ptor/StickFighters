@@ -3,8 +3,12 @@
 
 const GAME_KEYS = new Set([
   'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab',
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyF', 'ShiftLeft', 'ShiftRight',
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyF', 'KeyK', 'ShiftLeft', 'ShiftRight',
 ]);
+// Ctrl / Cmd are crouch keys too (as in most shooters). Held with a game key, they'd
+// otherwise open browser shortcuts (Ctrl+D bookmarks, Ctrl+S saves...), and the game
+// would miss the key being let go and keep moving.
+const MODIFIERS = new Set(['ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight']);
 
 // Number keys 1-9 and 0 pick weapon slots 0-9; F picks melee (slot 10).
 const SLOT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'KeyF'];
@@ -21,13 +25,20 @@ export class Input {
 
     window.addEventListener('keydown', e => {
       if (!this.enabled) return;
-      if (GAME_KEYS.has(e.code) || /^Digit\d$/.test(e.code)) e.preventDefault();
+      if (GAME_KEYS.has(e.code) || MODIFIERS.has(e.code) || /^Digit\d$/.test(e.code)) e.preventDefault();
       // Only weapon keys are read as one-off presses; everything else is read as held.
       if (!e.repeat && QUEUED.has(e.code) && this.queue.length < 8) this.queue.push(e.code);
       this.keys.add(e.code);
     });
-    window.addEventListener('keyup', e => this.keys.delete(e.code));
-    window.addEventListener('blur', () => { this.keys.clear(); this.mouse.left = this.mouse.right = false; });
+    window.addEventListener('keyup', e => {
+      this.keys.delete(e.code);
+      // (Macs don't report keys let go while Cmd is down: forget them all when it's let go.)
+      if (e.code === 'MetaLeft' || e.code === 'MetaRight') this.keys.clear();
+    });
+    // Leaving the page (a browser dialog, another window or tab): nothing stays held.
+    const release = () => { this.keys.clear(); this.mouse.left = this.mouse.right = false; };
+    window.addEventListener('blur', release);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
     window.addEventListener('mousemove', e => {
       const r = this.canvas.getBoundingClientRect();
       this.mouse.x = e.clientX - r.left;
@@ -79,12 +90,19 @@ export class Input {
 
 /** Drives the player's soldier from the keyboard and mouse. */
 export class PlayerController {
-  /** view: the renderer, or a function returning the current one (it can change in Settings). */
-  constructor(input, view) {
+  /**
+   * view: the renderer, or a function returning the current one (it can change in Settings).
+   * sprintMode: a function returning 'hold' (sprint while Shift is held) or 'toggle' (Shift
+   * starts sprinting, until you press it again, stop moving or run out of stamina).
+   */
+  constructor(input, view, { sprintMode = () => 'hold' } = {}) {
     this.in = input;
     this.view = typeof view === 'function' ? view : () => view;
+    this.sprintMode = sprintMode;
     this.prevJump = false;
     this.prevFire = false;
+    this.prevShift = false;
+    this.sprintOn = false;
     this.jetting = false;
   }
 
@@ -95,7 +113,7 @@ export class PlayerController {
       move: (k.down('KeyD', 'ArrowRight') ? 1 : 0) - (k.down('KeyA', 'ArrowLeft') ? 1 : 0),
       jump,
       jumpPressed: jump && !this.prevJump,
-      crouch: k.down('KeyS', 'ArrowDown'),
+      crouch: k.down('KeyS', 'ArrowDown', 'ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight'),
       // Hold K to self-destruct (to get out of a pit you can't climb out of).
       selfDestruct: k.down('KeyK'),
       fire: k.mouse.left,
@@ -105,10 +123,21 @@ export class PlayerController {
     this.prevJump = jump;
     this.prevFire = k.mouse.left;
 
-    // Jetpack: hold jump in the air once you start falling (or hold Shift).
+    // Sprint (Shift): while held, or toggled on and off.
+    const shift = k.down('ShiftLeft', 'ShiftRight');
     const b = s.body;
-    if (!b.hasJetpack || b.onGround || !(jump || k.down('ShiftLeft', 'ShiftRight'))) this.jetting = false;
-    else if (k.down('ShiftLeft', 'ShiftRight') || b.vy > -1.5 || this.jetting) this.jetting = true;
+    if (this.sprintMode() === 'toggle') {
+      if (shift && !this.prevShift) this.sprintOn = !this.sprintOn;
+      // (Stops when you stop moving for a moment, not while switching direction.)
+      this.still = inp.move ? 0 : (this.still || 0) + 1;
+      if (this.still > 8 || !s.alive || b.winded) this.sprintOn = false;
+      inp.sprint = this.sprintOn;
+    } else inp.sprint = shift;
+    this.prevShift = shift;
+
+    // Jetpack: hold jump in the air once you start falling.
+    if (!b.hasJetpack || b.onGround || !jump) this.jetting = false;
+    else if (b.vy > -1.5 || this.jetting) this.jetting = true;
     inp.jet = this.jetting;
 
     const w = this.view().screenToWorld(k.mouse.x, k.mouse.y);

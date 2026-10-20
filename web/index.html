@@ -149,8 +149,9 @@
               <table>
                 <tr><td>Move</td><td><kbd>A</kbd> <kbd>D</kbd></td></tr>
                 <tr><td>Jump (hold for higher)</td><td><kbd>W</kbd> or <kbd>Space</kbd></td></tr>
-                <tr><td>Jetpack</td><td>hold jump in the air, or <kbd>Shift</kbd></td></tr>
-                <tr><td>Crouch (steadier aim)</td><td><kbd>S</kbd></td></tr>
+                <tr><td>Sprint (uses stamina)</td><td><kbd>Shift</kbd> (hold, or press to toggle: see Settings)</td></tr>
+                <tr><td>Jetpack</td><td>hold jump in the air</td></tr>
+                <tr><td>Crouch (steadier aim)</td><td><kbd>S</kbd> or <kbd>Ctrl</kbd></td></tr>
                 <tr><td>Aim / fire</td><td>mouse / left click (mouse distance sets throw strength)</td></tr>
                 <tr><td>Sniper zoom</td><td>right click</td></tr>
                 <tr><td>Weapons</td><td><kbd>1</kbd>&ndash;<kbd>0</kbd>, melee <kbd>F</kbd>; press again to cycle; <kbd>Q</kbd> <kbd>E</kbd>, wheel</td></tr>
@@ -219,6 +220,12 @@
       <p id="fpsNote" class="muted-note"></p>
       <label class="check"><input type="checkbox" id="showFps"> Show frame rate</label>
       <label class="check"><input type="checkbox" id="showPing"> Show ping in online games</label>
+      <label class="field">Sprint (<kbd>Shift</kbd>)
+        <select id="sprintMode">
+          <option value="hold">Hold to sprint</option>
+          <option value="toggle">Press to start or stop</option>
+        </select>
+      </label>
       <h3 class="exp-head">Experimental</h3>
       <div class="field-pair">
         <label class="field">Bot vision

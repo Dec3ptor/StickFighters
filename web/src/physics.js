@@ -8,6 +8,7 @@ export function makeBody(x, y) {
     x, y, vx: 0, vy: 0,
     onGround: false, crouching: false, padLaunch: false,
     hasJetpack: false, fuel: 0,
+    stamina: 100, winded: false, sprinting: false, // sprinting: see stepBody
     rope: null,        // ninja rope: { x, y, len } while hanging from one
     momentum: 0,       // ticks of keeping speed in the air (after a rope swing or a big hit)
     // Set during each step, for animation and sound:
@@ -34,7 +35,7 @@ export function supportUnder(body, map) {
 
 /**
  * Advance one tick.
- * input: { move: -1..1, jump: held, jumpPressed: pressed this tick, crouch, jet }
+ * input: { move: -1..1, jump: held, jumpPressed: pressed this tick, crouch, jet, sprint }
  */
 export function stepBody(body, input, map) {
   const wasGround = body.onGround;
@@ -51,13 +52,25 @@ export function stepBody(body, input, map) {
     if (!blocked) body.crouching = false;
   }
 
+  // Sprinting: faster on the ground while stamina lasts (run out, and you're winded until
+  // it's partly back). The speed carries through a jump, as long as you keep it held.
+  const sprint = !!input.sprint && !!input.move && !body.crouching && !body.rope;
+  if (wasGround) {
+    if (body.winded && body.stamina >= PHYS.sprintRecover) body.winded = false;
+    body.sprinting = sprint && !body.winded;
+    if (body.sprinting) {
+      body.stamina = Math.max(0, body.stamina - PHYS.sprintDrain);
+      if (body.stamina <= 0) body.winded = true;
+    } else body.stamina = Math.min(100, body.stamina + PHYS.sprintRegen);
+  } else body.sprinting = body.sprinting && sprint;
+
   // Horizontal: ease toward the wanted speed, so knockback fades out naturally.
   if (body.momentum > 0) body.momentum--;
   if (body.rope && !wasGround) {
     // Swinging: left and right pump the swing instead of steering.
     body.vx += (input.move || 0) * PHYS.airAccel * 0.25;
   } else {
-    const target = (input.move || 0) * (body.crouching ? PHYS.crouchSpeed : PHYS.runSpeed);
+    const target = (input.move || 0) * (body.crouching ? PHYS.crouchSpeed : PHYS.runSpeed * (body.sprinting ? PHYS.sprintSpeed : 1));
     let accel = wasGround ? PHYS.groundAccel : PHYS.airAccel;
     if (!wasGround && body.momentum > 0 && Math.abs(body.vx) > Math.abs(target)) accel *= 0.12;
     const dv = target - body.vx;

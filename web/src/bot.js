@@ -97,6 +97,8 @@ const FAIL_COST = 45, MAX_PENALTY = 270;
 const RACE_MARGIN = 15, NEAR_ITEM = 90;
 // A bot that gives way on an item leaves it alone this long (4 seconds).
 const YIELD_TICKS = 240;
+// Bots sprint when at least this many steps of straight walking lie ahead (about 100 px).
+const SPRINT_RUN = 8;
 
 export class BotController {
   constructor(nav, difficulty, profile, rng) {
@@ -651,6 +653,15 @@ export class BotController {
       const through = next && next.type === 'walk' && next.dir === link.dir;
       if (Math.abs(dx) < 3 || Math.sign(dx) !== link.dir) { this.li++; inp.move = through ? link.dir : 0; }
       else inp.move = through ? Math.sign(dx) : approach(dx, b.vx);
+      // A long clear run ahead and nobody to fight: sprint (easing off before the route turns or jumps).
+      if (!this.target && this.goalKind !== 'hold') {
+        let run = 0;
+        for (let i = this.li; i < this.path.length && run < SPRINT_RUN; i++, run++) {
+          const l = this.path[i];
+          if (l.type !== 'walk' || l.dir !== link.dir) break;
+        }
+        inp.sprint = run >= SPRINT_RUN;
+      }
       if (Math.abs(s.y - link.to.y) > 14) this.thinkIn = 0;
     } else {
       const from = this.li === 0 ? this.start : this.path[this.li - 1].to;

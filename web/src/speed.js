@@ -11,7 +11,7 @@ import { WEAPONS } from './weapons.js';
 const BASE = JSON.parse(JSON.stringify({ PHYS, MOTION, RULES, WEAPONS }, (k, v) => (v === Infinity ? 'Infinity' : v)),
   (k, v) => (v === 'Infinity' ? Infinity : v));
 
-const SPEEDS = ['runSpeed', 'crouchSpeed', 'jumpSpeed', 'jumpCut', 'bounceScale', 'jetMaxUp', 'maxFall', 'jetDrain', 'jetRegen', 'ropeClimb'];
+const SPEEDS = ['runSpeed', 'crouchSpeed', 'jumpSpeed', 'jumpCut', 'bounceScale', 'jetMaxUp', 'maxFall', 'jetDrain', 'jetRegen', 'ropeClimb', 'sprintDrain', 'sprintRegen'];
 const ACCELS = ['gravity', 'groundAccel', 'airAccel', 'jetAccel'];
 
 // Weapon numbers by unit (anywhere in a weapon's definition, including payloads).

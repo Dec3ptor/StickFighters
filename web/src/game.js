@@ -255,7 +255,7 @@ export class Game {
     if (b.bounced) this.sound('bounce', s.x, s.y);
     if (b.landed > MOTION.landSound) { this.sound('land', s.x, s.y); this.noise(s.x, s.y, 220, s); }
     // Footsteps: running is heard close by (creeping along crouched isn't).
-    if (b.onGround && !b.crouching && Math.abs(b.vx) > PHYS.runSpeed * MOTION.timeScale * 0.6 && this.tick % 12 === s.id % 12) this.noise(s.x, s.y, 110, s);
+    if (b.onGround && !b.crouching && Math.abs(b.vx) > PHYS.runSpeed * MOTION.timeScale * 0.6 && this.tick % 12 === s.id % 12) this.noise(s.x, s.y, b.sprinting ? 180 : 110, s);
     if (b.jetting && this.tick % 10 === s.id % 10) this.noise(s.x, s.y, 420, s);
     if (b.jetting) {
       if (this.tick % 30 === 0) this.sound('jet', s.x, s.y);

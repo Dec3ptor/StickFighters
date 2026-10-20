@@ -23,6 +23,7 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
 - **Stick figures animated with the original game's leg animations**. Arms follow your aim at any angle, and the dead fall apart. No original art is used: everything is drawn in code.
 - **Bots** that get around every map, go for weapons, health and crates (but not ones someone else will get to first), and fight with human-like aim and reactions. They use every weapon: they lob grenades, call air strikes on you, steer super sheep and set them off next to you. There are 10 personalities and three skill levels. For huge battles, the bots slider goes up to **4,000** (see [Design notes](#design-notes)).
 - **The original game's sound effects**, from the Stick Soldiers Python fan project (see [`web/sounds/CREDITS.md`](web/sounds/CREDITS.md)). The new weapons' sounds (sheep included) are generated in code. The original game had no music.
+- **The HUD**: health, armour, ammo and jet fuel sit just above the weapon bar at the bottom, with stamina in a thin strip under them. A ring round the crosshair fills up while you reload (the pistol's magazine, or the wait between shots of slow guns like the sniper rifle and rocket launchers): when it's full, you can fire.
 - **Headshots** do double damage (2.5× with the sniper rifle, 2× with the bow), and you hear a hitmarker tick when you land one.
 - **Smooth on high refresh rate screens**: the game draws a frame every time your screen refreshes (60, 120, 144, 240 Hz...). It still updates 60 times a second, and everything moving (soldiers, bullets, rockets, particles, falling crates, running legs) is drawn part way between updates, while your gun follows the mouse on every frame.
 - **Drawn with the plain 2D canvas** by default, or with **WebGL** (through [PixiJS](https://pixijs.com/)) if you pick it in Settings. Both draw exactly the same picture. **Auto** picks WebGL on computers with a graphics card and the canvas on ones without, where it's faster.
@@ -30,7 +31,8 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
   - **Graphics**: Canvas (the default), WebGL or Auto. Switches straight away, even mid-match.
   - **Experimental**: the same bot vision and fog of war choices as the game setup, for the next game you start or host.
   - **Frame rate**: Auto, or a cap from 30 to 240 fps. Auto draws at your screen's refresh rate; if your computer can't keep up, it drops to an even fraction of it (144 → 72) so frames stay evenly spaced, and tries the full rate again later.
-  - **Show frame rate** and **show ping in online games**. The scoreboard (`Tab`) shows everyone's ping in online games.
+  - **Show frame rate** and **show ping in online games**.
+  - **Sprint**: hold `Shift` to sprint, or press it to start and stop. The scoreboard (`Tab`) shows everyone's ping in online games.
   - They're remembered between visits. `?renderer=webgl` / `?renderer=canvas` and `?fps` in the address override them.
 - **Game speed fixed at 75%** of the original tuning: movement, jumps, bullets, grenades and fire rates are slowed, while the game keeps updating 60 times a second. Jumps keep their height, so every map stays climbable. A hidden speed picker can be switched back on with `SHOW_SPEED_MENU` in `web/src/config.js`.
 
@@ -77,8 +79,9 @@ Air strikes, napalm, the donkey and teleports go where your mouse is. Weapons ar
 |---|---|
 | Move | `A` `D` (or arrow keys) |
 | Jump | `W` or `Space`; hold for a higher jump |
-| Jetpack | hold jump in the air, or hold `Shift` |
-| Crouch | `S`; your shots spread half as much while crouched (a shotgun's a quarter less) |
+| Sprint | `Shift`: about 40% faster, using up stamina (the thin bar over the weapon bar). It lasts about 4 seconds and refills in about 7; run it out and you're winded until it's back to 30%. Hold it, or set it to toggle in Settings |
+| Jetpack | hold jump in the air |
+| Crouch | `S` or `Ctrl`; your shots spread half as much while crouched (a shotgun's a quarter less) |
 | Aim / fire | mouse / left click |
 | Sniper zoom | right click |
 | Switch weapon | `1`–`0`, melee `F` (press again to cycle), `Q` / `E`, or mouse wheel |
@@ -86,6 +89,8 @@ Air strikes, napalm, the donkey and teleports go where your mouse is. Weapons ar
 | Self-destruct | hold `K` for a second (the way out of a pit you can't climb out of; counts as a suicide) |
 | Chat (online) | `Enter` or `T` |
 | Scores / menu / mute | `Tab` / `Esc` / `M` |
+
+During a match the browser's own `Ctrl` shortcuts (bookmark, save, select all...) are blocked, so holding `Ctrl` to crouch never opens one, and closing or leaving the page asks first.
 
 ## Online play
 

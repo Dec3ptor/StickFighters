@@ -581,9 +581,21 @@ export class Renderer {
   }
 
   /** Crosshair in screen space. */
-  drawCrosshair(mx, my, red) {
+  /** The crosshair at the mouse. reload: how far through a reload (0-1), drawn as a ring filling up. */
+  drawCrosshair(mx, my, red, reload = null) {
     const ctx = this.ctx, d = this.dpr;
     ctx.setTransform(d, 0, 0, d, 0, 0);
+    if (reload != null) {
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      ctx.beginPath();
+      ctx.arc(mx, my, 15, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = '#111';
+      ctx.beginPath();
+      ctx.arc(mx, my, 15, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(1, reload)));
+      ctx.stroke();
+    }
     ctx.strokeStyle = red ? '#e22' : '#111';
     ctx.lineWidth = 1.5;
     ctx.beginPath();

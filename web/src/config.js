@@ -35,6 +35,11 @@ export const PHYS = {
   jetDrain: 0.55,       // fuel per tick of thrust (fuel is 0-100)
   jetRegen: 0.25,       // fuel per tick while standing on the ground
   ropeClimb: 2.5,       // ninja rope: how fast you climb up or slide down it
+  // Sprinting (Shift): this much faster on the ground, using up stamina (0-100) as you go.
+  sprintSpeed: 1.4,
+  sprintDrain: 0.55,    // stamina per tick of sprinting (3 seconds' worth at full speed)
+  sprintRegen: 0.33,    // stamina per tick back while not sprinting (5 seconds to refill)
+  sprintRecover: 30,    // run out, and you're winded until stamina is back up to this
 };
 
 // Other motion values (at full speed), rescaled by speed.js.
