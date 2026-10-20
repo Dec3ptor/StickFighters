@@ -7,6 +7,8 @@
 import { BODY, RULES, MOTION } from './config.js';
 import { WEAPONS, HEADSHOT_MULTIPLIER } from './weapons.js';
 import { segmentBox } from './map.js';
+import { weaponFor } from './classes.js';
+import { projectileBeacon, shotBeacon, blastGadgets, meleeBeacon } from './gadgets.js';
 
 const HEAD_ZONE = 9; // top pixels of the body box that count as a headshot
 const MAX_MINES = 5; // per soldier
@@ -82,7 +84,8 @@ export function spawn(game, p) {
  * Returns true if something was fired.
  */
 export function fire(game, s, input = {}) {
-  const id = s.current, def = WEAPONS[id], inv = s.weapons[id];
+  // (The soldier's weapon upgrade, if any, changes its numbers: classes.js.)
+  const id = s.current, def = weaponFor(s, id), inv = s.weapons[id];
   if (!def || !inv) return false;
   const pressed = input.firePressed ?? true;
 
@@ -345,7 +348,10 @@ function meleeHit(game, s, def, id) {
     if (!game.map.clearLine(sx, sy, cx, cy)) continue;
     if (d < bd) { bd = d; best = o; }
   }
-  if (!best) { game.sound('swing', sx, sy); return; }
+  if (!best) {
+    if (!meleeBeacon(game, s, def)) game.sound('swing', sx, sy);
+    return;
+  }
   const o = best;
   if (o.spawnProtect > 0) return;
   let kx = dx * def.knock, ky = dy * def.knock - (def.lift || 0);
@@ -373,6 +379,9 @@ function railShot(game, s, x0, y0, dx, dy, def, id) {
   const wall = game.map.raycast(x0, y0, x1, y1);
   const wt = wall ? wall.t : 1;
   const hit = hitSoldier(game, x0, y0, x1 - x0, y1 - y0, s, s);
+  // (A spawn beacon in the way takes the shot.)
+  const gad = shotBeacon(game, s, x0, y0, x1 - x0, y1 - y0, Math.min(wt, hit ? hit.t : 1), def.damage);
+  if (gad) { game.fx?.trail(x0, y0, gad.x, gad.y); return; }
   if (hit && hit.t < wt) {
     const hx = x0 + (x1 - x0) * hit.t, hy = y0 + (y1 - y0) * hit.t;
     const head = hy < hit.box.t + HEAD_ZONE;
@@ -418,7 +427,10 @@ export function updateProjectiles(game) {
 function detonate(game, p, direct = null) {
   const c = p.cfg;
   p.dead = true;
-  if (c.blast) explode(game, p.x, p.y, c.blast, p.owner, p.weapon, direct);
+  if (c.blast) {
+    explode(game, p.x, p.y, c.blast, p.owner, p.weapon, direct);
+    blastGadgets(game, p.x, p.y, c.blast, p.owner);
+  }
   if (c.cluster) {
     const k = c.cluster;
     for (let i = 0; i < k.count; i++) {
@@ -465,6 +477,7 @@ const STEP = {
   bullet(game, p) {
     const wall = game.map.raycast(p.x, p.y, p.x + p.vx, p.y + p.vy);
     const hit = sweepHit(game, p, wall);
+    if (projectileBeacon(game, p, hit, wall, p.damage)) return false;
     if (hit) {
       const hy = p.y + p.vy * hit.t;
       const head = hy < hit.box.t + HEAD_ZONE;
@@ -488,6 +501,7 @@ const STEP = {
     p.vy += p.cfg.gravity;
     const wall = game.map.raycast(p.x, p.y, p.x + p.vx, p.y + p.vy);
     const hit = sweepHit(game, p, wall);
+    if (projectileBeacon(game, p, hit, wall, p.cfg.damage)) return false;
     if (hit) {
       const hy = p.y + p.vy * hit.t;
       const head = hy < hit.box.t + HEAD_ZONE;
@@ -523,6 +537,7 @@ const STEP = {
     p.vx = Math.cos(p.angle) * c.speed; p.vy = Math.sin(p.angle) * c.speed;
     const wall = game.map.raycast(p.x, p.y, p.x + p.vx, p.y + p.vy);
     const hit = sweepHit(game, p, wall);
+    if (projectileBeacon(game, p, hit, wall, c.damage)) { game.fx?.ring(p.x, p.y, '#8a5fe0'); return false; }
     if (hit) {
       damage(game, hit.soldier, c.damage, p.owner, p.weapon, { dirX: Math.cos(p.angle), dirY: Math.sin(p.angle), knock: c.knock });
       game.fx?.ring(p.x, p.y, '#8a5fe0');
@@ -795,6 +810,7 @@ const STEP = {
     if (inside && !p.inside) {
       p.smashes++;
       explode(game, p.x, p.y, c.blast, p.owner, p.weapon);
+      blastGadgets(game, p.x, p.y, c.blast, p.owner);
     }
     p.inside = inside;
     for (const s of game.near(p.x - 16, p.y - 12, p.x + 16, p.y + 24)) {
@@ -802,6 +818,7 @@ const STEP = {
       if (Math.abs(s.x - p.x) < 16 && Math.abs(s.y - 6 - p.y) < 18 && !p.squashed?.has(s)) {
         (p.squashed ||= new Set()).add(s);
         explode(game, p.x, p.y, c.blast, p.owner, p.weapon, s);
+        blastGadgets(game, p.x, p.y, c.blast, p.owner);
       }
     }
     return p.smashes < c.smashes && p.y < game.map.bounds.bottom + RULES.fallDeathMargin + 100;

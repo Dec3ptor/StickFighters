@@ -6,6 +6,7 @@ import { jumpSteer, dropSteer } from './nav.js';
 import { angleDiff, clamp } from './util.js';
 import { CELL } from './grid.js';
 import { inZone } from './objectives.js';
+import { botWantsGadget } from './gadgets.js';
 
 const SIGHT = 1300;  // how far bots look for enemies
 const LOOKS = 6;     // in big games, sight lines a bot checks each time it looks around
@@ -192,6 +193,8 @@ export class BotController {
     const look = game.soldiers.length > 1000 ? 6 : 3;
     if (game.tick % look === s.id % look) this.perceive(game, s);
     if (game.tick % 15 === s.id % 15) this.pickWeapon(game, s, inp);
+    // Classes on: medkits when someone's hurt, ammo when it's low, beacons near the objectives (gadgets.js).
+    if (game.classesOn && game.tick % 20 === s.id % 20 && botWantsGadget(game, s, this)) inp.gadget = true;
     this.watchdog(game, s);
     const it = this.goalItem;
     if (it && (!it.active || (it.dropped && it.life <= 0) || !wants(s, it))) {

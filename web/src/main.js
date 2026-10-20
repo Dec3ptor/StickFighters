@@ -15,13 +15,16 @@ import { Editor } from './editor.js';
 import { listMaps, getMap, saveMap } from './mapstore.js';
 import { decodeShare, encodeShare, normalizeMap } from './custommaps.js';
 import { MODES } from './modes.js';
-import { WEAPONS } from './weapons.js';
 import { seamsOf, fillSeams } from './map.js';
 import { Lobby, inviteCode, parseInvite } from './net/lobby.js';
 import { NetHost } from './net/host.js';
 import { NetClient } from './net/client.js';
 import { Community } from './net/community.js';
 import { PROTOCOL } from './net/protocol.js';
+import { CLASSES, CLASS_IDS, weaponFor } from './classes.js';
+import { holdSpawn } from './gadgets.js';
+import { loadProfile, saveProfile, playLoadouts, MatchXp, PROFILE_KEY } from './progression.js';
+import { renderLoadout, renderPicker, renderSummary } from './loadout.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -48,6 +51,8 @@ const params = new URLSearchParams(location.search);
 const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold' };
 let community = null;
 let watcher = null;
+// Classes on: the player's XP, ranks, unlocks and loadouts (saved apart from the settings: progression.js).
+let profile = null;
 
 // ---- Settings (remembered between visits) ------------------------------------
 
@@ -58,6 +63,8 @@ const DEFAULTS = {
   goals: {}, side: 1,
   // Experimental: what bots notice ('classic' | 'sight') and fog of war ('off' | 'on').
   botVision: 'classic', fog: 'off',
+  // Classes ('on' | 'off'), as last chosen for each mode (conquest and rush start on).
+  classesByMode: {},
   // Settings screen
   // (graphicsPicked: graphics was chosen in Settings, not just the default saved.)
   graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true,
@@ -120,6 +127,11 @@ function buildMenu(settings) {
   $('side').value = String(settings.side === 2 ? 2 : 1);
   $('botVision').value = settings.botVision === 'sight' ? 'sight' : 'classic';
   $('fog').value = settings.fog === 'on' ? 'on' : 'off';
+  $('playClass').innerHTML = CLASS_IDS.map(c => `<option value="${c}">${CLASSES[c].name}</option>`).join('');
+  $('playClass').value = profile.cls;
+  $('playClass').addEventListener('change', () => { profile.cls = $('playClass').value; saveProfile(profile); });
+  // (Remembered for this mode first: modeFields() shows the choice remembered for the mode.)
+  $('classes').addEventListener('change', () => { rememberMenu(); modeFields(); });
   $('mute').checked = settings.muted;
   audio.setMuted(settings.muted);
   $('bots').addEventListener('input', showBots);
@@ -160,6 +172,17 @@ function modeFields() {
   show('livesField', mode === 'oitc');
   show('gunField', mode === 'gungame');
   show('crateField', m.crates);
+  // Classes: offered unless the mode hands out its own weapons; the choice last made for this
+  // mode (or the mode's default). The "Your class" choice only matters with them on.
+  const classes = m.classes !== false;
+  show('classesField', classes);
+  if (classes) {
+    const saved = loadSettings().classesByMode?.[mode];
+    $('classes').value = saved === 'on' || saved === 'off' ? saved : m.classesDefault ? 'on' : 'off';
+  }
+  const on = classes && $('classes').value === 'on';
+  show('classField', on);
+  show('classesNote', on);
 }
 
 function showTab(tab) {
@@ -355,6 +378,9 @@ function readMenu() {
   const mode = $('mode').value;
   const goals = { ...(loadSettings().goals || {}) };
   if (MODES[mode]?.goal) goals[mode] = +$('goal').value;
+  const classesByMode = { ...(loadSettings().classesByMode || {}) };
+  const classesOffered = MODES[mode]?.classes !== false;
+  if (classesOffered) classesByMode[mode] = $('classes').value === 'on' ? 'on' : 'off';
   return {
     name: playerName(),
     map: selectedMap() || maps.index[0]?.file,
@@ -367,6 +393,8 @@ function readMenu() {
     side: +$('side').value === 2 ? 2 : 1,
     botVision: $('botVision').value,
     fog: $('fog').value,
+    classes: classesOffered && $('classes').value === 'on' ? 'on' : 'off',
+    classesByMode,
     lives: +$('lives').value,
     gunKills: +$('gunKills').value,
     crates: $('crates').value,
@@ -429,6 +457,7 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const options = {
     lives: settings.lives, gunGameKills: settings.gunKills, crates: settings.crates,
     botVision: settings.botVision === 'sight' ? 'sight' : 'classic', fog: settings.fog === 'on',
+    classes: settings.classes === 'on' && MODES[settings.mode]?.classes !== false,
   };
   const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
@@ -468,15 +497,26 @@ function enterMatch(game, me) {
   input.enabled = true;
   document.body.classList.add('playing');
   show('pause', false); show('over', false); show('menu', false); show('connecting', false); show('loading', false);
+  // Classes on: this match's XP, and our class and loadouts on our soldier (online: sent to the host).
+  state.pickerOpen = false;
+  show('classPicker', false);
+  show('xpSummary', false);
+  state.xp = game.classesOn ? new MatchXp(profile) : null;
+  state.xpSeen = 0;
+  state.summaryShown = -1;
+  syncKit(false);
   canvas.focus?.();
 }
 
 function endMatch(to = state.returnTo) {
+  closePicker();
   state.game = null;
   state.mode = 'offline';
   state.menuOpen = false;
+  state.xp = null;
   input.enabled = false;
   closeChat();
+  show('xpSummary', false);
   document.body.classList.remove('playing');
   show('pause', false); show('over', false); show('loading', false);
   if (to === 'editor') editor.resume();
@@ -515,11 +555,88 @@ function setPaused(p) {
   show('pauseNote', online);
   show('invite', state.mode === 'host');
   show('restart', state.mode !== 'client');
+  show('changeClass', !!state.game?.classesOn);
   $('quit').textContent = state.mode === 'host' ? 'End game for everyone' : state.mode === 'client' ? 'Leave game' : 'Quit to menu';
   state.menuOpen = p;
   show('pause', p);
   state.last = performance.now();
 }
+
+// ---- Classes and progression ----------------------------------------------------------
+
+/** The class and loadouts we play with (from the profile, less anything not unlocked). */
+const kitChoice = () => ({ cls: profile.cls, loadouts: playLoadouts(profile) });
+
+/**
+ * Classes on: our class and loadouts onto our soldier, for the next spawn (online, the
+ * host is told). hold: we're choosing a class while dead, so the respawn waits.
+ */
+function syncKit(hold = state.pickerOpen) {
+  const g = state.game, me = state.me;
+  if (!g?.classesOn || !me) return;
+  const kit = kitChoice();
+  me.pickCls = kit.cls; // (online, only for our own screen: "Next life: Recon")
+  if (state.mode === 'client') { state.net?.client?.sendKit({ ...kit, hold: !!hold && !me.alive }); return; }
+  me.loadouts = kit.loadouts;
+  holdSpawn(me, !!hold);
+}
+
+/** A message on our own screen only. */
+function localNote(text) {
+  const g = state.game;
+  if (g && state.me) g.notes.push({ text, tick: g.tick, to: state.me.id });
+}
+
+/** The class picker (C while waiting to respawn, or the pause menu's Change class). */
+function openPicker() {
+  const g = state.game;
+  if (!g?.classesOn || g.over || state.pickerOpen) return;
+  state.pickerOpen = true;
+  input.enabled = false;
+  input.clear();
+  drawPicker();
+  show('classPicker', true);
+  syncKit(true);
+}
+
+function drawPicker() {
+  renderPicker($('pickerCards'), profile, { current: state.me?.cls, next: profile.cls });
+}
+
+function closePicker() {
+  if (!state.pickerOpen) return;
+  state.pickerOpen = false;
+  show('classPicker', false);
+  show('loadout', false);
+  syncKit(false);
+  if (state.game && !state.menuOpen && !state.chatOpen && !state.game.over) input.enabled = true;
+}
+
+/** Choose the class to spawn as next (and from now on). */
+function pickClass(cls) {
+  if (!CLASSES[cls]) return;
+  profile.cls = cls;
+  saveProfile(profile);
+  $('playClass').value = cls;
+  if (state.me?.alive) localNote(`You'll spawn as ${CLASSES[cls].name} next time`);
+  closePicker();
+}
+
+/** The Loadout screen (main menu, or from the class picker). */
+function openLoadout() {
+  renderLoadout($('loadoutBody'), profile, {
+    onChange: () => {
+      saveProfile(profile);
+      $('playClass').value = profile.cls;
+      syncKit();
+      if (state.pickerOpen) drawPicker();
+    },
+  });
+  show('loadout', true);
+  $('loadoutDone').focus();
+}
+
+function closeLoadout() { show('loadout', false); }
 
 // ---- Settings screen -----------------------------------------------------------------
 
@@ -860,6 +977,14 @@ function frame(now) {
   renderer.fogFrom = view;
   renderer.render(g, alpha, me);
   if (client) me.ping = client.ping;
+  // Classes on: XP for us (from the game, or from the host online) goes into our profile.
+  if (state.xp) {
+    for (const e of g.xpLog) {
+      if (e.id <= state.xpSeen) continue;
+      state.xpSeen = e.id;
+      if (e.to === me.id) state.xp.add(e);
+    }
+  }
   // Holding K to self-destruct: shown as it counts down (it goes off after a second).
   const holdingK = me.alive && input.down('KeyK') && !state.menuOpen && !state.chatOpen;
   state.destructSince = holdingK ? state.destructSince ?? now : null;
@@ -870,11 +995,12 @@ function frame(now) {
     hostId: state.mode === 'host' ? me.id : state.mode === 'client' ? g.soldiers.find(s => !s.isBot && !s.remote)?.id : null,
     ping: !prefs.showPing ? null : client ? client.ping : state.mode === 'host' ? 'Host' : null,
     perf: perf.on ? perf.text : null,
+    xp: state.xp?.showing(), picking: state.pickerOpen,
   });
-  if (!state.menuOpen && !g.over && !state.chatOpen) {
+  if (!state.menuOpen && !g.over && !state.chatOpen && !state.pickerOpen) {
     // Reloading: a ring round the crosshair fills up, complete when the gun's ready. That's
     // the pistol's magazine, and the wait between shots of slow guns (sniper rifle, rockets...).
-    const gun = WEAPONS[me.current];
+    const gun = weaponFor(me, me.current);
     let reload = null;
     if (me.alive && gun) {
       if (gun.mag && me.reloadTimer > 0) reload = 1 - me.reloadTimer / gun.reload;
@@ -936,10 +1062,19 @@ function matchOver(g) {
     show('pause', false);
     state.menuOpen = false;
     show('again', state.mode !== 'client');
+    closePicker();
     $('again').textContent = state.mode === 'host' ? 'Next match now' : 'Play again';
     $('toMenu').textContent = state.mode === 'host' ? 'End game' : state.mode === 'client' ? 'Leave' : state.returnTo === 'editor' ? 'Back to map maker' : 'Menu';
   }
-  if (now - state.overAt > 1500) show('over', true);
+  if (now - state.overAt > 1500) {
+    show('over', true);
+    // Classes on: what the match earned (redrawn if more XP arrives, as it can online).
+    if (state.xp && state.summaryShown !== state.xp.version) {
+      state.summaryShown = state.xp.version;
+      renderSummary($('xpSummary'), state.xp.summary());
+      show('xpSummary', true);
+    }
+  }
   const noteEl = $('overNote');
   if (state.mode === 'host') {
     const left = Math.max(0, Math.ceil((state.nextMatchAt - now) / 1000));
@@ -1001,6 +1136,12 @@ function wire() {
   $('again').addEventListener('click', () => { state.nextMatchAt = 0; nextMatch(); });
   $('toMenu').addEventListener('click', () => { if (state.mode !== 'offline') { leaveOnline(); endMatch('menu'); } else endMatch(); });
   $('openSettings').addEventListener('click', openSettings);
+  $('openLoadout').addEventListener('click', openLoadout);
+  $('loadoutDone').addEventListener('click', closeLoadout);
+  $('changeClass').addEventListener('click', openPicker);
+  $('pickerClose').addEventListener('click', closePicker);
+  $('pickerLoadout').addEventListener('click', openLoadout);
+  $('pickerCards').addEventListener('click', e => { const card = e.target.closest('[data-cls]'); if (card) pickClass(card.dataset.cls); });
   $('pauseSettings').addEventListener('click', openSettings);
   $('settingsDone').addEventListener('click', closeSettings);
   $('graphics').addEventListener('change', () => { prefs.graphics = $('graphics').value; prefs.graphicsPicked = true; savePrefs(); setGraphics(prefs.graphics); });
@@ -1029,6 +1170,17 @@ function wire() {
       if (e.code === 'Escape') { e.preventDefault(); closeSettings(); }
       return;
     }
+    if (!$('loadout').classList.contains('hidden')) {
+      if (e.code === 'Escape') { e.preventDefault(); closeLoadout(); }
+      return;
+    }
+    if (state.pickerOpen) {
+      // The class picker takes the number keys while it's open (not conquest's spawn choice).
+      const k = /^Digit([1-4])$/.exec(e.code);
+      if (k) { e.preventDefault(); pickClass(CLASS_IDS[+k[1] - 1]); }
+      else if (e.code === 'Escape' || e.code === 'KeyC') { e.preventDefault(); closePicker(); }
+      return;
+    }
     if (!state.game) {
       if (e.code === 'Enter' && !$('menu').classList.contains('hidden') && !$('setup').classList.contains('hidden') && !/^(BUTTON|INPUT|SELECT)$/.test(document.activeElement?.tagName)) {
         startMatch(readMenu(), { online: state.setupFor === 'host' });
@@ -1036,6 +1188,10 @@ function wire() {
       return;
     }
     if (e.code === 'Escape') { e.preventDefault(); setPaused(!state.menuOpen); }
+    if (e.code === 'KeyC' && !e.repeat && !state.menuOpen && !state.chatOpen && state.game.classesOn && !state.game.over) {
+      if (!state.me.alive) openPicker();
+      else localNote('Change class while waiting to respawn (C), or from the menu (Esc)');
+    }
     if ((e.code === 'Enter' || e.code === 'KeyT') && state.mode !== 'offline' && !state.menuOpen && !e.repeat) { e.preventDefault(); openChat(); return; }
     if (e.code === 'KeyM' && !e.repeat && !state.menuOpen) {
       const m = !audio.muted;
@@ -1043,10 +1199,18 @@ function wire() {
       $('mute').checked = m;
     }
   });
-  window.addEventListener('mousedown', () => audio.unlock());
+  window.addEventListener('mousedown', e => {
+    audio.unlock();
+    // Waiting to respawn with classes on: a click on "C to change" opens the class picker.
+    const b = renderer?.classButton;
+    if (b && state.game && !state.menuOpen && !state.pickerOpen && e.target === canvas &&
+        e.clientX >= b.x && e.clientX <= b.x + b.w && e.clientY >= b.y && e.clientY <= b.y + b.h) openPicker();
+  });
   // Offline games pause when you switch away; online ones can't.
   window.addEventListener('blur', () => { if (state.game && !state.game.over && state.mode === 'offline') setPaused(true); });
   window.addEventListener('beforeunload', () => leaveOnline());
+  // Another tab saved the profile (XP earned there): take it here too, so neither overwrites the other.
+  window.addEventListener('storage', e => { if (e.key === PROFILE_KEY) Object.assign(profile, loadProfile()); });
 }
 
 /**
@@ -1085,6 +1249,7 @@ function takeInvite() {
 
 async function boot() {
   const settings = loadSettings();
+  profile = loadProfile();
   for (const k in prefs) prefs[k] = settings[k];
   pacer.setMode(prefs.fpsCap);
   perf.on ||= prefs.showFps;
@@ -1145,7 +1310,10 @@ async function boot() {
     toast(result.text);
   });
   // For automated tests and debugging in the console.
-  window.stickSoldiers = { state, get renderer() { return renderer; }, pacer, prefs, perf, setGraphics, startMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab };
+  window.stickSoldiers = {
+    state, get renderer() { return renderer; }, pacer, prefs, perf, setGraphics, startMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab,
+    get profile() { return profile; }, openPicker, openLoadout,
+  };
 }
 
 boot().catch(err => {

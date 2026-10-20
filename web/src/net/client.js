@@ -11,6 +11,9 @@ import { WEAPONS } from '../weapons.js';
 import { MOTION, TICK_RATE } from '../config.js';
 import { encodeInputs, decodeSnapshot, messageType, PROTOCOL } from './protocol.js';
 import { FX_METHODS } from './host.js';
+import { XP_LABEL } from '../progression.js';
+import { cleanClass } from '../classes.js';
+import { beaconKey } from '../gadgets.js';
 
 const INPUT_REPEAT = 4;     // each input packet carries the last few inputs, in case some are lost
 const VIEW_DELAY = 7;       // ticks behind the newest snapshot that others are shown (smooths out late packets)
@@ -117,6 +120,7 @@ export class NetClient {
     this.offsets = [];
     this.fixed = null;       // the new match's pickups
     this.switchSeq = 0;
+    this.myBeacon = null;    // our newest spawn beacon (classes on)
     this.applyRoster(w.roster);
     this.me = game.soldiers.find(s => s.id === w.you) || null;
     for (const c of w.chat || []) this.addChat(c);
@@ -233,6 +237,7 @@ export class NetClient {
     me.weapons = a.weapons;
     if (!this.switchSeq || snap.ack >= this.switchSeq || !me.has(me.current)) me.current = s.current;
     me.reloadTimer = a.reloadTimer; me.cooldown = a.cooldown; me.spin = a.spin;
+    me.cls = s.cls; me.gadgetCharge = a.gadgetCharge; me.mods = a.mods; me.holdSpawn = a.holdSpawn;
 
     const b = me.body;
     if (!s.alive || s.kamikaze) {
@@ -306,6 +311,7 @@ export class NetClient {
       s.health = sb.health; s.armour = sb.armour;
       s.current = sb.current;
       s.frags = sb.frags; s.deaths = sb.deaths; s.points = sb.points; s.level = sb.level; s.lives = sb.lives;
+      s.cls = sb.cls;
       s.respawnTimer = sb.respawnTimer;
       s.spawnProtect = sb.protected ? 1 : 0;
       s.burnTicks = sb.burning ? 1 : 0;
@@ -333,6 +339,10 @@ export class NetClient {
     if (!this.fixed) this.fixed = g.pickups.items.filter(it => !it.dropped);
     b.fixedItems.forEach((on, i) => { if (this.fixed[i]) this.fixed[i].active = on; });
     g.pickups.items = this.fixed.concat(b.looseItems.map(it => ({ ...it, active: true, dropped: true, bob: 0 })));
+    g.beacons = b.beacons.map(x => ({ ...x }));
+    // A spawn beacon we've just placed: spawn on it next time (the host is told, as for any choice).
+    const mine = this.me && b.beacons.filter(x => x.owner === this.me.id).pop();
+    if (mine && mine.id !== this.myBeacon) { this.myBeacon = mine.id; this.me.deployAt = beaconKey(mine); }
 
     while (this.events.length && this.events[0].tick <= rt + 0.5) this.applyEvents(this.events.shift());
     if (this.events.length > 200) this.events.splice(0, this.events.length - 200);
@@ -345,10 +355,18 @@ export class NetClient {
     for (const [text, weapon] of e.k || []) g.feed.push({ text: String(text), weapon: weapon && String(weapon), tick: g.tick });
     if (g.feed.length > 6) g.feed.splice(0, g.feed.length - 6);
     for (const text of e.n || []) g.notes.push({ text: String(text), tick: g.tick, to: me?.id });
+    // XP the host gave us: [amount, reason, weapon, class]. (The page adds it to our profile.)
+    for (const x of Array.isArray(e.x) ? e.x : []) {
+      if (!Array.isArray(x) || !XP_LABEL[x[1]] || !(x[0] > 0)) continue;
+      g.xpLog.push({ id: ++g.xpCount, to: me?.id, n: Math.min(5000, +x[0]), why: x[1], w: WEAPONS[x[2]] ? x[2] : null, c: cleanClass(x[3]), tick: g.tick });
+    }
     for (const [x, y, amount] of e.sh || []) g.shakes.push({ x, y, amount });
   }
 
   sendChat(text) { this.link.send({ t: 'chat', text: String(text).slice(0, 140) }, true); }
+
+  /** Classes on: our class (for our next spawn) and loadouts; hold: we're choosing a class, so wait to respawn. */
+  sendKit({ cls, loadouts, hold = false }) { this.link.send({ t: 'kit', cls, loadouts, hold }, true); }
 
   /** Leave the game. */
   leave() {

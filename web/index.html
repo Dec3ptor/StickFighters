@@ -23,6 +23,7 @@
       <nav class="tabs" aria-label="Play">
         <button type="button" class="tab" id="tabOnline" data-tab="online" aria-pressed="true">Play online</button>
         <button type="button" class="tab" id="tabOffline" data-tab="offline" aria-pressed="false">Play vs bots</button>
+        <button type="button" class="tab" id="openLoadout">Loadout</button>
         <button type="button" class="tab" id="openEditor">Map maker</button>
         <button type="button" class="tab" id="openSettings">Settings</button>
       </nav>
@@ -95,7 +96,14 @@
               <label class="field" id="crateField">Supply crates
                 <select id="crates"><option value="off">Off</option><option value="normal" selected>Normal</option><option value="lots">Lots</option></select>
               </label>
+              <label class="field" id="classesField">Classes
+                <select id="classes"><option value="off">Off: pick up weapons</option><option value="on">On: class kits</option></select>
+              </label>
+              <label class="field" id="classField">Your class
+                <select id="playClass"></select>
+              </label>
             </div>
+            <p id="classesNote" class="muted-note hidden">Everyone spawns with a class's kit and a gadget (<kbd>G</kbd>), and the map's weapons are gone. You earn XP towards ranks and unlocks: see <b>Loadout</b>.</p>
             <label class="field">Bots: <output id="botsOut">5</output>
               <input type="range" id="bots" min="0" max="29" value="5">
             </label>
@@ -156,6 +164,8 @@
                 <tr><td>Sniper zoom</td><td>right click</td></tr>
                 <tr><td>Weapons</td><td><kbd>1</kbd>&ndash;<kbd>0</kbd>, melee <kbd>F</kbd>; press again to cycle; <kbd>Q</kbd> <kbd>E</kbd>, wheel</td></tr>
                 <tr><td>Sheep, rope</td><td>click again to explode / let go</td></tr>
+                <tr><td>Gadget (classes on)</td><td><kbd>G</kbd>: medkit, armour pack, ammo box or spawn beacon</td></tr>
+                <tr><td>Change class</td><td><kbd>C</kbd> while waiting to respawn, or from the menu (<kbd>Esc</kbd>)</td></tr>
                 <tr><td>Self-destruct</td><td>hold <kbd>K</kbd> (to get out of a pit you can't climb out of)</td></tr>
                 <tr><td>Chat (online)</td><td><kbd>Enter</kbd> or <kbd>T</kbd></td></tr>
                 <tr><td>Scores / pause / mute</td><td><kbd>Tab</kbd> / <kbd>Esc</kbd> / <kbd>M</kbd></td></tr>
@@ -187,6 +197,7 @@
       <p id="pauseNote" class="muted-note hidden">The game carries on while this menu is open.</p>
       <button id="resume" class="primary">Resume</button>
       <button id="invite" class="hidden">Copy invite link</button>
+      <button id="changeClass" class="hidden">Change class</button>
       <button id="restart">Restart match</button>
       <button id="toEditor" class="hidden">Back to map maker</button>
       <button id="quit">Quit to menu</button>
@@ -242,7 +253,25 @@
       <button id="settingsDone" class="primary">Done</button>
     </div>
   </section>
+  <section id="classPicker" class="screen hidden" aria-label="Choose a class">
+    <div class="panel picker">
+      <h2>Choose a class</h2>
+      <p class="muted-note">Press its number or click it. You'll spawn with it next time.</p>
+      <div id="pickerCards" class="class-cards"></div>
+      <div class="picker-actions">
+        <button type="button" id="pickerLoadout">Weapons and upgrades…</button>
+        <button type="button" id="pickerClose">Cancel</button>
+      </div>
+    </div>
+  </section>
+  <section id="loadout" class="screen hidden" aria-label="Loadout">
+    <div class="panel">
+      <div class="lo-head"><h2>Loadout</h2><button type="button" id="loadoutDone" class="primary">Done</button></div>
+      <div id="loadoutBody"></div>
+    </div>
+  </section>
   <section id="over" class="screen hidden overlay-low">
+    <div id="xpSummary" class="xp-summary hidden" aria-live="polite"></div>
     <div class="buttons">
       <span id="overNote" class="over-note hidden"></span>
       <button id="again" class="primary">Play again</button>
