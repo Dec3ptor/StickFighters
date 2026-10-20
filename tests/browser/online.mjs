@@ -109,9 +109,8 @@ expect(j2.soldiers.length === h2.soldiers.length, `joiner sees everyone in the n
 expect(j2.soldiers.filter(s => s.bot).length === 2, 'joiner sees the bots');
 await joiner.screenshot({ path: `${outDir}/online-next-match.png` });
 
-// 5b. An objective mode: the next match is conquest (with classes on), and the joiner sees the points and tickets as the host does.
-// The joiner plays recon: their browser sends the class to the host.
-await joiner.evaluate(() => { window.stickSoldiers.profile.cls = 'recon'; });
+// 5b. An objective mode: the next match is conquest, and the joiner sees the points and tickets as the host does.
+// (Classes are switched off for now: asking for them doesn't turn them on.)
 await host.evaluate(() => { Object.assign(window.stickSoldiers.state.settings, { mode: 'conquest', classes: 'on' }); });
 await host.keyboard.press('Escape');
 await host.click('#restart');
@@ -125,13 +124,12 @@ const cq = await Promise.all([host, joiner].map(p => p.evaluate(() => {
 expect(cq[1].mode === 'conquest' && cq[1].start === cq[0].start && cq[1].points === cq[0].points && cq[1].points >= 3, `joiner plays conquest with the host's points and tickets (${JSON.stringify(cq)})`);
 expect(Math.abs(cq[1].tickets[0] - cq[0].tickets[0]) <= 3 && Math.abs(cq[1].tickets[1] - cq[0].tickets[1]) <= 3, `same tickets on both screens (${JSON.stringify(cq)})`);
 expect(cq[0].team && cq[1].team && cq[0].team !== cq[1].team, `host and joiner on opposite teams (${cq[0].team}, ${cq[1].team})`);
-await joiner.waitForFunction(() => window.stickSoldiers.state.me?.alive && window.stickSoldiers.state.me.cls, null, { timeout: 10000 }).catch(() => {});
+await joiner.waitForFunction(() => window.stickSoldiers.state.me?.alive, null, { timeout: 10000 }).catch(() => {});
 const classes = {
-  host: await host.evaluate(() => { const g = window.stickSoldiers.state.game; return { on: g.classesOn, joiner: g.soldiers.find(s => s.name === 'Joiner')?.cls }; }),
-  joiner: await joiner.evaluate(() => { const { state } = window.stickSoldiers; return { on: state.game.classesOn, cls: state.me?.cls, sniper: !!state.me?.weapons.SR }; }),
+  host: await host.evaluate(() => window.stickSoldiers.state.game.classesOn),
+  joiner: await joiner.evaluate(() => window.stickSoldiers.state.game.classesOn),
 };
-expect(classes.host.on && classes.joiner.on, `classes on for both (${JSON.stringify(classes)})`);
-expect(classes.host.joiner === 'recon' && classes.joiner.cls === 'recon' && classes.joiner.sniper, `the joiner's class reached the host (${JSON.stringify(classes)})`);
+expect(!classes.host && !classes.joiner, `classes stay off for both (${JSON.stringify(classes)})`);
 await joiner.screenshot({ path: `${outDir}/online-conquest.png` });
 
 // Pings: the joiner measures theirs, and the host shares it for everyone's scoreboard.

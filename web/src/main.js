@@ -51,6 +51,9 @@ let editor = null;
 let lobby = null;
 const pacer = new FramePacer();
 const params = new URLSearchParams(location.search);
+// Classes (kits, gadgets, the Loadout screen) are switched off for now: ?classes in the
+// address turns them back on (to try them, and for their tests).
+const CLASSES_ON = params.has('classes');
 // (?tiles=on or off: whether the canvas keeps the map in tiles, rather than deciding by the graphics card.)
 if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
@@ -181,7 +184,7 @@ function modeFields() {
   show('crateField', m.crates);
   // Classes: offered unless the mode hands out its own weapons; the choice last made for this
   // mode (or the mode's default). The "Your class" choice only matters with them on.
-  const classes = m.classes !== false;
+  const classes = CLASSES_ON && m.classes !== false;
   show('classesField', classes);
   if (classes) {
     const saved = loadSettings().classesByMode?.[mode];
@@ -386,7 +389,7 @@ function readMenu() {
   const goals = { ...(loadSettings().goals || {}) };
   if (MODES[mode]?.goal) goals[mode] = +$('goal').value;
   const classesByMode = { ...(loadSettings().classesByMode || {}) };
-  const classesOffered = MODES[mode]?.classes !== false;
+  const classesOffered = CLASSES_ON && MODES[mode]?.classes !== false;
   if (classesOffered) classesByMode[mode] = $('classes').value === 'on' ? 'on' : 'off';
   return {
     name: playerName(),
@@ -466,7 +469,7 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
     lives: settings.lives, gunGameKills: settings.gunKills, crates: settings.crates,
     botVision: settings.botVision === 'sight' ? 'sight' : 'classic', fog: settings.fog === 'on',
     destruction: settings.destruction !== 'off',
-    classes: settings.classes === 'on' && MODES[settings.mode]?.classes !== false,
+    classes: CLASSES_ON && settings.classes === 'on' && MODES[settings.mode]?.classes !== false,
   };
   const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
@@ -1327,6 +1330,8 @@ function takeInvite() {
 async function boot() {
   const settings = loadSettings();
   profile = loadKit();
+  // (Classes switched off: nothing about them in the menus.)
+  document.body.classList.toggle('no-classes', !CLASSES_ON);
   for (const k in prefs) prefs[k] = settings[k];
   pacer.setMode(prefs.fpsCap);
   perf.on ||= prefs.showFps;

@@ -334,3 +334,5 @@ button.big { font-size: 18px; padding: 13px 24px; letter-spacing: 0.04em; }
 .class-card i { font-size: 11px; color: var(--muted); }
 .class-card[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); background: var(--soft); }
 .picker-actions { display: flex; gap: 8px; justify-content: flex-end; }
+/* Classes are switched off for now (?classes in the address turns them on). */
+.no-classes .classes-only { display: none !important; }

@@ -1,7 +1,8 @@
-// Classes in the browser: the Loadout screen (everything open from the start), the
-// setup's Classes option, playing with a kit (gadgets, the Engineer's Builder in both
-// renderers), and the class picker while dead and from the pause menu (without taking
-// conquest-style spawn keys).
+// Classes in the browser. They're switched off for now: nothing about them shows in the
+// menus, and matches don't use them. With ?classes in the address: the Loadout screen
+// (everything open from the start), the setup's Classes option, playing with a kit
+// (gadgets, the Engineer's Builder in both renderers), and the class picker while dead
+// and from the pause menu (without taking conquest-style spawn keys).
 // Usage: node tests/browser/classes.mjs [outDir]
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -26,7 +27,25 @@ await page.addInitScript(() => {
   if (localStorage.getItem('stick-soldiers-profile')) return;
   localStorage.setItem('stick-soldiers-profile', JSON.stringify({ v: 1, xp: 2600, classXp: { assault: 1600 }, kills: { M4: 5 }, cls: 'assault' }));
 });
-await page.goto(url);
+// 0. Switched off (no ?classes): no Loadout tab, no Classes option, nothing in the controls list.
+const off = await browser.newPage({ viewport: { width: 1280, height: 760 } });
+off.on('pageerror', e => errors.push(String(e)));
+await off.goto(url);
+await off.waitForFunction(() => window.stickSoldiers);
+expect(!(await off.isVisible('#openLoadout')), 'switched off: no Loadout tab');
+await off.click('#tabOffline');
+await off.waitForSelector('.map-card');
+for (const mode of ['conquest', 'rush', 'team']) {
+  await off.selectOption('#mode', mode);
+  expect(!(await off.isVisible('#classesField')) && !(await off.isVisible('#classField')), `switched off: no Classes option for ${mode}`);
+}
+expect(await off.evaluate(() => [...document.querySelectorAll('.classes-only')].every(el => getComputedStyle(el).display === 'none')), 'switched off: no class controls listed');
+await off.evaluate(() => { const s = window.stickSoldiers.readMenu(); window.stickSoldiers.startMatch({ ...s, map: 'ssteam1.json', mode: 'conquest', bots: 3, classes: 'on' }); });
+await off.waitForFunction(() => window.stickSoldiers.state.me?.alive, null, { timeout: 20000 }).catch(() => {});
+expect(await off.evaluate(() => !window.stickSoldiers.state.game.classesOn && !window.stickSoldiers.state.me.cls), 'switched off: matches play without classes');
+await off.close();
+
+await page.goto(url + '&classes');
 await page.waitForFunction(() => window.stickSoldiers);
 const visible = sel => page.isVisible(sel);
 const profile = () => page.evaluate(() => JSON.parse(JSON.stringify(window.stickSoldiers.profile)));

@@ -8,7 +8,7 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
 
 - **Online multiplayer**: quick match, a server browser, hosting your own game (public, or invite-link only), chat, and bots that fill empty slots and make room as people join. No game server: players connect directly to each other (see [Online play](#online-play)).
 - **Eight modes**: free-for-all, team deathmatch, **gun game** and **one in the chamber**, plus four objective modes for two teams: **king of the hill**, **capture the flag**, and Battlefield-style **Conquest** and **Rush**.
-- **Battlefield-style classes** (a match option, on by default in Conquest and Rush): **Assault**, **Engineer**, **Support** and **Recon**, each spawning with its own kit and a gadget on `G` (medkits, ammo boxes, spawn beacons, and the Engineer's **Builder**, which puts up walls and planks and repairs what explosions broke). Pick each class's main weapon and weapon upgrades on the **Loadout** screen (see [Classes](#classes)).
+- **Battlefield-style classes** (switched off for now: add `?classes` to the address to try them): **Assault**, **Engineer**, **Support** and **Recon**, each spawning with its own kit and a gadget on `G` (medkits, ammo boxes, spawn beacons, and the Engineer's **Builder**, which puts up walls and planks and repairs what explosions broke), with a **Loadout** screen for each class's weapons and upgrades (see [Classes](#classes)).
 - **35 weapons**: the original eight with their original numbers, plus Worms-style ones like sheep, the Holy Hand Grenade, air strikes and the ninja rope (full list below). **Supply crates** parachute in with random weapons.
 - **All 8 original maps**, decoded from the original game's files: Fire in the Hole, Habitat, King of the Hill, Fraghouse, Sniping Grounds, Fatality Zone, Hells Steeple and Two Towers.
 - **10 new maps**, from small to huge:
@@ -90,15 +90,17 @@ Air strikes, napalm, the donkey and teleports go where your mouse is. Weapons ar
 | Ninja rope | click to fire, `W` / `S` to climb, `A` / `D` to swing, click again to let go |
 | Self-destruct | hold `K` for a second (the way out of a pit you can't climb out of; counts as a suicide) |
 | Spectate | **Spectate** in the menu (`Esc`): sit out and watch (it isn't a death, unless you'd just been hurt; a flag you carry drops). `A` / `D` (or the arrows, or a click) switch who you follow; `Space` gives a free camera (`WASD` or arrows to move, `Shift` faster; `Space` or a click follows whoever's nearest). **Join game** in the menu to play again |
-| Gadget (classes on) | `G`: drop a medkit or ammo box, place a spawn beacon, or take out the Engineer's Builder (`G` again puts it away) |
-| Builder (Engineer) | click to put up a wall, or repair what explosions broke; right click switches between a wall and a plank |
-| Change class (classes on) | `C` (or click the class box) while waiting to respawn, then `1`–`4` or click a class; or **Change class** in the menu (`Esc`). It applies when you next spawn |
+| Gadget (classes, switched off for now) | `G`: drop a medkit or ammo box, place a spawn beacon, or take out the Engineer's Builder (`G` again puts it away) |
+| Builder (Engineer, classes) | click to put up a wall, or repair what explosions broke; right click switches between a wall and a plank |
+| Change class (classes) | `C` (or click the class box) while waiting to respawn, then `1`–`4` or click a class; or **Change class** in the menu (`Esc`). It applies when you next spawn |
 | Chat (online) | `Enter` or `T` |
 | Scores / menu / mute | `Tab` / `Esc` / `M` |
 
 During a match the browser's own `Ctrl` shortcuts (bookmark, save, select all...) are blocked, so holding `Ctrl` to crouch never opens one, and closing or leaving the page asks first.
 
 ## Classes
+
+**Classes are switched off for now**: nothing about them shows in the menus, and every match is played without them. Add `?classes` to the game's address (for example `https://…/StickFighters/?classes`) to turn them back on and try them. The rest of this section describes them as they are then.
 
 **Classes** is a match option in the game setup: **Off** is the classic game (weapons from pickups and crates), **On** gives everyone a class. It starts on for Conquest and Rush and off for the other modes (your choice is remembered for each mode), and isn't offered in gun game or one in the chamber, which hand out their own weapons. Online, the host's choice applies to everyone. With classes on, the map's weapons aren't there (health, armour and jetpacks are), supply crates still drop, and the dead still drop the weapon in their hands.
 
