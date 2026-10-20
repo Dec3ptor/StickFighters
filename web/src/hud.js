@@ -14,7 +14,7 @@ const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
  * opts: { showScores, watching (soldier the camera follows when you're out), chat: [{ text, tick }],
  *   online (show everyone's ping on the scoreboard), hostId (the host's soldier),
  *   ping (your ping in ms, or a label like 'Host'), perf (frame rate text),
- *   xp (classes on: XP pop-ups showing, [{ text, age (0-1) }]), picking (the class picker is open) }
+ *   picking (the class picker is open) }
  * With classes on, while you wait to respawn this sets r.classButton (screen px) to the
  * "change class" box, so a click on it can open the class picker.
  */
@@ -81,8 +81,6 @@ export function drawHud(r, game, me, opts = {}) {
     }
   }
 
-  if (opts.xp?.length && !game.over) drawXp(ctx, opts.xp, W, H);
-
   if (opts.ping != null) {
     const ms = typeof opts.ping === 'number';
     ctx.textAlign = 'right';
@@ -144,6 +142,10 @@ function drawStatus(ctx, game, me, W, H) {
     if (def.mag) {
       frac = me.reloadTimer > 0 ? 1 - me.reloadTimer / def.reload : inv.mag / def.mag;
       label = me.reloadTimer > 0 ? `${def.name}: reloading` : `${def.name}  ${inv.mag}/${def.mag}`;
+    } else if (def.tool) {
+      // The Builder: blocks left.
+      frac = inv.ammo / (me.kitAmmo?.[me.current] || def.maxAmmo || 1);
+      label = `${def.name}  ${inv.ammo} block${inv.ammo === 1 ? '' : 's'}`;
     } else if (inv.ammo !== Infinity && !game.rules.infiniteAmmo) {
       frac = inv.ammo / (def.maxAmmo || def.ammo || 1);
       label = `${def.name}  ${inv.ammo}`;
@@ -176,6 +178,12 @@ function gadgetBar(game, me) {
   const c = CLASSES[me.cls];
   const g = c && GADGETS[c.gadget];
   if (!g) return null;
+  if (g.tool) {
+    // The Builder: blocks left, and (in hand) what a click puts up.
+    const n = me.weapons[g.tool]?.ammo || 0, full = me.kitAmmo?.[g.tool] || WEAPONS[g.tool].maxAmmo || 1;
+    const text = me.current === g.tool ? `${me.buildPlank ? 'Plank · right click: wall' : 'Wall · right click: plank'}` : `${c.name} · ${g.name} (G)`;
+    return [n / full, n > 0 ? 'gadgetReady' : 'gadget', text];
+  }
   const total = rechargeTicks(game, g), left = Math.max(0, me.gadgetCharge || 0);
   if (left > 0) return [1 - left / total, 'gadget', `${c.name} · ${g.name} ${Math.floor(100 * (1 - left / total))}%`];
   const up = c.gadget === 'beacon' && game.beacons?.some(b => b.owner === me.id);
@@ -198,19 +206,6 @@ function drawClassChoice(ctx, me, W, y) {
   ctx.textAlign = 'center';
   ctx.fillText(label, W / 2, y + h / 2 + 1);
   return { x, y, w, h };
-}
-
-/** XP pop-ups ("+100 Kill") under the middle of the screen, fading out. */
-function drawXp(ctx, list, W, H) {
-  ctx.textAlign = 'center';
-  list.forEach((p, i) => {
-    const newest = i === list.length - 1;
-    ctx.globalAlpha = Math.max(0, Math.min(1, (1 - p.age) / 0.3));
-    ctx.font = `bold ${newest ? 16 : 13}px ${FONT}`;
-    ctx.fillStyle = '#b8860b';
-    ctx.fillText(p.text, W / 2, H / 2 + 84 - (list.length - 1 - i) * 19 - p.age * 8);
-  });
-  ctx.globalAlpha = 1;
 }
 
 /** A bar like the original's: bright fill on a dark track, white label on top (bold: bigger). */

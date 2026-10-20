@@ -9,7 +9,7 @@ import { holdSpawn } from '../gadgets.js';
 // Effects every player draws for themselves from what they can see (rocket
 // smoke, jetpack flames, burning soldiers), so they aren't sent.
 const FX_SKIP = new Set(['smoke', 'fire', 'sparkle', 'spark']);
-export const FX_METHODS = new Set(['blood', 'sparks', 'muzzle', 'shell', 'explosion', 'trail', 'ring', 'gibs', 'whack', 'plane', 'rubble']);
+export const FX_METHODS = new Set(['blood', 'sparks', 'muzzle', 'shell', 'explosion', 'trail', 'ring', 'gibs', 'whack', 'plane', 'rubble', 'built']);
 const MAX_CHAT = 140;
 
 /** Drives a remote player's soldier from the inputs they send. */
@@ -61,7 +61,7 @@ export class NetHost {
     this.resetEvents();
   }
 
-  resetEvents() { this.events = { s: [], fx: [], k: [], n: [], sh: [], x: [] }; }
+  resetEvents() { this.events = { s: [], fx: [], k: [], n: [], sh: [] }; }
 
   get humans() { return 1 + this.players.size; }
 
@@ -240,7 +240,6 @@ export class NetHost {
   note(text, to) { this.events.n.push([text, to]); }
   shake(x, y, amount) { this.events.sh.push([round(x), round(y), amount]); }
   feed(e) { this.events.k.push([e.text, e.weapon || null, e.killer?.id ?? null, e.victim?.id ?? null]); }
-  xp(e) { if (this.events.x.length < 200) this.events.x.push([e.to, e.n, e.why, e.w, e.c]); }
   fxCall(method, args) { if (!FX_SKIP.has(method) && this.events.fx.length < 300) this.events.fx.push([method, ...round(args)]); }
 
   /** Call after every game update: sends snapshots and events every few ticks. */
@@ -260,7 +259,7 @@ export class NetHost {
       // New holes in the map (destructible maps), numbered so players can tell if they missed any.
       const cv = g.carves.length > this.carvesSent ? { from: this.carvesSent, list: g.carves.slice(this.carvesSent) } : null;
       this.carvesSent = g.carves.length;
-      const any = e.s.length || e.fx.length || e.k.length || e.n.length || e.sh.length || e.x.length || cv;
+      const any = e.s.length || e.fx.length || e.k.length || e.n.length || e.sh.length || cv;
       for (const p of ready) {
         p.link.send(encodeSnapshot(g, p.soldier, p.ctl.ackSeq, world), false);
         if (!any) continue;
@@ -270,8 +269,6 @@ export class NetHost {
           s: e.s.filter(x => x[3] == null || x[3] === id || x[3] === -p.soldier.team).map(x => x.slice(0, 3)),
           fx: e.fx, k: e.k, sh: e.sh, cv,
           n: e.n.filter(x => x[1] === id).map(x => x[0]),
-          // XP: only the player's own ([amount, reason, weapon, class]).
-          x: e.x.filter(x => x[0] === id).map(x => x.slice(1)),
         }, true);
       }
     }

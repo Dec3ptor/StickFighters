@@ -237,6 +237,14 @@ const SOUNDS = {
   plane: (a, o, t) => { a.noiseBurst(o, t, { dur: 1.6, freq: 300, sweepTo: 900, type: 'lowpass', gain: 0.5, attack: 0.5 }); a.tone(o, t, { dur: 1.5, from: 90, to: 110, type: 'sawtooth', gain: 0.03, attack: 0.4 }); return 1.6; },
   heehaw: (a, o, t) => { a.tone(o, t, { dur: 0.28, from: 650, to: 950, type: 'sawtooth', gain: 0.07 }); a.tone(o, t + 0.3, { dur: 0.35, from: 330, to: 250, type: 'sawtooth', gain: 0.08 }); return 0.7; },
   rumble: (a, o, t) => { a.noiseBurst(o, t, { dur: 1.0, freq: 140, type: 'lowpass', gain: 1.1, attack: 0.1 }); a.tone(o, t, { dur: 0.9, from: 45, to: 35, gain: 0.5 }); return 1.0; },
+  // The Engineer's Builder: a block knocked into place, or a repair ratcheted in.
+  build: (a, o, t) => {
+    a.noiseBurst(o, t, { dur: 0.09, freq: 380, type: 'lowpass', gain: 0.7 });
+    a.tone(o, t, { dur: 0.06, from: 560, to: 420, type: 'triangle', gain: 0.14 });
+    a.tone(o, t + 0.1, { dur: 0.05, from: 620, to: 470, type: 'triangle', gain: 0.1 });
+    return 0.17;
+  },
+  repair: (a, o, t) => { for (let i = 0; i < 3; i++) a.noiseBurst(o, t + i * 0.06, { dur: 0.035, freq: 2600 - i * 300, q: 3, gain: 0.35 }); return 0.2; },
   teleport: (a, o, t) => { a.tone(o, t, { dur: 0.3, from: 300, to: 1800, gain: 0.13 }); a.tone(o, t + 0.12, { dur: 0.3, from: 1800, to: 400, gain: 0.1 }); return 0.45; },
   banzai: (a, o, t) => { a.tone(o, t, { dur: 0.6, from: 480, to: 720, type: 'sawtooth', gain: 0.07, attack: 0.05 }); return 0.6; },
   rope: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.12, freq: 2400, sweepTo: 600, q: 2, gain: 0.3 }); return 0.13; },

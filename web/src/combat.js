@@ -9,6 +9,7 @@ import { WEAPONS, HEADSHOT_MULTIPLIER } from './weapons.js';
 import { segmentBox } from './map.js';
 import { weaponFor } from './classes.js';
 import { projectileBeacon, shotBeacon, blastGadgets, meleeBeacon } from './gadgets.js';
+import { build } from './building.js';
 
 const HEAD_ZONE = 9; // top pixels of the body box that count as a headshot
 const MAX_MINES = 5; // per soldier
@@ -120,15 +121,17 @@ export function fire(game, s, input = {}) {
   if (def.mag) {
     inv.mag--;
     if (inv.mag === 0) s.reloadTimer = def.reload;
-  } else if (!game.rules.infiniteAmmo && inv.ammo !== Infinity) {
+  } else if ((!game.rules.infiniteAmmo || def.tool) && inv.ammo !== Infinity) {
+    // (Blocks for the Builder run out even in modes with endless ammo.)
     inv.ammo--;
   }
   s.cooldown = def.rof;
   s.spawnProtect = 0;
-  s.anim.recoil = def.kind === 'rocket' || def.kind === 'rail' ? 4 : def.kind === 'melee' ? 0 : 2.5;
-  if (def.kind !== 'flame' || game.tick % 6 === 0) game.sound(def.sound, muzzle.x, muzzle.y);
+  s.anim.recoil = def.kind === 'rocket' || def.kind === 'rail' ? 4 : def.kind === 'melee' || def.kind === 'build' ? 0 : 2.5;
+  // (Building makes its own sound, where the block goes.)
+  if (def.kind !== 'build' && (def.kind !== 'flame' || game.tick % 6 === 0)) game.sound(def.sound, muzzle.x, muzzle.y);
   // How far the shot is heard (by bots that only know what they see and hear).
-  game.noise(s.x, s.y, def.kind === 'melee' ? 150 : def.kind === 'arrow' ? 260 : def.kind === 'thrown' || def.kind === 'placed' ? 320 : def.kind === 'flame' ? 450 : def.kind === 'rail' ? 1200 : 950, s);
+  game.noise(s.x, s.y, def.kind === 'melee' ? 150 : def.kind === 'arrow' ? 260 : def.kind === 'thrown' || def.kind === 'placed' || def.kind === 'build' ? 320 : def.kind === 'flame' ? 450 : def.kind === 'rail' ? 1200 : 950, s);
   if (GUN_KINDS.has(def.kind)) game.fx?.muzzle(muzzle.x, muzzle.y, s.aim, (def.pellets || 0) > 1 || def.kind === 'rocket');
   if (!def.mag && inv.ammo <= 0 && !s.body.rope) s.selectBest();
   return true;
@@ -319,6 +322,12 @@ const LAUNCH = {
   melee(game, s, def, id) {
     s.anim.swing = 1;
     meleeHit(game, s, def, id);
+    return true;
+  },
+
+  build(game, s) {
+    if (!build(game, s)) return false;
+    s.anim.swing = 1;
     return true;
   },
 };

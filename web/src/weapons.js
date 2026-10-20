@@ -20,6 +20,7 @@
 //   kamikaze  fly at the enemy and explode
 //   rope      a grappling rope to swing on
 //   melee     hit whoever is in front of you
+//   build     the Engineer's Builder: put up a block, or repair the map, where you aim (building.js)
 //
 // Payloads (on thrown/rocket/strike bombs): blast {radius, damage, knock},
 // cluster {count, ...bomblet}, fire {count, life}, gas {count, life, dpt}.
@@ -340,6 +341,13 @@ export const WEAPONS = {
     look: { type: 'pistol', length: 11, color: '#b8962e' },
     bot: { near: 0, far: 900, score: 9, value: 0 },
   },
+  // The Engineer's tool (classes on): ammo is blocks, which come back over time (gadgets.js).
+  Builder: {
+    name: 'Builder', short: 'Builder', slot: 9, kind: 'build', hidden: true, tool: true,
+    rof: 24, ammo: 6, maxAmmo: 6, sound: 'build', semi: true,
+    look: { type: 'held', sprite: 'hammer' },
+    bot: { score: 0, value: 0 },
+  },
 };
 
 for (const id in WEAPONS) WEAPONS[id].id = id;
@@ -354,7 +362,7 @@ export const PICKUP_WEAPONS = WEAPON_ORDER.filter(id => id !== 'Platinum' && id 
 export const STARTING_WEAPONS = ['Platinum', 'Prod'];
 
 /** Weapons that don't take over your hands when you pick them up (tools you choose to use). */
-export const NO_AUTO_SWITCH = new Set(['Teleport', 'NinjaRope', 'Kamikaze', 'Dynamite', 'Mine', 'Earthquake', 'Prod', 'BattleAxe', 'BaseballBat', 'FirePunch']);
+export const NO_AUTO_SWITCH = new Set(['Teleport', 'NinjaRope', 'Kamikaze', 'Dynamite', 'Mine', 'Earthquake', 'Prod', 'BattleAxe', 'BaseballBat', 'FirePunch', 'Builder']);
 
 /** Headshots with bullets and shotgun pellets do double damage (the sniper rifle and bow have their own). */
 export const HEADSHOT_MULTIPLIER = 2;

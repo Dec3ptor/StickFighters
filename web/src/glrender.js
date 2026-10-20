@@ -6,10 +6,10 @@
 // createRenderer() picks WebGL when the graphics card can do it, and the plain
 // canvas otherwise (Settings -> Graphics, or ?renderer=canvas / webgl in the address).
 
-import { Renderer, HATCH, HATCH_GAP } from './render.js';
+import { Renderer, HATCH, HATCH_GAP, BUILT, BUILT_LINE, BUILT_ROW } from './render.js';
 import { GLContext } from './glctx.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
-import { fillSeams, hatch } from './map.js';
+import { fillSeams, hatch, courses } from './map.js';
 
 const INK = 0x111111;
 // Particles drawn as sprites (the rest are drawn as shapes, like on the canvas).
@@ -168,6 +168,7 @@ export class GLRenderer extends Renderer {
     this.drawProjectiles(game, true);
     this.drawEffects(game);
     for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);
+    this.drawBuildGhost(game, viewer);
     for (const sol of shown.names) this.drawName(game, sol, alpha, viewer);
     fog?.drawAlerts(ctx);
   }
@@ -190,6 +191,13 @@ export class GLRenderer extends Renderer {
       if (solids.some(p => p.bounce)) {
         for (const p of solids) if (p.bounce) g.rect(p.l, p.t, p.r - p.l, p.b - p.t);
         g.fill(0xeef3e2);
+      }
+      // Built blocks: sandbag colour, with the rows drawn in.
+      if (game.map.builtCount) {
+        for (const p of solids) if (p.built) g.rect(p.l, p.t, p.r - p.l, p.b - p.t);
+        g.fill(BUILT);
+        for (const p of solids) if (p.built) courses(p.l, p.t, p.r, p.b, BUILT_ROW, (x0, y0, x1, y1) => { g.moveTo(x0, y0); g.lineTo(x1, y1); });
+        g.stroke({ width: 1, color: BUILT_LINE });
       }
       // Destructible maps: blocks explosions can't break are hatched.
       if (game.options?.destruction && solids.some(p => p.hard && !p.bounce)) {

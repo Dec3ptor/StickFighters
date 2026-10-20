@@ -89,6 +89,16 @@ export class Effects {
     for (let i = 0; i < 5; i++) this.smoke(x + (Math.random() - 0.5) * r, y + (Math.random() - 0.5) * r, 5 + Math.random() * 6, 60);
   }
 
+  /** A block built or repaired (the Engineer's Builder): a puff of dust around it, and stains under it go. */
+  built(l, t, r, b) {
+    this.stains = this.stains.filter(s => s.x < l - 1 || s.x > r + 1 || s.y < t - 1 || s.y > b + 1);
+    const n = Math.min(8, 3 + Math.round((r - l + b - t) / 24));
+    for (let i = 0; i < n; i++) {
+      const side = i % 2 ? l : r;
+      this.smoke(i < 2 ? side : l + Math.random() * (r - l), i < 2 ? t + Math.random() * (b - t) : b, 3 + Math.random() * 3, 35);
+    }
+  }
+
   fire(x, y) {
     this.add({ kind: 'fire', x, y, vx: (Math.random() - 0.5) * 0.6, vy: -0.6 - Math.random() * 0.8, r: 2 + Math.random() * 3, life: 18, max: 18 });
   }

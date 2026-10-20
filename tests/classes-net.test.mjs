@@ -1,5 +1,5 @@
-// Classes and progression online: the host runs the match, players send their
-// class and loadout, and each gets their own XP back. (In-memory links, no network.)
+// Classes online: the host runs the match, players send their class and loadout,
+// and what Engineers build reaches everyone. (In-memory links, no network.)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../web/src/game.js';
@@ -19,8 +19,7 @@ import { loadMap } from './helpers.mjs';
 const idle = { input: () => ({ move: 0, aim: 0, aimDist: 200 }) };
 
 /** A host (classes on) with `bots` bots, and `players` remote players over in-memory links on a simulated clock. */
-async function onlineMatch({ players = 1, bots = 2, mode = 'team', file = 'ssdm1.json', controllers = [], fragLimit = 999 } = {}) {
-  const mapData = loadMap(file);
+async function onlineMatch({ players = 1, bots = 2, mode = 'team', file = 'ssdm1.json', mapData = loadMap(file), controllers = [], fragLimit = 999 } = {}) {
   const game = new Game({ mapData, mode, fragLimit, seed: 5, effects: true, speed: DEFAULT_SPEED, options: { classes: true } });
   const nav = new NavGraph(game.map);
   const rng = makeRng(5);
@@ -39,11 +38,14 @@ async function onlineMatch({ players = 1, bots = 2, mode = 'team', file = 'ssdm1
   const me = game.addSoldier({ name: 'Host', isBot: false, team: 1 }, idle);
   host.setGame(game);
   const clients = [];
-  for (let i = 0; i < players; i++) {
+  const add = i => {
     const [h, c] = memoryLinks({ schedule, rng: makeRng(9 + i) });
-    clients.push(new NetClient({ link: c, controller: controllers[i] || idle, loadMap: async () => mapData, clock: () => now }));
+    const client = new NetClient({ link: c, controller: controllers[i] || idle, loadMap: async () => mapData, clock: () => now });
+    clients.push(client);
     host.addPlayer(h, `Guest${i}`);
-  }
+    return client;
+  };
+  for (let i = 0; i < players; i++) add(i);
   const pump = async () => {
     for (let k = 0; k < 4; k++) {
       await new Promise(r => setImmediate(r));
@@ -64,13 +66,15 @@ async function onlineMatch({ players = 1, bots = 2, mode = 'team', file = 'ssdm1
   };
   /** The host's soldier for a client. */
   const soldierOf = c => game.soldiers.find(s => s.id === c.me.id);
-  return { game, host, clients, step, me, soldierOf };
+  /** Another player joins (mid-match). */
+  const join = async () => { const c = add(clients.length); await pump(); return c; };
+  return { game, host, clients, step, me, soldierOf, join };
 }
 
-test('inputs carry the gadget key', () => {
-  const [a, b] = decodeInputs(encodeInputs([{ seq: 1, gadget: true, sprint: true }, { seq: 2, move: 1 }]));
-  assert.ok(a.gadget && a.sprint);
-  assert.ok(!b.gadget);
+test('inputs carry the gadget key, and wall or plank for the Builder', () => {
+  const [a, b] = decodeInputs(encodeInputs([{ seq: 1, gadget: true, sprint: true, plank: true }, { seq: 2, move: 1 }]));
+  assert.ok(a.gadget && a.sprint && a.plank);
+  assert.ok(!b.gadget && !b.plank);
 });
 
 test('snapshots carry classes, beacons, supplies and our gadget\'s charge and upgrades', async () => {
@@ -125,24 +129,7 @@ test('online: a player\'s class and loadout reach the host, which spawns them wi
   assert.ok(s.weapons.SR);
 });
 
-test('online: XP is worked out on the host and goes to the player it\'s for (and only them)', async () => {
-  const { game, clients, step, soldierOf } = await onlineMatch({ players: 2, mode: 'ffa', bots: 1 });
-  for (const c of clients) c.sendKit({ cls: 'assault', loadouts: defaultLoadouts() });
-  await step(90);
-  const [a, b] = clients;
-  const sa = soldierOf(a), bot = game.soldiers.find(s => s.isBot);
-  assert.ok(sa.alive && bot.alive);
-  bot.spawnProtect = 0;
-  damage(game, bot, 1000, sa, 'M4', { headshot: true });
-  await step(30);
-  const got = a.game.xpLog.map(e => [e.why, e.n, e.w, e.c]);
-  assert.deepEqual(got, [['kill', 100, 'M4', 'assault'], ['headshot', 50, 'M4', 'assault']]);
-  assert.ok(a.game.xpLog.every(e => e.to === a.me.id));
-  assert.equal(b.game.xpLog.length, 0, 'the other player gets none of it');
-  assert.equal(game.xpLog.filter(e => e.to === sa.id).length, 2, 'the host keeps a record too');
-});
-
-test('online: the end of a match reaches every player (on any update), with their XP for finishing and winning', async () => {
+test('online: the end of a match reaches every player (on any update)', async () => {
   const { game, clients, step, soldierOf } = await onlineMatch({ players: 2, mode: 'ffa', bots: 0, fragLimit: 1 });
   for (const c of clients) c.sendKit({ cls: 'assault', loadouts: defaultLoadouts() });
   await step(90);
@@ -154,8 +141,6 @@ test('online: the end of a match reaches every player (on any update), with thei
   assert.ok(game.over);
   await step(30);
   for (const c of clients) assert.ok(c.game.over, 'the player sees the match end');
-  assert.deepEqual(a.game.xpLog.map(e => e.why), ['kill', 'finish', 'win']);
-  assert.deepEqual(b.game.xpLog.map(e => e.why), ['finish']);
 });
 
 test('online: choosing a class while dead holds the respawn', async () => {
@@ -198,4 +183,66 @@ test('online: a player\'s spawn beacon becomes their spawn choice, and the host 
   game.kill(s, null, null);
   await step(RULES.respawnTicks + 5);
   assert.ok(s.alive && Math.abs(s.x - b.x) < 1, `respawned on the beacon (${s.x} vs ${b.x})`);
+});
+
+// A long flat floor, in three pieces, with a spawn point at each end.
+const FLAT = {
+  name: 'flat', bounds: { left: -1000, top: -600, right: 1000, bottom: 200 }, items: [],
+  spawns: [{ x: -900, y: -12, team: 1 }, { x: 900, y: -12, team: 2 }],
+  platforms: [{ left: -1000, top: 0, right: -500, bottom: 40 }, { left: -500, top: 0, right: 500, bottom: 40 }, { left: 500, top: 0, right: 1000, bottom: 40 }],
+};
+const blocks = g => g.map.solids.map(p => [p.l, p.t, p.r, p.b, !!p.built].join(',')).sort();
+
+test("online: an Engineer's Builder builds on the host, and everyone (players joining later too) gets the block", async () => {
+  const keys = { g: false, click: false, plank: false };
+  // Aims at the floor 90 px in front.
+  const ctl = {
+    input: (g, me) => {
+      const tx = me.x + 90, ty = me.y + 8;
+      const inp = {
+        move: 0, aim: Math.atan2(ty - me.shoulderY, tx - me.shoulderX), aimDist: Math.hypot(tx - me.shoulderX, ty - me.shoulderY),
+        gadget: keys.g, fire: keys.click, firePressed: keys.click, plank: keys.plank,
+      };
+      keys.g = keys.click = false;
+      return inp;
+    },
+  };
+  const { game, clients, step, soldierOf, join } = await onlineMatch({ players: 1, controllers: [ctl], bots: 0, mapData: FLAT });
+  const c = clients[0];
+  c.sendKit({ cls: 'engineer', loadouts: defaultLoadouts() });
+  await step(120);
+  const s = soldierOf(c);
+  assert.ok(s.alive && s.cls === 'engineer' && s.weapons.Builder);
+  keys.g = true;
+  await step(30);
+  assert.equal(s.current, 'Builder', 'G takes out the Builder');
+  assert.equal(c.me.current, 'Builder');
+  keys.click = true;
+  await step(30);
+  assert.equal(game.map.builtCount, 1, 'a wall went up');
+  assert.equal(s.weapons.Builder.ammo, 5, 'using a block');
+  const wall = game.map.solids.find(p => p.built);
+  assert.deepEqual([wall.r - wall.l, wall.b - wall.t, wall.b], [12, 40, 0], 'a wall standing on the floor');
+  assert.deepEqual(blocks(c.game), blocks(game), 'the player has it too');
+  // A plank (as the player chose it).
+  keys.plank = true;
+  await step(5);
+  assert.ok(s.buildPlank && c.me.buildPlank);
+  s.body.x += s.x > 0 ? -300 : 300; // (somewhere else along the floor)
+  await step(10);
+  keys.click = true;
+  await step(30);
+  assert.equal(game.map.builtCount, 2);
+  assert.ok(game.map.solids.some(p => p.built && p.r - p.l === 64 && p.b - p.t === 10), 'a plank');
+  assert.deepEqual(blocks(c.game), blocks(game));
+  // Someone joining now gets the blocks with the map.
+  const late = await join();
+  await step(30);
+  assert.deepEqual(blocks(late.game), blocks(game), 'a player joining later');
+  // A rocket breaks the wall (Destruction is off: the rest of the map doesn't break) for everyone.
+  game.carve(Math.round((wall.l + wall.r) / 2), wall.t + 20, 30);
+  await step(10);
+  assert.equal(game.map.solids.filter(p => !p.built).length, 3, 'the floor is still whole');
+  assert.ok(!game.map.solids.some(p => p.built && p.b - p.t === 40), 'the wall is broken');
+  for (const cl of [c, late]) assert.deepEqual(blocks(cl.game), blocks(game));
 });

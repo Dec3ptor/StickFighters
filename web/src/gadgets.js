@@ -1,6 +1,7 @@
 // Gadgets (classes on): G uses your class's gadget.
 //   medkit (assault)   drops a medkit: health for you and your team
-//   repair (engineer)  drops an armour pack: armour for you and your team
+//   builder (engineer) takes out the Builder (G again puts it away): build walls and
+//                      planks, and repair the map (building.js); blocks come back over time
 //   ammo (support)     drops an ammo box: ammo for you and your team
 //   beacon (recon)     places a spawn beacon where you stand: you and your team can
 //                      spawn on it (pick it while waiting to respawn) until an enemy
@@ -12,19 +13,21 @@ import { BODY, MOTION, RULES } from './config.js';
 import { CLASSES, weaponFor } from './classes.js';
 import { objectivesOf } from './objectives.js';
 import { segmentBox } from './map.js';
-import { XP } from './progression.js';
 
 /** Recharge times are in updates at full speed, like weapon numbers (game speed stretches them: 900 is 20 s at 75%). */
 export const GADGETS = {
   medkit: { name: 'Medkit', item: 'medkit', recharge: 900, blurb: 'G drops a medkit: 60 health for you or a teammate.' },
-  repair: { name: 'Armour pack', item: 'repair', recharge: 900, blurb: 'G drops an armour pack: 50 armour for you or a teammate.' },
+  builder: {
+    name: 'Builder', tool: 'Builder', recharge: 0,
+    blurb: 'G takes out the Builder: click to put up a wall (right click turns it into a plank) or, where explosions broke the map, repair it. A block comes back every few seconds.',
+  },
   ammo: { name: 'Ammo box', item: 'ammo', recharge: 900, blurb: 'G drops an ammo box: refills you or a teammate.' },
   beacon: { name: 'Spawn beacon', recharge: 450, blurb: 'G places a spawn beacon: you and your team can spawn on it until an enemy destroys it.' },
 };
 
 export const MEDKIT_HEAL = 60;
-export const ARMOUR_PACK = 50;
 export const BEACON_HP = 60;
+export const BLOCK_REGEN = 240; // the Builder gets a block back this often, up to what the kit gives (5.3 s at 75%)
 const SUPPLY_LIFE = 1800;   // a dropped supply lasts this long (updates at full speed: 40 s at 75%)
 const BEACON_SAFE = 150;    // no spawning on a beacon with an enemy this close
 const HOLD_SPAWN = 900;     // choosing a class holds your respawn for at most this long (15 s)
@@ -49,6 +52,7 @@ const byId = (game, id) => game.soldiers.find(o => o.id === id) || null;
 export function useGadget(game, s) {
   const g = gadgetOf(s);
   if (!g || !s.alive || s.kamikaze) return false;
+  if (g.tool) return toggleTool(game, s, g);
   if (s.gadgetCharge > 0) {
     if (!s.isBot && game.tick - (s.toldCharging ?? -999) > 60) {
       s.toldCharging = game.tick;
@@ -62,7 +66,30 @@ export function useGadget(game, s) {
   return true;
 }
 
-/** Drop a medkit, armour pack or ammo box at your feet (your last one goes). */
+/** A gadget that's a weapon (the Builder): take it out, or put it away again (back to what you had). */
+function toggleTool(game, s, g) {
+  if (s.current === g.tool) {
+    const back = s.beforeTool && s.beforeTool !== g.tool && s.has(s.beforeTool) ? s.beforeTool : null;
+    if (back) s.select(back); else s.selectBest();
+    return true;
+  }
+  if (!s.has(g.tool)) {
+    if (!s.isBot && game.tick - (s.toldCharging ?? -999) > 60) {
+      s.toldCharging = game.tick;
+      game.notify(s, s.weapons[g.tool] ? `No blocks left: one comes back in ${Math.ceil((blockRegenTicks(game) - (s.blockRegen || 0)) / 60)} s` : `No ${g.name}`);
+    }
+    return false;
+  }
+  const was = s.current;
+  if (!s.select(g.tool)) return false;
+  s.beforeTool = was;
+  if (!s.isBot) game.sound('click', s.x, s.y, s.id);
+  return true;
+}
+
+const blockRegenTicks = game => BLOCK_REGEN / (game.speed || 1);
+
+/** Drop a medkit or ammo box at your feet (your last one goes). */
 function dropSupply(game, s, type) {
   for (const it of game.pickups.items) if (it.supply && it.owner === s.id) { it.active = false; it.life = 0; }
   const lying = game.pickups.items.filter(it => it.supply && it.life > 0);
@@ -77,30 +104,20 @@ function dropSupply(game, s, type) {
 
 /**
  * Someone touched a supply. Returns true if they took it (the pickup then goes).
- * Helping a teammate earns the owner XP.
  */
 export function takeSupply(game, s, it) {
   if (!friendly(game, s, it.owner, it.team)) return false;
-  let why;
   if (it.type === 'medkit') {
     if (s.health >= RULES.maxHealth && s.burnTicks <= 0) return false;
     s.health = Math.min(RULES.maxHealth, s.health + MEDKIT_HEAL);
     s.burnTicks = 0;
     game.sound('health', it.x, it.y);
-    why = 'heal';
-  } else if (it.type === 'repair') {
-    if (s.armour >= RULES.maxArmour) return false;
-    s.armour = Math.min(RULES.maxArmour, s.armour + ARMOUR_PACK);
-    game.sound('armour', it.x, it.y);
-    why = 'repair';
   } else if (it.type === 'ammo') {
     if (!resupply(s)) return false;
     game.sound('pickup', it.x, it.y);
-    why = 'resupply';
   } else return false;
   const owner = it.owner === s.id ? null : byId(game, it.owner);
   game.notify(s, `${GADGETS[it.type].name}${owner ? ` from ${owner.name}` : ''}`);
-  if (owner) game.xp(owner, XP[why], why);
   return true;
 }
 
@@ -150,7 +167,7 @@ function canHit(game, by, b) {
   return !(game.rules.teams && by.team === b.team);
 }
 
-/** Hurt a beacon; at no health left, it's destroyed (and whoever did it gets XP). */
+/** Hurt a beacon; at no health left, it's destroyed. */
 export function damageBeacon(game, b, amount, by) {
   if (b.hp <= 0 || !(amount > 0) || !canHit(game, by, b)) return;
   b.hp -= amount;
@@ -165,7 +182,7 @@ export function damageBeacon(game, b, amount, by) {
     // (Recharges from now, so a new one can't go straight back down.)
     if (owner.cls === 'recon') owner.gadgetCharge = Math.max(owner.gadgetCharge || 0, rechargeTicks(game, GADGETS.beacon));
   }
-  if (by) { game.notify(by, 'You destroyed a spawn beacon'); game.xp(by, XP.beaconKill, 'beaconKill'); }
+  if (by) game.notify(by, 'You destroyed a spawn beacon');
 }
 
 const beaconBox = b => ({ l: b.x - 4, t: b.y - 14, r: b.x + 4, b: b.y });
@@ -252,20 +269,25 @@ export function beaconSpawn(game, s) {
   return { x: b.x, y: b.y - BODY.bottom, beacon: b };
 }
 
-/** Someone spawned on a beacon: a teammate's earns its owner XP. */
+/** Someone spawned on a beacon: a teammate's tells its owner. */
 export function beaconSpawned(game, s, b) {
   if (b.owner === s.id) return;
   const owner = byId(game, b.owner);
-  if (owner) { game.xp(owner, XP.beaconSpawn, 'beaconSpawn'); game.notify(owner, `${s.name} spawned on your beacon`); }
+  if (owner) game.notify(owner, `${s.name} spawned on your beacon`);
 }
 
 // ---- Every update ------------------------------------------------------------------------------
 
-/** Gadgets recharge (while dead too), and beacons fall if the floor under them goes. */
+/** Gadgets recharge (while dead too), the Builder gets its blocks back, and beacons fall if the floor under them goes. */
 export function updateGadgets(game) {
   for (const s of game.soldiers) {
     if (s.gadgetCharge > 0) s.gadgetCharge = Math.max(0, s.gadgetCharge - 1);
     if (s.holdSpawn > 0 && s.alive) s.holdSpawn = 0;
+    const blocks = s.alive && s.weapons.Builder;
+    if (blocks && blocks.ammo < (s.kitAmmo?.Builder ?? 0)) {
+      s.blockRegen = (s.blockRegen || 0) + 1;
+      if (s.blockRegen >= blockRegenTicks(game)) { s.blockRegen = 0; blocks.ammo++; }
+    } else s.blockRegen = 0;
   }
   if (!game.beacons.length) return;
   const map = game.map;
@@ -328,7 +350,6 @@ export function botWantsGadget(game, s, bot) {
   if (!s.alive || s.gadgetCharge > 0 || !s.body.onGround || s.body.rope) return false;
   switch (CLASSES[s.cls]?.gadget) {
     case 'medkit': return s.health < 60 || s.burnTicks > 0 || mateNear(game, s, 130, o => o.health < 60 || o.burnTicks > 0);
-    case 'repair': return s.armour < 30 || mateNear(game, s, 130, o => o.armour < 30);
     case 'ammo': return lowAmmo(s) || mateNear(game, s, 130, lowAmmo);
     case 'beacon': {
       if (bot.target || game.beacons.some(b => b.owner === s.id)) return false;

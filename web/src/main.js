@@ -24,8 +24,8 @@ import { Community } from './net/community.js';
 import { PROTOCOL } from './net/protocol.js';
 import { CLASSES, CLASS_IDS, weaponFor } from './classes.js';
 import { holdSpawn } from './gadgets.js';
-import { loadProfile, saveProfile, playLoadouts, MatchXp, PROFILE_KEY } from './progression.js';
-import { renderLoadout, renderPicker, renderSummary } from './loadout.js';
+import { loadKit, saveKit, KIT_KEY } from './kitchoice.js';
+import { renderLoadout, renderPicker } from './loadout.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -52,7 +52,7 @@ const params = new URLSearchParams(location.search);
 const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold' };
 let community = null;
 let watcher = null;
-// Classes on: the player's XP, ranks, unlocks and loadouts (saved apart from the settings: progression.js).
+// Classes on: the class and loadouts we play with (saved apart from the settings: kitchoice.js).
 let profile = null;
 
 // ---- Settings (remembered between visits) ------------------------------------
@@ -131,7 +131,7 @@ function buildMenu(settings) {
   $('fog').value = settings.fog === 'on' ? 'on' : 'off';
   $('playClass').innerHTML = CLASS_IDS.map(c => `<option value="${c}">${CLASSES[c].name}</option>`).join('');
   $('playClass').value = profile.cls;
-  $('playClass').addEventListener('change', () => { profile.cls = $('playClass').value; saveProfile(profile); });
+  $('playClass').addEventListener('change', () => { profile.cls = $('playClass').value; saveKit(profile); });
   // (Remembered for this mode first: modeFields() shows the choice remembered for the mode.)
   $('classes').addEventListener('change', () => { rememberMenu(); modeFields(); });
   $('mute').checked = settings.muted;
@@ -466,8 +466,8 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
   // Route maps depend on the map version and the speed's move timings. (Built on a
-  // fresh copy of the map: on a destructible one, the match works on a copy of the
-  // route map, and its own map gets holes blown in it.)
+  // fresh copy of the map: when the map can change (holes, building), the match works
+  // on a copy of the route map, and its own map changes.)
   const navKey = `${map.navKey}@${settings.speed}`;
   if (!maps.nav.has(navKey)) maps.nav.set(navKey, new NavGraph(new GameMap(map.data)));
   const nav = game.useNav(maps.nav.get(navKey));
@@ -502,13 +502,9 @@ function enterMatch(game, me) {
   input.enabled = true;
   document.body.classList.add('playing');
   show('pause', false); show('over', false); show('menu', false); show('connecting', false); show('loading', false);
-  // Classes on: this match's XP, and our class and loadouts on our soldier (online: sent to the host).
+  // Classes on: our class and loadouts on our soldier (online: sent to the host).
   state.pickerOpen = false;
   show('classPicker', false);
-  show('xpSummary', false);
-  state.xp = game.classesOn ? new MatchXp(profile) : null;
-  state.xpSeen = 0;
-  state.summaryShown = -1;
   syncKit(false);
   canvas.focus?.();
 }
@@ -518,10 +514,8 @@ function endMatch(to = state.returnTo) {
   state.game = null;
   state.mode = 'offline';
   state.menuOpen = false;
-  state.xp = null;
   input.enabled = false;
   closeChat();
-  show('xpSummary', false);
   document.body.classList.remove('playing');
   show('pause', false); show('over', false); show('loading', false);
   if (to === 'editor') editor.resume();
@@ -567,10 +561,10 @@ function setPaused(p) {
   state.last = performance.now();
 }
 
-// ---- Classes and progression ----------------------------------------------------------
+// ---- Classes ----------------------------------------------------------------------------
 
-/** The class and loadouts we play with (from the profile, less anything not unlocked). */
-const kitChoice = () => ({ cls: profile.cls, loadouts: playLoadouts(profile) });
+/** The class and loadouts we play with. */
+const kitChoice = () => ({ cls: profile.cls, loadouts: profile.loadouts });
 
 /**
  * Classes on: our class and loadouts onto our soldier, for the next spawn (online, the
@@ -621,7 +615,7 @@ function closePicker() {
 function pickClass(cls) {
   if (!CLASSES[cls]) return;
   profile.cls = cls;
-  saveProfile(profile);
+  saveKit(profile);
   $('playClass').value = cls;
   if (state.me?.alive) localNote(`You'll spawn as ${CLASSES[cls].name} next time`);
   closePicker();
@@ -631,7 +625,7 @@ function pickClass(cls) {
 function openLoadout() {
   renderLoadout($('loadoutBody'), profile, {
     onChange: () => {
-      saveProfile(profile);
+      saveKit(profile);
       $('playClass').value = profile.cls;
       syncKit();
       if (state.pickerOpen) drawPicker();
@@ -982,14 +976,6 @@ function frame(now) {
   renderer.fogFrom = view;
   renderer.render(g, alpha, me);
   if (client) me.ping = client.ping;
-  // Classes on: XP for us (from the game, or from the host online) goes into our profile.
-  if (state.xp) {
-    for (const e of g.xpLog) {
-      if (e.id <= state.xpSeen) continue;
-      state.xpSeen = e.id;
-      if (e.to === me.id) state.xp.add(e);
-    }
-  }
   // Holding K to self-destruct: shown as it counts down (it goes off after a second).
   const holdingK = me.alive && input.down('KeyK') && !state.menuOpen && !state.chatOpen;
   state.destructSince = holdingK ? state.destructSince ?? now : null;
@@ -1000,7 +986,7 @@ function frame(now) {
     hostId: state.mode === 'host' ? me.id : state.mode === 'client' ? g.soldiers.find(s => !s.isBot && !s.remote)?.id : null,
     ping: !prefs.showPing ? null : client ? client.ping : state.mode === 'host' ? 'Host' : null,
     perf: perf.on ? perf.text : null,
-    xp: state.xp?.showing(), picking: state.pickerOpen,
+    picking: state.pickerOpen,
   });
   if (!state.menuOpen && !g.over && !state.chatOpen && !state.pickerOpen) {
     // Reloading: a ring round the crosshair fills up, complete when the gun's ready. That's
@@ -1073,12 +1059,6 @@ function matchOver(g) {
   }
   if (now - state.overAt > 1500) {
     show('over', true);
-    // Classes on: what the match earned (redrawn if more XP arrives, as it can online).
-    if (state.xp && state.summaryShown !== state.xp.version) {
-      state.summaryShown = state.xp.version;
-      renderSummary($('xpSummary'), state.xp.summary());
-      show('xpSummary', true);
-    }
   }
   const noteEl = $('overNote');
   if (state.mode === 'host') {
@@ -1214,8 +1194,8 @@ function wire() {
   // Offline games pause when you switch away; online ones can't.
   window.addEventListener('blur', () => { if (state.game && !state.game.over && state.mode === 'offline') setPaused(true); });
   window.addEventListener('beforeunload', () => leaveOnline());
-  // Another tab saved the profile (XP earned there): take it here too, so neither overwrites the other.
-  window.addEventListener('storage', e => { if (e.key === PROFILE_KEY) Object.assign(profile, loadProfile()); });
+  // Another tab changed the class or loadouts: take them here too.
+  window.addEventListener('storage', e => { if (e.key === KIT_KEY) Object.assign(profile, loadKit()); });
 }
 
 /**
@@ -1254,7 +1234,7 @@ function takeInvite() {
 
 async function boot() {
   const settings = loadSettings();
-  profile = loadProfile();
+  profile = loadKit();
   for (const k in prefs) prefs[k] = settings[k];
   pacer.setMode(prefs.fpsCap);
   perf.on ||= prefs.showFps;

@@ -11,8 +11,6 @@ import { WEAPONS } from '../weapons.js';
 import { MOTION, TICK_RATE } from '../config.js';
 import { encodeInputs, decodeSnapshot, messageType, PROTOCOL } from './protocol.js';
 import { FX_METHODS } from './host.js';
-import { XP_LABEL } from '../progression.js';
-import { cleanClass } from '../classes.js';
 import { beaconKey } from '../gadgets.js';
 
 const INPUT_REPEAT = 4;     // each input packet carries the last few inputs, in case some are lost
@@ -164,6 +162,7 @@ export class NetClient {
 
     if (me.alive && !me.kamikaze) {
       if (inp.aimDist != null) me.aimDist = inp.aimDist;
+      me.buildPlank = !!inp.plank; // (the Builder: for our own screen)
       if (inp.switchTo && me.has(inp.switchTo)) { me.current = inp.switchTo; this.switchSeq = inp.seq; }
       me.move(this.heavy(inp), g.map);
       if (me.body.jetting && g.tick % 2 === 0) g.fx?.fire(me.x + me.facing * 3, me.y - 4);
@@ -365,17 +364,12 @@ export class NetClient {
     for (const [text, weapon] of e.k || []) g.feed.push({ text: String(text), weapon: weapon && String(weapon), tick: g.tick });
     if (g.feed.length > 6) g.feed.splice(0, g.feed.length - 6);
     for (const text of e.n || []) g.notes.push({ text: String(text), tick: g.tick, to: me?.id });
-    // XP the host gave us: [amount, reason, weapon, class]. (The page adds it to our profile.)
-    for (const x of Array.isArray(e.x) ? e.x : []) {
-      if (!Array.isArray(x) || !XP_LABEL[x[1]] || !(x[0] > 0)) continue;
-      g.xpLog.push({ id: ++g.xpCount, to: me?.id, n: Math.min(5000, +x[0]), why: x[1], w: WEAPONS[x[2]] ? x[2] : null, c: cleanClass(x[3]), tick: g.tick });
-    }
     for (const [x, y, amount] of e.sh || []) g.shakes.push({ x, y, amount });
   }
 
   /**
-   * Destructible maps: holes the host blew, numbered from `from`. Ones already
-   * blown here are skipped; if some are missing before them, ask for them.
+   * Changes to the map: holes the host blew and blocks built, numbered from `from`.
+   * Ones already made here are skipped; if some are missing before them, ask for them.
    */
   applyCarves(from, list) {
     const g = this.game;
@@ -383,7 +377,14 @@ export class NetClient {
     from = Math.floor(Number(from) || 0);
     if (from > g.carves.length) { this.askCarves(); return; }
     for (let i = g.carves.length - from; i < list.length; i++) {
-      const [x, y, r] = (list[i] || []).map(v => Math.round(Number(v) || 0));
+      const e = Array.isArray(list[i]) ? list[i] : [];
+      if (e[0] === '+') {
+        // A block built: ['+', l, t, r, b, built].
+        const [l, t, r, b] = e.slice(1, 5).map(v => Number(v) || 0);
+        g.applyBuild(l, t, Math.min(r, l + 400), Math.min(b, t + 400), !!e[5]);
+        continue;
+      }
+      const [x, y, r] = e.map(v => Math.round(Number(v) || 0));
       g.applyCarve(x, y, Math.max(0, Math.min(400, r)));
     }
   }

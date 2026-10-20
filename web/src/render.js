@@ -8,7 +8,8 @@ import { clamp, lerp } from './util.js';
 import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate, drawSupply, drawBeacon } from './sprites.js';
 import { BEACON_HP } from './gadgets.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
-import { fillSeams, hatch } from './map.js';
+import { fillSeams, hatch, courses } from './map.js';
+import { buildPlan } from './building.js';
 import { Fog } from './fog.js';
 
 export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate };
@@ -16,6 +17,8 @@ export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate 
 const INK = '#111';
 // Destructible maps: the hatching on blocks that can't be destroyed.
 export const HATCH = '#dcdcdc', HATCH_GAP = 10;
+// Blocks soldiers built (the Engineer's Builder): rows of sandbags.
+export const BUILT = '#efe5cf', BUILT_LINE = '#c4ae86', BUILT_ROW = 6;
 const TEAM_COLORS = { 1: '#2f6fdb', 2: '#d33b2f' };
 const TEAM_HEAD = { 1: '#d9e6ff', 2: '#ffdcd8' };
 
@@ -132,6 +135,7 @@ export class Renderer {
     this.drawProjectiles(game, true);
     this.drawEffects(game);
     for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);
+    this.drawBuildGhost(game, viewer);
     for (const sol of shown.names) this.drawName(game, sol, alpha, viewer);
     fog?.drawAlerts(this.ctx);
   }
@@ -179,6 +183,7 @@ export class Renderer {
     for (const p of game.map.solids) ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t);
     // No hairlines where blocks just meet.
     fillSeams(game.map.getSeams(), e, (x, y, w, h) => ctx.fillRect(x, y, w, h));
+    if (game.map.builtCount) this.drawBuilt(game);
     // Destructible maps: blocks explosions can't break are hatched.
     if (game.options?.destruction) {
       const v = this.view;
@@ -192,6 +197,38 @@ export class Renderer {
       ctx.stroke();
     }
     this.drawPads(game, true);
+  }
+
+  /** Built blocks: sandbag colour, with the rows drawn in. */
+  drawBuilt(game) {
+    const ctx = this.ctx, v = this.view;
+    const shown = game.map.solids.filter(p => p.built && !(v && (p.r < v.l || p.l > v.r || p.b < v.t || p.t > v.b)));
+    ctx.fillStyle = BUILT;
+    for (const p of shown) ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t);
+    ctx.strokeStyle = BUILT_LINE;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const p of shown) courses(p.l, p.t, p.r, p.b, BUILT_ROW, (x0, y0, x1, y1) => { ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); });
+    ctx.stroke();
+  }
+
+  /**
+   * Holding the Builder: what a click would do (the block, or the repair), drawn
+   * where it would go: green if it can, red if not.
+   */
+  drawBuildGhost(game, s) {
+    const inv = s?.alive && s.current === 'Builder' && s.weapons.Builder;
+    if (!inv) return;
+    const plan = buildPlan(game, s);
+    const ok = plan.ok && inv.ammo > 0;
+    const ctx = this.ctx;
+    ctx.fillStyle = ok ? 'rgba(70,170,90,0.3)' : 'rgba(215,60,45,0.22)';
+    ctx.strokeStyle = ok ? 'rgba(40,135,60,0.9)' : 'rgba(200,45,35,0.8)';
+    ctx.lineWidth = 1;
+    for (const b of plan.boxes) {
+      ctx.fillRect(b.l, b.t, b.r - b.l, b.b - b.t);
+      ctx.strokeRect(b.l, b.t, b.r - b.l, b.b - b.t);
+    }
   }
 
   /** Jump pads: light fill with upward chevrons that move. */
@@ -243,7 +280,7 @@ export class Renderer {
         case 'armour': drawArmour(ctx); break;
         case 'jetpack': drawJetpack(ctx); break;
         case 'weapon': drawWeapon(ctx, WEAPONS[it.weapon], true); break;
-        case 'medkit': case 'repair': case 'ammo': drawSupply(ctx, it.type, it.team); break;
+        case 'medkit': case 'ammo': drawSupply(ctx, it.type, it.team); break;
       }
       ctx.restore();
     }
@@ -390,7 +427,7 @@ export class Renderer {
     ctx.save();
     ctx.translate(pose.gun.x, pose.gun.y);
     let angle = pose.gun.angle;
-    if (pose.gun.def.kind === 'melee' && v.anim.swing > 0) angle -= Math.sin(v.anim.swing * Math.PI) * 1.7 * (Math.cos(angle) < 0 ? -1 : 1);
+    if ((pose.gun.def.kind === 'melee' || pose.gun.def.kind === 'build') && v.anim.swing > 0) angle -= Math.sin(v.anim.swing * Math.PI) * 1.7 * (Math.cos(angle) < 0 ? -1 : 1);
     ctx.rotate(angle);
     if (Math.cos(pose.gun.angle) < 0) ctx.scale(1, -1);
     drawWeapon(ctx, pose.gun.def, false);

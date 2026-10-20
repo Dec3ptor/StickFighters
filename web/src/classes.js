@@ -1,9 +1,9 @@
 // Classes, kits and weapon upgrades (the "Classes" match option).
 //
 // With classes on, every soldier is one of four classes and spawns with that
-// class's kit instead of the usual pistol: a main weapon (chosen from the ones
-// the player has unlocked, see progression.js), the class's other weapons, the
-// pistol and the prod, and a gadget used with G (gadgets.js).
+// class's kit instead of the usual pistol: a main weapon (the player's choice,
+// see kitchoice.js), the class's other weapons, the pistol and the prod, and a
+// gadget used with G (gadgets.js).
 //
 // Each kit weapon can carry one upgrade. Upgrades are per-soldier modifiers:
 // weaponFor(s, id) gives the weapon's numbers with the soldier's upgrade
@@ -13,33 +13,33 @@ import { WEAPONS } from './weapons.js';
 import { RULES } from './config.js';
 
 /**
- * The classes. mains: the main weapons to choose from (rank: the class rank
- * that unlocks it), with the ammo the kit gives; kit: the class's other
- * weapons; hold: what's in your hands at spawn (the main weapon, if not given).
+ * The classes. mains: the main weapons to choose from, with the ammo the kit
+ * gives; kit: the class's other weapons; hold: what's in your hands at spawn
+ * (the main weapon, if not given).
  */
 export const CLASSES = {
   assault: {
     name: 'Assault', gadget: 'medkit', mainLabel: 'Primary',
     blurb: 'A rifleman with grenades, who keeps the team on its feet with medkits.',
-    mains: [{ id: 'M4', ammo: 120 }, { id: 'Shotgun', ammo: 16, rank: 1 }, { id: 'Uzi', ammo: 150, rank: 3 }],
+    mains: [{ id: 'M4', ammo: 120 }, { id: 'Shotgun', ammo: 16 }, { id: 'Uzi', ammo: 150 }],
     kit: [{ id: 'GrenadeLauncher', ammo: 2 }],
   },
   engineer: {
-    name: 'Engineer', gadget: 'repair', mainLabel: 'Launcher', hold: 'Uzi',
-    blurb: 'Rockets and mines, and armour packs to patch up the team.',
-    mains: [{ id: 'Bazooka', ammo: 3 }, { id: 'HomingMissile', ammo: 3, rank: 1 }, { id: 'Mortar', ammo: 4, rank: 3 }],
-    kit: [{ id: 'Uzi', ammo: 150 }, { id: 'Mine', ammo: 2 }],
+    name: 'Engineer', gadget: 'builder', mainLabel: 'Launcher', hold: 'Uzi',
+    blurb: 'Rockets and mines, and a Builder to put up cover and repair what explosions broke.',
+    mains: [{ id: 'Bazooka', ammo: 3 }, { id: 'HomingMissile', ammo: 3 }, { id: 'Mortar', ammo: 4 }],
+    kit: [{ id: 'Uzi', ammo: 150 }, { id: 'Mine', ammo: 2 }, { id: 'Builder', ammo: 6 }],
   },
   support: {
     name: 'Support', gadget: 'ammo', mainLabel: 'Primary',
     blurb: 'Heavy guns and dynamite, and ammo boxes to keep everyone shooting.',
-    mains: [{ id: 'Shotgun', ammo: 16 }, { id: 'Minigun', ammo: 300, rank: 1 }, { id: 'Flamer', ammo: 200, rank: 3 }],
+    mains: [{ id: 'Shotgun', ammo: 16 }, { id: 'Minigun', ammo: 300 }, { id: 'Flamer', ammo: 200 }],
     kit: [{ id: 'Dynamite', ammo: 2 }],
   },
   recon: {
     name: 'Recon', gadget: 'beacon', mainLabel: 'Primary',
     blurb: 'A long-range shooter, who places spawn beacons for the team.',
-    mains: [{ id: 'SR', ammo: 15 }, { id: 'Longbow', ammo: 16, rank: 1 }, { id: 'MagicBullet', ammo: 4, rank: 3 }],
+    mains: [{ id: 'SR', ammo: 15 }, { id: 'Longbow', ammo: 16 }, { id: 'MagicBullet', ammo: 4 }],
     kit: [],
   },
 };
@@ -63,7 +63,6 @@ const isExplosive = def => !!def.blast && ['thrown', 'rocket', 'placed'].include
 /**
  * Weapon upgrades. scale: numbers in the weapon's definition multiplied by
  * this much; extra: added to its ammo; blast: its blast radius multiplied by this.
- * Guns unlock theirs in the order listed, explosives likewise (progression.js).
  */
 export const UPGRADES = {
   steady: { name: 'Steady grip', blurb: 'Shots spread 40% less', fits: def => isGun(def) && def.spread > 0, scale: { spread: 0.6 } },
@@ -78,7 +77,7 @@ export const UPGRADE_IDS = Object.keys(UPGRADES);
 // Numbers that are counts, so stay whole.
 const WHOLE = new Set(['ammo', 'maxAmmo', 'mag']);
 
-/** The upgrades a weapon can carry, in the order they unlock. */
+/** The upgrades a weapon can carry. */
 export function upgradesFor(id) {
   const def = WEAPONS[id];
   if (!def || def.kind === 'melee') return [];
@@ -205,7 +204,7 @@ function botClass(game, s) {
   return CLASS_IDS.reduce((a, b) => (count[b] < count[a] ? b : a));
 }
 
-/** Bots don't progress: any main weapon, and now and then an upgrade. */
+/** Bots: any main weapon, and now and then an upgrade. */
 function botLoadouts(game) {
   const out = {};
   for (const cls of CLASS_IDS) {
@@ -252,10 +251,10 @@ export function applyKit(game, s) {
   s.lastInSlot = { [WEAPONS[hold].slot]: hold };
 }
 
-/** What a class's kit holds, in words ("M4 Carbine, Grenade Launcher ×2, Pistol"). */
+/** What a class's kit holds, in words ("M4 Carbine, Grenade Launcher ×2, Pistol"). (The gadget is shown on its own.) */
 export function kitText(cls, main) {
   return kitWeapons(cls, main)
-    .filter(w => w.id !== 'Prod')
+    .filter(w => w.id !== 'Prod' && !WEAPONS[w.id].tool)
     .map(w => (w.ammo && w.ammo <= 4 ? `${WEAPONS[w.id].name} ×${w.ammo}` : WEAPONS[w.id].id === 'Platinum' ? 'Pistol' : WEAPONS[w.id].name))
     .join(', ');
 }

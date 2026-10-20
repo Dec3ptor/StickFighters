@@ -17,13 +17,12 @@ import { SoldierGrid, GRID_MIN } from './grid.js';
 import { objectivesOf } from './objectives.js';
 import { setupClass, applyKit, weaponFor } from './classes.js';
 import { useGadget, updateGadgets, removeGadgets, blastGadgets, beaconSpawn, beaconSpawned, beaconOptions, classChanged, botDeploy } from './gadgets.js';
-import { XP } from './progression.js';
 
 const IDLE = { move: 0 };
 // Holding self-destruct this many updates (a second) blows you up: the way out of a pit you can't climb out of.
 export const SELF_DESTRUCT_TICKS = 60;
-// Destructible maps: the bots' route map is patched this many updates after the first
-// hole since the last patch (holes made meanwhile are done in the same go).
+// When the map changes (holes, building), the bots' route map is patched this many updates
+// after the first change since the last patch (changes meanwhile are done in the same go).
 const NAV_PATCH_DELAY = 20;
 
 export class Game {
@@ -32,7 +31,7 @@ export class Game {
    *   botVision: 'classic' (bots see everyone nearby in a clear line) | 'sight' (only what's on their
    *   screen in front of them, plus what they hear), fog: true (players only see what's in their line of sight),
    *   destruction: true (explosions blow holes in the map),
-   *   classes: true (everyone spawns with a class's kit, uses gadgets and earns XP: classes.js) }
+   *   classes: true (everyone spawns with a class's kit and uses gadgets: classes.js) }
    */
   constructor({ mapData, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1, options = {} }) {
     // Speed rescales shared constants, so set it before anything reads them.
@@ -41,7 +40,8 @@ export class Game {
     this.mode = mode;
     this.rules = modeOf(mode);
     this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, destruction: false, classes: false, ...options };
-    // Destructible maps: every hole blown so far ([x, y, radius]; online players repeat them).
+    // Every change to the map so far, in order (online players repeat them): holes blown
+    // ([x, y, radius]: destructible maps) and blocks built (['+', l, t, r, b, built]: the Engineer's Builder).
     this.carves = [];
     if (this.options.destruction) this.protectFloors();
     // Noises bots can hear (with bot vision 'sight'): { x, y, r (how far it carries), by, tick }.
@@ -69,10 +69,8 @@ export class Game {
     this.grid = new SoldierGrid();
     // The objective modes' state (flags, capture points...): plain data, sent to online players.
     this.modeState = null;
-    // Classes on: spawn beacons (gadgets.js), and XP handed out (read by the player's page, or sent to them online).
+    // Classes on: spawn beacons (gadgets.js).
     this.beacons = [];
-    this.xpLog = [];
-    this.xpCount = 0;
     this.rules.begin?.(this);
   }
 
@@ -167,11 +165,11 @@ export class Game {
   /**
    * The bots' route map, once it's built: it tells the game which spots are in a
    * pit nobody can climb out of (no spawning there; players stuck there are told
-   * how to get out). On a destructible map, the game works on its own copy (holes
-   * change it). Returns the route map the bots should use.
+   * how to get out). When the map can change (destruction, or Engineers building),
+   * the game works on its own copy. Returns the route map the bots should use.
    */
   useNav(nav) {
-    this.nav = this.options.destruction ? nav.clone(this.map) : nav;
+    this.nav = this.options.destruction || this.classesOn ? nav.clone(this.map) : nav;
     this.spawnSets = null;
     return this.nav;
   }
@@ -204,14 +202,15 @@ export class Game {
    * bots' route map is patched shortly after.
    */
   carve(x, y, r) {
-    if (!this.options.destruction) return;
+    // (Built blocks break on any map.)
+    if (!this.options.destruction && !this.map.builtCount) return;
     x = Math.round(x); y = Math.round(y); r = Math.round(r);
     if (this.applyCarve(x, y, r)) this.fx?.rubble(x, y, r);
   }
 
   /** Blow a hole (online players: one the host made). Returns true if anything broke. */
   applyCarve(x, y, r) {
-    const area = this.map.carve(x, y, r);
+    const area = this.map.carve(x, y, r, !this.options.destruction);
     // (Kept even if nothing broke here, so everyone's list of holes lines up.)
     if (this.online) this.carves.push([x, y, r]);
     if (!area) return false;
@@ -225,13 +224,41 @@ export class Game {
     for (const it of this.pickups.items) {
       if (it.dropped && it.vy === null && it.x >= area.l - 4 && it.x <= area.r + 4 && it.y >= area.t - 16 && it.y <= area.b) it.vy = 0;
     }
-    if (this.nav) {
-      this.navDirty = this.navDirty
-        ? { l: Math.min(this.navDirty.l, area.l), t: Math.min(this.navDirty.t, area.t), r: Math.max(this.navDirty.r, area.r), b: Math.max(this.navDirty.b, area.b) }
-        : area;
-      this.navPatchAt ??= this.tick + NAV_PATCH_DELAY;
-    }
+    this.mapChanged(area);
     return true;
+  }
+
+  /**
+   * The Engineer's Builder: new blocks (`built`: new ones, rather than repairs to
+   * the map as it was). Remembered with the holes, so online players get them too.
+   */
+  addBlocks(boxes, built) {
+    let area = null;
+    for (const b of boxes) {
+      if (!this.applyBuild(b.l, b.t, b.r, b.b, built)) continue;
+      area = area ? { l: Math.min(area.l, b.l), t: Math.min(area.t, b.t), r: Math.max(area.r, b.r), b: Math.max(area.b, b.b) } : { ...b };
+    }
+    if (!area) return;
+    this.fx?.built(area.l, area.t, area.r, area.b);
+    this.sound(built ? 'build' : 'repair', (area.l + area.r) / 2, (area.t + area.b) / 2);
+  }
+
+  /** Add one block (online players: one the host built). Returns true if it went in. */
+  applyBuild(l, t, r, b, built) {
+    this.carves.push(['+', l, t, r, b, built ? 1 : 0]);
+    const area = this.map.add(l, t, r, b, built);
+    if (!area) return false;
+    this.mapChanged(area);
+    return true;
+  }
+
+  /** Blocks changed in `area`: the bots' route map is patched shortly (changes meanwhile go in the same go). */
+  mapChanged(area) {
+    if (!this.nav) return;
+    this.navDirty = this.navDirty
+      ? { l: Math.min(this.navDirty.l, area.l), t: Math.min(this.navDirty.t, area.t), r: Math.max(this.navDirty.r, area.r), b: Math.max(this.navDirty.b, area.b) }
+      : area;
+    this.navPatchAt ??= this.tick + NAV_PATCH_DELAY;
   }
 
   /** Bring the bots' route map up to date with the holes blown, and have them plan again. */
@@ -317,7 +344,6 @@ export class Game {
     // (Bots listen every few updates: keep the last few updates' noises.)
     if (this.noises.length) this.noises = this.noises.filter(n => this.tick - n.tick < 8);
     if (this.notes.length > 20) this.notes.splice(0, this.notes.length - 20);
-    if (this.xpLog.length > 200) this.xpLog.splice(0, this.xpLog.length - 200);
   }
 
   updateSoldier(s, input) {
@@ -369,6 +395,7 @@ export class Game {
       if (WEAPONS[s.current].mag) this.sound('reload', s.x, s.y);
     }
     if (input.gadget && this.classesOn) useGadget(this, s);
+    if (input.plank != null) s.buildPlank = !!input.plank; // (the Builder: a plank rather than a wall)
     if (input.fire) fire(this, s, input);
 
     if (s.burnTicks > 0) {
@@ -550,8 +577,6 @@ export class Game {
       text = opts.fall ? `${killer.name} knocked ${victim.name} off the map` : `${killer.name} fragged ${victim.name}`;
       if (!killer.isBot) this.notify(killer, `You ${how} ${victim.name}${opts.headshot ? ' (headshot!)' : ''}`);
       if (!victim.isBot) this.notify(victim, `You were fragged by ${killer.name}`);
-      this.xp(killer, XP.kill, 'kill', weapon);
-      if (opts.headshot) this.xp(killer, XP.headshot, 'headshot', weapon);
     } else {
       // Kamikaze is meant to kill you, so it doesn't cost a frag.
       if (weapon !== 'Kamikaze') {
@@ -595,24 +620,9 @@ export class Game {
       this.over = true;
       this.winner = w;
       this.sound('gameover', null, null);
-      // XP for everyone who played to the end, and more for the winners.
-      for (const s of this.soldiers) {
-        this.xp(s, XP.finish, 'finish');
-        if (w.team ? s.team === w.team : w.soldier === s) this.xp(s, XP.win, 'win');
-      }
     }
   }
 
-  /**
-   * Classes on: `n` XP for player s, for `why` (one of progression.js's XP
-   * reasons; `weapon` for kills). Read by the player's page, or sent to them online.
-   */
-  xp(s, n, why, weapon = null) {
-    if (!s || s.isBot || !n || !this.classesOn) return;
-    const e = { id: ++this.xpCount, to: s.id, n, why, w: weapon || null, c: s.cls || null, tick: this.tick };
-    this.xpLog.push(e);
-    this.recorder?.xp?.(e);
-  }
 
   /**
    * Where a soldier waiting to respawn can choose to spawn (number keys): conquest's

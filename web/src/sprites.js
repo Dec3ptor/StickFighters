@@ -289,6 +289,14 @@ export function drawSprite(ctx, name, opts = {}) {
       ctx.strokeStyle = '#5a3f9a';
       ctx.beginPath(); ctx.moveTo(0, -3.5); ctx.lineTo(0, -7); ctx.stroke();
       break;
+    case 'hammer':
+      // The Engineer's Builder: a hammer.
+      ctx.fillStyle = '#8a6a3a';
+      ctx.fillRect(-4, -0.9, 11, 1.8);
+      ctx.fillStyle = '#777';
+      ctx.beginPath(); ctx.rect(5, -4.5, 3.4, 9); ctx.fill(); ctx.stroke();
+      ctx.fillRect(8.4, -4.5, 1.6, 3);
+      break;
     case 'kamikaze':
       ctx.fillStyle = '#fff';
       ctx.beginPath(); ctx.rect(-4, -3, 8, 6); ctx.fill(); ctx.stroke();
@@ -372,7 +380,7 @@ export function drawCrate(ctx, crate, t) {
 
 const SUPPLY_TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
 
-/** Gadget drops (classes on): a medkit, an armour pack or an ammo box, edged in its team's colour. */
+/** Gadget drops (classes on): a medkit or an ammo box, edged in its team's colour. */
 export function drawSupply(ctx, type, team) {
   const edge = SUPPLY_TEAM[team] || '#333';
   ctx.lineWidth = 1.2;
@@ -385,15 +393,6 @@ export function drawSupply(ctx, type, team) {
     ctx.fillRect(-3.6, -1.4, 7.2, 2.8);
     ctx.strokeStyle = '#555';
     ctx.beginPath(); ctx.moveTo(-2.5, -5); ctx.lineTo(-2.5, -7); ctx.lineTo(2.5, -7); ctx.lineTo(2.5, -5); ctx.stroke();
-  } else if (type === 'repair') {
-    ctx.fillStyle = '#8d8d8d';
-    ctx.strokeStyle = edge;
-    ctx.beginPath();
-    ctx.moveTo(-6, -5); ctx.lineTo(6, -5); ctx.lineTo(5, 3); ctx.lineTo(0, 6); ctx.lineTo(-5, 3); ctx.closePath();
-    ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = '#eee';
-    ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.moveTo(-3, -1); ctx.lineTo(3, -1); ctx.moveTo(0, -3.5); ctx.lineTo(0, 2); ctx.stroke();
   } else {
     ctx.fillStyle = '#6b6b3a';
     ctx.strokeStyle = edge;

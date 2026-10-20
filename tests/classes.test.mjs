@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { Game } from '../web/src/game.js';
 import { WEAPONS } from '../web/src/weapons.js';
 import { CLASSES, CLASS_IDS, weaponFor, upgradesFor, kitWeapons, cleanLoadouts, defaultLoadouts } from '../web/src/classes.js';
-import { GADGETS, MEDKIT_HEAL, ARMOUR_PACK, BEACON_HP, useGadget, beaconKey } from '../web/src/gadgets.js';
+import { GADGETS, MEDKIT_HEAL, BEACON_HP, useGadget, beaconKey } from '../web/src/gadgets.js';
 import { fire } from '../web/src/combat.js';
 import { DEFAULT_SPEED, RULES } from '../web/src/config.js';
 import { setGameSpeed } from '../web/src/speed.js';
@@ -46,7 +46,6 @@ function shoot(game, s) {
   s.cooldown = 0;
   return fire(game, s, { firePressed: true });
 }
-const xpFor = (game, s) => game.xpLog.filter(e => e.to === s.id);
 
 test('classes off (the default): the classic game, with the usual loadout and the map\'s weapons', () => {
   const game = arena({ options: {} });
@@ -57,15 +56,13 @@ test('classes off (the default): the classic game, with the usual loadout and th
   assert.equal(s.cls, undefined, 'no class');
   assert.ok(game.pickups.items.some(it => it.type === 'weapon'), 'weapons on the map');
   assert.equal(weaponFor(s, 'M4'), WEAPONS.M4, 'no upgrades');
-  run(game, 60);
-  assert.equal(game.xpLog.length, 0, 'no XP');
 });
 
 test('classes on: every class spawns with its kit, holding its main gun', () => {
   const game = arena();
   const expect = {
     assault: { M4: 120, GrenadeLauncher: 2, hold: 'M4' },
-    engineer: { Bazooka: 3, Uzi: 150, Mine: 2, hold: 'Uzi' },
+    engineer: { Bazooka: 3, Uzi: 150, Mine: 2, Builder: 6, hold: 'Uzi' },
     support: { Shotgun: 16, Dynamite: 2, hold: 'Shotgun' },
     recon: { SR: 15, hold: 'SR' },
   };
@@ -217,7 +214,7 @@ test('upgraded weapons follow the game speed (speed.js rescales weapons in place
   } finally { setGameSpeed(DEFAULT_SPEED); }
 });
 
-test('medkit: heals you and your team (not the enemy), recharges in about 20 s, and earns its owner XP', () => {
+test('medkit: heals you and your team (not the enemy), and recharges in about 20 s', () => {
   const game = arena();
   let g = false;
   const medic = put(game, 'Medic', { x: 0, ctl: () => (g ? (g = false, { move: 0, gadget: true }) : { move: 0 }) });
@@ -241,34 +238,37 @@ test('medkit: heals you and your team (not the enemy), recharges in about 20 s, 
   run(game, 3);
   assert.equal(mate.health, 30 + MEDKIT_HEAL, 'a teammate is healed');
   assert.ok(!game.pickups.items.some(it => it.type === 'medkit' && it.active && it.life > 0), 'used up');
-  assert.deepEqual(xpFor(game, medic).map(e => e.why), ['heal']);
   // Not ready again until it's recharged.
   assert.equal(useGadget(game, medic), false);
   run(game, Math.ceil(medic.gadgetCharge));
   assert.equal(useGadget(game, medic), true);
 });
 
-test('ammo box and armour pack: refill your team\'s ammo and armour', () => {
+test('ammo box: refills your team\'s ammo (and an Engineer\'s blocks)', () => {
   const game = arena();
   const support = put(game, 'Support', { cls: 'support', x: 0 });
-  const eng = put(game, 'Eng', { cls: 'engineer', x: 200 });
+  const eng = put(game, 'Eng', { cls: 'engineer', x: 300 });
   const mate = put(game, 'Mate', { x: -300, bot: true });
-  eng.armour = RULES.maxArmour; // (or the engineer takes their own pack)
   mate.weapons.M4.ammo = 10;
   mate.weapons.GrenadeLauncher.ammo = 0;
-  assert.ok(useGadget(game, support) && useGadget(game, eng));
+  assert.ok(useGadget(game, support));
   run(game, 40);
-  const box = game.pickups.items.find(it => it.type === 'ammo'), pack = game.pickups.items.find(it => it.type === 'repair');
-  place(support, -700); place(eng, -650);
+  const box = game.pickups.items.find(it => it.type === 'ammo');
+  place(support, -700);
   place(mate, box.x);
   run(game, 3);
   assert.equal(mate.weapons.M4.ammo, 70, 'half the kit\'s 120 back');
   assert.equal(mate.weapons.GrenadeLauncher.ammo, 1);
-  place(mate, pack.x);
+  place(mate, -300);
+  run(game, Math.ceil(support.gadgetCharge) + 2);
+  place(support, 0);
+  assert.ok(useGadget(game, support));
+  run(game, 40);
+  place(support, -700);
+  eng.weapons.Builder.ammo = 0; // (blocks come back over time too)
+  place(eng, game.pickups.items.find(it => it.type === 'ammo' && it.active).x);
   run(game, 3);
-  assert.equal(mate.armour, ARMOUR_PACK);
-  assert.deepEqual(xpFor(game, support).map(e => e.why), ['resupply']);
-  assert.deepEqual(xpFor(game, eng).map(e => e.why), ['repair']);
+  assert.equal(eng.weapons.Builder.ammo, 3, 'half the Builder\'s 6 blocks back');
   // A soldier with everything full leaves a box where it is.
   const game2 = arena();
   const s2 = put(game2, 'S', { cls: 'support', x: 0 });
@@ -297,7 +297,6 @@ test('spawn beacon: you and your team spawn on it; enemies shoot it or blow it u
   run(game, RULES.respawnTicks + 2);
   assert.ok(recon.alive && Math.abs(recon.x - b.x) < 1, `recon spawned on the beacon (${recon.x})`);
   assert.ok(mate.alive && Math.abs(mate.x - b.x) < 1, 'a teammate spawned on it');
-  assert.ok(xpFor(game, recon).some(e => e.why === 'beaconSpawn'), 'XP for a teammate spawning on it');
 
   // A teammate's shots don't hurt it; an enemy's do.
   place(recon, -700); place(mate, 300);
@@ -309,7 +308,6 @@ test('spawn beacon: you and your team spawn on it; enemies shoot it or blow it u
   foe.aim = toBeacon(foe);
   for (let i = 0; i < 20 && game.beacons.length; i++) { foe.weapons.M4.ammo = 100; shoot(game, foe); run(game, 20); }
   assert.equal(game.beacons.length, 0, 'shot to pieces');
-  assert.ok(xpFor(game, foe).some(e => e.why === 'beaconKill'), 'XP for destroying it');
   // Gone: back to spawning at base.
   game.kill(recon, null, null);
   run(game, RULES.respawnTicks + 2);
@@ -353,7 +351,7 @@ test('bots spread over the classes and use their gadgets', () => {
     }
   }
   assert.ok(used.size >= 3, `gadgets used: ${[...used]}`);
-  assert.equal(game.xpLog.length, 0, 'bots don\'t earn XP');
+  assert.equal(game.map.builtCount, 0, 'bots don\'t build');
   // Kits: every bot has its class's weapons (or what it picked up since).
   for (const s of game.soldiers) {
     if (!s.alive) continue;

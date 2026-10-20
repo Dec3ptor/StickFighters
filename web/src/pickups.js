@@ -1,7 +1,7 @@
 // Health, armour, jetpacks and weapons lying on the map, weapons dropped by
 // the dead, and supply crates that parachute in with a random weapon. With
-// classes on, the map's weapons aren't there (everyone has a kit), and medkits,
-// armour packs and ammo boxes dropped with gadgets (gadgets.js) lie around too.
+// classes on, the map's weapons aren't there (everyone has a kit), and medkits
+// and ammo boxes dropped with gadgets (gadgets.js) lie around too.
 
 import { BODY, ITEM_RESPAWN, ITEM_SIZE, RULES, MOTION, CRATES } from './config.js';
 import { WEAPONS, CRATE_WEIGHTS } from './weapons.js';
@@ -164,7 +164,7 @@ function give(game, s, it) {
       return giveWeapon(game, s, it.weapon, null, it, true);
     case 'weapon':
       return giveWeapon(game, s, it.weapon, it.ammo, it, false);
-    case 'medkit': case 'repair': case 'ammo':
+    case 'medkit': case 'ammo':
       return takeSupply(game, s, it);
   }
   return false;

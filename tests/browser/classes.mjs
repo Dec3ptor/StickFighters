@@ -1,6 +1,7 @@
-// Classes and progression in the browser: the Loadout screen, the setup's Classes
-// option, playing with a kit (gadget, XP pop-ups), the class picker while dead and
-// from the pause menu (without taking conquest-style spawn keys), and the XP summary.
+// Classes in the browser: the Loadout screen (everything open from the start), the
+// setup's Classes option, playing with a kit (gadgets, the Engineer's Builder in both
+// renderers), and the class picker while dead and from the pause menu (without taking
+// conquest-style spawn keys).
 // Usage: node tests/browser/classes.mjs [outDir]
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -20,7 +21,7 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 
-// A profile with a little progress: assault class rank 1 (the shotgun) and 5 M4 kills (steady grip).
+// Choices saved by an older version (with XP and kills, no longer used): the class carries over.
 await page.addInitScript(() => {
   if (localStorage.getItem('stick-soldiers-profile')) return;
   localStorage.setItem('stick-soldiers-profile', JSON.stringify({ v: 1, xp: 2600, classXp: { assault: 1600 }, kills: { M4: 5 }, cls: 'assault' }));
@@ -34,19 +35,19 @@ const profile = () => page.evaluate(() => JSON.parse(JSON.stringify(window.stick
 await page.click('#openLoadout');
 expect(await visible('#loadout'), 'loadout screen opens');
 expect(await page.locator('.lo-class').count() === 4, 'four classes');
-expect(/Rank 2 · Private First Class/.test(await page.textContent('.lo-top')), `overall rank shown (${await page.textContent('.lo-top b')})`);
-const assaultMains = await page.$$eval('select[data-main=assault] option', os => os.map(o => [o.value, o.disabled]));
-expect(JSON.stringify(assaultMains) === JSON.stringify([['M4', false], ['Shotgun', false], ['Uzi', true]]), `assault mains: shotgun unlocked, uzi not (${JSON.stringify(assaultMains)})`);
-const m4Ups = await page.$$eval('select[data-up="assault:M4"] option', os => os.map(o => [o.value, o.disabled]));
-expect(m4Ups.find(([v]) => v === 'steady')?.[1] === false && m4Ups.find(([v]) => v === 'extmag')?.[1] === true, `M4: steady grip unlocked, extended mag locked (${JSON.stringify(m4Ups)})`);
-await page.selectOption('select[data-up="assault:M4"]', 'steady');
+expect(!/\b(rank|XP|unlock)/i.test(await page.textContent('#loadout')), 'no ranks, XP or unlocks');
+expect(await page.locator('#loadout option[disabled]').count() === 0, 'every weapon and upgrade can be chosen');
+const assaultMains = await page.$$eval('select[data-main=assault] option', os => os.map(o => o.value));
+expect(JSON.stringify(assaultMains) === JSON.stringify(['M4', 'Shotgun', 'Uzi']), `assault mains (${JSON.stringify(assaultMains)})`);
+expect(/Builder/.test(await page.textContent('.lo-class[data-cls=engineer]')), 'the Engineer\'s gadget is the Builder');
+await page.selectOption('select[data-up="assault:M4"]', 'quick');
 await page.check('input[name=loClass][value=recon]');
 await page.screenshot({ path: `${outDir}/classes-loadout.png` });
-let p = await profile();
-expect(p.loadouts.assault.ups.M4 === 'steady', 'upgrade chosen');
+const p = await profile();
+expect(p.loadouts.assault.ups.M4 === 'quick', 'upgrade chosen');
 expect(p.cls === 'recon', 'class chosen');
 const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('stick-soldiers-profile')));
-expect(saved.loadouts.assault.ups.M4 === 'steady' && saved.cls === 'recon', 'saved in its own place');
+expect(saved.loadouts.assault.ups.M4 === 'quick' && saved.cls === 'recon' && saved.xp === undefined, 'saved in its own place (without the old XP)');
 expect(!JSON.parse(await page.evaluate(() => localStorage.getItem('stick-soldiers') || '{}')).loadouts, 'not in the settings');
 await page.selectOption('select[data-main=assault]', 'Shotgun');
 expect((await profile()).loadouts.assault.main === 'Shotgun', 'main weapon chosen');
@@ -89,10 +90,6 @@ await page.keyboard.press('KeyG');
 await page.waitForFunction(() => window.stickSoldiers.state.game.beacons.some(b => b.owner === window.stickSoldiers.state.me.id), null, { timeout: 3000 }).catch(() => {});
 const beacon = await page.evaluate(() => { const { state } = window.stickSoldiers; const b = state.game.beacons.find(x => x.owner === state.me.id); return b && { key: `b:${b.id}`, deploy: state.me.deployAt }; });
 expect(beacon && beacon.deploy === beacon.key, `G placed a beacon to spawn on (${JSON.stringify(beacon)})`);
-// XP pop-up.
-await page.evaluate(() => { const { state } = window.stickSoldiers; state.game.xp(state.me, 100, 'kill', 'SR'); });
-await page.waitForFunction(() => window.stickSoldiers.state.xp?.total === 100, null, { timeout: 3000 }).catch(() => {});
-expect(await page.evaluate(() => window.stickSoldiers.state.xp.showing().some(x => x.text === '+100 Kill')), 'XP pop-up');
 await page.screenshot({ path: `${outDir}/classes-play.png` });
 
 // 4. Die (hold K), then C opens the class picker; 2 picks engineer, without changing where you spawn.
@@ -113,7 +110,69 @@ expect(after.pick === 'engineer' && after.cls === 'engineer', `2 picked engineer
 expect(after.deploy === beacon?.key, 'the number key didn\'t change where you spawn');
 await page.waitForFunction(() => window.stickSoldiers.state.me.alive, null, { timeout: 8000 }).catch(() => {});
 me = await page.evaluate(() => ({ cls: window.stickSoldiers.state.me.cls, weapons: Object.keys(window.stickSoldiers.state.me.weapons) }));
-expect(me.cls === 'engineer' && me.weapons.includes('Bazooka') && me.weapons.includes('Mine'), `respawned as engineer (${JSON.stringify(me)})`);
+expect(me.cls === 'engineer' && me.weapons.includes('Bazooka') && me.weapons.includes('Mine') && me.weapons.includes('Builder'), `respawned as engineer (${JSON.stringify(me)})`);
+
+// 4b. The Builder: G takes it out; the preview shows where a click builds; a click puts up a
+// wall, and a right click turns it into a plank. In both renderers.
+const built = [];
+for (const graphics of ['canvas', 'webgl']) {
+  await page.evaluate(g => window.stickSoldiers.setGraphics(g), graphics);
+  await page.waitForTimeout(300);
+  // Somewhere flat and clear, away from everyone.
+  const spot = await page.evaluate(() => {
+    const { state } = window.stickSoldiers, g = state.game, me = state.me;
+    for (const o of g.soldiers) if (o !== me && o.alive) g.kill(o, null, null);
+    for (const o of g.soldiers) o.respawnTimer = 99999;
+    me.weapons.Builder.ammo = 6;
+    return { x: me.x, y: me.y };
+  });
+  if ((await page.evaluate(() => window.stickSoldiers.state.me.current)) !== 'Builder') await page.keyboard.press('KeyG');
+  await page.waitForFunction(() => window.stickSoldiers.state.me.current === 'Builder', null, { timeout: 2000 }).catch(() => {});
+  expect(await page.evaluate(() => window.stickSoldiers.state.me.current) === 'Builder', `${graphics}: G takes out the Builder`);
+  await page.waitForTimeout(400); // (a weapon just taken out isn't ready straight away)
+  // Aim at points in front, on both sides, until the preview says a block can go there.
+  let ok = null;
+  for (const dx of [70, -70, 110, -110, 40, -40]) {
+    for (const dy of [0, -30, 30]) {
+      await page.mouse.move(640 + dx * 2, 380 + dy);
+      await page.waitForTimeout(60);
+      const plan = await page.evaluate(async () => {
+        const { buildPlan } = await import('./src/building.js');
+        const { state } = window.stickSoldiers;
+        const p = buildPlan(state.game, state.me);
+        return { ok: p.ok, kind: p.kind };
+      });
+      if (plan.ok) { ok = plan; break; }
+    }
+    if (ok) break;
+  }
+  expect(ok, `${graphics}: somewhere to build near ${JSON.stringify(spot)}`);
+  await page.screenshot({ path: `${outDir}/classes-build-${graphics}-preview.png` });
+  const before = await page.evaluate(() => window.stickSoldiers.state.game.map.builtCount);
+  await page.mouse.down();
+  await page.waitForTimeout(80);
+  await page.mouse.up();
+  await page.waitForFunction(n => window.stickSoldiers.state.game.map.builtCount > n, before, { timeout: 2000 }).catch(() => {});
+  const count = await page.evaluate(() => window.stickSoldiers.state.game.map.builtCount);
+  expect(count > before, `${graphics}: a click built a block (${before} -> ${count})`);
+  // Right click: a plank.
+  await page.mouse.down({ button: 'right' });
+  await page.waitForTimeout(80);
+  await page.mouse.up({ button: 'right' });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => window.stickSoldiers.state.me.buildPlank), `${graphics}: right click turns it into a plank`);
+  await page.waitForTimeout(150);
+  await page.screenshot({ path: `${outDir}/classes-build-${graphics}.png` });
+  built.push({ graphics, count, kind: ok?.kind });
+  // (Back to a wall, and the Builder put away.)
+  await page.mouse.down({ button: 'right' });
+  await page.waitForTimeout(80);
+  await page.mouse.up({ button: 'right' });
+  await page.keyboard.press('KeyG');
+  await page.waitForTimeout(100);
+}
+await page.evaluate(() => window.stickSoldiers.setGraphics('canvas'));
+await page.evaluate(() => { for (const o of window.stickSoldiers.state.game.soldiers) if (o.respawnTimer > 9999) o.respawnTimer = 30; });
 
 // 5. From the pause menu.
 await page.keyboard.press('Escape');
@@ -136,20 +195,18 @@ if (box) {
 }
 await page.screenshot({ path: `${outDir}/classes-dead.png` });
 
-// 7. The end of the match: an XP summary.
+// 7. The end of the match (no XP summary any more), and the class kept for next time.
 await page.evaluate(() => { const g = window.stickSoldiers.state.game; g.teamScore[1] = 999; g.checkWin(); });
-await page.waitForSelector('#xpSummary:not(.hidden)', { timeout: 5000 }).catch(() => {});
-const summary = await page.textContent('#xpSummary').catch(() => '');
-expect(/Match XP/.test(summary) && /Match completed/.test(summary) && /Kill/.test(summary), `summary shown (${summary})`);
-await page.screenshot({ path: `${outDir}/classes-summary.png` });
-p = await profile();
-expect(p.xp >= 2600 + 100 + 300, `XP saved (${p.xp})`);
+await page.waitForSelector('#over:not(.hidden)', { timeout: 5000 }).catch(() => {});
+expect(await visible('#over'), 'the match ends');
+expect(!(await page.$('#xpSummary')), 'no XP summary');
+await page.screenshot({ path: `${outDir}/classes-over.png` });
 await page.reload();
 await page.waitForFunction(() => window.stickSoldiers);
 const reloaded = await profile();
-expect(reloaded.xp === p.xp && reloaded.cls === 'support', `profile kept on reload (${reloaded.xp}, ${reloaded.cls})`);
+expect(reloaded.cls === 'support', `class kept on reload (${reloaded.cls})`);
 
-console.log(JSON.stringify({ defaults, beacon, after, summary: summary.slice(0, 200), xp: reloaded.xp, errors }, null, 2));
+console.log(JSON.stringify({ defaults, beacon, after, built, errors }, null, 2));
 await browser.close();
 server.close();
 await relay.close();

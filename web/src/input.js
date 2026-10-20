@@ -123,6 +123,10 @@ export class PlayerController {
     };
     this.prevJump = jump;
     this.prevFire = k.mouse.left;
+    // The Builder: right click turns the block (a wall or a plank).
+    if (k.mouse.right && !this.prevAlt && s.current === 'Builder' && s.alive) this.plank = !this.plank;
+    this.prevAlt = k.mouse.right;
+    inp.plank = !!this.plank;
 
     // Sprint (Shift): while held, or toggled on and off.
     const shift = k.down('ShiftLeft', 'ShiftRight');

@@ -16,7 +16,6 @@
 import { objectivesOf, spotsIn, inZone, mcomZone, touchesFlag, floorBelow, STAND } from './objectives.js';
 import { explode } from './combat.js';
 import { blastGadgets } from './gadgets.js';
-import { XP } from './progression.js';
 
 const SEC = 60;                // the game always updates 60 times a second
 const HILL_MOVES = 60 * SEC;   // king of the hill: the hill moves every minute (maps with several)
@@ -73,11 +72,9 @@ function news(game, team, good = 'objGood', bad = 'objBad') {
   game.sound(bad, null, null, -other(team));
 }
 
-/** Objective points for a soldier, and (classes on) XP for `why` (a reason in progression.js). */
-const award = (game, s, n, why) => {
-  if (!s) return;
-  s.points = (s.points || 0) + n;
-  game.xp(s, XP[why], why);
+/** Objective points for a soldier. */
+const award = (game, s, n) => {
+  if (s) s.points = (s.points || 0) + n;
 };
 
 /** The menu's goal: 0 picks the mode's own (tickets scaled to how many are playing). */
@@ -166,7 +163,7 @@ export function objectiveModes(base) {
       if (owner && ++st.acc >= SEC) {
         st.acc = 0;
         game.teamScore[owner]++;
-        for (const s of game.near(z.left, z.top, z.right, z.bottom)) if (s.alive && s.team === owner && inZone(s, z)) award(game, s, 1, 'hill');
+        for (const s of game.near(z.left, z.top, z.right, z.bottom)) if (s.alive && s.team === owner && inZone(s, z)) award(game, s, 1);
         game.checkWin();
       }
     },
@@ -232,7 +229,7 @@ export function objectiveModes(base) {
     take(game, f, s) {
       f.carrier = s.id;
       f.home = false;
-      award(game, s, 2, 'flagTake');
+      award(game, s, 2);
       game.addFeed({ text: `${s.name} took the ${TEAM_NAME[f.team].toLowerCase()} flag`, tick: game.tick });
       news(game, s.team, 'flagTaken', 'alarm');
       game.notify(s, 'You have the flag! Bring it back to your base');
@@ -253,7 +250,7 @@ export function objectiveModes(base) {
       const stand = objectivesOf(game.map, 'flag')[f.team - 1];
       Object.assign(f, { home: true, carrier: -1, timer: 0, vy: 0, x: stand.x, y: stand.y });
       if (by) {
-        award(game, by, 3, 'flagReturn');
+        award(game, by, 3);
         game.addFeed({ text: `${by.name} returned the ${TEAM_NAME[f.team].toLowerCase()} flag`, tick: game.tick });
       } else game.addFeed({ text: `The ${TEAM_NAME[f.team].toLowerCase()} flag went back to base`, tick: game.tick });
       news(game, f.team, 'flagReturned', 'flagReturned');
@@ -261,7 +258,7 @@ export function objectiveModes(base) {
 
     capture(game, f, c) {
       game.teamScore[c.team]++;
-      award(game, c, 10, 'flagCapture');
+      award(game, c, 10);
       game.addFeed({ text: `${c.name} captured the ${TEAM_NAME[f.team].toLowerCase()} flag!`, tick: game.tick });
       const stand = objectivesOf(game.map, 'flag')[f.team - 1];
       Object.assign(f, { home: true, carrier: -1, timer: 0, vy: 0, x: stand.x, y: stand.y });
@@ -272,7 +269,7 @@ export function objectiveModes(base) {
     onKill(game, victim, killer, weapon, opts) {
       const f = game.modeState.flags?.find(o => o.carrier === victim.id);
       if (!f) return;
-      if (killer && killer !== victim) { award(game, killer, 2, 'carrierKill'); game.notify(killer, 'You stopped the flag carrier'); }
+      if (killer && killer !== victim) { award(game, killer, 2); game.notify(killer, 'You stopped the flag carrier'); }
       f.x = victim.x;
       f.y = victim.y + STAND;
       this.drop(game, f, !!opts.fall);
@@ -353,7 +350,7 @@ export function objectiveModes(base) {
           game.addFeed({ text: `${TEAM_NAME[lost]} lost ${label}`, tick: game.tick });
           news(game, other(lost), 'pointLost', 'pointLost');
           tell(game, lost, `We've lost ${label}!`);
-          for (const s of game.near(z.left, z.top, z.right, z.bottom)) if (s.alive && s.team === other(lost) && inZone(s, z)) award(game, s, 2, 'neutralise');
+          for (const s of game.near(z.left, z.top, z.right, z.bottom)) if (s.alive && s.team === other(lost) && inZone(s, z)) award(game, s, 2);
         }
         const taker = p.v <= -1 ? 1 : p.v >= 1 ? 2 : 0;
         if (taker && p.own !== taker) {
@@ -361,7 +358,7 @@ export function objectiveModes(base) {
           game.addFeed({ text: `${TEAM_NAME[taker]} captured ${label}`, tick: game.tick });
           news(game, taker, 'pointTaken', 'objBad');
           tell(game, taker, `We've captured ${label}`);
-          for (const s of game.near(z.left, z.top, z.right, z.bottom)) if (s.alive && s.team === taker && inZone(s, z)) award(game, s, 5, 'capture');
+          for (const s of game.near(z.left, z.top, z.right, z.bottom)) if (s.alive && s.team === taker && inZone(s, z)) award(game, s, 5);
         }
       });
       // The team holding fewer points bleeds tickets.
@@ -494,7 +491,7 @@ export function objectiveModes(base) {
             if (o.p >= 1) {
               const by = game.soldiers.find(s => s.alive && s.team === 1 && inZone(s, mcomZone(m)));
               Object.assign(o, { s: 1, p: 0, fuse: FUSE, by: by ? by.id : -1 });
-              award(game, by, 5, 'arm');
+              award(game, by, 5);
               game.addFeed({ text: `${by ? by.name : 'Blue'} armed an M-COM!`, tick: game.tick });
               news(game, 1, 'armed', 'alarm');
               tell(game, 2, 'An M-COM has been armed! Disarm it');
@@ -507,7 +504,7 @@ export function objectiveModes(base) {
             if (o.p >= 1) {
               const by = game.soldiers.find(s => s.alive && s.team === 2 && inZone(s, mcomZone(m)));
               Object.assign(o, { s: 0, p: 0, fuse: 0, by: -1 });
-              award(game, by, 8, 'disarm');
+              award(game, by, 8);
               game.addFeed({ text: `${by ? by.name : 'Red'} disarmed the M-COM`, tick: game.tick });
               news(game, 2, 'disarmed', 'objBad');
               game.checkWin();
@@ -525,7 +522,7 @@ export function objectiveModes(base) {
         }
       });
       for (const { by } of blasts) {
-        award(game, by, 10, 'destroy');
+        award(game, by, 10);
         game.addFeed({ text: 'An M-COM was destroyed!', tick: game.tick });
         news(game, 1, 'destroyed', 'objBad');
       }

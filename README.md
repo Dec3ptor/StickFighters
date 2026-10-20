@@ -8,7 +8,7 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
 
 - **Online multiplayer**: quick match, a server browser, hosting your own game (public, or invite-link only), chat, and bots that fill empty slots and make room as people join. No game server: players connect directly to each other (see [Online play](#online-play)).
 - **Eight modes**: free-for-all, team deathmatch, **gun game** and **one in the chamber**, plus four objective modes for two teams: **king of the hill**, **capture the flag**, and Battlefield-style **Conquest** and **Rush**.
-- **Battlefield-style classes** (a match option, on by default in Conquest and Rush): **Assault**, **Engineer**, **Support** and **Recon**, each spawning with its own kit and a gadget on `G` (medkits, armour packs, ammo boxes, spawn beacons). Earn **XP** for kills, objectives and helping your team, rank up, unlock other main weapons for each class and upgrades for each weapon, and pick them on the **Loadout** screen (see [Classes and progression](#classes-and-progression)).
+- **Battlefield-style classes** (a match option, on by default in Conquest and Rush): **Assault**, **Engineer**, **Support** and **Recon**, each spawning with its own kit and a gadget on `G` (medkits, ammo boxes, spawn beacons, and the Engineer's **Builder**, which puts up walls and planks and repairs what explosions broke). Pick each class's main weapon and weapon upgrades on the **Loadout** screen (see [Classes](#classes)).
 - **35 weapons**: the original eight with their original numbers, plus Worms-style ones like sheep, the Holy Hand Grenade, air strikes and the ninja rope (full list below). **Supply crates** parachute in with random weapons.
 - **All 8 original maps**, decoded from the original game's files: Fire in the Hole, Habitat, King of the Hill, Fraghouse, Sniping Grounds, Fatality Zone, Hells Steeple and Two Towers.
 - **10 new maps**, from small to huge:
@@ -89,38 +89,39 @@ Air strikes, napalm, the donkey and teleports go where your mouse is. Weapons ar
 | Switch weapon | `1`–`0`, melee `F` (press again to cycle), `Q` / `E`, or mouse wheel |
 | Ninja rope | click to fire, `W` / `S` to climb, `A` / `D` to swing, click again to let go |
 | Self-destruct | hold `K` for a second (the way out of a pit you can't climb out of; counts as a suicide) |
-| Gadget (classes on) | `G`: drop a medkit, armour pack or ammo box, or place a spawn beacon |
+| Gadget (classes on) | `G`: drop a medkit or ammo box, place a spawn beacon, or take out the Engineer's Builder (`G` again puts it away) |
+| Builder (Engineer) | click to put up a wall, or repair what explosions broke; right click switches between a wall and a plank |
 | Change class (classes on) | `C` (or click the class box) while waiting to respawn, then `1`–`4` or click a class; or **Change class** in the menu (`Esc`). It applies when you next spawn |
 | Chat (online) | `Enter` or `T` |
 | Scores / menu / mute | `Tab` / `Esc` / `M` |
 
 During a match the browser's own `Ctrl` shortcuts (bookmark, save, select all...) are blocked, so holding `Ctrl` to crouch never opens one, and closing or leaving the page asks first.
 
-## Classes and progression
+## Classes
 
 **Classes** is a match option in the game setup: **Off** is the classic game (weapons from pickups and crates), **On** gives everyone a class. It starts on for Conquest and Rush and off for the other modes (your choice is remembered for each mode), and isn't offered in gun game or one in the chamber, which hand out their own weapons. Online, the host's choice applies to everyone. With classes on, the map's weapons aren't there (health, armour and jetpacks are), supply crates still drop, and the dead still drop the weapon in their hands.
 
-| Class | Kit | Gadget (`G`) | Unlocks (class rank 1 / 3) |
+| Class | Kit | Gadget (`G`) | Other main weapons |
 |---|---|---|---|
 | Assault | M4 (120 rounds), Grenade Launcher ×2 | **Medkit**: 60 health for you or a teammate | Shotgun / Uzi |
-| Engineer | Bazooka ×3, Uzi (150), Mines ×2 | **Armour pack**: 50 armour for you or a teammate | Homing Missile / Mortar (instead of the bazooka) |
+| Engineer | Bazooka ×3, Uzi (150), Mines ×2 | **Builder**: walls, planks and repairs (below) | Homing Missile / Mortar (instead of the bazooka) |
 | Support | Shotgun (16), Dynamite ×2 | **Ammo box**: half a kit's ammo back for you or a teammate | Minigun / Flamethrower |
 | Recon | Sniper Rifle (15) | **Spawn beacon**: you and your team can spawn on it | Longbow / Magic Bullet |
 
-Everyone also has the pistol and the prod. Medkits, armour packs and ammo boxes drop at your feet, only your team can take them (one each lying around at a time, for 40 seconds), and they recharge in 20 seconds. A spawn beacon goes where you stand (it drops to the floor if you're in the air); it becomes your spawn choice, and your team can pick it too, with the number keys while waiting to respawn (Conquest's points are still there; the beacons come after them). Enemies destroy it by shooting it (60 health) or blowing it up; if one's right next to it, you spawn at base instead. Your old beacon goes when you place a new one or respawn as another class.
+Everyone also has the pistol and the prod. Medkits and ammo boxes drop at your feet, only your team can take them (one each lying around at a time, for 40 seconds), and they recharge in 20 seconds. A spawn beacon goes where you stand (it drops to the floor if you're in the air); it becomes your spawn choice, and your team can pick it too, with the number keys while waiting to respawn (Conquest's points are still there; the beacons come after them). Enemies destroy it by shooting it (60 health) or blowing it up; if one's right next to it, you spawn at base instead. Your old beacon goes when you place a new one or respawn as another class.
 
-Pick your class in the setup, with `C` while waiting to respawn (your respawn waits while you choose, for up to 15 seconds), or from the menu (`Esc`). Bots pick a class to suit their personality while spreading out over their team, and use their gadgets: medkits when they or a teammate nearby is hurt, armour packs, ammo when they're low, and beacons near the objectives.
+Pick your class in the setup, with `C` while waiting to respawn (your respawn waits while you choose, for up to 15 seconds), or from the menu (`Esc`). Bots pick a class to suit their personality while spreading out over their team, and use their gadgets: medkits when they or a teammate nearby is hurt, ammo when they're low, and beacons near the objectives (they don't build).
 
-**Upgrades.** Each kit weapon can carry one upgrade, unlocked by kills with that weapon:
+**The Builder.** `G` takes it out (or `0`), and a green outline shows what a click will do (red: it can't, and why if you click). On a destructible map, aiming where an explosion broke the map repairs it: what was there at the start comes back in a 64 px square around where you aim, leaving room for anyone standing in it. Anywhere else, a click puts up a **wall** (12 × 40, standing on the floor below where you aim: cover for a soldier) or, after a right click, a **plank** (64 × 10: a step up, a ledge, a bridge over a hole). It reaches 150 px, not through walls, and a block that would overlap the map fits around it. Not inside anyone, nor next to a spawn point (or, in capture the flag and rush, a flag or M-COM), so nobody can be walled in. Each click uses one of six blocks; one comes back every 5 seconds or so, and ammo boxes give half of them back. Built blocks look like sandbags, and explosions break them even on maps that don't otherwise break.
 
-| Weapons | Upgrades (kills to unlock) |
+**Upgrades.** Each kit weapon can carry one upgrade:
+
+| Weapons | Upgrades |
 |---|---|
-| Guns | **Steady grip** (5): 40% less spread · **Extended mag** (15): 50% more ammo and a bigger pistol magazine (12) · **Hollow points** (30): 25% more damage, 30% less range · **Quick hands** (50): 20% less time between shots and reloading. (Guns without spread skip steady grip, and the flamethrower hollow points: the rest move up.) |
-| Explosives | **Bigger charge** (3): 30% bigger blast · **Extra round** (10): one more |
+| Guns | **Steady grip**: 40% less spread · **Extended mag**: 50% more ammo and a bigger pistol magazine (12) · **Hollow points**: 25% more damage, 30% less range · **Quick hands**: 20% less time between shots and reloading. (Guns without spread can't take steady grip, nor the flamethrower hollow points.) |
+| Explosives | **Bigger charge**: 30% bigger blast · **Extra round**: one more |
 
-**XP and ranks.** In matches with classes on you earn XP, shown as it comes ("+100 Kill"): kill 100 (headshot +50); capture a point 250 (neutralise 100); take a flag 100, return it 150, capture it 500, stop a carrier 100; arm an M-COM 250, disarm 300, destroy 400; 10 a second on the hill; 25 when a teammate takes your medkit, armour pack or ammo box, 30 when one spawns on your beacon, 50 for destroying an enemy beacon; 300 for finishing a match and 500 more for winning. Your total XP gives your rank (Recruit to General, 23 ranks: the first takes 1,000 XP, and each one after takes 500 more than the last); XP earned as a class gives that class's rank (1,500 / 4,000 / 8,000 / 14,000 / 22,000 XP), and ranks 1 and 3 unlock its other main weapons. At the end of a match, a summary shows the XP by reason, your rank and class ranks, and anything newly unlocked.
-
-The **Loadout** screen (main menu, or *Weapons and upgrades…* in the class picker) shows your rank and each class's rank, what unlocks next, and lets you pick each class's main weapon and an upgrade for each of its weapons. Progress is saved in your browser (`localStorage`, apart from the settings), as it's earned, so leaving a match early keeps it. Bots don't progress: they play random kits.
+The **Loadout** screen (main menu, or *Weapons and upgrades…* in the class picker) lets you pick each class's main weapon and an upgrade for each of its weapons, all available from the start. Your choices are saved in your browser (`localStorage`, apart from the settings). Bots play random kits.
 
 ## Online play
 
@@ -135,7 +136,7 @@ How it works, with no game server:
 - **Limits.** If the host leaves, the game ends for everyone. A few networks (some mobile and office networks) block direct connections; joining then fails with a message saying so. Fixing that would need a TURN relay server, which you can add to `ICE_SERVERS` in `relays.js`.
 - **Hosting in the background works.** When the host switches tabs, a worker keeps the game running.
 - **Ping.** Each player measures their round trip to the host every 2 seconds and tells the host, which shares everyone's for the scoreboard.
-- **Classes and XP.** Each player's browser sends the host their class and loadouts (when they join and when they change them); the host checks they make sense and uses them from the player's next spawn. The host works out everyone's XP (it knows what happened) and sends each player only their own, along with their messages; each player's browser adds it to their own profile.
+- **Classes and building.** Each player's browser sends the host their class and loadouts (when they join and when they change them); the host checks they make sense and uses them from the player's next spawn. Engineers build on the host, and new blocks go out with the holes, in one list of changes to the map in order, so everyone ends up with the same map (players who join later get the whole list).
 
 ## Map maker
 
@@ -167,7 +168,7 @@ npm test             # game logic: physics, bots, weapons, modes, netcode, lobby
 npx playwright install chromium
 npm run test:browser # in Chromium: plays matches, uses the map maker, checks WebGL draws the same as the canvas,
                      # checks smooth drawing above 60 fps, the settings screen, classes (the Loadout screen, the class
-                     # picker, the XP summary), and plays online between three browsers
+                     # picker, building in both renderers), and plays online between three browsers
 ```
 
 There's no build step: the game is plain JavaScript modules in `web/`, and the browser loads them directly. Two libraries are copied into `web/vendor/`: [PixiJS](https://pixijs.com/) 8.22 (`pixi.min.js`, MIT licence), for WebGL drawing, and [noble-secp256k1](https://github.com/paulmillr/noble-secp256k1), for signing relay messages. PixiJS is only downloaded on computers that draw with WebGL.
@@ -188,8 +189,9 @@ GitHub Pages has to be switched on once: **Settings → Pages → Build and depl
 | `web/src/objmodes.js`, `objectives.js`, `objdraw.js` | The objective modes (king of the hill, capture the flag, conquest, rush); where their objectives are (or worked out from a map's layout); drawing them, their HUD and the minimap |
 | `web/src/physics.js` | Movement, collision and the ninja rope, shared by players, bots and the bots' route planner |
 | `web/src/combat.js`, `weapons.js` | Firing, projectiles, payloads, explosions, damage; weapon data |
-| `web/src/classes.js`, `gadgets.js` | Classes, kits and weapon upgrades; gadgets (medkits, armour packs, ammo boxes, spawn beacons) |
-| `web/src/progression.js`, `loadout.js` | XP, ranks, unlocks and the saved profile; the Loadout screen, class picker and XP summary |
+| `web/src/classes.js`, `gadgets.js` | Classes, kits and weapon upgrades; gadgets (medkits, ammo boxes, spawn beacons, the Builder) |
+| `web/src/building.js` | The Engineer's Builder: walls, planks and repairs |
+| `web/src/kitchoice.js`, `loadout.js` | The class and loadouts you play with (saved in the browser); the Loadout screen and class picker |
 | `web/src/pickups.js` | Items on the map, dropped weapons, supply crates |
 | `web/src/nav.js`, `bot.js` | Bot route planning and bot behaviour |
 | `web/src/grid.js` | Where the soldiers are, by area, for big battles |
@@ -221,7 +223,7 @@ GitHub Pages has to be switched on once: **Settings → Pages → Build and depl
 - **WebGL.** All drawing code is written for the browser's 2D canvas. `glctx.js` takes the same drawing calls and turns them into PixiJS shapes and cached text, in the same order, so the WebGL renderer reuses every drawing (soldiers, weapons, animals, the HUD) unchanged. The map is built once, and blood and most particles are sprites, as they're the most numerous. A browser test draws the same frames both ways and checks they match. Computers without a graphics card run WebGL on the processor, which is slower than the canvas, so those get the canvas.
 - **Objective modes.** Everything a mode tracks (flags, capture progress, M-COM fuses) is plain data in `game.modeState`, which the host sends in every snapshot, so players see the same thing without any extra messages. Bots ask the mode where they should be (a hill, a flag, the point they've picked, an M-COM), then go there and hold it: they move about inside the area and fight from there, and on the way they sometimes stop to fight. Roles come from each bot's id, so some defend and some attack, and they spread over several objectives instead of crowding one. Rush defenders guard an M-COM from a few steps away rather than standing on it, so it can still be armed.
 - **Classes.** Kits replace the mode's loadout at spawn (`applyKit`), so with classes off nothing changes. Weapon upgrades never touch the weapon definitions: `weaponFor(s, id)` gives a view of the weapon with the soldier's upgrade applied (a bigger magazine, a scaled blast...), which firing, reloading, pickups and the HUD use; it reads through to the real numbers, so it follows the game speed. Gadget timers are written like weapon numbers, in updates at full speed, and stretched by the game speed (a 15 s recharge is 20 s at 75%). Spawn beacons are plain data in `game.beacons`, sent in snapshots; shots and blasts reach them through small calls next to the hit checks and `explode()`, which is left as it is.
-- **Progression.** XP only counts in matches with classes on, so the classic game plays as it always has. Awards are worked out by the game (`game.xp`) on the host or offline, then added to the player's profile by their own browser. Unlocks live in each player's browser, so the host can only check that a loadout makes sense, not that it was earned: fine among friends, but a cheater could claim every unlock.
+- **Building.** Built blocks are ordinary map boxes, marked as built (drawn as sandbags, and breakable on any map). Repairs fill in what's missing of the map as it was at the start (a copy is kept) around where you aim, less whatever's there now and anyone standing there; repaired blocks are plain map again. Each new block patches the bots' route map just as a hole does, and online it goes in the same ordered list as the holes, so block numbers line up for everyone. Bots walk on, around and over built blocks but don't build themselves.
 - **Same game everywhere.** Offline, hosting and joining all run the same `Game` code. The host records every sound and effect as it happens and sends them on, and players draw trails (rocket smoke, jetpack flames) themselves, from what's in the snapshots.
 
 ## Ideas for what's next

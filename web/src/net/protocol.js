@@ -4,12 +4,12 @@
 //   player -> host: inputs, 60 a second (each packet repeats the last few, in case one is lost)
 //   host -> player: snapshots, 20 a second: every soldier, projectile and pickup
 // Reliable channel (JSON): joining, the roster, sounds and effects, kill feed, chat,
-// XP (host -> the player it's for) and class and loadout choices (player -> host).
+// and class and loadout choices (player -> host).
 
 import { WEAPONS } from '../weapons.js';
 import { CLASS_IDS, UPGRADE_IDS } from '../classes.js';
 
-export const PROTOCOL = 9;            // bump when the messages change; older versions can't join
+export const PROTOCOL = 10;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -17,7 +17,7 @@ const WEAPON_INDEX = new Map(WEAPON_IDS.map((id, i) => [id, i]));
 const KINDS = ['bullet', 'rail', 'arrow', 'seeker', 'thrown', 'rocket', 'flame', 'fire', 'gas', 'walker', 'flyer', 'placed', 'donkey'];
 const SPRITES = ['', 'bullet', 'slug', 'arrow', 'magic', 'grenade', 'bomblet', 'cluster', 'banana', 'holy', 'petrol', 'napalm', 'skunk',
   'rocket', 'homing', 'mortar', 'bomb', 'flame', 'fire', 'gas', 'sheep', 'supersheep', 'oldwoman', 'cow', 'dynamite', 'mine', 'donkey'];
-const ITEM_TYPES = ['health', 'armour', 'jetpack', 'weapon', 'crate', 'medkit', 'repair', 'ammo'];
+const ITEM_TYPES = ['health', 'armour', 'jetpack', 'weapon', 'crate', 'medkit', 'ammo'];
 
 export const weaponIndex = id => WEAPON_INDEX.get(id) ?? 255;
 export const weaponAt = i => WEAPON_IDS[i] || null;
@@ -76,7 +76,7 @@ export const messageType = data => (data instanceof Uint8Array ? data : new Uint
 
 // ---- Inputs ----------------------------------------------------------------------------
 
-/** A player's inputs: the newest last. Each is { seq, move, jump, jumpPressed, crouch, jet, fire, firePressed, alt, selfDestruct, sprint, gadget, aim, aimDist, switchTo, cycle }. */
+/** A player's inputs: the newest last. Each is { seq, move, jump, jumpPressed, crouch, jet, fire, firePressed, alt, selfDestruct, sprint, gadget, plank, aim, aimDist, switchTo, cycle }. */
 export function encodeInputs(inputs) {
   const w = new Writer(16 + inputs.length * 13);
   w.u8(MSG.input);
@@ -85,7 +85,7 @@ export function encodeInputs(inputs) {
   for (const i of inputs) {
     w.i8(Math.round((i.move || 0) * 100));
     w.u8((i.jump ? 1 : 0) | (i.jumpPressed ? 2 : 0) | (i.crouch ? 4 : 0) | (i.jet ? 8 : 0) | (i.fire ? 16 : 0) | (i.firePressed ? 32 : 0) | (i.alt ? 64 : 0) | (i.selfDestruct ? 128 : 0));
-    w.u8((i.sprint ? 1 : 0) | (i.gadget ? 2 : 0));
+    w.u8((i.sprint ? 1 : 0) | (i.gadget ? 2 : 0) | (i.plank ? 4 : 0));
     w.u16(angleToU16(i.aim ?? 0));
     w.u16(clampU16(i.aimDist ?? 200));
     w.u8(i.switchTo ? weaponIndex(i.switchTo) + 1 : 0);
@@ -109,7 +109,7 @@ export function decodeInputs(data) {
     const cycle = Math.sign(r.i8());
     out.push({
       seq: last - (n - 1 - k), move, jump: !!(f & 1), jumpPressed: !!(f & 2), crouch: !!(f & 4), jet: !!(f & 8),
-      fire: !!(f & 16), firePressed: !!(f & 32), alt: !!(f & 64), selfDestruct: !!(f & 128), sprint: !!(f2 & 1), gadget: !!(f2 & 2), aim, aimDist,
+      fire: !!(f & 16), firePressed: !!(f & 32), alt: !!(f & 64), selfDestruct: !!(f & 128), sprint: !!(f2 & 1), gadget: !!(f2 & 2), plank: !!(f2 & 4), aim, aimDist,
       switchTo: sw ? weaponAt(sw - 1) : null, cycle: cycle || 0,
     });
   }

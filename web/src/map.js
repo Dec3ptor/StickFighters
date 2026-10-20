@@ -17,7 +17,11 @@ export class GameMap {
       id: i, l: p.left, t: p.top, r: p.right, b: p.bottom, bounce: p.bounce || 0, hard: !!(p.hard || p.bounce),
     }));
     this.nextId = this.solids.length;
-    this.version = 0; // goes up whenever blocks change (destruction)
+    this.version = 0; // goes up whenever blocks change (destruction, building)
+    // The map as it was (what the Engineer's Builder can repair), and whether any of it is gone.
+    this.original = this.solids.filter(s => !s.bounce).map(s => ({ l: s.l, t: s.t, r: s.r, b: s.b }));
+    this.changed = false;
+    this.builtCount = 0; // blocks soldiers have built (explosions break these even on maps that don't break)
     this.spawns = data.spawns.map(s => (s.sector ? { x: s.x, y: s.y, team: s.team, sector: s.sector } : { x: s.x, y: s.y, team: s.team }));
     this.items = data.items.map(it => ({ type: it.type, weapon: it.weapon || null, x: it.x, y: it.y }));
     // What everyone spawns with on this map (custom maps): { weapons: [ids], armour, jetpack }.
@@ -67,12 +71,12 @@ export class GameMap {
 
   /**
    * Blow a roughly round hole, radius r, at (x, y) through every block that isn't
-   * hard. Each block hit is replaced by the boxes left around the hole. Returns the
-   * area that changed ({ l, t, r, b }), or null if there was nothing to break.
-   * Integer arguments give exactly the same result everywhere (online players
-   * repeat the host's holes).
+   * hard (builtOnly: only through built blocks). Each block hit is replaced by the
+   * boxes left around the hole. Returns the area that changed ({ l, t, r, b }), or
+   * null if there was nothing to break. Integer arguments give exactly the same
+   * result everywhere (online players repeat the host's holes).
    */
-  carve(x, y, r) {
+  carve(x, y, r, builtOnly = false) {
     if (r < 2 || this.solids.length > MAX_SOLIDS) return null;
     // A rounded hole: a wide box, a tall box and a square between them.
     const k = Math.round(r * 0.42), m = Math.round(r * 0.74);
@@ -83,7 +87,7 @@ export class GameMap {
     ];
     const hit = [];
     this.query(x - r, y - r, x + r, y + r, s => {
-      if (!s.hard && holes.some(h => s.l < h.r && s.r > h.l && s.t < h.b && s.b > h.t)) hit.push(s);
+      if (!s.hard && (!builtOnly || s.built) && holes.some(h => s.l < h.r && s.r > h.l && s.t < h.b && s.b > h.t)) hit.push(s);
       return false;
     });
     if (!hit.length) return null;
@@ -94,17 +98,32 @@ export class GameMap {
       let pieces = [s];
       for (const h of holes) pieces = pieces.flatMap(p => subtractBox(p, snapHole(p, h)));
       this._remove(s);
+      if (s.built) this.builtCount--;
       for (const p of pieces) {
         // (Bits left too small to matter are swept away; snapHole keeps them small.)
         if (p.r - p.l < MIN_PIECE || p.b - p.t < MIN_PIECE) continue;
-        this._add({ id: this.nextId++, l: p.l, t: p.t, r: p.r, b: p.b, bounce: 0, hard: false });
+        this._add({ id: this.nextId++, l: p.l, t: p.t, r: p.r, b: p.b, bounce: 0, hard: false, built: !!s.built });
+        if (s.built) this.builtCount++;
       }
       area = area ? { l: Math.min(area.l, s.l), t: Math.min(area.t, s.t), r: Math.max(area.r, s.r), b: Math.max(area.b, s.b) }
         : { l: s.l, t: s.t, r: s.r, b: s.b };
     }
     this.version++;
+    this.changed = true;
     const e = r + MIN_PIECE;
     return { l: Math.max(area.l, x - e), t: Math.max(area.t, y - e), r: Math.min(area.r, x + e), b: Math.min(area.b, y + e) };
+  }
+
+  /**
+   * A new block (the Engineer's Builder): `built` if it's new, rather than a repair
+   * to the map as it was. Returns its area, or null if the map is too full to take it.
+   */
+  add(l, t, r, b, built = false) {
+    if (!(r > l && b > t) || this.solids.length > MAX_SOLIDS) return null;
+    this._add({ id: this.nextId++, l, t, r, b, bounce: 0, hard: false, built: !!built });
+    if (built) this.builtCount++;
+    this.version++;
+    return { l, t, r, b };
   }
 
   /** Where blocks just meet (see seamsOf), worked out again when they change. */
@@ -261,6 +280,23 @@ export function hatch(l, t, r, b, gap, line) {
     // Where the line x = y + c enters and leaves the box.
     const y0 = Math.max(t, l - c), y1 = Math.min(b, r - c);
     if (y1 - y0 > 0.5) line(y0 + c, y0, y1 + c, y1);
+  }
+}
+
+/**
+ * Built blocks (the Engineer's Builder) are drawn as rows of sandbags: lines across
+ * the box `gap` apart, with joins staggered from row to row. Calls line(x0, y0, x1, y1).
+ */
+export function courses(l, t, r, b, gap, line) {
+  const wide = r - l >= b - t;
+  if (wide) {
+    for (let y = t + gap; y < b - 1; y += gap) line(l, y, r, y);
+    let row = 0;
+    for (let y = t; y < b - 1; y += gap, row++) {
+      for (let x = l + (row % 2 ? gap : gap * 2); x < r - 2; x += gap * 3) line(x, y, x, Math.min(b, y + gap));
+    }
+  } else {
+    for (let y = t + gap; y < b - 1; y += gap) line(l, y, r, y);
   }
 }
 
