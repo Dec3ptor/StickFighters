@@ -148,3 +148,54 @@ test('bot matches on destructible maps: holes get blown and everything keeps wor
     assert.ok(game.soldiers.every(s => Number.isFinite(s.x) && Number.isFinite(s.y)));
   }
 });
+
+test("a hole's route map patch is spread over several updates (a few spots each), and ends up as one done all at once", () => {
+  setGameSpeed(DEFAULT_SPEED);
+  const data = loadMap('frontline.json');
+  const game = new Game({ mapData: data, mode: 'team', effects: false, seed: 2, speed: DEFAULT_SPEED, options: { destruction: true } });
+  game.useNav(new NavGraph(new GameMap(data)));
+  const nav = game.nav;
+  let relinked = 0;
+  const link = nav._linkNode.bind(nav);
+  nav._linkNode = (...a) => { relinked++; return link(...a); };
+  const breakable = game.map.solids.filter(s => !s.hard && s.r - s.l > 100);
+  const s = breakable[3];
+  game.carve(Math.round((s.l + s.r) / 2), s.t, 30);
+  let most = 0, updates = 0;
+  for (let i = 0; i < 400 && (game.navDirty || game.navJob || !updates); i++) {
+    relinked = 0;
+    game.update();
+    if (game.navJob || relinked) updates++;
+    most = Math.max(most, relinked);
+  }
+  assert.ok(!game.navDirty && !game.navJob, 'finished');
+  assert.ok(most <= 6, `at most 6 spots in one update (${most})`);
+  assert.ok(updates > 1, `spread over ${updates} updates`);
+  // The same as patching it all at once.
+  const map2 = new GameMap(data), all = new NavGraph(map2);
+  all.patch(map2.carve(Math.round((s.l + s.r) / 2), s.t, 30));
+  const sig = g => g.nodes.map(a => `${a.x.toFixed(3)},${a.y}:` + a.links.map(l => `${l.type}>${l.to.id}@${l.cost.toFixed(4)}`).join('|')).join('\n');
+  assert.equal(sig(nav), sig(all));
+});
+
+test('patching only re-simulates the jumps and drops that went near the change, with the same result as redoing them all', () => {
+  setGameSpeed(DEFAULT_SPEED);
+  const sig = g => g.nodes.map(a => `${a.x.toFixed(3)},${a.y}:` + a.links.map(l => `${l.type}>${l.to.id}@${l.cost.toFixed(4)}`).join('|')).join('\n');
+  for (const file of ['ssteam1.json', 'citadel.json']) {
+    const m1 = new GameMap(loadMap(file)), m2 = new GameMap(loadMap(file));
+    const quick = new NavGraph(m1), full = new NavGraph(m2);
+    const rng = makeRng(17);
+    for (let i = 0; i < 8; i++) {
+      const breakable = m1.solids.filter(s => !s.hard);
+      const s = breakable[Math.floor(rng() * breakable.length)];
+      const x = Math.round(s.l + rng() * (s.r - s.l)), y = Math.round(s.t + rng() * (s.b - s.t)), r = 20 + Math.floor(rng() * 30);
+      const a1 = i % 3 === 2 ? m1.add(x - 6, s.t - 40, x + 6, s.t, true) : m1.carve(x, y, r);
+      const a2 = i % 3 === 2 ? m2.add(x - 6, s.t - 40, x + 6, s.t, true) : m2.carve(x, y, r);
+      if (!a1) continue;
+      quick.patch(a1);
+      for (const n of full.nodes) n.tries = null; // (nothing remembered: every try simulated again)
+      full.patch(a2);
+      assert.equal(sig(quick), sig(full), `${file}, change ${i}`);
+    }
+  }
+});

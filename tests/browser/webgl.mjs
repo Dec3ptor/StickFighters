@@ -89,7 +89,41 @@ await page.waitForFunction(() => !window.stickSoldiers.state.game);
 await page.waitForTimeout(300);
 expect(await page.evaluate(() => window.stickSoldiers.renderer.blank), 'menu shows a blank page');
 
-console.log(JSON.stringify({ results, size, errors }, null, 2));
+// 6. The canvas with the map kept in tiles (what computers with a graphics card get; this
+// test browser has none, so ?tiles=on asks for it): the same picture as drawing the map
+// directly, after holes are blown (tiles drawn again where the map changed).
+const tiled = await open('&tiles=on');
+await play(tiled, 'frontline.json', 'team');
+const tiles = await tiled.evaluate(() => {
+  const { state, renderer: r } = window.stickSoldiers, g = state.game, me = state.me;
+  for (let i = 0; i < 4; i++) g.carve(me.x + 60 * i - 90, me.y + 14, 22);
+  state.paused = true;
+  const now = Date.now(), random = Math.random;
+  Date.now = () => now; // (jump pads' chevrons move with the clock, and jetpack flames flicker at random)
+  const grab = () => {
+    let seed = 7;
+    Math.random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    r.shake = 0;
+    r.render(g, 1, me);
+    return r.ctx.getImageData(0, 0, r.canvas.width, r.canvas.height).data;
+  };
+  for (let i = 0; i < 6; i++) grab();
+  const a = grab(), made = r.mapTiles?.tiles.size || 0;
+  const draw = r.mapTiles.draw;
+  r.mapTiles.draw = () => false;
+  const b = grab();
+  r.mapTiles.draw = draw;
+  Math.random = random;
+  let worst = 0;
+  for (let i = 0; i < a.length; i++) worst = Math.max(worst, Math.abs(a[i] - b[i]));
+  return { made, worst };
+});
+expect(tiles.made > 0, 'the map is kept in tiles with ?tiles=on');
+expect(tiles.worst <= 24, `tiles draw the same map as drawing it directly (worst pixel off by ${tiles.worst})`);
+await tiled.screenshot({ path: `${outDir}/canvas-tiles.png` });
+await tiled.close();
+
+console.log(JSON.stringify({ results, size, tiles, errors }, null, 2));
 await browser.close();
 server.close();
 await relay.close();

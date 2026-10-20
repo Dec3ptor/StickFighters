@@ -22,6 +22,10 @@ export class GameMap {
     this.original = this.solids.filter(s => !s.bounce).map(s => ({ l: s.l, t: s.t, r: s.r, b: s.b }));
     this.changed = false;
     this.builtCount = 0; // blocks soldiers have built (explosions break these even on maps that don't break)
+    // Where blocks changed, most recent last (for redrawing just those parts): editCount in all,
+    // the last few in edits.
+    this.edits = [];
+    this.editCount = 0;
     this.spawns = data.spawns.map(s => (s.sector ? { x: s.x, y: s.y, team: s.team, sector: s.sector } : { x: s.x, y: s.y, team: s.team }));
     this.items = data.items.map(it => ({ type: it.type, weapon: it.weapon || null, x: it.x, y: it.y }));
     // What everyone spawns with on this map (custom maps): { weapons: [ids], armour, jetpack }.
@@ -111,7 +115,9 @@ export class GameMap {
     this.version++;
     this.changed = true;
     const e = r + MIN_PIECE;
-    return { l: Math.max(area.l, x - e), t: Math.max(area.t, y - e), r: Math.min(area.r, x + e), b: Math.min(area.b, y + e) };
+    const changed = { l: Math.max(area.l, x - e), t: Math.max(area.t, y - e), r: Math.min(area.r, x + e), b: Math.min(area.b, y + e) };
+    this._edited(changed);
+    return changed;
   }
 
   /**
@@ -123,7 +129,14 @@ export class GameMap {
     this._add({ id: this.nextId++, l, t, r, b, bounce: 0, hard: false, built: !!built });
     if (built) this.builtCount++;
     this.version++;
+    this._edited({ l, t, r, b });
     return { l, t, r, b };
+  }
+
+  _edited(area) {
+    this.edits.push(area);
+    this.editCount++;
+    if (this.edits.length > 64) this.edits.shift();
   }
 
   /** Where blocks just meet (see seamsOf), worked out again when they change. */

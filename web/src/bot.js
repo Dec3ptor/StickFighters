@@ -98,6 +98,8 @@ const FAIL_COST = 45, MAX_PENALTY = 270;
 const RACE_MARGIN = 15, NEAR_ITEM = 90;
 // A bot that gives way on an item leaves it alone this long (4 seconds).
 const YIELD_TICKS = 240;
+// When the route map changes, bots plan again over this many updates (a few at a time).
+const REPLAN_SPREAD = 30;
 // Bots sprint when at least this many steps of straight walking lie ahead (about 100 px).
 const SPRINT_RUN = 8;
 
@@ -170,14 +172,13 @@ export class BotController {
     this.unstuck = (this.unstuck || 0) + 1;
   }
 
-  /** The route map changed (destructible maps): plan again from scratch (spots are numbered afresh). */
+  /**
+   * The route map changed (holes, building): plan again soon. Bots take turns over a
+   * few updates (planning is the costly part), carrying on along their old route
+   * meanwhile; it's still a route through real places, numbered as they were.
+   */
   navChanged(game, s) {
-    this.path = null;
-    this.li = 0;
-    this.offGraph = null;
-    this.lastNode = null;
-    this.history = [];
-    this.thinkIn = Math.min(this.thinkIn, 2);
+    this.thinkIn = Math.min(this.thinkIn, 1 + (s.id % REPLAN_SPREAD));
   }
 
   onSpawn(game, s) {

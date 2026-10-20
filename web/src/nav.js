@@ -9,6 +9,8 @@ import { BODY, PHYS, MOTION } from './config.js';
 import { makeBody, stepBody } from './physics.js';
 
 const NODE_STEP = 12;
+// A remembered jump or drop is tried again when blocks change this close to where it went.
+const TRY_MARGIN = 10;
 const NODE_CELL = 64; // grid cells for finding the nearest node
 const MAX_SIM = 320;
 // What a jump costs on top of the time it takes (in updates at full speed). A jump
@@ -102,6 +104,7 @@ export class NavGraph {
   }
 
   _addNode(n) {
+    this._flatLinks = null;
     this.nodes.push(n);
     const k = Math.round(n.y);
     if (!this.rows.has(k)) this.rows.set(k, []);
@@ -211,8 +214,11 @@ export class NavGraph {
    * Work out the moves from spot a: walking to its neighbours, then every jump
    * and drop. a.reach: a box around everywhere those moves went (so after blocks
    * change, only spots whose moves went near the change need doing again).
+   * Each jump and drop tried is remembered in a.tries (where the body went, and
+   * where it landed): given the `area` that changed, only the tries that went
+   * near it are simulated again, and the rest come out as they did before.
    */
-  _linkNode(a) {
+  _linkNode(a, area = null) {
     a.links = [];
     const reach = a.reach = { l: a.x - NODE_STEP - 6, t: a.y - 4, r: a.x + NODE_STEP + 6, b: a.y + 4 };
     // Walking between neighbouring spots.
@@ -228,31 +234,65 @@ export class NavGraph {
     }
     const walkL = a.links.some(l => l.type === 'walk' && l.dir < 0);
     const walkR = a.links.some(l => l.type === 'walk' && l.dir > 0);
-    for (const j of this.jumps) {
-      const r = this._simulate(a, t => ({ move: jumpSteer(j, t), jump: true, jumpPressed: t === 0 }), reach);
+    const old = area && a.tries, tries = a.tries = new Array(this.jumps.length + this.drops.length).fill(null);
+    // (A try is simulated again if the body went near the change, or where it landed is gone.)
+    const m = TRY_MARGIN;
+    const stale = tr => !tr || tr.box.l - BODY.halfW - m < area.r && tr.box.r + BODY.halfW + m > area.l &&
+      tr.box.t + BODY.top - m < area.b && tr.box.b + BODY.bottom + m > area.t || (tr.res && this.nodes[tr.res.node.id] !== tr.res.node);
+    const attempt = (i, inputAt) => {
+      let tr = old && old[i];
+      if (!old || stale(tr)) {
+        const box = { l: a.x, t: a.y, r: a.x, b: a.y };
+        tr = { box, res: this._simulate(a, inputAt, box) };
+      }
+      tries[i] = tr;
+      if (tr.box.l < reach.l) reach.l = tr.box.l;
+      if (tr.box.r > reach.r) reach.r = tr.box.r;
+      if (tr.box.t < reach.t) reach.t = tr.box.t;
+      if (tr.box.b > reach.b) reach.b = tr.box.b;
+      return tr.res;
+    };
+    this.jumps.forEach((j, i) => {
+      const r = attempt(i, t => ({ move: jumpSteer(j, t), jump: true, jumpPressed: t === 0 }));
       if (r) this._addLink(a, r.node, { type: 'jump', move: j, cost: r.ticks + JUMP_COST / this.timeScale });
-    }
-    for (const d of this.drops) {
-      if ((d.dir < 0 && walkL) || (d.dir > 0 && walkR)) continue;
+    });
+    this.drops.forEach((d, k) => {
+      if ((d.dir < 0 && walkL) || (d.dir > 0 && walkR)) return; // (walking that way instead)
       let fellAt = -1;
-      const r = this._simulate(a, (t, body, airborne) => {
+      const r = attempt(this.jumps.length + k, (t, body, airborne) => {
         if (airborne && fellAt < 0) fellAt = t;
         return { move: dropSteer(d, fellAt < 0 ? -1 : t - fellAt) };
-      }, reach);
+      });
       if (r) this._addLink(a, r.node, { type: 'drop', move: d, cost: r.ticks + 3 });
-    }
+    });
   }
 
   /**
-   * Blocks changed inside `area` (destructible maps): find the spots there again,
+   * Blocks changed inside `area` (holes, building): find the spots there again,
    * and work out the moves again from every spot whose moves went near it. The
    * rest of the route map stays as it was. Spots are numbered afresh (bots plan
    * again afterwards).
    */
   patch(area) {
+    const job = this.patchJob(area);
+    job.step();
+    return { removed: job.removed, added: job.added, redone: job.redone };
+  }
+
+  /**
+   * patch(), a bit at a time, so a hole doesn't hold up the game: the spots change
+   * straight away, and the moves from the spots near the change are worked out
+   * `n` spots per job.step(n) (each spot is a few dozen short simulations). Until
+   * then, those spots keep their old moves (less any to spots that are gone).
+   * step() returns true once it's all done. `also`: spots an earlier job hadn't
+   * got to yet (job.left: [{ node, area }]), to do in this one.
+   */
+  patchJob(area, also = []) {
     // Spots whose standing room or floor was inside the area.
     const touched = n => n.x + BODY.halfW > area.l && n.x - BODY.halfW < area.r && n.y + BODY.bottom + 1 > area.t && n.y + BODY.top < area.b;
     const removed = new Set(this.nodes.filter(touched));
+    // (Which spots are in a pit nobody can climb out of: kept as it was until the job's done.)
+    const wasTrapped = this._trapped && new Map(this.nodes.map(n => [n, this._trapped[n.id]]));
     this.nodes = this.nodes.filter(n => !removed.has(n));
     this._reindex();
     const pad = { l: area.l - BODY.halfW - 2, t: area.t - BODY.bottom - 2, r: area.r + BODY.halfW + 2, b: area.b - BODY.top + 2 };
@@ -266,17 +306,49 @@ export class NavGraph {
     // Moves that went near the change (or start next to it) are worked out again.
     const near = r => r.l - BODY.halfW - 2 < area.r && r.r + BODY.halfW + 2 > area.l && r.t + BODY.top - 2 < area.b && r.b + BODY.bottom + 2 > area.t;
     const besidePad = n => n.x > pad.l - NODE_STEP - 6 && n.x < pad.r + NODE_STEP + 6 && n.y > pad.t - PHYS.stepUp - 2 && n.y < pad.b + PHYS.stepUp + 2;
-    let redone = 0;
+    // Each spot to redo, with the area its tries need checking against.
+    const redo = [], todo = new Map();
     for (const a of this.nodes) {
-      if (fresh.has(a) || besidePad(a) || !a.reach || near(a.reach)) { this._linkNode(a); redone++; }
-      else if (removed.size) a.links = a.links.filter(l => !removed.has(l.to));
+      if (fresh.has(a) || besidePad(a) || !a.reach || near(a.reach)) { const e = { node: a, area }; redo.push(e); todo.set(a, e); }
+      if (removed.size) a.links = a.links.filter(l => !removed.has(l.to));
     }
-    this.linkCount = this.nodes.reduce((n, a) => n + a.links.length, 0);
-    this.searches = null;
-    this.zoneCache = null;
-    this._trapped = null;
-    this.version = (this.version || 0) + 1;
-    return { removed: removed.size, added: fresh.size, redone };
+    this._flatLinks = null;
+    for (const { node, area: was } of also) {
+      if (this.nodes[node.id] !== node) continue;
+      const e = todo.get(node);
+      if (!e) { redo.push({ node, area: was }); continue; }
+      e.area = { l: Math.min(e.area.l, was.l), t: Math.min(e.area.t, was.t), r: Math.max(e.area.r, was.r), b: Math.max(e.area.b, was.b) };
+    }
+    const done = () => {
+      this.linkCount = this.nodes.reduce((n, a) => n + a.links.length, 0);
+      this._flatLinks = null;
+      this.searches = null;
+      this.zoneCache = null;
+      this._trapped = null;
+      this.version = (this.version || 0) + 1;
+    };
+    done();
+    if (wasTrapped) this._trapped = Uint8Array.from(this.nodes, n => wasTrapped.get(n) || 0);
+    // (Until the job's done, searches use the moves as they were, less those to spots that
+    // are gone: _flatLinks isn't worked out again for each spot redone.)
+    let i = 0;
+    const job = {
+      removed: removed.size, added: fresh.size, redone: 0,
+      get left() { return redo.slice(i); },
+      step: (n = Infinity) => {
+        for (let k = 0; k < n && i < redo.length; i++) {
+          const { node: a, area: changed } = redo[i];
+          if (this.nodes[a.id] !== a) continue; // (gone since)
+          this._linkNode(a, changed);
+          job.redone++;
+          k++;
+        }
+        if (i < redo.length) return false;
+        done();
+        return true;
+      },
+    };
+    return job;
   }
 
   /** A copy of this route map, for a match whose map can change (on `map`, that match's map). */
@@ -286,7 +358,12 @@ export class NavGraph {
     g.nodes = [];
     g.rows = new Map();
     for (const n of this.nodes) g._addNode({ id: n.id, x: n.x, y: n.y, links: [], reach: n.reach && { ...n.reach } });
-    for (const n of this.nodes) g.nodes[n.id].links = n.links.map(l => ({ ...l, to: g.nodes[l.to.id], penalty: 0 }));
+    for (const n of this.nodes) {
+      const c = g.nodes[n.id];
+      c.links = n.links.map(l => ({ ...l, to: g.nodes[l.to.id], penalty: 0 }));
+      // (Where each try went doesn't change, so the boxes are shared.)
+      c.tries = n.tries && n.tries.map(t => t && { box: t.box, res: t.res && { node: g.nodes[t.res.node.id], ticks: t.res.ticks } });
+    }
     return g;
   }
 
@@ -306,34 +383,34 @@ export class NavGraph {
    * components). Returns { comp: Int32Array (group per node), sizes: Map(group -> size) }.
    */
   groups() {
-    const n = this.nodes.length;
+    // (Tarjan's strongly connected components, without recursion, on the flat links.)
+    const n = this.nodes.length, g = this._flat();
     const index = new Int32Array(n).fill(-1), low = new Int32Array(n), onStack = new Uint8Array(n);
     const comp = new Int32Array(n).fill(-1);
-    const stack = [];
-    let next = 0, groupCount = 0;
+    const stack = new Int32Array(n), workNode = new Int32Array(n), workLink = new Int32Array(n);
+    let sp = 0, next = 0, groupCount = 0;
     for (let root = 0; root < n; root++) {
       if (index[root] >= 0) continue;
-      const work = [[root, 0]];
+      let wp = 0;
+      workNode[wp] = root; workLink[wp] = g.from[root]; wp++;
       index[root] = low[root] = next++;
-      stack.push(root); onStack[root] = 1;
-      while (work.length) {
-        const top = work[work.length - 1];
-        const [u, k] = top;
-        const links = this.nodes[u].links;
-        if (k < links.length) {
-          top[1]++;
-          const w = links[k].to.id;
+      stack[sp++] = root; onStack[root] = 1;
+      while (wp) {
+        const u = workNode[wp - 1], k = workLink[wp - 1];
+        if (k < g.from[u + 1]) {
+          workLink[wp - 1]++;
+          const w = g.to[k];
           if (index[w] < 0) {
             index[w] = low[w] = next++;
-            stack.push(w); onStack[w] = 1;
-            work.push([w, 0]);
+            stack[sp++] = w; onStack[w] = 1;
+            workNode[wp] = w; workLink[wp] = g.from[w]; wp++;
           } else if (onStack[w]) low[u] = Math.min(low[u], index[w]);
         } else {
-          work.pop();
-          if (work.length) { const p = work[work.length - 1][0]; low[p] = Math.min(low[p], low[u]); }
+          wp--;
+          if (wp) { const p = workNode[wp - 1]; low[p] = Math.min(low[p], low[u]); }
           if (low[u] === index[u]) {
             let w;
-            do { w = stack.pop(); onStack[w] = 0; comp[w] = groupCount; } while (w !== u);
+            do { w = stack[--sp]; onStack[w] = 0; comp[w] = groupCount; } while (w !== u);
             groupCount++;
           }
         }
@@ -361,11 +438,20 @@ export class NavGraph {
     let main = -1, most = -1;
     for (const [c, k] of spawnsIn.size ? spawnsIn : sizes) if (k > most) { most = k; main = c; }
     // Work back from the main group: every spot with a way into it can get back.
-    const into = Array.from({ length: n }, () => []);
-    for (const a of this.nodes) for (const l of a.links) into[l.to.id].push(a.id);
-    const back = new Uint8Array(n), queue = [];
-    for (let i = 0; i < n; i++) if (comp[i] === main) { back[i] = 1; queue.push(i); }
-    while (queue.length) for (const j of into[queue.pop()]) if (!back[j]) { back[j] = 1; queue.push(j); }
+    // (The links turned round, as flat arrays: the spots with a link into each spot.)
+    const g = this._flat(), e = g.to.length;
+    const intoFrom = new Int32Array(n + 1), into = new Int32Array(e);
+    for (let k = 0; k < e; k++) intoFrom[g.to[k] + 1]++;
+    for (let i = 0; i < n; i++) intoFrom[i + 1] += intoFrom[i];
+    const fill = intoFrom.slice(0, n);
+    for (let i = 0; i < n; i++) for (let k = g.from[i]; k < g.from[i + 1]; k++) into[fill[g.to[k]]++] = i;
+    const back = new Uint8Array(n), queue = new Int32Array(n);
+    let q = 0;
+    for (let i = 0; i < n; i++) if (comp[i] === main) { back[i] = 1; queue[q++] = i; }
+    while (q) {
+      const v = queue[--q];
+      for (let k = intoFrom[v]; k < intoFrom[v + 1]; k++) { const j = into[k]; if (!back[j]) { back[j] = 1; queue[q++] = j; } }
+    }
     this._trapped = back.map(b => 1 - b);
     return this._trapped;
   }
@@ -376,6 +462,25 @@ export class NavGraph {
     return hit && hit.ny < 0 ? this.nodeAt(x, hit.y - BODY.bottom, 14) : null;
   }
 
+  /**
+   * The links as flat arrays, for searching (worked out again after they change):
+   * node i's links are from[i] to from[i + 1] - 1 in to (node ids), cost and link (the objects).
+   */
+  _flat() {
+    if (this._flatLinks) return this._flatLinks;
+    const n = this.nodes.length;
+    let e = 0;
+    for (const a of this.nodes) e += a.links.length;
+    const from = new Int32Array(n + 1), to = new Int32Array(e), cost = new Float64Array(e), link = new Array(e);
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      from[i] = k;
+      for (const l of this.nodes[i].links) { to[k] = l.to.id; cost[k] = l.cost; link[k] = l; k++; }
+    }
+    from[n] = k;
+    return (this._flatLinks = { from, to, cost, link });
+  }
+
   /** Cheapest cost from `start` to every node: { cost: Float64Array, prev: Int32Array, via: [] }. */
   costsFrom(start) {
     const n = this.nodes.length;
@@ -383,21 +488,50 @@ export class NavGraph {
     const prev = new Int32Array(n).fill(-1);
     const via = new Array(n);
     const done = new Uint8Array(n);
+    const g = this._flat();
     cost[start.id] = 0;
-    // Small graphs: a simple binary heap keeps this fast enough to run often.
-    const heap = [[0, start.id]];
-    while (heap.length) {
-      const [c, id] = popMin(heap);
+    // A binary heap of (cost, node) in two typed arrays, so a search makes no garbage.
+    // (Each link can add one entry at most.)
+    if (heapCost.length <= g.to.length) { heapCost = new Float64Array(g.to.length * 2 + 16); heapNode = new Int32Array(g.to.length * 2 + 16); }
+    const hc = heapCost, hn = heapNode;
+    let size = 1;
+    hc[0] = 0; hn[0] = start.id;
+    while (size) {
+      // Take the cheapest.
+      const c = hc[0], id = hn[0];
+      size--;
+      if (size) {
+        hc[0] = hc[size]; hn[0] = hn[size];
+        for (let i = 0; ;) {
+          const l = 2 * i + 1, r = l + 1;
+          let m = i;
+          if (l < size && hc[l] < hc[m]) m = l;
+          if (r < size && hc[r] < hc[m]) m = r;
+          if (m === i) break;
+          const tc = hc[m], tn = hn[m];
+          hc[m] = hc[i]; hn[m] = hn[i]; hc[i] = tc; hn[i] = tn;
+          i = m;
+        }
+      }
       if (done[id]) continue;
       done[id] = 1;
-      for (const l of this.nodes[id].links) {
+      for (let k = g.from[id], end = g.from[id + 1]; k < end; k++) {
         // (penalty: extra cost bots add to moves that went wrong for them, see bot.js)
-        const nc = c + l.cost + (l.penalty || 0);
-        if (nc < cost[l.to.id]) {
-          cost[l.to.id] = nc;
-          prev[l.to.id] = id;
-          via[l.to.id] = l;
-          pushHeap(heap, [nc, l.to.id]);
+        const to = g.to[k], nc = c + g.cost[k] + (g.link[k].penalty || 0);
+        if (nc < cost[to]) {
+          cost[to] = nc;
+          prev[to] = id;
+          via[to] = g.link[k];
+          // Add it, and let it rise to its place.
+          let i = size++;
+          hc[i] = nc; hn[i] = to;
+          while (i > 0) {
+            const p = (i - 1) >> 1;
+            if (hc[p] <= hc[i]) break;
+            const tc = hc[p], tn = hn[p];
+            hc[p] = hc[i]; hn[p] = hn[i]; hc[i] = tc; hn[i] = tn;
+            i = p;
+          }
         }
       }
     }
@@ -429,31 +563,5 @@ export class NavGraph {
   }
 }
 
-function pushHeap(h, item) {
-  h.push(item);
-  let i = h.length - 1;
-  while (i > 0) {
-    const p = (i - 1) >> 1;
-    if (h[p][0] <= h[i][0]) break;
-    [h[p], h[i]] = [h[i], h[p]];
-    i = p;
-  }
-}
-
-function popMin(h) {
-  const top = h[0], last = h.pop();
-  if (h.length) {
-    h[0] = last;
-    let i = 0;
-    for (;;) {
-      const l = 2 * i + 1, r = l + 1;
-      let m = i;
-      if (l < h.length && h[l][0] < h[m][0]) m = l;
-      if (r < h.length && h[r][0] < h[m][0]) m = r;
-      if (m === i) break;
-      [h[m], h[i]] = [h[i], h[m]];
-      i = m;
-    }
-  }
-  return top;
-}
+// Scratch space for costsFrom()'s heap (grown when needed).
+let heapCost = new Float64Array(1024), heapNode = new Int32Array(1024);

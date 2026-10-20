@@ -392,6 +392,36 @@ export const bigMap = map => map.bounds.right - map.bounds.left > 2600 || map.bo
  * A small picture of the whole map at the top right: platforms, the objectives,
  * your team (dots), you, and what's on screen.
  */
+// The minimap's blocks: drawn once into a picture (again when the map changes or
+// the minimap's size does), not block by block every frame.
+const mini = { map: null, key: null, canvas: null };
+
+function drawMiniMapBlocks(r, ctx, map, x0, y0, w, h, k) {
+  const d = r.dpr || 1, pw = Math.ceil(w * d), ph = Math.ceil(h * d);
+  const key = `${map.version}|${pw}|${ph}|${k}`;
+  // (No pictures to draw with: WebGL's drawing layer, or no page.)
+  if (!ctx.drawImage || (typeof OffscreenCanvas === 'undefined' && typeof document === 'undefined')) {
+    ctx.fillStyle = '#9a9a9a';
+    for (const p of map.solids) ctx.fillRect(x0 + (p.l - map.bounds.left) * k, y0 + (p.t - map.bounds.top) * k, Math.max(1, (p.r - p.l) * k), Math.max(1, (p.b - p.t) * k));
+    return;
+  }
+  if (mini.map !== map || mini.key !== key) {
+    mini.map = map;
+    mini.key = key;
+    if (!mini.canvas || mini.canvas.width !== pw || mini.canvas.height !== ph) {
+      mini.canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(pw, ph) : Object.assign(document.createElement('canvas'), { width: pw, height: ph });
+    }
+    const g = mini.canvas.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, pw, ph);
+    g.setTransform(d, 0, 0, d, 0, 0);
+    g.fillStyle = '#9a9a9a';
+    const b = map.bounds;
+    for (const p of map.solids) g.fillRect((p.l - b.left) * k, (p.t - b.top) * k, Math.max(1, (p.r - p.l) * k), Math.max(1, (p.b - p.t) * k));
+  }
+  ctx.drawImage(mini.canvas, x0, y0, pw / d, ph / d);
+}
+
 export function drawMinimap(r, ctx, game, me, W) {
   const b = game.map.bounds, mapW = b.right - b.left, mapH = b.bottom - b.top;
   let w = Math.min(300, W * 0.26), h = w * mapH / mapW;
@@ -403,8 +433,7 @@ export function drawMinimap(r, ctx, game, me, W) {
   ctx.strokeStyle = '#999';
   ctx.lineWidth = 1;
   ctx.strokeRect(x0 - 3, y0 - 3, w + 6, h + 6);
-  ctx.fillStyle = '#9a9a9a';
-  for (const p of game.map.solids) ctx.fillRect(X(p.l), Y(p.t), Math.max(1, (p.r - p.l) * k), Math.max(1, (p.b - p.t) * k));
+  drawMiniMapBlocks(r, ctx, game.map, x0, y0, w, h, k);
   // Objectives.
   const st = game.modeState;
   if (st && game.rules.objective) {

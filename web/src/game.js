@@ -22,8 +22,10 @@ const IDLE = { move: 0 };
 // Holding self-destruct this many updates (a second) blows you up: the way out of a pit you can't climb out of.
 export const SELF_DESTRUCT_TICKS = 60;
 // When the map changes (holes, building), the bots' route map is patched this many updates
-// after the first change since the last patch (changes meanwhile are done in the same go).
+// after the first change since the last patch (changes meanwhile are done in the same go),
+// a few spots each update (about 2 ms' worth), so it never holds the game up.
 const NAV_PATCH_DELAY = 20;
+const NAV_SPOTS_PER_UPDATE = 6;
 
 export class Game {
   /**
@@ -66,7 +68,7 @@ export class Game {
     this.over = false;
     this.winner = null;
     this.stats = { kills: 0, suicides: 0, falls: 0 };
-    this.grid = new SoldierGrid();
+    this.grid = new SoldierGrid(this.map.bounds);
     // The objective modes' state (flags, capture points...): plain data, sent to online players.
     this.modeState = null;
     // Classes on: spawn beacons (gadgets.js).
@@ -261,11 +263,24 @@ export class Game {
     this.navPatchAt ??= this.tick + NAV_PATCH_DELAY;
   }
 
-  /** Bring the bots' route map up to date with the holes blown, and have them plan again. */
+  /**
+   * Start bringing the bots' route map up to date with the changes to the map (it's
+   * finished a bit at a time: navStep()). Spots an unfinished patch hadn't got to go
+   * in this one. (Bots carry on along their routes meanwhile, and plan again once it's done.)
+   */
   patchNav() {
-    this.nav.patch(this.navDirty);
+    this.navJob = this.nav.patchJob(this.navDirty, this.navJob ? this.navJob.left : []);
     this.navDirty = null;
     this.navPatchAt = null;
+  }
+
+  /** Some more of the route map's patch: once it's done, the bots plan again with it. */
+  navStep(n = NAV_SPOTS_PER_UPDATE) {
+    if (this.navJob?.step(n)) { this.navJob = null; this.navUpdated(); }
+  }
+
+  /** The route map changed: spawn points are checked again, and bots plan again. */
+  navUpdated() {
     this.spawnSets = null;
     for (const [s, ctl] of this.controllers) ctl.navChanged?.(this, s);
   }
@@ -335,6 +350,7 @@ export class Game {
     }
     updateProjectiles(this);
     if (this.navDirty && this.tick >= this.navPatchAt) this.patchNav();
+    else if (this.navJob) this.navStep();
     this.pickups.update(this);
     if (this.classesOn) updateGadgets(this);
     if (!this.over) this.rules.tick?.(this);

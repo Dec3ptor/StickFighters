@@ -6,6 +6,7 @@ import { NavGraph } from './nav.js';
 import { BotController, BOT_PROFILES } from './bot.js';
 import { Input, PlayerController } from './input.js';
 import { createRenderer, autoGraphics } from './glrender.js';
+import { Renderer } from './render.js';
 import { FramePacer } from './framerate.js';
 import { drawHud } from './hud.js';
 import { SoundSystem } from './audio.js';
@@ -50,6 +51,8 @@ let editor = null;
 let lobby = null;
 const pacer = new FramePacer();
 const params = new URLSearchParams(location.search);
+// (?tiles=on or off: whether the canvas keeps the map in tiles, rather than deciding by the graphics card.)
+if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
 const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold' };
 let community = null;

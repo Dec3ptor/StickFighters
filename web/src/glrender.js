@@ -7,6 +7,7 @@
 // canvas otherwise (Settings -> Graphics, or ?renderer=canvas / webgl in the address).
 
 import { Renderer, HATCH, HATCH_GAP, BUILT, BUILT_LINE, BUILT_ROW } from './render.js';
+import { hasGPU } from './gpu.js';
 import { GLContext } from './glctx.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
 import { fillSeams, hatch, courses } from './map.js';
@@ -39,27 +40,8 @@ let probed = null;
 
 /** What "auto" picks here: 'webgl' if WebGL runs on a graphics card, otherwise 'canvas'. */
 export function autoGraphics() {
-  probed ??= hardwareWebGL() ? 'webgl' : 'canvas';
+  probed ??= hasGPU() ? 'webgl' : 'canvas';
   return probed;
-}
-
-/**
- * True if WebGL runs on a graphics card. Without one, browsers draw WebGL on
- * the processor, which is slower than the plain canvas.
- */
-function hardwareWebGL() {
-  try {
-    const c = document.createElement('canvas');
-    const opts = { failIfMajorPerformanceCaveat: true };
-    const gl = c.getContext('webgl2', opts) || c.getContext('webgl', opts);
-    if (!gl) return false;
-    const info = gl.getExtension('WEBGL_debug_renderer_info');
-    const name = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
-    gl.getExtension('WEBGL_lose_context')?.loseContext();
-    return !/swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
-  } catch {
-    return false;
-  }
 }
 
 export class GLRenderer extends Renderer {
@@ -148,6 +130,7 @@ export class GLRenderer extends Renderer {
     ctx.beginFrame();
     const sx = (Math.random() - 0.5) * this.shake, sy = (Math.random() - 0.5) * this.shake;
     const tx = this.pw / 2 - (this.cam.x + sx) * s, ty = this.ph / 2 - (this.cam.y + sy) * s;
+    this.s = s; this.tx = tx; this.ty = ty; // (for drawing turned things: Renderer.turn())
     ctx.setTransform(s, 0, 0, s, tx, ty);
     this.updateView(s, tx, ty);
     for (const layer of [this.mapLayer, this.stainLayer, this.partLayer]) {

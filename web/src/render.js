@@ -8,23 +8,29 @@ import { clamp, lerp } from './util.js';
 import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate, drawSupply, drawBeacon } from './sprites.js';
 import { BEACON_HP } from './gadgets.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
-import { fillSeams, hatch, courses } from './map.js';
+import { MapTiles, paintMap, HATCH, HATCH_GAP, BUILT, BUILT_LINE, BUILT_ROW } from './maptiles.js';
+import { hasGPU } from './gpu.js';
 import { buildPlan } from './building.js';
 import { Fog } from './fog.js';
 
 export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate };
 
 const INK = '#111';
-// Destructible maps: the hatching on blocks that can't be destroyed.
-export const HATCH = '#dcdcdc', HATCH_GAP = 10;
-// Blocks soldiers built (the Engineer's Builder): rows of sandbags.
-export const BUILT = '#efe5cf', BUILT_LINE = '#c4ae86', BUILT_ROW = 6;
+// (The map's colours: maptiles.js.)
+export { HATCH, HATCH_GAP, BUILT, BUILT_LINE, BUILT_ROW };
 const TEAM_COLORS = { 1: '#2f6fdb', 2: '#d33b2f' };
+
+// Colours of soft round things (smoke, fire): fixed, faded with globalAlpha (no new colour string per particle).
+const GLOW_COLORS = { smoke: 'rgb(140,140,140)', fireHot: 'rgb(255,220,90)', fireCool: 'rgb(255,110,30)' };
 const TEAM_HEAD = { 1: '#d9e6ff', 2: '#ffdcd8' };
 
 /** Draws with the browser's 2D canvas. (glrender.js draws the same things with WebGL.) */
 export class Renderer {
-  constructor(canvas, ctx = canvas.getContext('2d')) {
+  // Keep the map in tiles: 'auto' (with a graphics card), 'on' or 'off' (?tiles= in the address, for testing).
+  static tiles = 'auto';
+
+  // (alpha: false: the canvas is opaque (it's always filled in), so the page doesn't blend it with what's behind.)
+  constructor(canvas, ctx = canvas.getContext('2d', { alpha: false })) {
     this.kind = 'canvas';
     this.canvas = canvas;
     this.ctx = ctx;
@@ -90,6 +96,8 @@ export class Renderer {
     const ease = k => 1 - Math.pow(1 - k, f);
     const zoomTarget = sniping ? 0.72 : 1;
     this.cam.zoom = lerp(this.cam.zoom, zoomTarget, ease(0.12));
+    // (Settled: exactly there, so the map's tiles can be made for it.)
+    if (Math.abs(this.cam.zoom - zoomTarget) < 0.001) this.cam.zoom = zoomTarget;
     let tx = fx, ty = fy - 20;
     if (mouse) {
       const look = sniping ? 0.55 : 0.22;
@@ -115,12 +123,15 @@ export class Renderer {
     const ctx = this.ctx, s = this.scale * this.dpr;
     this.blank = false;
     this.alpha = alpha;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    // (Without fog of war, the map's tiles bring the white background: drawMap().)
+    this.cleared = !!game.options?.fog;
+    if (this.cleared) this.clearWhite();
     const sx = (Math.random() - 0.5) * this.shake, sy = (Math.random() - 0.5) * this.shake;
-    ctx.setTransform(s, 0, 0, s, this.canvas.width / 2 - (this.cam.x + sx) * s, this.canvas.height / 2 - (this.cam.y + sy) * s);
-    this.updateView(s, this.canvas.width / 2 - (this.cam.x + sx) * s, this.canvas.height / 2 - (this.cam.y + sy) * s);
+    // (The world goes at whole screen pixels: crisper, and the map's tiles fit exactly.)
+    const tx = Math.round(this.canvas.width / 2 - (this.cam.x + sx) * s), ty = Math.round(this.canvas.height / 2 - (this.cam.y + sy) * s);
+    this.s = s; this.tx = tx; this.ty = ty;
+    ctx.setTransform(s, 0, 0, s, tx, ty);
+    this.updateView(s, tx, ty);
     this.lineW = Math.max(1.1, 1.3 / (this.scale));
 
     const fog = this.startFog(game, alpha, viewer);
@@ -176,41 +187,27 @@ export class Renderer {
     return { soldiers, names: soldiers.length > 60 ? soldiers.filter(o => o === viewer || !o.isBot) : soldiers };
   }
 
+  /**
+   * The map: copied from tiles drawn before (maptiles.js), or drawn directly (while
+   * the zoom is changing, or without a graphics card, where copying big pictures
+   * costs more than it saves). Then the jump pads' moving chevrons.
+   */
   drawMap(game) {
-    const ctx = this.ctx, e = this.lineW;
-    ctx.fillStyle = INK;
-    for (const p of game.map.solids) ctx.fillRect(p.l - e, p.t - e, p.r - p.l + 2 * e, p.b - p.t + 2 * e);
-    ctx.fillStyle = '#fff';
-    for (const p of game.map.solids) ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t);
-    // No hairlines where blocks just meet.
-    fillSeams(game.map.getSeams(), e, (x, y, w, h) => ctx.fillRect(x, y, w, h));
-    if (game.map.builtCount) this.drawBuilt(game);
-    // Destructible maps: blocks explosions can't break are hatched.
-    if (game.options?.destruction) {
-      const v = this.view;
-      ctx.strokeStyle = HATCH;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (const p of game.map.solids) {
-        if (!p.hard || p.bounce || (v && (p.r < v.l || p.l > v.r || p.b < v.t || p.t > v.b))) continue;
-        hatch(p.l, p.t, p.r, p.b, HATCH_GAP, (x0, y0, x1, y1) => { ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); });
-      }
-      ctx.stroke();
+    this.tiled ??= Renderer.tiles === 'on' || (Renderer.tiles !== 'off' && hasGPU());
+    if (!this.tiled || !(this.mapTiles ||= new MapTiles()).draw(this, game, !this.cleared)) {
+      if (!this.cleared) this.clearWhite();
+      paintMap(this.ctx, game.map, this.lineW, this.view, !!game.options?.destruction);
     }
-    this.drawPads(game, true);
+    this.drawPads(game, false);
   }
 
-  /** Built blocks: sandbag colour, with the rows drawn in. */
-  drawBuilt(game) {
-    const ctx = this.ctx, v = this.view;
-    const shown = game.map.solids.filter(p => p.built && !(v && (p.r < v.l || p.l > v.r || p.b < v.t || p.t > v.b)));
-    ctx.fillStyle = BUILT;
-    for (const p of shown) ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t);
-    ctx.strokeStyle = BUILT_LINE;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (const p of shown) courses(p.l, p.t, p.r, p.b, BUILT_ROW, (x0, y0, x1, y1) => { ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); });
-    ctx.stroke();
+  /** The whole canvas white (then back to the world transform). */
+  clearWhite() {
+    const ctx = this.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    if (this.s) ctx.setTransform(this.s, 0, 0, this.s, this.tx, this.ty);
   }
 
   /**
@@ -258,9 +255,9 @@ export class Renderer {
   drawStains(game) {
     if (!game.fx) return;
     const ctx = this.ctx;
+    ctx.fillStyle = '#a30d0d';
     for (const st of game.fx.stains) {
       ctx.globalAlpha = Math.min(1, st.life / 200) * 0.8;
-      ctx.fillStyle = '#a30d0d';
       ctx.fillRect(st.x - st.size / 2, st.y - st.size / 2, st.size, st.size);
     }
     ctx.globalAlpha = 1;
@@ -514,6 +511,23 @@ export class Renderer {
     for (const p of game.fx.parts) this.drawEffect(this.ctx, p);
   }
 
+  /** A soft round thing (smoke, fire) of radius r at (x, y), faded to `alpha`. */
+  drawGlow(ctx, kind, x, y, r, alpha) {
+    if (!(r > 0) || !(alpha > 0)) return;
+    ctx.globalAlpha = Math.min(1, alpha);
+    ctx.fillStyle = GLOW_COLORS[kind];
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  /** Draw turned by `angle` about (x, y) (back to the world transform with endTurn()). Quicker than save() and restore(). */
+  turn(ctx, x, y, angle) {
+    const s = this.s, c = Math.cos(angle) * s, n = Math.sin(angle) * s;
+    ctx.setTransform(c, n, -n, c, this.tx + x * s, this.ty + y * s);
+  }
+
+  endTurn(ctx) { ctx.setTransform(this.s, 0, 0, this.s, this.tx, this.ty); }
+
   drawEffect(ctx, p) {
     // Particles are drawn between game updates too.
     const a = this.alpha ?? 1;
@@ -532,9 +546,11 @@ export class Renderer {
         ctx.fillRect(x - 0.8, y - 0.8, 1.6, 1.6);
         break;
       case 'puff':
-        ctx.strokeStyle = `rgba(120,120,120,${0.5 * p.life / p.max})`;
+        ctx.strokeStyle = 'rgb(120,120,120)';
+        ctx.globalAlpha = 0.5 * p.life / p.max;
         ctx.lineWidth = 0.8;
         ctx.beginPath(); ctx.arc(x, y, p.r, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
         break;
       case 'flash': {
         ctx.save();
@@ -548,49 +564,50 @@ export class Renderer {
         break;
       }
       case 'shell':
-        ctx.save();
-        ctx.translate(x, y); ctx.rotate(p.angle);
+        this.turn(ctx, x, y, p.angle);
         ctx.fillStyle = '#c9a227';
         ctx.fillRect(-1.2, -0.5, 2.4, 1);
-        ctx.restore();
+        this.endTurn(ctx);
         break;
       case 'chunk': {
         // A bit of a blown-up block: white with an outline, like the map.
         const h = p.size / 2;
-        ctx.save();
-        ctx.translate(x, y); ctx.rotate(p.angle);
+        this.turn(ctx, x, y, p.angle);
         ctx.fillStyle = INK;
         ctx.fillRect(-h - 0.7, -h - 0.7, p.size + 1.4, p.size + 1.4);
         ctx.fillStyle = '#fff';
         ctx.fillRect(-h, -h, p.size, p.size);
-        ctx.restore();
+        this.endTurn(ctx);
         break;
       }
       case 'smoke':
-        ctx.fillStyle = `rgba(140,140,140,${0.32 * p.life / p.max})`;
-        ctx.beginPath(); ctx.arc(x, y, p.r, 0, Math.PI * 2); ctx.fill();
+        this.drawGlow(ctx, 'smoke', x, y, p.r, 0.32 * p.life / p.max);
         break;
       case 'fire': {
         const k = p.life / p.max;
-        ctx.fillStyle = k > 0.6 ? `rgba(255,220,90,${k})` : `rgba(255,110,30,${k})`;
-        ctx.beginPath(); ctx.arc(x, y, p.r * (0.6 + k * 0.4), 0, Math.PI * 2); ctx.fill();
+        this.drawGlow(ctx, k > 0.6 ? 'fireHot' : 'fireCool', x, y, p.r * (0.6 + k * 0.4), k);
         break;
       }
       case 'boom': {
+        // (Fading with globalAlpha is the same as fading every stop of the gradient.)
         const k = p.life / p.max;
         const r = p.r * (1.3 - k * 0.6);
         const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-        g.addColorStop(0, `rgba(255,255,220,${k})`);
-        g.addColorStop(0.4, `rgba(255,170,40,${k})`);
+        g.addColorStop(0, 'rgb(255,255,220)');
+        g.addColorStop(0.4, 'rgb(255,170,40)');
         g.addColorStop(1, 'rgba(255,90,20,0)');
+        ctx.globalAlpha = k;
         ctx.fillStyle = g;
         ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
         break;
       }
       case 'trail':
-        ctx.strokeStyle = `rgba(90,90,90,${0.7 * p.life / p.max})`;
+        ctx.strokeStyle = 'rgb(90,90,90)';
+        ctx.globalAlpha = 0.7 * p.life / p.max;
         ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(p.x1, p.y1); ctx.stroke();
+        ctx.globalAlpha = 1;
         break;
       case 'ring': {
         const k = p.life / p.max;
@@ -604,22 +621,24 @@ export class Renderer {
       }
       case 'whack': {
         const k = p.life / p.max;
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(p.angle);
-        ctx.fillStyle = `rgba(255,214,60,${k})`;
-        ctx.strokeStyle = `rgba(30,30,30,${k})`;
+        this.turn(ctx, x, y, p.angle);
+        ctx.globalAlpha = k;
+        ctx.fillStyle = 'rgb(255,214,60)';
+        ctx.strokeStyle = 'rgb(30,30,30)';
         ctx.lineWidth = 0.7;
         const r = 7 + (1 - k) * 4;
         ctx.beginPath();
         for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8, rr = i % 2 ? r * 0.45 : r; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
         ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.restore();
+        ctx.globalAlpha = 1;
+        this.endTurn(ctx);
         break;
       }
       case 'sparkle':
-        ctx.fillStyle = `rgba(170,120,255,${p.life / p.max})`;
+        ctx.fillStyle = 'rgb(170,120,255)';
+        ctx.globalAlpha = p.life / p.max;
         ctx.fillRect(x - 0.8, y - 0.8, 1.6, 1.6);
+        ctx.globalAlpha = 1;
         break;
       case 'plane':
         ctx.save();
