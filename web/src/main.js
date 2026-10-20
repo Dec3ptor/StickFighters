@@ -43,6 +43,8 @@ const state = {
   mode: 'offline',     // 'offline' | 'host' | 'client'
   net: null,           // online session: { role, host?, handle?, client?, target? }
   chat: [], chatOpen: false, setupFor: 'offline', nextMatchAt: 0,
+  spectating: false,   // chosen from the in-game menu (sitting out to watch)
+  spec: { id: null, free: false, x: 0, y: 0 }, // watching: who the camera follows, or the free camera
 };
 let editor = null;
 let lobby = null;
@@ -506,12 +508,16 @@ function enterMatch(game, me) {
   state.pickerOpen = false;
   show('classPicker', false);
   syncKit(false);
+  // Spectating carries on into the next match (online, the host remembers it for us).
+  state.spec = { id: null, free: false, x: 0, y: 0 };
+  if (state.spectating && state.mode !== 'client') game.spectate(me, true, { quiet: true });
   canvas.focus?.();
 }
 
 function endMatch(to = state.returnTo) {
   closePicker();
   state.game = null;
+  state.spectating = false;
   state.mode = 'offline';
   state.menuOpen = false;
   input.enabled = false;
@@ -555,10 +561,76 @@ function setPaused(p) {
   show('invite', state.mode === 'host');
   show('restart', state.mode !== 'client');
   show('changeClass', !!state.game?.classesOn);
+  $('spectate').textContent = state.me?.spectating ? 'Join game' : 'Spectate';
   $('quit').textContent = state.mode === 'host' ? 'End game for everyone' : state.mode === 'client' ? 'Leave game' : 'Quit to menu';
   state.menuOpen = p;
   show('pause', p);
   state.last = performance.now();
+}
+
+// ---- Spectating ---------------------------------------------------------------------------
+
+/** Sit out and watch (from the menu), or join the game again. */
+function setSpectating(on) {
+  const g = state.game, me = state.me;
+  if (!g || !me || g.over) return;
+  state.spectating = on;
+  if (state.mode === 'client') state.net?.client?.sendSpectate(on);
+  else g.spectate(me, on);
+  state.spec = { id: null, free: false, x: renderer.cam.x, y: renderer.cam.y };
+  setPaused(false);
+}
+
+/** Watching (spectating, or out of lives): who there is to watch, in a steady order. */
+const watchable = (g, me) => g.soldiers.filter(s => s.alive && s !== me && !s.spectating);
+
+/** Who the camera follows: the one picked, while they're alive, otherwise the leader. */
+function watchTarget(g, me) {
+  const list = watchable(g, me);
+  let t = list.find(s => s.id === state.spec.id);
+  if (!t) {
+    t = g.standings().find(s => list.includes(s)) || null;
+    state.spec.id = t?.id ?? null;
+  }
+  return t;
+}
+
+/** A/D or a click while watching: the next (or previous) one to follow. */
+function cycleWatch(dir) {
+  const g = state.game, me = state.me, list = watchable(g, me);
+  if (!list.length) return;
+  if (state.spec.free) {
+    // From the free camera: whoever's nearest the middle of the screen.
+    const c = renderer.cam;
+    state.spec.id = list.reduce((a, b) => (Math.hypot(b.x - c.x, b.y - c.y) < Math.hypot(a.x - c.x, a.y - c.y) ? b : a)).id;
+    state.spec.free = false;
+    return;
+  }
+  const i = list.findIndex(s => s.id === state.spec.id);
+  state.spec.id = list[(i + dir + list.length) % list.length].id;
+}
+
+/** Space while spectating: a free camera (WASD), starting where the camera is. */
+function toggleFreeCam() {
+  const sp = state.spec;
+  if (sp.free) { cycleWatch(0); return; }
+  sp.free = true;
+  sp.x = renderer.cam.x;
+  sp.y = renderer.cam.y + 20;
+}
+
+/** The free camera moves with WASD or the arrow keys (Shift: faster), and stays over the map. */
+function moveFreeCam(g, dt) {
+  const sp = state.spec;
+  if (!state.menuOpen && !state.chatOpen) {
+    const speed = (input.down('ShiftLeft', 'ShiftRight') ? 1600 : 650) * dt / 1000;
+    sp.x += ((input.down('KeyD', 'ArrowRight') ? 1 : 0) - (input.down('KeyA', 'ArrowLeft') ? 1 : 0)) * speed;
+    sp.y += ((input.down('KeyS', 'ArrowDown') ? 1 : 0) - (input.down('KeyW', 'ArrowUp') ? 1 : 0)) * speed;
+  }
+  const b = g.map.bounds;
+  sp.x = Math.max(b.left, Math.min(b.right, sp.x));
+  sp.y = Math.max(b.top, Math.min(b.bottom, sp.y));
+  return sp;
 }
 
 // ---- Classes ----------------------------------------------------------------------------
@@ -955,22 +1027,25 @@ function frame(now) {
   const alpha = state.paused ? 1 : Math.min(1, state.acc / state.step);
   const me = state.me;
 
-  // Out of lives: watch the leader instead.
-  let view = me, watching = null;
-  if (!me.alive && !g.rules.canRespawn(g, me)) {
-    watching = g.standings().find(s => s.alive && s !== me) || null;
-    if (watching) view = watching;
+  // Spectating, or out of lives: watch someone else (or, spectating, look around freely).
+  const watchMode = !!me.spectating || (!me.alive && !g.rules.canRespawn(g, me));
+  let view = me, watching = null, free = null;
+  if (watchMode) {
+    if (me.spectating && state.spec.free) free = moveFreeCam(g, dt);
+    else { watching = watchTarget(g, me); if (watching) view = watching; }
   }
+  renderer.noFog = !!free;
 
   // Fog of war: sounds from places you can't see show where they came from.
-  if (g.options.fog) renderer.fog?.hear(g.sounds, view);
-  audio.playQueue(g.sounds, view.x, view.y, me.id, me.team);
+  if (g.options.fog && !free) renderer.fog?.hear(g.sounds, view);
+  const ear = free || view;
+  audio.playQueue(g.sounds, ear.x, ear.y, me.id, me.team);
   g.sounds.length = 0;
 
   const sniping = me.alive && me.current === 'SR' && input.mouse.right && !state.menuOpen && !state.chatOpen;
-  const ax = view === me ? lerp(me.prevX, me.x, alpha) + (me.drawDX || 0) : view.x;
-  const ay = view === me ? lerp(me.prevY, me.y, alpha) + (me.drawDY || 0) : view.y;
-  renderer.updateCamera(g, ax, ay, state.menuOpen ? null : input.mouse, sniping, dt);
+  const ax = free ? free.x : lerp(view.prevX ?? view.x, view.x, alpha) + (view.drawDX || 0);
+  const ay = free ? free.y : lerp(view.prevY ?? view.y, view.y, alpha) + (view.drawDY || 0);
+  renderer.updateCamera(g, ax, ay, state.menuOpen || watchMode ? null : input.mouse, sniping, dt);
   const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
   renderer.fogFrom = view;
@@ -982,13 +1057,14 @@ function frame(now) {
   drawHud(renderer, g, me, {
     selfDestruct: holdingK ? (now - state.destructSince) / 1000 : 0,
     showScores: input.down('Tab') && !state.chatOpen, watching, chat: state.chat,
+    spectating: me.spectating ? { free: !!free, target: watching } : null,
     online: state.mode !== 'offline',
     hostId: state.mode === 'host' ? me.id : state.mode === 'client' ? g.soldiers.find(s => !s.isBot && !s.remote)?.id : null,
     ping: !prefs.showPing ? null : client ? client.ping : state.mode === 'host' ? 'Host' : null,
     perf: perf.on ? perf.text : null,
     picking: state.pickerOpen,
   });
-  if (!state.menuOpen && !g.over && !state.chatOpen && !state.pickerOpen) {
+  if (!state.menuOpen && !g.over && !state.chatOpen && !state.pickerOpen && !watchMode) {
     // Reloading: a ring round the crosshair fills up, complete when the gun's ready. That's
     // the pistol's magazine, and the wait between shots of slow guns (sniper rifle, rockets...).
     const gun = weaponFor(me, me.current);
@@ -1124,6 +1200,7 @@ function wire() {
   $('openLoadout').addEventListener('click', openLoadout);
   $('loadoutDone').addEventListener('click', closeLoadout);
   $('changeClass').addEventListener('click', openPicker);
+  $('spectate').addEventListener('click', () => setSpectating(!state.me?.spectating));
   $('pickerClose').addEventListener('click', closePicker);
   $('pickerLoadout').addEventListener('click', openLoadout);
   $('pickerCards').addEventListener('click', e => { const card = e.target.closest('[data-cls]'); if (card) pickClass(card.dataset.cls); });
@@ -1173,6 +1250,14 @@ function wire() {
       return;
     }
     if (e.code === 'Escape') { e.preventDefault(); setPaused(!state.menuOpen); }
+    // Watching (spectating, or out of lives): A/D (or the arrows) switch who you follow,
+    // and spectating, Space gives a free camera (where A/D move it instead).
+    const me = state.me;
+    if (me && !e.repeat && !state.menuOpen && !state.game.over && (me.spectating || (!me.alive && !state.game.rules.canRespawn(state.game, me)))) {
+      const step = { KeyA: -1, ArrowLeft: -1, KeyD: 1, ArrowRight: 1 }[e.code];
+      if (step && !state.spec.free) { e.preventDefault(); cycleWatch(step); }
+      if (e.code === 'Space' && me.spectating) { e.preventDefault(); toggleFreeCam(); }
+    }
     if (e.code === 'KeyC' && !e.repeat && !state.menuOpen && !state.chatOpen && state.game.classesOn && !state.game.over) {
       if (!state.me.alive) openPicker();
       else localNote('Change class while waiting to respawn (C), or from the menu (Esc)');
@@ -1186,6 +1271,10 @@ function wire() {
   });
   window.addEventListener('mousedown', e => {
     audio.unlock();
+    // Watching: a click follows the next player (right click: the one before).
+    const g = state.game, me = state.me;
+    if (g && me && e.target === canvas && !state.menuOpen && !state.pickerOpen && !g.over &&
+        (me.spectating || (!me.alive && !g.rules.canRespawn(g, me)))) cycleWatch(e.button === 2 ? -1 : 1);
     // Waiting to respawn with classes on: a click on "C to change" opens the class picker.
     const b = renderer?.classButton;
     if (b && state.game && !state.menuOpen && !state.pickerOpen && e.target === canvas &&

@@ -20,7 +20,9 @@ export class Input {
     this.canvas = canvas;
     this.keys = new Set();
     this.queue = [];          // key presses waiting to be read by the game
-    this.mouse = { x: 0, y: 0, left: false, right: false, moved: false };
+    // (clicked / rightClicked: a press not yet seen by the game, so a click quicker than
+    // the time between two game updates still counts.)
+    this.mouse = { x: 0, y: 0, left: false, right: false, moved: false, clicked: false, rightClicked: false };
     this.wheel = 0;
     this.enabled = false;
 
@@ -52,8 +54,8 @@ export class Input {
     });
     this.onCanvas = {
       mousedown: e => {
-        if (e.button === 0) this.mouse.left = true;
-        if (e.button === 2) this.mouse.right = true;
+        if (e.button === 0) this.mouse.left = this.mouse.clicked = true;
+        if (e.button === 2) this.mouse.right = this.mouse.rightClicked = true;
       },
       contextmenu: e => e.preventDefault(),
       wheel: e => { e.preventDefault(); this.wheel += Math.sign(e.deltaY); },
@@ -84,7 +86,7 @@ export class Input {
   clear() {
     this.keys.clear();
     this.queue.length = 0;
-    this.mouse.left = this.mouse.right = false;
+    this.mouse.left = this.mouse.right = this.mouse.clicked = this.mouse.rightClicked = false;
     this.wheel = 0;
   }
 }
@@ -117,15 +119,16 @@ export class PlayerController {
       crouch: k.down('KeyS', 'ArrowDown', 'ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight'),
       // Hold K to self-destruct (to get out of a pit you can't climb out of).
       selfDestruct: k.down('KeyK'),
-      fire: k.mouse.left,
-      firePressed: k.mouse.left && !this.prevFire,
-      alt: k.mouse.right,
+      fire: k.mouse.left || k.mouse.clicked,
+      firePressed: (k.mouse.left && !this.prevFire) || k.mouse.clicked,
+      alt: k.mouse.right || k.mouse.rightClicked,
     };
     this.prevJump = jump;
     this.prevFire = k.mouse.left;
     // The Builder: right click turns the block (a wall or a plank).
-    if (k.mouse.right && !this.prevAlt && s.current === 'Builder' && s.alive) this.plank = !this.plank;
+    if (((k.mouse.right && !this.prevAlt) || k.mouse.rightClicked) && s.current === 'Builder' && s.alive) this.plank = !this.plank;
     this.prevAlt = k.mouse.right;
+    k.mouse.clicked = k.mouse.rightClicked = false;
     inp.plank = !!this.plank;
 
     // Sprint (Shift): while held, or toggled on and off.

@@ -143,6 +143,8 @@ export class NetClient {
       s.name = String(r.name).slice(0, 14);
       s.team = r.team;
       s.remote = !!r.remote;
+      // (Our own: unless we've just asked to change it, and the host hasn't caught up yet.)
+      if (s !== this.me || this.clock() - (this.spectateAt ?? -1e9) > 1500) s.spectating = !!r.spec;
     }
   }
 
@@ -394,6 +396,13 @@ export class NetClient {
     if (now - (this.carvesAsked ?? -1e9) < 1000) return;
     this.carvesAsked = now;
     this.link.send({ t: 'carves?', from: this.game.carves.length }, true);
+  }
+
+  /** Sit out and watch (on), or join the game again. */
+  sendSpectate(on) {
+    this.spectateAt = this.clock();
+    if (this.me) this.me.spectating = !!on;
+    this.link.send({ t: 'spectate', on: !!on }, true);
   }
 
   sendChat(text) { this.link.send({ t: 'chat', text: String(text).slice(0, 140) }, true); }

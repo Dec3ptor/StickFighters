@@ -181,8 +181,10 @@ const oitc = {
   canRespawn(game, s) { return (s.lives ?? 1) > 0; },
 
   winner(game) {
-    if (game.soldiers.length < 2) return null;
-    const left = game.soldiers.filter(s => (s.lives ?? 1) > 0);
+    // (Players spectating are sitting this one out.)
+    const playing = game.soldiers.filter(s => !s.spectating);
+    if (playing.length < 2) return null;
+    const left = playing.filter(s => (s.lives ?? 1) > 0);
     if (left.length === 1) return { soldier: left[0] };
     if (left.length === 0) return { soldier: game.standings()[0] };
     return null;

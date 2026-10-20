@@ -151,13 +151,18 @@ for (const graphics of ['canvas', 'webgl']) {
   }
   expect(ok, `${graphics}: somewhere to build near ${JSON.stringify(spot)}`);
   await page.screenshot({ path: `${outDir}/classes-build-${graphics}-preview.png` });
-  const before = await page.evaluate(() => window.stickSoldiers.state.game.map.builtCount);
+  // (The map's version goes up when a block goes in: built, or a repair on a destructible map.)
+  const before = await page.evaluate(() => window.stickSoldiers.state.game.map.version);
   await page.mouse.down();
   await page.waitForTimeout(80);
   await page.mouse.up();
-  await page.waitForFunction(n => window.stickSoldiers.state.game.map.builtCount > n, before, { timeout: 2000 }).catch(() => {});
-  const count = await page.evaluate(() => window.stickSoldiers.state.game.map.builtCount);
-  expect(count > before, `${graphics}: a click built a block (${before} -> ${count})`);
+  await page.waitForFunction(n => window.stickSoldiers.state.game.map.version > n, before, { timeout: 2000 }).catch(() => {});
+  const count = await page.evaluate(() => window.stickSoldiers.state.game.map.version);
+  const why = count > before ? '' : await page.evaluate(() => {
+    const { state } = window.stickSoldiers, me = state.me;
+    return JSON.stringify({ alive: me.alive, current: me.current, cooldown: me.cooldown, ammo: me.weapons.Builder?.ammo, notes: state.game.notes.slice(-2).map(n => n.text), paused: state.paused, menu: state.menuOpen, enabled: !!state.game && document.body.className });
+  });
+  expect(count > before, `${graphics}: a click built a block (map version ${before} -> ${count}) ${why}`);
   // Right click: a plank.
   await page.mouse.down({ button: 'right' });
   await page.waitForTimeout(80);

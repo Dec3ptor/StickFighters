@@ -145,7 +145,8 @@ export class Renderer {
    * (drawn first, under the map). `fogFrom` is who the camera follows, if not the viewer.
    */
   startFog(game, alpha, viewer) {
-    this.fogNow = game.options?.fog && (this.fogFrom || viewer) ? (this.fog ||= new Fog()).update(game, this.fogFrom || viewer, alpha) : null;
+    // (Spectating with the free camera: no fog.)
+    this.fogNow = game.options?.fog && !this.noFog && (this.fogFrom || viewer) ? (this.fog ||= new Fog()).update(game, this.fogFrom || viewer, alpha) : null;
     this.fogNow?.drawShadows(this.ctx, this.view);
     return this.fogNow;
   }

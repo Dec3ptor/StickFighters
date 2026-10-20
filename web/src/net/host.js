@@ -120,6 +120,8 @@ export class NetHost {
       const others = g.soldiers.filter(o => o !== s && o.lives > 0).map(o => o.lives);
       if (others.length) s.lives = Math.max(1, Math.min(s.lives, ...others));
     }
+    // Spectating carries on into the next match.
+    if (p.spectating) g.spectate(s, true, { quiet: true });
     return s;
   }
 
@@ -147,7 +149,12 @@ export class NetHost {
   }
 
   roster() {
-    return this.game.soldiers.map(s => ({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, remote: !!s.remote }));
+    return this.game.soldiers.map(s => ({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, remote: !!s.remote, spec: !!s.spectating }));
+  }
+
+  /** Someone started or stopped spectating (called by the game): everyone's list of players changes. */
+  rosterChanged() {
+    if (this.players.size) this.broadcast({ t: 'roster', roster: this.roster() });
   }
 
   /** Everything a player needs to set up the match. (The chat so far only goes to players who just joined.) */
@@ -184,6 +191,11 @@ export class NetHost {
           this.useKit(p.soldier, p.kit);
           holdSpawn(p.soldier, !!data.hold);
         }
+        break;
+      case 'spectate':
+        // They want to sit out and watch (or join again).
+        p.spectating = !!data.on;
+        if (p.soldier) this.game?.spectate(p.soldier, p.spectating);
         break;
       case 'roster?':
         // The player saw a soldier it doesn't know: send the list again (at most once a second).

@@ -89,6 +89,7 @@ Air strikes, napalm, the donkey and teleports go where your mouse is. Weapons ar
 | Switch weapon | `1`–`0`, melee `F` (press again to cycle), `Q` / `E`, or mouse wheel |
 | Ninja rope | click to fire, `W` / `S` to climb, `A` / `D` to swing, click again to let go |
 | Self-destruct | hold `K` for a second (the way out of a pit you can't climb out of; counts as a suicide) |
+| Spectate | **Spectate** in the menu (`Esc`): sit out and watch (it isn't a death, unless you'd just been hurt; a flag you carry drops). `A` / `D` (or the arrows, or a click) switch who you follow; `Space` gives a free camera (`WASD` or arrows to move, `Shift` faster; `Space` or a click follows whoever's nearest). **Join game** in the menu to play again |
 | Gadget (classes on) | `G`: drop a medkit or ammo box, place a spawn beacon, or take out the Engineer's Builder (`G` again puts it away) |
 | Builder (Engineer) | click to put up a wall, or repair what explosions broke; right click switches between a wall and a plank |
 | Change class (classes on) | `C` (or click the class box) while waiting to respawn, then `1`–`4` or click a class; or **Change class** in the menu (`Esc`). It applies when you next spawn |
@@ -136,6 +137,7 @@ How it works, with no game server:
 - **Limits.** If the host leaves, the game ends for everyone. A few networks (some mobile and office networks) block direct connections; joining then fails with a message saying so. Fixing that would need a TURN relay server, which you can add to `ICE_SERVERS` in `relays.js`.
 - **Hosting in the background works.** When the host switches tabs, a worker keeps the game running.
 - **Ping.** Each player measures their round trip to the host every 2 seconds and tells the host, which shares everyone's for the scoreboard.
+- **Spectating.** A player who chooses Spectate tells the host, which sits their soldier out (no respawning) and marks them on everyone's scoreboard; they stay a spectator in the following matches until they join again.
 - **Classes and building.** Each player's browser sends the host their class and loadouts (when they join and when they change them); the host checks they make sense and uses them from the player's next spawn. Engineers build on the host, and new blocks go out with the holes, in one list of changes to the map in order, so everyone ends up with the same map (players who join later get the whole list).
 
 ## Map maker

@@ -14,7 +14,7 @@ const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
  * opts: { showScores, watching (soldier the camera follows when you're out), chat: [{ text, tick }],
  *   online (show everyone's ping on the scoreboard), hostId (the host's soldier),
  *   ping (your ping in ms, or a label like 'Host'), perf (frame rate text),
- *   picking (the class picker is open) }
+ *   picking (the class picker is open), spectating ({ free (the free camera), target (who it follows) }) }
  * With classes on, while you wait to respawn this sets r.classButton (screen px) to the
  * "change class" box, so a click on it can open the class picker.
  */
@@ -62,7 +62,8 @@ export function drawHud(r, game, me, opts = {}) {
   }
 
   r.classButton = null;
-  if (!me.alive && !game.over) {
+  if (opts.spectating && !game.over) drawSpectating(ctx, game, opts.spectating, W, H);
+  else if (!me.alive && !game.over) {
     ctx.textAlign = 'center';
     ctx.font = `bold 20px ${FONT}`;
     ctx.fillStyle = '#222';
@@ -77,6 +78,9 @@ export function drawHud(r, game, me, opts = {}) {
       if (opts.watching) {
         ctx.font = `14px ${FONT}`;
         ctx.fillText(`Watching ${opts.watching.name}`, W / 2, H / 2 - 46);
+        ctx.font = `12px ${FONT}`;
+        ctx.fillStyle = '#777';
+        ctx.fillText('A / D or click: watch someone else', W / 2, H / 2 - 26);
       }
     }
   }
@@ -208,6 +212,31 @@ function drawClassChoice(ctx, me, W, y) {
   return { x, y, w, h };
 }
 
+/**
+ * Spectating: who the camera follows (their health and weapon), or the free
+ * camera, and how to switch, at the bottom of the screen.
+ */
+function drawSpectating(ctx, game, sp, W, H) {
+  const t = sp.free ? null : sp.target;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.fillRect(W / 2 - 250, H - 86, 500, 74);
+  ctx.font = `bold 16px ${FONT}`;
+  ctx.fillStyle = t && game.rules.teams ? TEAM[t.team] : '#222';
+  ctx.fillText(sp.free ? 'Spectating · free camera' : t ? `Spectating ${t.name}` : 'Spectating · nobody to watch right now', W / 2, H - 70);
+  if (t) {
+    ctx.font = `13px ${FONT}`;
+    ctx.fillStyle = '#444';
+    const gun = WEAPONS[t.current];
+    ctx.fillText(`${Math.max(0, Math.ceil(t.health))} health${t.armour > 0 ? ` · ${Math.ceil(t.armour)} armour` : ''}${gun ? ` · ${gun.name}` : ''}`, W / 2, H - 50);
+  }
+  ctx.font = `12px ${FONT}`;
+  ctx.fillStyle = '#777';
+  ctx.fillText(sp.free
+    ? 'WASD or arrows: move (Shift: faster)  ·  Space or click: follow a player  ·  Esc: join game'
+    : 'A / D or click: switch player  ·  Space: free camera  ·  Esc: join game', W / 2, H - 28);
+}
+
 /** A bar like the original's: bright fill on a dark track, white label on top (bold: bigger). */
 function bar(ctx, x, y, w, h, frac, kind, label, bold = false) {
   const [fg, bg] = BAR_COLORS[kind];
@@ -324,7 +353,7 @@ function drawTop(ctx, game, me, W, standings, r, H) {
     ctx.fillStyle = '#777';
     ctx.fillText(next ? `Next: ${WEAPONS[next].name}` : 'Get a kill to win!', W / 2, 34);
   } else if (game.mode === 'oitc') {
-    const left = game.soldiers.filter(s => (s.lives ?? 1) > 0).length;
+    const left = game.soldiers.filter(s => !s.spectating && (s.lives ?? 1) > 0).length;
     const bullets = me.weapons.Chamber?.ammo ?? 0;
     ctx.fillText(`Lives: ${me.lives ?? 0}  ·  Bullets: ${me.alive ? bullets : '-'}  ·  ${left} still in`, W / 2, 16);
   } else {
@@ -390,6 +419,7 @@ function drawScoreboard(ctx, game, me, W, H, opts, standings) {
       ctx.fillText(value(s), colX(c), ry);
     });
     if (s.isBot) { ctx.fillStyle = '#aaa'; ctx.font = `10px ${FONT}`; ctx.textAlign = 'left'; ctx.fillText('bot', x + 26 + nameW, ry); }
+    else if (s.spectating) { ctx.fillStyle = '#999'; ctx.font = `10px ${FONT}`; ctx.textAlign = 'left'; ctx.fillText('spectating', x + 26 + nameW, ry); }
   });
   if (more) {
     ctx.font = `12px ${FONT}`;

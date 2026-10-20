@@ -73,10 +73,54 @@ if (Math.abs(speed.ticksPerSecond - 60) > 5) errors.push(`expected ~60 updates p
 results.audio = audio;
 results.speed = speed;
 
+const RULES_WAIT = 3500; // longer than a respawn takes
+
 // Pause menu
 await page.keyboard.press('Escape');
 await page.waitForTimeout(200);
 await page.screenshot({ path: `${outDir}/pause.png` });
+
+// Spectate (from the menu): sit out and follow the others, switch with D, a free camera
+// with Space, then join again.
+const S = () => page.evaluate(() => {
+  const { state } = window.stickSoldiers;
+  return { spectating: !!state.me.spectating, alive: state.me.alive, follow: state.spec.id, free: state.spec.free, menu: state.menuOpen, deaths: state.me.deaths };
+});
+// (Spectating just after being hurt counts as a death for whoever hurt you: not that here.)
+await page.evaluate(() => { window.stickSoldiers.state.me.lastHurtBy = null; });
+const before = await S();
+await page.click('#spectate');
+await page.waitForTimeout(300);
+let sp = await S();
+if (!sp.spectating || sp.alive || sp.menu) errors.push(`Spectate: ${JSON.stringify(sp)}`);
+if (sp.deaths !== before.deaths) errors.push('Spectate counted as a death');
+if (sp.follow == null) errors.push('Spectate: not following anyone');
+const first = sp.follow;
+await page.keyboard.press('KeyD');
+await page.waitForTimeout(150);
+sp = await S();
+if (sp.follow === first) errors.push('Spectate: D didn\'t switch who to follow');
+await page.screenshot({ path: `${outDir}/spectate.png` });
+await page.keyboard.press('Space');
+await page.keyboard.down('KeyD');
+await page.waitForTimeout(400);
+await page.keyboard.up('KeyD');
+sp = await S();
+if (!sp.free) errors.push('Spectate: Space didn\'t give a free camera');
+await page.screenshot({ path: `${outDir}/spectate-free.png` });
+await page.waitForTimeout(RULES_WAIT);
+if ((await S()).alive) errors.push('Spectate: respawned while spectating');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+const label = await page.textContent('#spectate');
+if (label !== 'Join game') errors.push(`Spectate: the menu says "${label}", not "Join game"`);
+await page.click('#spectate');
+await page.waitForFunction(() => window.stickSoldiers.state.me.alive, null, { timeout: 8000 }).catch(() => {});
+sp = await S();
+if (!sp.alive || sp.spectating) errors.push(`Join game: ${JSON.stringify(sp)}`);
+results.spectate = { first, label };
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
 
 // A huge battle, set up from the menu: 1,000 bots.
 await page.click('#quit');

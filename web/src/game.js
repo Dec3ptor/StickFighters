@@ -348,6 +348,8 @@ export class Game {
 
   updateSoldier(s, input) {
     if (!s.alive) {
+      // Spectating: sitting out until they join again.
+      if (s.spectating) return;
       // (Choosing a class holds the respawn for a while.)
       if (s.holdSpawn > 0) { s.holdSpawn--; return; }
       if (this.rules.canRespawn(this, s) && --s.respawnTimer <= 0) this.respawn(s);
@@ -611,6 +613,36 @@ export class Game {
     this.controllers.get(victim)?.onDeath?.(this, victim, killer);
 
     this.checkWin();
+  }
+
+  /**
+   * Spectating (from the in-game menu): a player sits out and watches until they
+   * join again. Leaving play isn't a death (no frag lost, no life used), unless
+   * they'd just been hurt: then it counts for whoever hurt them, as self-destructing
+   * does. A flag they were carrying drops. Joining again respawns them as usual.
+   * quiet: no message in the kill feed (carrying it into the next match).
+   */
+  spectate(s, on, { quiet = false } = {}) {
+    on = !!on;
+    if (!!s.spectating === on) return false;
+    if (on && s.alive) {
+      if (s.lastHurtBy && s.lastHurtBy !== s && this.tick - s.lastHurtTick < RULES.creditFallTicks) this.kill(s, null, null);
+      else {
+        this.rules.onRemove?.(this, s);
+        s.alive = false;
+        s.kamikaze = null;
+        s.burnTicks = 0;
+        s.body.rope = null;
+        this.fx?.ring(s.x, s.y - 6, '#999');
+      }
+    }
+    s.spectating = on;
+    s.holdSpawn = 0;
+    s.respawnTimer = RULES.respawnTicks;
+    if (!quiet) this.addFeed({ text: on ? `${s.name} is spectating` : `${s.name} joined the game`, tick: this.tick });
+    this.recorder?.rosterChanged?.();
+    this.checkWin();
+    return true;
   }
 
   checkWin() {
