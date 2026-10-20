@@ -3,6 +3,10 @@
 // only where blocks change (holes, building), and copied onto the screen each
 // frame instead of drawing every block, outline and hatch line again.
 //
+// Only with ?tiles=on in the address: with the canvas drawn by a graphics card,
+// copying the tiles every frame turned out slower than drawing the map (about 20%
+// fewer frames), so by default the map is drawn directly (paintMap()).
+//
 // The world is drawn at whole screen pixels (render.js rounds the camera), so a
 // tile copied into place gives the pixels drawing the map there would.
 //

@@ -9,7 +9,6 @@ import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate,
 import { BEACON_HP } from './gadgets.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
 import { MapTiles, paintMap, HATCH, HATCH_GAP, BUILT, BUILT_LINE, BUILT_ROW } from './maptiles.js';
-import { hasGPU } from './gpu.js';
 import { buildPlan } from './building.js';
 import { Fog } from './fog.js';
 
@@ -26,8 +25,9 @@ const TEAM_HEAD = { 1: '#d9e6ff', 2: '#ffdcd8' };
 
 /** Draws with the browser's 2D canvas. (glrender.js draws the same things with WebGL.) */
 export class Renderer {
-  // Keep the map in tiles: 'auto' (with a graphics card), 'on' or 'off' (?tiles= in the address, for testing).
-  static tiles = 'auto';
+  // Keep the map in tiles (maptiles.js): off unless ?tiles=on is in the address. With the
+  // canvas drawn by a graphics card, copying the tiles turned out slower than drawing the map.
+  static tiles = 'off';
 
   // (alpha: false: the canvas is opaque (it's always filled in), so the page doesn't blend it with what's behind.)
   constructor(canvas, ctx = canvas.getContext('2d', { alpha: false })) {
@@ -188,12 +188,11 @@ export class Renderer {
   }
 
   /**
-   * The map: copied from tiles drawn before (maptiles.js), or drawn directly (while
-   * the zoom is changing, or without a graphics card, where copying big pictures
-   * costs more than it saves). Then the jump pads' moving chevrons.
+   * The map: drawn directly (only what's on screen), or with ?tiles=on, copied from
+   * tiles drawn before (maptiles.js). Then the jump pads' moving chevrons.
    */
   drawMap(game) {
-    this.tiled ??= Renderer.tiles === 'on' || (Renderer.tiles !== 'off' && hasGPU());
+    this.tiled ??= Renderer.tiles === 'on';
     if (!this.tiled || !(this.mapTiles ||= new MapTiles()).draw(this, game, !this.cleared)) {
       if (!this.cleared) this.clearWhite();
       paintMap(this.ctx, game.map, this.lineW, this.view, !!game.options?.destruction);

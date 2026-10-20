@@ -54,7 +54,7 @@ const params = new URLSearchParams(location.search);
 // Classes (kits, gadgets, the Loadout screen) are switched off for now: ?classes in the
 // address turns them back on (to try them, and for their tests).
 const CLASSES_ON = params.has('classes');
-// (?tiles=on or off: whether the canvas keeps the map in tiles, rather than deciding by the graphics card.)
+// (?tiles=on: the canvas keeps the map in tiles, maptiles.js. Off by default: slower with a graphics card.)
 if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
 const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold' };
