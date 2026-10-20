@@ -130,12 +130,15 @@ for (const graphics of ['canvas', 'webgl']) {
   await page.waitForFunction(() => window.stickSoldiers.state.me.current === 'Builder', null, { timeout: 2000 }).catch(() => {});
   expect(await page.evaluate(() => window.stickSoldiers.state.me.current) === 'Builder', `${graphics}: G takes out the Builder`);
   await page.waitForTimeout(400); // (a weapon just taken out isn't ready straight away)
-  // Aim at points in front, on both sides, until the preview says a block can go there.
+  // Aim around the screen, nearest first, until the preview says a block can go there.
   let ok = null;
-  for (const dx of [70, -70, 110, -110, 40, -40]) {
-    for (const dy of [0, -30, 30]) {
-      await page.mouse.move(640 + dx * 2, 380 + dy);
-      await page.waitForTimeout(60);
+  const aims = [];
+  for (let dx = -300; dx <= 300; dx += 30) for (let dy = -120; dy <= 120; dy += 30) if (Math.abs(dx) >= 30) aims.push([dx, dy]);
+  aims.sort((a, b) => Math.hypot(...a) - Math.hypot(...b));
+  for (const [dx, dy] of aims) {
+    {
+      await page.mouse.move(640 + dx, 380 + dy);
+      await page.waitForTimeout(40);
       const plan = await page.evaluate(async () => {
         const { buildPlan } = await import('./src/building.js');
         const { state } = window.stickSoldiers;
