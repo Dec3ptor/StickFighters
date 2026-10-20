@@ -43,6 +43,9 @@ expect(await visible('#setBotVision') && await visible('#setFog'), 'experimental
 await page.selectOption('#setFog', 'on');
 expect(await page.inputValue('#fog') === 'on', 'fog of war chosen in settings shows in the game setup');
 await page.selectOption('#setFog', 'off');
+await page.selectOption('#setJump', 'low');
+expect(await page.evaluate(() => window.stickSoldiers.readMenu().jump) === 'low', 'low jump chosen in settings is used for the next game');
+await page.selectOption('#setJump', 'normal');
 await page.keyboard.press('Escape');
 expect(!(await visible('#settings')), 'Esc closes settings');
 

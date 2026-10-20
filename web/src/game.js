@@ -8,7 +8,7 @@ import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
 import { fire, updateProjectiles, damage, explode, soldierBox, canHurt } from './combat.js';
 import { buildPose } from './stickman.js';
-import { RULES, TICK_RATE, MOTION, PHYS } from './config.js';
+import { RULES, TICK_RATE, MOTION, PHYS, LOW_JUMP } from './config.js';
 import { setGameSpeed } from './speed.js';
 import { WEAPONS } from './weapons.js';
 import { modeOf } from './modes.js';
@@ -21,15 +21,16 @@ export class Game {
   /**
    * options: { lives (one in the chamber), gunGameKills (kills per weapon), crates: 'off'|'normal'|'lots',
    *   botVision: 'classic' (bots see everyone nearby in a clear line) | 'sight' (only what's on their
-   *   screen in front of them, plus what they hear), fog: true (players only see what's in their line of sight) }
+   *   screen in front of them, plus what they hear), fog: true (players only see what's in their line of sight),
+   *   jump: 'normal' | 'low' (jumps reach LOW_JUMP of their usual height) }
    */
   constructor({ mapData, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1, options = {} }) {
     // Speed rescales shared constants, so set it before anything reads them.
-    setGameSpeed(speed);
+    setGameSpeed(speed, { jump: options.jump === 'low' ? LOW_JUMP : 1 });
     this.map = new GameMap(mapData);
     this.mode = mode;
     this.rules = modeOf(mode);
-    this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, ...options };
+    this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, jump: 'normal', ...options };
     // Noises bots can hear (with bot vision 'sight'): { x, y, r (how far it carries), by, tick }.
     this.noises = [];
     this.fragLimit = fragLimit;

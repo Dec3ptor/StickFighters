@@ -36,12 +36,17 @@ function scaleWeapon(out, base, s) {
   }
 }
 
-/** Rescale the shared constants for speed s (1 = full speed). Call before building a game or route map. */
-export function setGameSpeed(s = 1) {
+/**
+ * Rescale the shared constants for speed s (1 = full speed). Call before building a game or route map.
+ * jump: jump height as a share of the usual (the experimental low jump); jump pads are unchanged.
+ */
+export function setGameSpeed(s = 1, { jump = 1 } = {}) {
   current = s;
   const v = s, a = s * s, t = 1 / s;
   for (const k of SPEEDS) if (k in BASE.PHYS) PHYS[k] = BASE.PHYS[k] * v;
   for (const k of ACCELS) PHYS[k] = BASE.PHYS[k] * a;
+  // (Height goes with the square of the take-off speed.)
+  PHYS.jumpSpeed *= Math.sqrt(jump);
 
   MOTION.timeScale = s;
   MOTION.grenadeGravity = BASE.MOTION.grenadeGravity * a;

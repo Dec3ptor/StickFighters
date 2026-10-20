@@ -7,7 +7,7 @@ import { makeBody, stepBody } from '../web/src/physics.js';
 import { NavGraph } from '../web/src/nav.js';
 import { Game } from '../web/src/game.js';
 import { WEAPONS } from '../web/src/weapons.js';
-import { BODY, PHYS, SPEEDS, DEFAULT_SPEED, SHOW_SPEED_MENU } from '../web/src/config.js';
+import { BODY, PHYS, SPEEDS, DEFAULT_SPEED, SHOW_SPEED_MENU, LOW_JUMP } from '../web/src/config.js';
 import { setGameSpeed } from '../web/src/speed.js';
 import fs from 'node:fs';
 
@@ -181,6 +181,26 @@ test('lower game speeds keep jumps the same height but slower, at 60 updates a s
   assert.equal(WEAPONS.M4.rof, 16, 'fire delay doubles at half speed');
   assert.equal(WEAPONS.M4.speed, 17, 'bullets fly half as fast');
 });
+test('the experimental low jump reaches 60% as high, at any speed, and only in that match', () => {
+  const jump = (speed, options) => {
+    const g = new Game({ mapData: loadMap('ssteam1.json'), effects: false, speed, options });
+    const body = settle(makeBody(g.map.spawns[0].x, g.map.spawns[0].y), g.map);
+    const floorY = body.y;
+    stepBody(body, { move: 0, jump: true, jumpPressed: true }, g.map);
+    let top = body.y;
+    for (let i = 0; i < 400 && !body.onGround; i++) { stepBody(body, { move: 0, jump: true }, g.map); top = Math.min(top, body.y); }
+    return floorY - top;
+  };
+  const normal = jump(1);
+  for (const speed of [1, DEFAULT_SPEED]) {
+    const low = jump(speed, { jump: 'low' });
+    assert.ok(Math.abs(low / normal - LOW_JUMP) < 0.03, `low jump at ${speed}: ${low.toFixed(0)} px vs ${normal.toFixed(0)}`);
+  }
+  // The next match without it jumps as usual again.
+  assert.ok(Math.abs(jump(DEFAULT_SPEED) - normal) < 4);
+  assert.equal(new Game({ mapData: loadMap('ssteam1.json'), effects: false }).options.jump, 'normal');
+});
+
 test('the pistol keeps reloading and firing at the real game speed', () => {
   const map = { name: 'range', bounds: { left: -600, top: -300, right: 600, bottom: 200 }, spawns: [], items: [],
     platforms: [{ left: -600, top: 0, right: 600, bottom: 40 }] };
