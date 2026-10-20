@@ -90,6 +90,38 @@ await page.keyboard.press('Control+KeyY');
 const redone = (await editorMap()).platforms[1].top;
 expect(moved !== before && undone === before && redone === moved, `move/undo/redo: ${before} -> ${moved} -> ${undone} -> ${redone}`);
 
+// Indestructible platforms: drawn that way (the Platform tool's option), clicked with
+// the Indestructible tool (I), or marked by dragging a box (Shift: unmarked).
+const hardFlags = () => page.evaluate(() => window.stickSoldiers.editor.map.platforms.map(p => !!p.hard).join());
+await page.keyboard.press('KeyP');
+await page.check('#toolHard');
+await drag([-56, 104], [56, 120]);
+const drawnHard = await hardFlags();
+expect(drawnHard === 'false,false,false,false,true', `drawn indestructible: ${drawnHard}`);
+await page.uncheck('#toolHard');
+await page.click('#selDel');
+const ledge = await page.evaluate(() => { const p = window.stickSoldiers.editor.map.platforms[1]; return [(p.left + p.right) / 2, (p.top + p.bottom) / 2]; });
+await page.keyboard.press('KeyI');
+await clickAt(...ledge);
+const clickedHard = await hardFlags();
+await clickAt(...ledge);
+const clickedBack = await hardFlags();
+await drag([-290, 20], [290, 130]);
+const boxHard = await hardFlags();
+await page.keyboard.down('Shift');
+await drag([-290, 20], [-40, 130]);
+await page.keyboard.up('Shift');
+const unmarked = await hardFlags();
+await page.click('#hardAll');
+const allHard = await hardFlags();
+await page.keyboard.press('Control+KeyZ');
+const hardUndone = await hardFlags();
+const marking = { drawnHard, clickedHard, clickedBack, boxHard, unmarked, allHard, hardUndone };
+expect(clickedHard === 'false,true,false,false' && clickedBack === 'false,false,false,false', `click to mark and unmark: ${JSON.stringify(marking)}`);
+expect(boxHard === 'false,true,true,false' && unmarked === 'false,false,true,false', `box to mark, Shift-box to unmark: ${JSON.stringify(marking)}`);
+expect(allHard === 'true,true,true,false' && hardUndone === unmarked, `all indestructible (not the jump pad), then undo: ${JSON.stringify(marking)}`);
+await page.keyboard.press('KeyV');
+
 await page.click('#edCheck');
 await page.waitForTimeout(300);
 const report = await page.$$eval('.ed-problem', els => els.map(e => e.textContent));
@@ -101,8 +133,12 @@ await page.screenshot({ path: `${outDir}/editor.png` });
 await page.click('#edTest');
 await page.waitForFunction(() => window.stickSoldiers.state.game && window.stickSoldiers.state.me.alive, null, { timeout: 15000 });
 await page.waitForTimeout(2500);
-const playing = await page.evaluate(() => ({ map: window.stickSoldiers.state.game.map.name, tick: window.stickSoldiers.state.game.tick }));
+const playing = await page.evaluate(() => {
+  const g = window.stickSoldiers.state.game;
+  return { map: g.map.name, tick: g.tick, destruction: !!g.options.destruction, saved: window.stickSoldiers.editor.record.data.platforms.map(p => !!p.hard).join() };
+});
 expect(playing.map === 'Playwright Arena' && playing.tick > 60, `test play: ${JSON.stringify(playing)}`);
+expect(playing.destruction && playing.saved === 'false,false,true,false', `played with Destruction on, the indestructible ledge saved: ${JSON.stringify(playing)}`);
 await page.screenshot({ path: `${outDir}/editor-testplay.png` });
 await page.keyboard.press('Escape');
 await page.waitForTimeout(200);
@@ -170,6 +206,12 @@ await drag([-250, 50], [-250, 10]);
 const moved2 = await page.evaluate(() => window.stickSoldiers.editor.map.platforms.filter(p => p.right - p.left < 200).map(p => p.top));
 expect(moved2.length === 2 && moved2[0] === moved2[1] && moved2[0] < 40, `both sides moved: ${moved2}`);
 await page.screenshot({ path: `${outDir}/editor-mirror.png` });
+// Marking a platform indestructible marks its twin too.
+await page.keyboard.press('KeyI');
+const small = await page.evaluate(() => window.stickSoldiers.editor.map.platforms.find(p => p.right - p.left < 200 && p.right <= 0));
+await clickAt((small.left + small.right) / 2, (small.top + small.bottom) / 2);
+const twinsHard = await page.evaluate(() => window.stickSoldiers.editor.map.platforms.map(p => !!p.hard).join());
+expect(twinsHard === 'false,true,true', `both sides marked indestructible: ${twinsHard}`);
 // Everyone spawns with an Uzi and full armour.
 await page.keyboard.press('Escape');
 await page.click('#loDetails summary');
@@ -227,7 +269,7 @@ const communityCards = await page.$$eval('.map-card span', els => els.map(e => e
 expect(communityCards.includes('Mirror Test Arena'), `community tab lists the upload (${communityCards})`);
 await page.screenshot({ path: `${outDir}/menu-community.png` });
 
-console.log(JSON.stringify({ objectives, ctf, uploadStatus, communityCards, mirrored, loadout, built, moves: { before, moved, undone, redone }, report, playing, shared, again, broken, errors }, null, 2));
+console.log(JSON.stringify({ marking, objectives, ctf, uploadStatus, communityCards, mirrored, loadout, built, moves: { before, moved, undone, redone }, report, playing, shared, again, broken, errors }, null, 2));
 await browser.close();
 server.close();
 await relay.close();

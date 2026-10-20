@@ -212,6 +212,7 @@ button.small { font-size: 12px; padding: 4px 9px; border-width: 1.5px; }
 .ed-icon-select { background: linear-gradient(135deg, transparent 45%, currentColor 45%, currentColor 55%, transparent 55%); width: 14px; }
 .ed-icon-platform { border: 2px solid currentColor; height: 10px; margin: 3px 0; }
 .ed-icon-pad { border: 2px solid currentColor; height: 10px; margin: 3px 0; background: #cfe0a8; }
+.ed-icon-hard { border: 2px solid currentColor; height: 10px; margin: 3px 0; background: repeating-linear-gradient(45deg, transparent 0 3px, #9a9a9a 3px 4.5px); }
 .ed-icon-spawn { width: 10px; border-radius: 50%; border: 2px solid #2f6fdb; height: 10px; margin: 3px 0; }
 .ed-icon-weapon { height: 4px; margin: 6px 0; background: currentColor; }
 .ed-icon-health { width: 12px; height: 12px; margin: 2px 0; background: linear-gradient(#d21f1f, #d21f1f) center/4px 12px no-repeat, linear-gradient(#d21f1f, #d21f1f) center/12px 4px no-repeat; }

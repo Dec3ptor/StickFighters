@@ -12,8 +12,9 @@ import { platformSeams, fillSeams, hatch } from './map.js';
 
 const TOOLS = [
   { id: 'select', label: 'Select', key: 'KeyV', short: 'V', hint: 'Click to select. Drag to move, drag the corner squares to resize. Drag empty space to move the view.' },
-  { id: 'platform', label: 'Platform', key: 'KeyP', short: 'P', hint: 'Drag to draw a platform.' },
+  { id: 'platform', label: 'Platform', key: 'KeyP', short: 'P', hint: "Drag to draw a platform. Tick Indestructible on the right to draw ones explosions can't break." },
   { id: 'pad', label: 'Jump pad', key: 'KeyJ', short: 'J', hint: 'Drag to draw a jump pad. Set how strong it is on the right.' },
+  { id: 'hard', label: 'Indestructible', key: 'KeyI', short: 'I', hint: "Click a platform to make it indestructible, and again to undo that. Drag a box to mark every platform inside it (hold Shift to unmark them). With Destruction on, explosions can't break them." },
   { id: 'spawn', label: 'Spawn', key: 'KeyS', short: 'S', hint: 'Click to place a spawn point. Pick blue or red team on the right.' },
   { id: 'weapon', label: 'Weapon', key: 'KeyW', short: 'W', hint: 'Click to place a weapon. Pick which one on the right.' },
   { id: 'health', label: 'Health', key: 'KeyH', short: 'H', hint: 'Click to place a health pack.' },
@@ -66,6 +67,7 @@ export class Editor {
     this.spawnSector = 0;   // for new spawn points (0: not tied to a Rush sector)
     this.grid = 8;
     this.sitOnFloor = true;
+    this.hardNew = false;   // new platforms are indestructible
     this.sel = null;
     this.hover = null;
     this.drag = null;
@@ -243,21 +245,28 @@ export class Editor {
       const o = ob[i];
       if (!isBox(o) && Math.abs(o.x - wx) <= Math.max(r, 10) && wy >= o.y - (o.type === 'flag' ? 44 : 30) && wy <= o.y + 4) return { kind: 'objective', i };
     }
-    const pl = this.map.platforms;
-    const e = 2 / this.view.zoom;
-    for (const wantPad of [true, false]) {
-      for (let i = pl.length - 1; i >= 0; i--) {
-        const p = pl[i];
-        if (!!p.bounce !== wantPad) continue;
-        if (wx >= p.left - e && wx <= p.right + e && wy >= p.top - e && wy <= p.bottom + e) return { kind: 'platform', i };
-      }
-    }
+    const i = this.platformAt(wx, wy);
+    if (i >= 0) return { kind: 'platform', i };
     // Hills and capture points: anywhere inside them that isn't a platform.
     for (let i = ob.length - 1; i >= 0; i--) {
       const o = ob[i];
       if (isBox(o) && wx >= o.left && wx <= o.right && wy >= o.top && wy <= o.bottom) return { kind: 'objective', i };
     }
     return null;
+  }
+
+  /** The platform at (wx, wy): its index, or -1. Jump pads come first (they sit on platforms), unless pads is false. */
+  platformAt(wx, wy, pads = true) {
+    const pl = this.map.platforms;
+    const e = 2 / this.view.zoom;
+    for (const wantPad of pads ? [true, false] : [false]) {
+      for (let i = pl.length - 1; i >= 0; i--) {
+        const p = pl[i];
+        if (!!p.bounce !== wantPad) continue;
+        if (wx >= p.left - e && wx <= p.right + e && wy >= p.top - e && wy <= p.bottom + e) return i;
+      }
+    }
+    return -1;
   }
 
   handlePoints(p) {
@@ -550,6 +559,8 @@ export class Editor {
           this.select(null);
           this.drag = { mode: 'pan', sx, sy, vx: this.view.x, vy: this.view.y };
         }
+      } else if (this.tool === 'hard') {
+        this.drag = { mode: 'mark', sx, sy, ex: sx, ey: sy, x0: wx, y0: wy, x1: wx, y1: wy, unmark: e.shiftKey };
       } else if (this.tool === 'platform' || this.tool === 'pad' || AREA_TOOLS.has(this.tool)) {
         if (AREA_TOOLS.has(this.tool) && this.map.objectives.length >= LIMITS.maxObjectives) return this.setStatus(`At most ${LIMITS.maxObjectives} objectives`, true);
         if (!AREA_TOOLS.has(this.tool) && this.map.platforms.length >= LIMITS.maxPlatforms) return this.setStatus(`At most ${LIMITS.maxPlatforms} platforms`, true);
@@ -566,10 +577,11 @@ export class Editor {
       Object.assign(this.mouse, { x: sx, y: sy, wx, wy, inside: sx >= 0 && sy >= 0 && sx <= this.w && sy <= this.h });
       const d = this.drag;
       if (!d) {
-        this.hover = this.tool === 'select' ? this.objectAt(wx, wy) : null;
+        const plat = this.tool === 'hard' ? this.platformAt(wx, wy, false) : -1;
+        this.hover = this.tool === 'select' ? this.objectAt(wx, wy) : plat >= 0 ? { kind: 'platform', i: plat } : null;
         const h = this.tool === 'select' && this.handleAt(sx, sy);
         cv.style.cursor = this.spaceDown ? 'grab' : h ? (h === 'n' || h === 's' ? 'ns-resize' : h === 'e' || h === 'w' ? 'ew-resize' : h === 'nw' || h === 'se' ? 'nwse-resize' : 'nesw-resize')
-          : this.tool === 'select' ? (this.hover ? 'move' : 'default') : 'crosshair';
+          : this.tool === 'select' ? (this.hover ? 'move' : 'default') : this.hover ? 'pointer' : 'crosshair';
         return;
       }
       if (d.mode === 'pan') {
@@ -577,6 +589,8 @@ export class Editor {
         this.view.y = d.vy - (sy - d.sy) / this.view.zoom;
       } else if (d.mode === 'create') {
         d.x1 = this.snap(wx); d.y1 = this.snap(wy);
+      } else if (d.mode === 'mark') {
+        Object.assign(d, { x1: wx, y1: wy, ex: sx, ey: sy, unmark: e.shiftKey });
       } else if (d.mode === 'move') {
         const o = this.selected(), dx = wx - d.wx, dy = wy - d.wy;
         if (isBox(o)) {
@@ -610,6 +624,7 @@ export class Editor {
         this.remember();
         const p = { left: l, top: t, right: r, bottom: b };
         if (this.tool === 'pad') p.bounce = -(this.padStrength || BOUNCE.standard);
+        else if (this.hardNew) p.hard = true;
         const m = this.mirror.x;
         if (this.mirror.on && l < m && r > m) {
           // Drawn across the mirror line: make it symmetric.
@@ -619,6 +634,8 @@ export class Editor {
         this.sel = { kind: 'platform', i: this.map.platforms.length - 1 };
         if (this.mirror.on && !(p.left < m && p.right > m) && !(p.left === this.mx(p.right))) this.map.platforms.push(this.mirrored('platform', p));
         this.changed();
+      } else if (d.mode === 'mark') {
+        this.mark(d);
       } else if (d.mode === 'move' || d.mode === 'resize') {
         // Nothing actually moved: forget the undo step.
         if (JSON.stringify(this.map) === d.before) this.undoStack.pop();
@@ -715,6 +732,8 @@ export class Editor {
 
   setTool(id) {
     this.tool = id;
+    // (The Indestructible tool doesn't select anything: its options take the panel.)
+    if (id === 'hard') this.sel = this.hover = null;
     for (const b of this.root.querySelectorAll('[data-tool]')) b.setAttribute('aria-pressed', String(b.dataset.tool === id));
     this.$('#edHint').textContent = TOOLS.find(t => t.id === id).hint;
     this.refreshPanel();
@@ -725,6 +744,50 @@ export class Editor {
     bar.innerHTML = TOOLS.map(t => `<button type="button" data-tool="${t.id}" title="${t.label} (${t.short})"><span class="ed-icon ed-icon-${t.id}"></span>${t.label}<kbd>${t.short}</kbd></button>`).join('');
     for (const b of bar.querySelectorAll('[data-tool]')) b.addEventListener('click', () => this.setTool(b.dataset.tool));
     this.setTool('select');
+  }
+
+  // ---- Indestructible platforms -----------------------------------------------------
+
+  /** The Indestructible tool's drag d was a click (or hardly moved), not a box. */
+  isClick(d) { return Math.abs(d.ex - d.sx) < 4 && Math.abs(d.ey - d.sy) < 4; }
+
+  /**
+   * What the Indestructible tool's drag d would do: { list: indexes of the platforms it
+   * changes (their twins too, with mirror editing on), hard: what they become,
+   * box: it's a box (not a click), pad: it's a click on a jump pad }.
+   */
+  markPlan(d) {
+    const pl = this.map.platforms, box = !this.isClick(d);
+    const picked = new Set();
+    let hard = !d.unmark;
+    if (!box) {
+      const i = this.platformAt(d.x0, d.y0, false);
+      if (i < 0) return { list: [], hard, box, pad: this.platformAt(d.x0, d.y0) >= 0 };
+      picked.add(i);
+      hard = !pl[i].hard;
+    } else {
+      // Platforms wholly inside the box (jump pads never break anyway).
+      const l = Math.min(d.x0, d.x1), r = Math.max(d.x0, d.x1), t = Math.min(d.y0, d.y1), b = Math.max(d.y0, d.y1);
+      pl.forEach((p, i) => { if (!p.bounce && p.left >= l && p.right <= r && p.top >= t && p.bottom <= b) picked.add(i); });
+    }
+    if (this.mirror.on) for (const i of [...picked]) { const j = this.twinIndex('platform', i); if (j >= 0) picked.add(j); }
+    return { list: [...picked].filter(i => !!pl[i].hard !== hard), hard, box, pad: false };
+  }
+
+  mark(d) {
+    const plan = this.markPlan(d);
+    if (plan.list.length) this.setHard(plan.list, plan.hard);
+    else if (plan.pad) this.setStatus('Jump pads never break anyway');
+    else if (plan.box) this.setStatus(`No ${plan.hard ? 'breakable' : 'indestructible'} platforms wholly inside the box`);
+  }
+
+  /** Make the platforms at these indexes indestructible (hard) or breakable again. */
+  setHard(list, hard) {
+    if (!list.length) return;
+    this.remember();
+    for (const i of list) { const p = this.map.platforms[i]; if (hard) p.hard = true; else delete p.hard; }
+    this.changed();
+    this.setStatus(`${count(list.length, 'platform')} made ${hard ? 'indestructible' : 'breakable'}`);
   }
 
   // ---- Side panel ----------------------------------------------------------------
@@ -774,11 +837,26 @@ export class Editor {
         ${o.type === 'weapon' ? `<label class="ed-field">Weapon<select id="iWeapon">${weaponOptions(o.weapon)}</select></label>` : ''}
         <div class="ed-grid">${num('iX', 'X', o.x)}${num('iY', 'Y', o.y)}</div>`;
     }
+    // Platforms explosions can't break: options for the Platform and Indestructible tools.
+    const solid = this.map.platforms.filter(p => !p.bounce), hardCount = solid.filter(p => p.hard).length;
+    let hardTool = '';
+    if (this.tool === 'platform') {
+      hardTool = `<h3>Drawing platforms</h3>
+        <label class="check" title="With Destruction on, explosions can't blow holes in them"><input type="checkbox" id="toolHard"${this.hardNew ? ' checked' : ''}> Indestructible</label>
+        <p class="ed-note">${this.hardNew ? "New platforms can't be broken by explosions (they're hatched)." : 'Tick it to draw platforms explosions can\'t break.'}</p>`;
+    } else if (this.tool === 'hard') {
+      hardTool = `<h3>Indestructible platforms</h3>
+        <p class="ed-stats">${hardCount} of ${count(solid.length, 'platform')}</p>
+        <div class="ed-row"><button type="button" id="hardAll">All indestructible</button><button type="button" id="hardNone">All breakable</button></div>
+        <p class="ed-note">Click platforms, or drag a box around them (Shift: unmark). With Destruction on, explosions can't break them. Floors with spawn points or objectives on them, and jump pads, never break.</p>`;
+    }
     if (o) {
       html += `<div class="ed-row"><button type="button" id="selDup">Duplicate</button><button type="button" id="selDel">Delete</button></div>
         <div class="ed-row"><button type="button" id="selMirror">Mirror to other side</button></div>`;
+      html += hardTool;
     } else {
       // Tool options and map summary.
+      html += hardTool;
       if (this.tool === 'spawn') html += `<h3>Placing spawn points</h3>${teamButtons('toolTeam', this.team)}<label class="ed-field">Rush sector<select id="toolSpawnSector">${sectorOptions(this.spawnSector, true)}</select></label>`;
       if (this.tool === 'flag') html += `<h3>Placing flags</h3>${teamButtons('toolTeam', this.team)}<p class="ed-note">One flag per team: placing another moves it.</p>`;
       if (this.tool === 'mcom') html += `<h3>Placing M-COMs</h3><label class="ed-field">Sector<select id="toolSector">${sectorOptions(this.sector)}</select></label><p class="ed-note">Blue attacks from sector 1 onward. Two per sector is usual.</p>`;
@@ -789,7 +867,7 @@ export class Editor {
       const blue = m.spawns.filter(s => s.team === 1).length;
       const ob = type => m.objectives.filter(o => o.type === type).length;
       const sectors = new Set(m.objectives.filter(o => o.type === 'mcom').map(o => o.sector)).size;
-      html += `<h3>Map</h3><p class="ed-stats">${count(m.platforms.length, 'platform')} &middot; ${count(m.spawns.length, 'spawn')} (${blue} blue, ${m.spawns.length - blue} red) &middot; ${count(m.items.length, 'pickup')}<br>${Math.round(b.right - b.left)} &times; ${Math.round(b.bottom - b.top)} px</p>
+      html += `<h3>Map</h3><p class="ed-stats">${count(m.platforms.length, 'platform')}${hardCount ? ` (${hardCount} indestructible)` : ''} &middot; ${count(m.spawns.length, 'spawn')} (${blue} blue, ${m.spawns.length - blue} red) &middot; ${count(m.items.length, 'pickup')}<br>${Math.round(b.right - b.left)} &times; ${Math.round(b.bottom - b.top)} px</p>
         <p class="ed-stats">Objectives: ${count(ob('hill'), 'hill')} &middot; ${count(ob('flag'), 'flag')} &middot; ${count(ob('point'), 'capture point')} &middot; ${count(ob('mcom'), 'M-COM')}${sectors ? ` in ${count(sectors, 'sector')}` : ''}</p>
         <p class="ed-note">Modes whose objectives you leave out get some worked out from the layout.</p>`;
       html += this.loadoutPanel();
@@ -849,6 +927,10 @@ export class Editor {
     on('pH', 'change', edit(el => { o.bottom = o.top + Math.max(8, +el.value || 8); }));
     on('pPad', 'change', edit(el => { if (el.checked) { o.bounce = -(this.padStrength || BOUNCE.standard); delete o.hard; } else delete o.bounce; }));
     on('pHard', 'change', edit(el => { if (el.checked) o.hard = true; else delete o.hard; }));
+    on('toolHard', 'change', el => { this.hardNew = el.checked; this.refreshPanel(); });
+    const platformsWhere = test => this.map.platforms.flatMap((p, i) => (!p.bounce && test(p) ? [i] : []));
+    on('hardAll', 'click', () => this.setHard(platformsWhere(p => !p.hard), true));
+    on('hardNone', 'click', () => this.setHard(platformsWhere(p => p.hard), false));
     on('pBounce', 'input', el => { el.previousElementSibling.textContent = el.value; });
     on('pBounce', 'change', edit(el => { o.bounce = -(+el.value); this.padStrength = +el.value; }));
     on('sX', 'change', edit(el => { o.x = +el.value || 0; }));
@@ -1174,6 +1256,27 @@ export class Editor {
         ctx.strokeRect(this.mx(l + Math.abs(dr.x1 - dr.x0)), t, Math.abs(dr.x1 - dr.x0), Math.abs(dr.y1 - dr.y0));
       }
       ctx.setLineDash([]);
+    }
+
+    // The Indestructible tool: its box, and the platforms it would change.
+    if (dr?.mode === 'mark') {
+      const color = dr.unmark ? '#d33b2f' : '#2f6fdb';
+      if (!this.isClick(dr)) {
+        const l = Math.min(dr.x0, dr.x1), t = Math.min(dr.y0, dr.y1), w = Math.abs(dr.x1 - dr.x0), h = Math.abs(dr.y1 - dr.y0);
+        ctx.fillStyle = dr.unmark ? 'rgba(211,59,47,0.07)' : 'rgba(47,111,219,0.07)';
+        ctx.fillRect(l, t, w, h);
+        ctx.setLineDash([4 * px, 3 * px]);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = px;
+        ctx.strokeRect(l, t, w, h);
+        ctx.setLineDash([]);
+      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2 * px;
+      for (const i of this.markPlan(dr).list) {
+        const p = m.platforms[i];
+        ctx.strokeRect(p.left - 2 * px, p.top - 2 * px, p.right - p.left + 4 * px, p.bottom - p.top + 4 * px);
+      }
     }
 
     // Ghost of what a click would place.
