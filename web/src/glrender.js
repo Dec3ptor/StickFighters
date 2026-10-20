@@ -129,7 +129,8 @@ export class GLRenderer extends Renderer {
     this.alpha = alpha;
     ctx.beginFrame();
     const sx = (Math.random() - 0.5) * this.shake, sy = (Math.random() - 0.5) * this.shake;
-    const tx = this.pw / 2 - (this.cam.x + sx) * s, ty = this.ph / 2 - (this.cam.y + sy) * s;
+    // (At whole screen pixels, as the canvas draws it: crisper, and the same picture.)
+    const tx = Math.round(this.pw / 2 - (this.cam.x + sx) * s), ty = Math.round(this.ph / 2 - (this.cam.y + sy) * s);
     this.s = s; this.tx = tx; this.ty = ty; // (for drawing turned things: Renderer.turn())
     ctx.setTransform(s, 0, 0, s, tx, ty);
     this.updateView(s, tx, ty);
