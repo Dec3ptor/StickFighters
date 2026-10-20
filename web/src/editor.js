@@ -5,10 +5,10 @@
 import { normalizeMap, computeBounds, checkMap, encodeShare, encodeSSM, decodeSSM, BOUNCE, LIMITS } from './custommaps.js';
 import { listMaps, getMap, saveMap, deleteMap } from './mapstore.js';
 import { WEAPONS, PICKUP_WEAPONS, SLOTS } from './weapons.js';
-import { drawWeapon, drawHealth, drawArmour, drawJetpack } from './render.js';
+import { drawWeapon, drawHealth, drawArmour, drawJetpack, HATCH, HATCH_GAP } from './render.js';
 import { RULES } from './config.js';
 import { MODES } from './modes.js';
-import { platformSeams, fillSeams } from './map.js';
+import { platformSeams, fillSeams, hatch } from './map.js';
 
 const TOOLS = [
   { id: 'select', label: 'Select', key: 'KeyV', short: 'V', hint: 'Click to select. Drag to move, drag the corner squares to resize. Drag empty space to move the view.' },
@@ -684,7 +684,7 @@ export class Editor {
     });
     this.$('#edExport').addEventListener('click', () => this.download(`${this.fileName()}.json`, 'application/json', JSON.stringify(normalizeMap(this.map), null, 2)));
     this.$('#edExportSSM').addEventListener('click', () => {
-      if (this.map.objectives?.length && !confirm("The original game's .ssm format can't hold hills, flags, capture points, M-COMs or Rush sectors, so those won't be in the file. Export anyway?")) return;
+      if ((this.map.objectives?.length || this.map.platforms.some(p => p.hard)) && !confirm("The original game's .ssm format can't hold hills, flags, capture points, M-COMs, Rush sectors or indestructible platforms, so those won't be in the file. Export anyway?")) return;
       this.download(`${this.fileName()}.ssm`, 'application/octet-stream', encodeSSM(this.map));
     });
     this.$('#edImport').addEventListener('click', () => this.$('#edFile').click());
@@ -748,6 +748,7 @@ export class Editor {
       html += `<h3>${pad ? 'Jump pad' : 'Platform'}</h3>
         <div class="ed-grid">${num('pX', 'X', o.left)}${num('pY', 'Y', o.top)}${num('pW', 'Width', o.right - o.left)}${num('pH', 'Height', o.bottom - o.top)}</div>
         <label class="check"><input type="checkbox" id="pPad"${pad ? ' checked' : ''}> Jump pad</label>
+        ${pad ? '' : `<label class="check" title="With Destruction on, explosions can't blow holes in it (floors with spawn points or objectives on them are always safe)"><input type="checkbox" id="pHard"${o.hard ? ' checked' : ''}> Indestructible</label>`}
         ${pad ? `<label class="ed-range">Strength <output>${-o.bounce}</output><input type="range" id="pBounce" min="${BOUNCE.min}" max="${BOUNCE.max}" step="0.5" value="${-o.bounce}"></label>` : ''}`;
     } else if (o && this.sel.kind === 'spawn') {
       html += `<h3>Spawn point</h3>${teamButtons('sTeam', o.team)}<div class="ed-grid">${num('sX', 'X', o.x)}${num('sY', 'Y', o.y)}</div>
@@ -846,7 +847,8 @@ export class Editor {
     on('pY', 'change', edit(el => { const h = o.bottom - o.top; o.top = +el.value || 0; o.bottom = o.top + h; }));
     on('pW', 'change', edit(el => { o.right = o.left + Math.max(8, +el.value || 8); }));
     on('pH', 'change', edit(el => { o.bottom = o.top + Math.max(8, +el.value || 8); }));
-    on('pPad', 'change', edit(el => { if (el.checked) o.bounce = -(this.padStrength || BOUNCE.standard); else delete o.bounce; }));
+    on('pPad', 'change', edit(el => { if (el.checked) { o.bounce = -(this.padStrength || BOUNCE.standard); delete o.hard; } else delete o.bounce; }));
+    on('pHard', 'change', edit(el => { if (el.checked) o.hard = true; else delete o.hard; }));
     on('pBounce', 'input', el => { el.previousElementSibling.textContent = el.value; });
     on('pBounce', 'change', edit(el => { o.bounce = -(+el.value); this.padStrength = +el.value; }));
     on('sX', 'change', edit(el => { o.x = +el.value || 0; }));
@@ -1081,6 +1083,12 @@ export class Editor {
     fillSeams(platformSeams(m.platforms), e, (x, y, w, h) => ctx.fillRect(x, y, w, h));
     ctx.fillStyle = '#eef3e2';
     for (const p of m.platforms) if (p.bounce) ctx.fillRect(p.left, p.top, p.right - p.left, p.bottom - p.top);
+    // Indestructible platforms (destructible maps) are hatched, as in the game.
+    ctx.strokeStyle = HATCH;
+    ctx.lineWidth = Math.max(1, px);
+    ctx.beginPath();
+    for (const p of m.platforms) if (p.hard) hatch(p.left, p.top, p.right, p.bottom, HATCH_GAP, (x0, y0, x1, y1) => { ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); });
+    ctx.stroke();
     ctx.strokeStyle = '#7c9a3d';
     ctx.lineWidth = 1.5 * Math.max(1, px);
     for (const p of m.platforms) {

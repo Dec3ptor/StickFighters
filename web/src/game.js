@@ -14,16 +14,21 @@ import { WEAPONS } from './weapons.js';
 import { modeOf } from './modes.js';
 import { makeRng } from './util.js';
 import { SoldierGrid, GRID_MIN } from './grid.js';
+import { objectivesOf } from './objectives.js';
 
 const IDLE = { move: 0 };
 // Holding self-destruct this many updates (a second) blows you up: the way out of a pit you can't climb out of.
 export const SELF_DESTRUCT_TICKS = 60;
+// Destructible maps: the bots' route map is patched this many updates after the first
+// hole since the last patch (holes made meanwhile are done in the same go).
+const NAV_PATCH_DELAY = 20;
 
 export class Game {
   /**
    * options: { lives (one in the chamber), gunGameKills (kills per weapon), crates: 'off'|'normal'|'lots',
    *   botVision: 'classic' (bots see everyone nearby in a clear line) | 'sight' (only what's on their
-   *   screen in front of them, plus what they hear), fog: true (players only see what's in their line of sight) }
+   *   screen in front of them, plus what they hear), fog: true (players only see what's in their line of sight),
+   *   destruction: true (explosions blow holes in the map) }
    */
   constructor({ mapData, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1, options = {} }) {
     // Speed rescales shared constants, so set it before anything reads them.
@@ -31,7 +36,10 @@ export class Game {
     this.map = new GameMap(mapData);
     this.mode = mode;
     this.rules = modeOf(mode);
-    this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, ...options };
+    this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, destruction: false, ...options };
+    // Destructible maps: every hole blown so far ([x, y, radius]; online players repeat them).
+    this.carves = [];
+    if (this.options.destruction) this.protectFloors();
     // Noises bots can hear (with bot vision 'sight'): { x, y, r (how far it carries), by, tick }.
     this.noises = [];
     this.fragLimit = fragLimit;
@@ -146,11 +154,77 @@ export class Game {
   /**
    * The bots' route map, once it's built: it tells the game which spots are in a
    * pit nobody can climb out of (no spawning there; players stuck there are told
-   * how to get out).
+   * how to get out). On a destructible map, the game works on its own copy (holes
+   * change it). Returns the route map the bots should use.
    */
   useNav(nav) {
-    this.nav = nav;
+    this.nav = this.options.destruction ? nav.clone(this.map) : nav;
     this.spawnSets = null;
+    return this.nav;
+  }
+
+  /**
+   * Destructible maps: the floors that spawn points, flags, M-COMs, hills and
+   * capture points stand on can't be destroyed (so every mode keeps working).
+   */
+  protectFloors() {
+    const map = this.map;
+    const floorUnder = (x, y) => {
+      const hit = map.raycast(x, y, x, y + 3000);
+      if (hit && hit.ny < 0) hit.solid.hard = true;
+    };
+    for (const p of map.spawns) floorUnder(p.x, p.y);
+    for (const type of ['flag', 'mcom']) for (const o of objectivesOf(map, type)) floorUnder(o.x, o.y - 4);
+    for (const type of ['hill', 'point']) {
+      for (const z of objectivesOf(map, type)) {
+        map.query(z.left, z.bottom - 3, z.right, z.bottom + 3, s => {
+          if (Math.abs(s.t - z.bottom) <= 3 && s.r > z.left && s.l < z.right) s.hard = true;
+          return false;
+        });
+      }
+    }
+  }
+
+  /**
+   * Destructible maps: an explosion at (x, y) blows a hole of radius r in whatever
+   * isn't hard. Every hole is remembered (online players are sent them), and the
+   * bots' route map is patched shortly after.
+   */
+  carve(x, y, r) {
+    if (!this.options.destruction) return;
+    x = Math.round(x); y = Math.round(y); r = Math.round(r);
+    if (this.applyCarve(x, y, r)) this.fx?.rubble(x, y, r);
+  }
+
+  /** Blow a hole (online players: one the host made). Returns true if anything broke. */
+  applyCarve(x, y, r) {
+    const area = this.map.carve(x, y, r);
+    // (Kept even if nothing broke here, so everyone's list of holes lines up.)
+    if (this.online) this.carves.push([x, y, r]);
+    if (!area) return false;
+    if (!this.online) this.carves.push([x, y, r]);
+    // Things lying on what's gone fall; arrows stuck in it go with it.
+    for (const p of this.projectiles) {
+      if (p.x < area.l - 8 || p.x > area.r + 8 || p.y < area.t - 16 || p.y > area.b + 8) continue;
+      if (p.stuck) p.dead = true;
+      else if (p.onGround) p.onGround = false;
+    }
+    if (this.nav) {
+      this.navDirty = this.navDirty
+        ? { l: Math.min(this.navDirty.l, area.l), t: Math.min(this.navDirty.t, area.t), r: Math.max(this.navDirty.r, area.r), b: Math.max(this.navDirty.b, area.b) }
+        : area;
+      this.navPatchAt ??= this.tick + NAV_PATCH_DELAY;
+    }
+    return true;
+  }
+
+  /** Bring the bots' route map up to date with the holes blown, and have them plan again. */
+  patchNav() {
+    this.nav.patch(this.navDirty);
+    this.navDirty = null;
+    this.navPatchAt = null;
+    this.spawnSets = null;
+    for (const [s, ctl] of this.controllers) ctl.navChanged?.(this, s);
   }
 
   /**
@@ -159,7 +233,8 @@ export class Game {
    */
   get spawns() {
     if (!this.nav) return this.map.spawns;
-    if (this.spawnsFor !== this.nav) {
+    if (this.spawnsFor !== this.nav || this.spawnsVersion !== this.nav.version) {
+      this.spawnsVersion = this.nav.version;
       const trapped = this.nav.trapped();
       const inPit = p => { const n = this.nav.landing(p.x, p.y); return !!n && trapped[n.id] === 1; };
       const all = this.map.spawns;
@@ -216,6 +291,7 @@ export class Game {
       this.updateSoldier(s, ctl ? ctl.input(this, s) : IDLE);
     }
     updateProjectiles(this);
+    if (this.navDirty && this.tick >= this.navPatchAt) this.patchNav();
     this.pickups.update(this);
     if (!this.over) this.rules.tick?.(this);
     if (this.quake) this.updateQuake();

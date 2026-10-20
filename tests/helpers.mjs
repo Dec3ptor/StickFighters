@@ -15,11 +15,10 @@ export const mapIndex = () => JSON.parse(fs.readFileSync(path.join(WEB, 'data/ma
 export const loadMap = file => JSON.parse(fs.readFileSync(path.join(WEB, 'data/maps', file), 'utf8'));
 
 /** A bots-only match. */
-export function botMatch(file, { bots = 6, mode = 'ffa', difficulty = 'normal', seed = 7, fragLimit = 999, speed = DEFAULT_SPEED } = {}) {
+export function botMatch(file, { bots = 6, mode = 'ffa', difficulty = 'normal', seed = 7, fragLimit = 999, speed = DEFAULT_SPEED, options = {} } = {}) {
   const mapData = loadMap(file);
-  const game = new Game({ mapData, mode, fragLimit, seed, effects: false, speed });
-  const nav = new NavGraph(game.map);
-  game.useNav(nav);
+  const game = new Game({ mapData, mode, fragLimit, seed, effects: false, speed, options });
+  const nav = game.useNav(new NavGraph(game.map));
   const rng = makeRng(seed * 31 + 1);
   for (let i = 0; i < bots; i++) {
     const profile = BOT_PROFILES[i % BOT_PROFILES.length];

@@ -75,6 +75,20 @@ export class Effects {
     }
   }
 
+  /** A hole blown in the map (destructible maps): chunks and dust, and any stains there go. */
+  rubble(x, y, r) {
+    this.stains = this.stains.filter(s => Math.hypot(s.x - x, s.y - y) > r + 2);
+    const n = Math.min(14, 4 + Math.round(r / 5));
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, d = Math.random() * r, sp = 1 + Math.random() * 3.5;
+      this.add({
+        kind: 'chunk', x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2,
+        angle: Math.random() * 6, va: (Math.random() - 0.5) * 0.5, size: 2 + Math.random() * 3.5, life: 90 + Math.random() * 60,
+      });
+    }
+    for (let i = 0; i < 5; i++) this.smoke(x + (Math.random() - 0.5) * r, y + (Math.random() - 0.5) * r, 5 + Math.random() * 6, 60);
+  }
+
   fire(x, y) {
     this.add({ kind: 'fire', x, y, vx: (Math.random() - 0.5) * 0.6, vy: -0.6 - Math.random() * 0.8, r: 2 + Math.random() * 3, life: 18, max: 18 });
   }
@@ -150,7 +164,7 @@ export class Effects {
         case 'spark': case 'ember':
           p.vy += 0.15 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.95 ** dt;
           break;
-        case 'shell': case 'gib': case 'head': {
+        case 'shell': case 'gib': case 'head': case 'chunk': {
           p.vy += 0.3 * dt;
           const nx = p.x + p.vx * dt, ny = p.y + p.vy * dt;
           const hit = map.raycast(p.x, p.y, nx, ny);
@@ -160,7 +174,7 @@ export class Effects {
             if (p.va) p.va *= 0.6;
           } else { p.x = nx; p.y = ny; }
           if (p.va) p.angle += p.va * dt;
-          if (p.kind !== 'shell' && Math.random() < 0.05 * dt && p.life > 150) drips.push({ kind: 'blood', x: p.x, y: p.y, vx: 0, vy: 0, life: 40, size: 1 });
+          if (p.kind !== 'shell' && p.kind !== 'chunk' && Math.random() < 0.05 * dt && p.life > 150) drips.push({ kind: 'blood', x: p.x, y: p.y, vx: 0, vy: 0, life: 40, size: 1 });
           break;
         }
         case 'smoke': case 'fire':

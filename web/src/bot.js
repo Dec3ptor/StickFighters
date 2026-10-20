@@ -16,8 +16,8 @@ const VIEW = { hw: 520, hh: 330, behind: 30, touch: 26 };
 
 /** The route map spot nearest an item (remembered while the item stays put). */
 function nodeFor(nav, it) {
-  if (it.navAt !== nav || it.navX !== it.x || it.navY !== it.y) {
-    it.navAt = nav; it.navX = it.x; it.navY = it.y;
+  if (it.navAt !== nav || it.navVersion !== nav.version || it.navX !== it.x || it.navY !== it.y) {
+    it.navAt = nav; it.navVersion = nav.version; it.navX = it.x; it.navY = it.y;
     it.navNode = nav.nearest(it.x, it.y + 12, 90);
   }
   return it.navNode;
@@ -167,6 +167,16 @@ export class BotController {
     this.thinkIn = 0;
     this.history = [];
     this.unstuck = (this.unstuck || 0) + 1;
+  }
+
+  /** The route map changed (destructible maps): plan again from scratch (spots are numbered afresh). */
+  navChanged(game, s) {
+    this.path = null;
+    this.li = 0;
+    this.offGraph = null;
+    this.lastNode = null;
+    this.history = [];
+    this.thinkIn = Math.min(this.thinkIn, 2);
   }
 
   onSpawn(game, s) {

@@ -16,7 +16,7 @@ import { listMaps, getMap, saveMap } from './mapstore.js';
 import { decodeShare, encodeShare, normalizeMap } from './custommaps.js';
 import { MODES } from './modes.js';
 import { WEAPONS } from './weapons.js';
-import { seamsOf, fillSeams } from './map.js';
+import { GameMap, seamsOf, fillSeams } from './map.js';
 import { Lobby, inviteCode, parseInvite } from './net/lobby.js';
 import { NetHost } from './net/host.js';
 import { NetClient } from './net/client.js';
@@ -53,7 +53,7 @@ let watcher = null;
 
 const DEFAULTS = {
   name: 'Player', map: 'ssdm1.json', mode: 'ffa', bots: 5, difficulty: 'normal', fragLimit: 20, speed: DEFAULT_SPEED, muted: false,
-  lives: 3, gunKills: 1, crates: 'normal', maxPlayers: 8, visibility: 'public', gameName: '', tab: 'online', mapSource: 'originals',
+  lives: 3, gunKills: 1, crates: 'normal', destruction: 'on', maxPlayers: 8, visibility: 'public', gameName: '', tab: 'online', mapSource: 'originals',
   // Objective modes: the goal chosen for each (points, captures, tickets), and which team you're on.
   goals: {}, side: 1,
   // Experimental: what bots notice ('classic' | 'sight') and fog of war ('off' | 'on').
@@ -111,6 +111,7 @@ function buildMenu(settings) {
   $('lives').value = String(settings.lives);
   $('gunKills').value = String(settings.gunKills);
   $('crates').value = settings.crates;
+  $('destruction').value = settings.destruction === 'off' ? 'off' : 'on';
   $('maxPlayers').value = String(settings.maxPlayers);
   $('visibility').value = settings.visibility;
   $('gameName').value = settings.gameName;
@@ -134,7 +135,7 @@ function buildMenu(settings) {
     r.checked = r.value === settings.mapSource;
     r.addEventListener('change', () => { buildMapCards(selectedMap()); rememberMenu(); });
   }
-  for (const id of ['difficulty', 'fragLimit', 'goal', 'side', 'botVision', 'fog', 'lives', 'gunKills', 'crates', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
+  for (const id of ['difficulty', 'fragLimit', 'goal', 'side', 'botVision', 'fog', 'lives', 'gunKills', 'crates', 'destruction', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
   $('bots').addEventListener('change', rememberMenu);
   modeFields();
   buildMapCards(settings.map, { follow: true });
@@ -370,6 +371,7 @@ function readMenu() {
     lives: +$('lives').value,
     gunKills: +$('gunKills').value,
     crates: $('crates').value,
+    destruction: $('destruction').value,
     speed: SHOW_SPEED_MENU && SPEEDS.includes(+$('speed').value) ? +$('speed').value : DEFAULT_SPEED,
     muted: $('mute').checked,
     maxPlayers: +$('maxPlayers').value,
@@ -429,14 +431,16 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const options = {
     lives: settings.lives, gunGameKills: settings.gunKills, crates: settings.crates,
     botVision: settings.botVision === 'sight' ? 'sight' : 'classic', fog: settings.fog === 'on',
+    destruction: settings.destruction !== 'off',
   };
   const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
-  // Route maps depend on the map version and the speed's move timings.
+  // Route maps depend on the map version and the speed's move timings. (Built on a
+  // fresh copy of the map: on a destructible one, the match works on a copy of the
+  // route map, and its own map gets holes blown in it.)
   const navKey = `${map.navKey}@${settings.speed}`;
-  if (!maps.nav.has(navKey)) maps.nav.set(navKey, new NavGraph(game.map));
-  const nav = maps.nav.get(navKey);
-  game.useNav(nav);
+  if (!maps.nav.has(navKey)) maps.nav.set(navKey, new NavGraph(new GameMap(map.data)));
+  const nav = game.useNav(maps.nav.get(navKey));
   const rng = makeRng((Math.random() * 2 ** 31) | 0);
 
   const team = game.rules.teams ? (settings.side === 2 ? 2 : 1) : 0;

@@ -4,7 +4,7 @@
 //
 // Map format (same as the decoded originals in web/data/maps/):
 //   { name, bounds: {left, top, right, bottom},
-//     platforms: [{ left, top, right, bottom, bounce? }],   bounce < 0 makes a jump pad
+//     platforms: [{ left, top, right, bottom, bounce?, hard? }],   bounce < 0 makes a jump pad; hard: explosions can't destroy it
 //     spawns: [{ x, y, team, sector? }],                     team 1 = blue, 2 = red; sector: Rush (see below)
 //     items: [{ type: 'health'|'armour'|'jetpack'|'weapon', x, y, weapon? }],
 //     loadout?: { weapons: [ids], armour: 0-100, jetpack: bool },      what everyone spawns with
@@ -70,6 +70,7 @@ export function normalizeMap(raw) {
     const out = { left: l, top: t, right: r, bottom: b };
     const bounce = Number(p.bounce) || 0;
     if (bounce) out.bounce = -Math.min(BOUNCE.max, Math.max(BOUNCE.min, Math.abs(round(bounce))));
+    else if (p.hard) out.hard = true;
     platforms.push(out);
   }
   const spawns = (Array.isArray(raw.spawns) ? raw.spawns : []).slice(0, LIMITS.maxSpawns).map((s, i) => {
@@ -143,7 +144,7 @@ function pack(map) {
   return {
     v: 1,
     n: map.name,
-    p: map.platforms.map(p => (p.bounce ? [p.left, p.top, p.right, p.bottom, p.bounce] : [p.left, p.top, p.right, p.bottom])),
+    p: map.platforms.map(p => (p.hard ? [p.left, p.top, p.right, p.bottom, 0, 1] : p.bounce ? [p.left, p.top, p.right, p.bottom, p.bounce] : [p.left, p.top, p.right, p.bottom])),
     s: map.spawns.map(s => (s.sector ? [s.x, s.y, s.team, s.sector] : [s.x, s.y, s.team])),
     ...(map.objectives ? { o: map.objectives.map(o => (o.type === 'flag' ? ['f', o.x, o.y, o.team] : o.type === 'mcom' ? ['m', o.x, o.y, o.sector]
       : [o.type === 'hill' ? 'h' : 'p', o.left, o.top, o.right, o.bottom, ...(o.label ? [o.label] : [])])) } : {}),
@@ -156,7 +157,7 @@ function unpack(o) {
   if (!o || o.v !== 1) throw new Error("That link isn't a map from this game");
   return normalizeMap({
     name: o.n,
-    platforms: (o.p || []).map(([left, top, right, bottom, bounce]) => ({ left, top, right, bottom, bounce })),
+    platforms: (o.p || []).map(([left, top, right, bottom, bounce, hard]) => ({ left, top, right, bottom, bounce, hard: !!hard })),
     spawns: (o.s || []).map(([x, y, team, sector]) => ({ x, y, team, sector })),
     objectives: (o.o || []).map(([k, ...a]) => (k === 'f' ? { type: 'flag', x: a[0], y: a[1], team: a[2] } : k === 'm' ? { type: 'mcom', x: a[0], y: a[1], sector: a[2] }
       : { type: k === 'h' ? 'hill' : 'point', left: a[0], top: a[1], right: a[2], bottom: a[3], label: a[4] })),

@@ -7,7 +7,7 @@ import { encodeWorld, encodeSnapshot, decodeInputs, messageType, PROTOCOL, SNAPS
 // Effects every player draws for themselves from what they can see (rocket
 // smoke, jetpack flames, burning soldiers), so they aren't sent.
 const FX_SKIP = new Set(['smoke', 'fire', 'sparkle', 'spark']);
-export const FX_METHODS = new Set(['blood', 'sparks', 'muzzle', 'shell', 'explosion', 'trail', 'ring', 'gibs', 'whack', 'plane']);
+export const FX_METHODS = new Set(['blood', 'sparks', 'muzzle', 'shell', 'explosion', 'trail', 'ring', 'gibs', 'whack', 'plane', 'rubble']);
 const MAX_CHAT = 140;
 
 /** Drives a remote player's soldier from the inputs they send. */
@@ -68,6 +68,7 @@ export class NetHost {
     game.recorder = this;
     if (game.fx && !game.fx.recording) game.fx = recordFx(game.fx, this);
     this.resetEvents();
+    this.carvesSent = 0; // (destructible maps: holes sent to everyone so far)
     for (const p of this.players) {
       p.soldier = this.soldierFor(p);
       p.ctl.queue.length = 0;
@@ -145,6 +146,7 @@ export class NetHost {
     p.link.send({
       t: 'welcome', v: PROTOCOL, you: p.soldier.id, tick: this.game.tick,
       match: this.opts.matchInfo(), roster: this.roster(), chat: fresh ? this.chatLog.slice(-8) : [],
+      carves: this.game.carves,
     });
   }
 
@@ -159,6 +161,12 @@ export class NetHost {
     switch (data.t) {
       case 'ready': p.ready = true; break;
       case 'deploy': if (p.soldier) p.soldier.deployAt = data.at == null ? null : String(data.at).slice(0, 4); break;
+      case 'carves?': {
+        // The player is missing some of the holes blown in the map: send them (at most once a second).
+        const from = Math.max(0, Math.floor(Number(data.from) || 0));
+        if (Date.now() - (p.carvesAt || 0) > 1000) { p.carvesAt = Date.now(); p.link.send({ t: 'carves', from, list: this.game.carves.slice(from) }, true); }
+        break;
+      }
       case 'roster?':
         // The player saw a soldier it doesn't know: send the list again (at most once a second).
         if (Date.now() - (p.rosterAt || 0) > 1000) { p.rosterAt = Date.now(); p.link.send({ t: 'roster', roster: this.roster() }, true); }
@@ -224,7 +232,10 @@ export class NetHost {
     if (ready.length) {
       const world = encodeWorld(g);
       const e = this.events;
-      const any = e.s.length || e.fx.length || e.k.length || e.n.length || e.sh.length;
+      // New holes in the map (destructible maps), numbered so players can tell if they missed any.
+      const cv = g.carves.length > this.carvesSent ? { from: this.carvesSent, list: g.carves.slice(this.carvesSent) } : null;
+      this.carvesSent = g.carves.length;
+      const any = e.s.length || e.fx.length || e.k.length || e.n.length || e.sh.length || cv;
       for (const p of ready) {
         p.link.send(encodeSnapshot(g, p.soldier, p.ctl.ackSeq, world), false);
         if (!any) continue;
@@ -232,7 +243,7 @@ export class NetHost {
         p.link.send({
           t: 'ev', tick: g.tick,
           s: e.s.filter(x => x[3] == null || x[3] === id || x[3] === -p.soldier.team).map(x => x.slice(0, 3)),
-          fx: e.fx, k: e.k, sh: e.sh,
+          fx: e.fx, k: e.k, sh: e.sh, cv,
           n: e.n.filter(x => x[1] === id).map(x => x[0]),
         }, true);
       }

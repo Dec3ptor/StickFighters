@@ -7,12 +7,14 @@ import { WEAPONS } from './weapons.js';
 import { clamp, lerp } from './util.js';
 import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate } from './sprites.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
-import { seamsOf, fillSeams } from './map.js';
+import { fillSeams, hatch } from './map.js';
 import { Fog } from './fog.js';
 
 export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate };
 
 const INK = '#111';
+// Destructible maps: the hatching on blocks that can't be destroyed.
+export const HATCH = '#dcdcdc', HATCH_GAP = 10;
 const TEAM_COLORS = { 1: '#2f6fdb', 2: '#d33b2f' };
 const TEAM_HEAD = { 1: '#d9e6ff', 2: '#ffdcd8' };
 
@@ -175,7 +177,19 @@ export class Renderer {
     ctx.fillStyle = '#fff';
     for (const p of game.map.solids) ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t);
     // No hairlines where blocks just meet.
-    fillSeams(game.map.seams ||= seamsOf(game.map.solids), e, (x, y, w, h) => ctx.fillRect(x, y, w, h));
+    fillSeams(game.map.getSeams(), e, (x, y, w, h) => ctx.fillRect(x, y, w, h));
+    // Destructible maps: blocks explosions can't break are hatched.
+    if (game.options?.destruction) {
+      const v = this.view;
+      ctx.strokeStyle = HATCH;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const p of game.map.solids) {
+        if (!p.hard || p.bounce || (v && (p.r < v.l || p.l > v.r || p.b < v.t || p.t > v.b))) continue;
+        hatch(p.l, p.t, p.r, p.b, HATCH_GAP, (x0, y0, x1, y1) => { ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); });
+      }
+      ctx.stroke();
+    }
     this.drawPads(game, true);
   }
 
@@ -493,6 +507,18 @@ export class Renderer {
         ctx.fillRect(-1.2, -0.5, 2.4, 1);
         ctx.restore();
         break;
+      case 'chunk': {
+        // A bit of a blown-up block: white with an outline, like the map.
+        const h = p.size / 2;
+        ctx.save();
+        ctx.translate(x, y); ctx.rotate(p.angle);
+        ctx.fillStyle = INK;
+        ctx.fillRect(-h - 0.7, -h - 0.7, p.size + 1.4, p.size + 1.4);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(-h, -h, p.size, p.size);
+        ctx.restore();
+        break;
+      }
       case 'smoke':
         ctx.fillStyle = `rgba(140,140,140,${0.32 * p.life / p.max})`;
         ctx.beginPath(); ctx.arc(x, y, p.r, 0, Math.PI * 2); ctx.fill();

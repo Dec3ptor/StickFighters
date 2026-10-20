@@ -83,8 +83,11 @@ export class NetClient {
           }
         }
         break;
+      case 'carves': if (this.game) this.applyCarves(data.from, data.list); break;
       case 'ev':
         if (!this.game) break;
+        // Holes in the map change how everything moves: blown straight away, not when the effects show.
+        if (data.cv) this.applyCarves(data.cv.from, data.cv.list);
         this.events.push(data);
         // (In a background tab nothing is drawn, so don't let events pile up.)
         if (this.events.length > 300) this.events.splice(0, this.events.length - 300);
@@ -118,6 +121,7 @@ export class NetClient {
     this.fixed = null;       // the new match's pickups
     this.switchSeq = 0;
     this.applyRoster(w.roster);
+    this.applyCarves(0, w.carves);
     this.me = game.soldiers.find(s => s.id === w.you) || null;
     for (const c of w.chat || []) this.addChat(c);
     this.link.send({ t: 'ready' });
@@ -197,6 +201,12 @@ export class NetClient {
     snap.arrival = this.clock();
     this.snaps.push(snap);
     if (this.snaps.length > 40) this.snaps.shift();
+    // Destructible maps: missing holes the host has blown? (They usually arrive just
+    // after this; ask only if they still haven't half a second later.)
+    if (snap.carves > this.game.carves.length) {
+      this.carvesBehind ??= snap.arrival;
+      if (snap.arrival - this.carvesBehind > 500) this.askCarves();
+    } else this.carvesBehind = null;
     // The host's clock: the least-delayed snapshot says best when each tick happened.
     this.offsets.push(snap.arrival - snap.tick * this.step);
     if (this.offsets.length > 60) this.offsets.shift();
@@ -346,6 +356,28 @@ export class NetClient {
     if (g.feed.length > 6) g.feed.splice(0, g.feed.length - 6);
     for (const text of e.n || []) g.notes.push({ text: String(text), tick: g.tick, to: me?.id });
     for (const [x, y, amount] of e.sh || []) g.shakes.push({ x, y, amount });
+  }
+
+  /**
+   * Destructible maps: holes the host blew, numbered from `from`. Ones already
+   * blown here are skipped; if some are missing before them, ask for them.
+   */
+  applyCarves(from, list) {
+    const g = this.game;
+    if (!g || !Array.isArray(list)) return;
+    from = Math.floor(Number(from) || 0);
+    if (from > g.carves.length) { this.askCarves(); return; }
+    for (let i = g.carves.length - from; i < list.length; i++) {
+      const [x, y, r] = (list[i] || []).map(v => Math.round(Number(v) || 0));
+      g.applyCarve(x, y, Math.max(0, Math.min(400, r)));
+    }
+  }
+
+  askCarves() {
+    const now = this.clock();
+    if (now - (this.carvesAsked ?? -1e9) < 1000) return;
+    this.carvesAsked = now;
+    this.link.send({ t: 'carves?', from: this.game.carves.length }, true);
   }
 
   sendChat(text) { this.link.send({ t: 'chat', text: String(text).slice(0, 140) }, true); }

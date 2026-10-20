@@ -2,14 +2,22 @@
 // Coordinates are map pixels with y pointing down.
 
 const CELL = 64;
+// Destructible maps: explosions carve holes in blocks (see carve()). Pieces thinner
+// than this are swept away rather than left as slivers, and a map stops breaking
+// up once it's in this many pieces.
+const MIN_PIECE = 4;
+const MAX_SOLIDS = 6000;
 
 export class GameMap {
   constructor(data) {
     this.name = data.name;
     this.bounds = { ...data.bounds };
+    // hard: can't be destroyed (marked in the map, or jump pads).
     this.solids = data.platforms.map((p, i) => ({
-      id: i, l: p.left, t: p.top, r: p.right, b: p.bottom, bounce: p.bounce || 0,
+      id: i, l: p.left, t: p.top, r: p.right, b: p.bottom, bounce: p.bounce || 0, hard: !!(p.hard || p.bounce),
     }));
+    this.nextId = this.solids.length;
+    this.version = 0; // goes up whenever blocks change (destruction)
     this.spawns = data.spawns.map(s => (s.sector ? { x: s.x, y: s.y, team: s.team, sector: s.sector } : { x: s.x, y: s.y, team: s.team }));
     this.items = data.items.map(it => ({ type: it.type, weapon: it.weapon || null, x: it.x, y: it.y }));
     // What everyone spawns with on this map (custom maps): { weapons: [ids], armour, jetpack }.
@@ -33,7 +41,85 @@ export class GameMap {
           this.grid[cy * this.gw + cx].push(s);
     }
     this._stamp = 0;
-    this._seen = new Int32Array(this.solids.length);
+    this._seen = new Int32Array(Math.max(16, this.nextId));
+  }
+
+  _cells(s, fn) {
+    for (let cy = this._cy(s.t); cy <= this._cy(s.b); cy++)
+      for (let cx = this._cx(s.l); cx <= this._cx(s.r); cx++) fn(this.grid[cy * this.gw + cx]);
+  }
+
+  _add(s) {
+    this.solids.push(s);
+    this._cells(s, list => list.push(s));
+    if (s.id >= this._seen.length) {
+      const seen = new Int32Array(Math.max(s.id + 1, this._seen.length * 2));
+      seen.set(this._seen);
+      this._seen = seen;
+    }
+  }
+
+  _remove(s) {
+    const i = this.solids.indexOf(s);
+    if (i >= 0) this.solids.splice(i, 1);
+    this._cells(s, list => { const j = list.indexOf(s); if (j >= 0) list.splice(j, 1); });
+  }
+
+  /**
+   * Blow a roughly round hole, radius r, at (x, y) through every block that isn't
+   * hard. Each block hit is replaced by the boxes left around the hole. Returns the
+   * area that changed ({ l, t, r, b }), or null if there was nothing to break.
+   * Integer arguments give exactly the same result everywhere (online players
+   * repeat the host's holes).
+   */
+  carve(x, y, r) {
+    if (r < 2 || this.solids.length > MAX_SOLIDS) return null;
+    // A rounded hole: a wide box, a tall box and a square between them.
+    const k = Math.round(r * 0.42), m = Math.round(r * 0.74);
+    const holes = [
+      { l: x - r, t: y - k, r: x + r, b: y + k },
+      { l: x - k, t: y - r, r: x + k, b: y + r },
+      { l: x - m, t: y - m, r: x + m, b: y + m },
+    ];
+    const hit = [];
+    this.query(x - r, y - r, x + r, y + r, s => {
+      if (!s.hard && holes.some(h => s.l < h.r && s.r > h.l && s.t < h.b && s.b > h.t)) hit.push(s);
+      return false;
+    });
+    if (!hit.length) return null;
+    // (In the order blocks were made, so every player gets the same new ids.)
+    hit.sort((a, b) => a.id - b.id);
+    let area = null;
+    for (const s of hit) {
+      let pieces = [s];
+      for (const h of holes) pieces = pieces.flatMap(p => subtractBox(p, snapHole(p, h)));
+      this._remove(s);
+      for (const p of pieces) {
+        // (Bits left too small to matter are swept away; snapHole keeps them small.)
+        if (p.r - p.l < MIN_PIECE || p.b - p.t < MIN_PIECE) continue;
+        this._add({ id: this.nextId++, l: p.l, t: p.t, r: p.r, b: p.b, bounce: 0, hard: false });
+      }
+      area = area ? { l: Math.min(area.l, s.l), t: Math.min(area.t, s.t), r: Math.max(area.r, s.r), b: Math.max(area.b, s.b) }
+        : { l: s.l, t: s.t, r: s.r, b: s.b };
+    }
+    this.version++;
+    const e = r + MIN_PIECE;
+    return { l: Math.max(area.l, x - e), t: Math.max(area.t, y - e), r: Math.min(area.r, x + e), b: Math.min(area.b, y + e) };
+  }
+
+  /** Where blocks just meet (see seamsOf), worked out again when they change. */
+  getSeams() {
+    if (this.seams && this.seamsVersion === this.version) return this.seams;
+    const out = [];
+    for (const a of this.solids) {
+      this.query(a.l - 0.1, a.t - 0.1, a.r + 0.1, a.b + 0.1, c => {
+        if (c.id > a.id) seamBetween(a, c, out);
+        return false;
+      });
+    }
+    this.seams = out;
+    this.seamsVersion = this.version;
+    return out;
   }
 
   _cx(x) { return Math.max(0, Math.min(this.gw - 1, Math.floor(x / CELL) - this.gx0)); }
@@ -97,21 +183,51 @@ export class GameMap {
  */
 export function seamsOf(boxes) {
   const out = [];
-  const meet = (a, b) => Math.abs(a - b) < 0.05;
-  for (let i = 0; i < boxes.length; i++) {
-    const a = boxes[i];
-    for (let j = i + 1; j < boxes.length; j++) {
-      const c = boxes[j];
-      if (meet(a.r, c.l) || meet(c.r, a.l)) {
-        const t = Math.max(a.t, c.t), b = Math.min(a.b, c.b);
-        if (b - t > 0.5) out.push({ x: meet(a.r, c.l) ? a.r : a.l, t, b, max: Math.min(a.r - a.l, c.r - c.l) / 2 });
-      }
-      if (meet(a.b, c.t) || meet(c.b, a.t)) {
-        const l = Math.max(a.l, c.l), r = Math.min(a.r, c.r);
-        if (r - l > 0.5) out.push({ y: meet(a.b, c.t) ? a.b : a.t, l, r, max: Math.min(a.b - a.t, c.b - c.t) / 2 });
-      }
-    }
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) seamBetween(boxes[i], boxes[j], out);
+  return out;
+}
+
+/** The seam between boxes a and c, if they meet edge to edge (added to out). */
+function seamBetween(a, c, out) {
+  const meet = (p, q) => Math.abs(p - q) < 0.05;
+  if (meet(a.r, c.l) || meet(c.r, a.l)) {
+    const t = Math.max(a.t, c.t), b = Math.min(a.b, c.b);
+    if (b - t > 0.5) out.push({ x: meet(a.r, c.l) ? a.r : a.l, t, b, max: Math.min(a.r - a.l, c.r - c.l) / 2 });
   }
+  if (meet(a.b, c.t) || meet(c.b, a.t)) {
+    const l = Math.max(a.l, c.l), r = Math.min(a.r, c.r);
+    if (r - l > 0.5) out.push({ y: meet(a.b, c.t) ? a.b : a.t, l, r, max: Math.min(a.b - a.t, c.b - c.t) / 2 });
+  }
+}
+
+const NO_HOLE = { l: 0, t: 0, r: 0, b: 0 };
+
+/**
+ * A hole h as cut out of box a: where the hole stops just short of one of a's
+ * edges, it goes all the way to it instead, rather than leaving a sliver (which
+ * would run the whole length of the box). One that only just touches the box
+ * leaves it alone.
+ */
+function snapHole(a, h) {
+  // Only just touching the box: leave it alone (what's left beside the hole would be a sliver).
+  if (Math.min(a.r, h.r) - Math.max(a.l, h.l) < MIN_PIECE || Math.min(a.b, h.b) - Math.max(a.t, h.t) < MIN_PIECE) return NO_HOLE;
+  return {
+    l: h.l - a.l < MIN_PIECE ? Math.min(h.l, a.l) : h.l,
+    t: h.t - a.t < MIN_PIECE ? Math.min(h.t, a.t) : h.t,
+    r: a.r - h.r < MIN_PIECE ? Math.max(h.r, a.r) : h.r,
+    b: a.b - h.b < MIN_PIECE ? Math.max(h.b, a.b) : h.b,
+  };
+}
+
+/** Box a ({ l, t, r, b }) less box h: the (up to 4) boxes left. */
+export function subtractBox(a, h) {
+  if (h.l >= a.r || h.r <= a.l || h.t >= a.b || h.b <= a.t) return [a];
+  const out = [];
+  if (h.t > a.t) out.push({ l: a.l, t: a.t, r: a.r, b: h.t });
+  if (h.b < a.b) out.push({ l: a.l, t: h.b, r: a.r, b: a.b });
+  const t = Math.max(a.t, h.t), b = Math.min(a.b, h.b);
+  if (h.l > a.l) out.push({ l: a.l, t, r: h.l, b });
+  if (h.r < a.r) out.push({ l: h.r, t, r: a.r, b });
   return out;
 }
 
@@ -131,6 +247,20 @@ export function fillSeams(seams, w, rect) {
     const k = Math.min(w, s.max);
     if (s.x !== undefined) rect(s.x - k, s.t, 2 * k, s.b - s.t);
     else rect(s.l, s.y - k, s.r - s.l, 2 * k);
+  }
+}
+
+/**
+ * Diagonal hatching inside a box (how indestructible blocks are shown on
+ * destructible maps): lines `gap` apart, already cut to the box. Calls line(x0, y0, x1, y1).
+ */
+export function hatch(l, t, r, b, gap, line) {
+  // Lines x - y = c, for c from (l - b) up to (r - t).
+  const start = Math.ceil((l - b) / gap) * gap;
+  for (let c = start; c <= r - t; c += gap) {
+    // Where the line x = y + c enters and leaves the box.
+    const y0 = Math.max(t, l - c), y1 = Math.min(b, r - c);
+    if (y1 - y0 > 0.5) line(y0 + c, y0, y1 + c, y1);
   }
 }
 

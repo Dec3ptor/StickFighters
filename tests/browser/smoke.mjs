@@ -45,6 +45,14 @@ for (const [file, mode] of (process.env.MAPS || 'ssdm1.json:ffa,ssteam1.json:tea
   await page.keyboard.down('KeyA');
   await page.waitForTimeout(800);
   await page.keyboard.up('KeyA');
+  // Destructible maps (on by default): blow holes in the blocks nearest the player.
+  const holes = await page.evaluate(() => {
+    const g = window.stickSoldiers.state.game, me = g.soldiers[0];
+    const d = b => Math.hypot((b.l + b.r) / 2 - me.x, (b.t + b.b) / 2 - me.y);
+    for (const b of g.map.solids.filter(b => !b.hard).sort((a, c) => d(a) - d(c)).slice(0, 3)) g.carve((b.l + b.r) / 2, (b.t + b.b) / 2, 36);
+    return g.carves.length;
+  });
+  if (!holes) errors.push(`no holes blown in ${file}`);
   await page.waitForTimeout(4000);
   await page.screenshot({ path: `${outDir}/play-${file.replace('.json', '')}.png` });
   results[file] = await page.evaluate(() => {

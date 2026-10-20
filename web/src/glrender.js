@@ -6,10 +6,10 @@
 // createRenderer() picks WebGL when the graphics card can do it, and the plain
 // canvas otherwise (Settings -> Graphics, or ?renderer=canvas / webgl in the address).
 
-import { Renderer } from './render.js';
+import { Renderer, HATCH, HATCH_GAP } from './render.js';
 import { GLContext } from './glctx.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
-import { seamsOf, fillSeams } from './map.js';
+import { fillSeams, hatch } from './map.js';
 
 const INK = 0x111111;
 // Particles drawn as sprites (the rest are drawn as shapes, like on the canvas).
@@ -172,23 +172,31 @@ export class GLRenderer extends Renderer {
     fog?.drawAlerts(ctx);
   }
 
-  /** The map doesn't change: build it once (again only if the outline width changes with the zoom). */
+  /** Build the map's shapes once (again when blocks are destroyed, or the outline width changes with the zoom). */
   drawMap(game) {
     const e = Math.round(this.lineW * 20) / 20;
-    if (this.mapFor !== game.map || this.mapEdge !== e) {
+    if (this.mapFor !== game.map || this.mapEdge !== e || this.mapVersion !== game.map.version) {
       this.mapFor = game.map;
       this.mapEdge = e;
+      this.mapVersion = game.map.version;
       const g = this.mapGfx, solids = game.map.solids;
       g.clear();
       for (const p of solids) g.rect(p.l - e, p.t - e, p.r - p.l + 2 * e, p.b - p.t + 2 * e);
       g.fill(INK);
       for (const p of solids) g.rect(p.l, p.t, p.r - p.l, p.b - p.t);
       // No hairlines where blocks just meet.
-      fillSeams(game.map.seams ||= seamsOf(solids), e, (x, y, w, h) => g.rect(x, y, w, h));
+      fillSeams(game.map.getSeams(), e, (x, y, w, h) => g.rect(x, y, w, h));
       g.fill(0xffffff);
       if (solids.some(p => p.bounce)) {
         for (const p of solids) if (p.bounce) g.rect(p.l, p.t, p.r - p.l, p.b - p.t);
         g.fill(0xeef3e2);
+      }
+      // Destructible maps: blocks explosions can't break are hatched.
+      if (game.options?.destruction && solids.some(p => p.hard && !p.bounce)) {
+        for (const p of solids) {
+          if (p.hard && !p.bounce) hatch(p.l, p.t, p.r, p.b, HATCH_GAP, (x0, y0, x1, y1) => { g.moveTo(x0, y0); g.lineTo(x1, y1); });
+        }
+        g.stroke({ width: 1, color: HATCH });
       }
     }
     this.ctx.insert(this.mapLayer);

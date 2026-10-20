@@ -32,10 +32,10 @@ test('inputs survive the trip (and silly values are clamped)', () => {
   assert.ok(out[1].crouch && out[1].jet && !out[1].fire);
 });
 
-function botGame(file = 'ssdm1.json', mode = 'ffa', seed = 5) {
+function botGame(file = 'ssdm1.json', mode = 'ffa', seed = 5, options = {}) {
   const mapData = loadMap(file);
-  const game = new Game({ mapData, mode, fragLimit: 999, seed, effects: true, speed: DEFAULT_SPEED });
-  const nav = new NavGraph(game.map);
+  const game = new Game({ mapData, mode, fragLimit: 999, seed, effects: true, speed: DEFAULT_SPEED, options });
+  const nav = game.useNav(new NavGraph(game.map));
   const rng = makeRng(seed);
   const addBot = g => {
     const profile = BOT_PROFILES[g.soldiers.length % BOT_PROFILES.length];
@@ -70,8 +70,8 @@ test('snapshots carry every soldier, projectile and pickup', () => {
 });
 
 /** A host with bots, and `players` remote players joined over in-memory links on a simulated clock. */
-async function onlineMatch({ players = 1, latency = 0, loss = 0, mode = 'ffa', file = 'ssdm1.json', controllers = [] } = {}) {
-  const first = botGame(file, mode);
+async function onlineMatch({ players = 1, latency = 0, loss = 0, mode = 'ffa', file = 'ssdm1.json', controllers = [], options = {}, before } = {}) {
+  const first = botGame(file, mode, 5, options);
   const { mapData, addBot } = first;
   let game = first.game;
   let now = 0;
@@ -84,6 +84,7 @@ async function onlineMatch({ players = 1, latency = 0, loss = 0, mode = 'ffa', f
   });
   game.addSoldier({ name: 'Host', isBot: false }, { input: () => ({ move: 0 }) });
   host.setGame(game);
+  before?.(game);
   const clients = [];
   for (let i = 0; i < players; i++) {
     const [h, c] = memoryLinks({ latency, loss, schedule, rng: makeRng(9 + i) });
@@ -180,6 +181,33 @@ test('sprinting online: my screen predicts the speed and stamina the host has', 
     assert.ok(Math.hypot(c.me.x - mine.x, c.me.y - mine.y) < Math.hypot(mine.body.vx, mine.body.vy) + 2);
   }
   assert.ok(sprinted, 'sprinted on the host');
+});
+
+test('destructible maps online: players get every hole the host blows, joining late or missing some', async () => {
+  const blocks = g => g.map.solids.map(b => `${b.l},${b.t},${b.r},${b.b}`).sort().join('|');
+  // Blow a hole in the middle of the i-th block that can be destroyed.
+  const blast = (g, i) => { const b = g.map.solids.filter(s => !s.hard)[i]; g.carve((b.l + b.r) / 2, (b.t + b.b) / 2, 40); };
+  // Holes blown before the player joins come with the welcome...
+  const { game, clients, step } = await onlineMatch({ players: 1, options: { destruction: true }, before: g => { blast(g, 0); blast(g, 3); } });
+  const c = clients[0];
+  await step(30);
+  assert.equal(game.carves.length, 2);
+  assert.equal(c.game.carves.length, game.carves.length);
+  assert.equal(blocks(c.game), blocks(game), 'same map after the early holes');
+  // ...and ones blown during the match arrive as they happen.
+  for (const i of [1, 2, 5]) blast(game, i);
+  await step(10);
+  assert.equal(c.game.carves.length, game.carves.length);
+  assert.equal(blocks(c.game), blocks(game), 'same map after more holes');
+  // A player who notices it's missing some asks, and gets them.
+  const asked = [];
+  const send = c.link.send.bind(c.link);
+  c.link.send = (m, r) => { if (m?.t === 'carves?') asked.push(m); return send(m, r); };
+  c.game.carves.pop(); // (pretend the last one never arrived)
+  c.carvesBehind = null;
+  await step(60);
+  assert.ok(asked.length >= 1, 'asked for the missing holes');
+  assert.equal(c.game.carves.length, game.carves.length, 'caught up');
 });
 
 test('players hear the host\'s sounds, see the feed, and can chat', async () => {

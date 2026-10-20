@@ -54,6 +54,7 @@ export class NavGraph {
   constructor(map) {
     this.map = map;
     this.nodes = [];
+    this.version = 0; // goes up when patch() changes the spots (they're numbered afresh)
     // At lower game speeds everything takes longer, so stretch the move timings
     // to match: the moves (and so the routes) are then the same at every speed.
     const t = 1 / MOTION.timeScale;
@@ -72,25 +73,48 @@ export class NavGraph {
   }
 
   _buildNodes() {
-    for (const s of this.map.solids) {
-      if (s.bounce) continue;
-      const y = s.t - BODY.bottom;
-      // A soldier can stand partly hanging over an edge, so sample past the ends too.
-      const x0 = s.l - BODY.halfW + 1, x1 = s.r + BODY.halfW - 1;
-      const n = Math.max(1, Math.round((x1 - x0) / NODE_STEP));
-      for (let i = 0; i <= n; i++) {
-        const x = x0 + ((x1 - x0) * i) / n;
-        if (this.nodes.some(o => Math.abs(o.y - y) < 0.5 && Math.abs(o.x - x) < NODE_STEP * 0.5)) continue;
-        if (this._standable(x, y)) this.nodes.push({ id: this.nodes.length, x, y, links: [] });
-      }
-    }
-    // Index nodes by row for quick lookups.
     this.rows = new Map();
-    for (const n of this.nodes) {
-      const k = Math.round(n.y);
-      if (!this.rows.has(k)) this.rows.set(k, []);
-      this.rows.get(k).push(n);
+    for (const s of this.map.solids) this._nodesOn(s);
+  }
+
+  /** Spots to stand on along the top of solid s (only inside `area` { l, t, r, b }, if given). */
+  _nodesOn(s, area = null) {
+    if (s.bounce) return;
+    const y = s.t - BODY.bottom;
+    if (area && (y < area.t || y > area.b)) return;
+    // A soldier can stand partly hanging over an edge, so sample past the ends too.
+    const x0 = s.l - BODY.halfW + 1, x1 = s.r + BODY.halfW - 1;
+    const n = Math.max(1, Math.round((x1 - x0) / NODE_STEP));
+    for (let i = 0; i <= n; i++) {
+      const x = x0 + ((x1 - x0) * i) / n;
+      if (area && (x < area.l || x > area.r)) continue;
+      if (this._taken(x, y)) continue;
+      if (this._standable(x, y)) this._addNode({ id: this.nodes.length, x, y, links: [] });
     }
+  }
+
+  /** True if there's already a spot within half a step of (x, y) on the same row. */
+  _taken(x, y) {
+    for (const k of [Math.round(y) - 1, Math.round(y), Math.round(y) + 1]) {
+      for (const o of this.rows.get(k) || []) if (Math.abs(o.y - y) < 0.5 && Math.abs(o.x - x) < NODE_STEP * 0.5) return true;
+    }
+    return false;
+  }
+
+  _addNode(n) {
+    this.nodes.push(n);
+    const k = Math.round(n.y);
+    if (!this.rows.has(k)) this.rows.set(k, []);
+    this.rows.get(k).push(n);
+    this.nodeCells = null;
+  }
+
+  /** Index the spots again (ids, rows, cells) after some were taken away. */
+  _reindex() {
+    this.rows = new Map();
+    const all = this.nodes;
+    this.nodes = [];
+    for (const n of all) { n.id = this.nodes.length; this._addNode(n); }
   }
 
   /** Nearest node to a standing position (same height, within `reach` px), or null. */
@@ -150,13 +174,16 @@ export class NavGraph {
     return this.nodeCells;
   }
 
-  _simulate(start, inputAt) {
+  /** Try a move from `start`. reach: a box grown to cover everywhere the body went. */
+  _simulate(start, inputAt, reach) {
     const body = makeBody(start.x, start.y);
     body.onGround = true;
     let airborne = false;
     const bottom = this.map.bounds.bottom + 120;
     for (let t = 0; t < this.maxSim; t++) {
       stepBody(body, inputAt(t, body, airborne), this.map);
+      if (body.x < reach.l) reach.l = body.x; else if (body.x > reach.r) reach.r = body.x;
+      if (body.y < reach.t) reach.t = body.y; else if (body.y > reach.b) reach.b = body.y;
       if (!body.onGround) airborne = true;
       else if (airborne) {
         const n = this.nodeAt(body.x, body.y, 7);
@@ -176,37 +203,91 @@ export class NavGraph {
   }
 
   _buildLinks() {
+    for (const a of this.nodes) this._linkNode(a);
+    this.linkCount = this.nodes.reduce((n, a) => n + a.links.length, 0);
+  }
+
+  /**
+   * Work out the moves from spot a: walking to its neighbours, then every jump
+   * and drop. a.reach: a box around everywhere those moves went (so after blocks
+   * change, only spots whose moves went near the change need doing again).
+   */
+  _linkNode(a) {
+    a.links = [];
+    const reach = a.reach = { l: a.x - NODE_STEP - 6, t: a.y - 4, r: a.x + NODE_STEP + 6, b: a.y + 4 };
     // Walking between neighbouring spots.
-    for (const a of this.nodes) {
-      for (let dy = -PHYS.stepUp; dy <= PHYS.stepUp; dy++) {
-        for (const b of this.rows.get(Math.round(a.y) + dy) || []) {
-          // (Spots where two floors meet can be a little further apart than usual.)
-          if (b === a || Math.abs(b.x - a.x) > NODE_STEP + 4) continue;
-          const dir = Math.sign(b.x - a.x);
-          if (dir && this._walkReaches(a, b, dir)) {
-            this._addLink(a, b, { type: 'walk', dir, cost: Math.abs(b.x - a.x) / PHYS.runSpeed + 1 });
-          }
+    for (let dy = -PHYS.stepUp; dy <= PHYS.stepUp; dy++) {
+      for (const b of this.rows.get(Math.round(a.y) + dy) || []) {
+        // (Spots where two floors meet can be a little further apart than usual.)
+        if (b === a || Math.abs(b.x - a.x) > NODE_STEP + 4) continue;
+        const dir = Math.sign(b.x - a.x);
+        if (dir && this._walkReaches(a, b, dir)) {
+          this._addLink(a, b, { type: 'walk', dir, cost: Math.abs(b.x - a.x) / PHYS.runSpeed + 1 });
         }
       }
     }
+    const walkL = a.links.some(l => l.type === 'walk' && l.dir < 0);
+    const walkR = a.links.some(l => l.type === 'walk' && l.dir > 0);
+    for (const j of this.jumps) {
+      const r = this._simulate(a, t => ({ move: jumpSteer(j, t), jump: true, jumpPressed: t === 0 }), reach);
+      if (r) this._addLink(a, r.node, { type: 'jump', move: j, cost: r.ticks + JUMP_COST / this.timeScale });
+    }
+    for (const d of this.drops) {
+      if ((d.dir < 0 && walkL) || (d.dir > 0 && walkR)) continue;
+      let fellAt = -1;
+      const r = this._simulate(a, (t, body, airborne) => {
+        if (airborne && fellAt < 0) fellAt = t;
+        return { move: dropSteer(d, fellAt < 0 ? -1 : t - fellAt) };
+      }, reach);
+      if (r) this._addLink(a, r.node, { type: 'drop', move: d, cost: r.ticks + 3 });
+    }
+  }
+
+  /**
+   * Blocks changed inside `area` (destructible maps): find the spots there again,
+   * and work out the moves again from every spot whose moves went near it. The
+   * rest of the route map stays as it was. Spots are numbered afresh (bots plan
+   * again afterwards).
+   */
+  patch(area) {
+    // Spots whose standing room or floor was inside the area.
+    const touched = n => n.x + BODY.halfW > area.l && n.x - BODY.halfW < area.r && n.y + BODY.bottom + 1 > area.t && n.y + BODY.top < area.b;
+    const removed = new Set(this.nodes.filter(touched));
+    this.nodes = this.nodes.filter(n => !removed.has(n));
+    this._reindex();
+    const pad = { l: area.l - BODY.halfW - 2, t: area.t - BODY.bottom - 2, r: area.r + BODY.halfW + 2, b: area.b - BODY.top + 2 };
+    const fresh = new Set();
+    for (const s of this.map.solids) {
+      if (s.r + BODY.halfW < pad.l || s.l - BODY.halfW > pad.r) continue;
+      const before = this.nodes.length;
+      this._nodesOn(s, pad);
+      for (let i = before; i < this.nodes.length; i++) fresh.add(this.nodes[i]);
+    }
+    // Moves that went near the change (or start next to it) are worked out again.
+    const near = r => r.l - BODY.halfW - 2 < area.r && r.r + BODY.halfW + 2 > area.l && r.t + BODY.top - 2 < area.b && r.b + BODY.bottom + 2 > area.t;
+    const besidePad = n => n.x > pad.l - NODE_STEP - 6 && n.x < pad.r + NODE_STEP + 6 && n.y > pad.t - PHYS.stepUp - 2 && n.y < pad.b + PHYS.stepUp + 2;
+    let redone = 0;
     for (const a of this.nodes) {
-      const walkL = a.links.some(l => l.type === 'walk' && l.dir < 0);
-      const walkR = a.links.some(l => l.type === 'walk' && l.dir > 0);
-      for (const j of this.jumps) {
-        const r = this._simulate(a, t => ({ move: jumpSteer(j, t), jump: true, jumpPressed: t === 0 }));
-        if (r) this._addLink(a, r.node, { type: 'jump', move: j, cost: r.ticks + JUMP_COST / this.timeScale });
-      }
-      for (const d of this.drops) {
-        if ((d.dir < 0 && walkL) || (d.dir > 0 && walkR)) continue;
-        let fellAt = -1;
-        const r = this._simulate(a, (t, body, airborne) => {
-          if (airborne && fellAt < 0) fellAt = t;
-          return { move: dropSteer(d, fellAt < 0 ? -1 : t - fellAt) };
-        });
-        if (r) this._addLink(a, r.node, { type: 'drop', move: d, cost: r.ticks + 3 });
-      }
+      if (fresh.has(a) || besidePad(a) || !a.reach || near(a.reach)) { this._linkNode(a); redone++; }
+      else if (removed.size) a.links = a.links.filter(l => !removed.has(l.to));
     }
     this.linkCount = this.nodes.reduce((n, a) => n + a.links.length, 0);
+    this.searches = null;
+    this.zoneCache = null;
+    this._trapped = null;
+    this.version = (this.version || 0) + 1;
+    return { removed: removed.size, added: fresh.size, redone };
+  }
+
+  /** A copy of this route map, for a match whose map can change (on `map`, that match's map). */
+  clone(map = this.map) {
+    const g = Object.create(NavGraph.prototype);
+    Object.assign(g, { map, timeScale: this.timeScale, maxSim: this.maxSim, jumps: this.jumps, drops: this.drops, version: 0, linkCount: this.linkCount });
+    g.nodes = [];
+    g.rows = new Map();
+    for (const n of this.nodes) g._addNode({ id: n.id, x: n.x, y: n.y, links: [], reach: n.reach && { ...n.reach } });
+    for (const n of this.nodes) g.nodes[n.id].links = n.links.map(l => ({ ...l, to: g.nodes[l.to.id], penalty: 0 }));
+    return g;
   }
 
   _walkReaches(a, b, dir) {

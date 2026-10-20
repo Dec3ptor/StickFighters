@@ -7,7 +7,7 @@
 
 import { WEAPONS } from '../weapons.js';
 
-export const PROTOCOL = 7;            // bump when the messages change; older versions can't join
+export const PROTOCOL = 8;            // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -121,6 +121,8 @@ export function encodeWorld(game) {
   w.u8(game.quake ? 1 : 0);
   // Who won (soldier id + 1, or team + 100), 0 if nobody yet.
   w.u8(game.winner ? (game.winner.team ? 100 + game.winner.team : game.winner.soldier.id + 1) : 0);
+  // How many holes have been blown in the map (destructible maps): players missing some ask for them.
+  w.u16(Math.min(game.carves?.length || 0, 65535));
   // The objective modes' state (flags, capture points, M-COMs), as JSON.
   const mode = game.modeState ? TEXT.encode(JSON.stringify(game.modeState, short)) : NONE;
   w.u16(mode.length);
@@ -233,6 +235,7 @@ export function decodeSnapshot(data) {
   snap.teamScore = { 1: r.i16(), 2: r.i16() };
   snap.quake = !!r.u8();
   snap.winner = r.u8();
+  snap.carves = r.u16();
   const ml = r.u16();
   snap.mode = null;
   if (ml) {

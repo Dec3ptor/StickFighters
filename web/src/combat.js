@@ -849,7 +849,12 @@ export function explode(game, x, y, blast, owner, weapon, direct = null) {
     if (p.cfg.mine) { p.armed = 0; if (p.triggered < 0 || p.triggered > 4) p.triggered = 4; }
     else p.life = Math.min(p.life, 4);
   }
+  // Destructible maps: a hole (after the damage, so the wall still shielded anyone behind it).
+  game.carve?.(x, y, blast.radius * CARVE_SHARE);
 }
+
+// How big a hole an explosion blows in the map (destructible maps), as a share of its blast radius.
+const CARVE_SHARE = 0.4;
 
 /** Apply damage. Armour soaks up part of it; burns and poison go straight to health. */
 export function damage(game, target, amount, attacker, weapon, opts = {}) {
