@@ -96,10 +96,13 @@ if (!sp.spectating || sp.alive || sp.menu) errors.push(`Spectate: ${JSON.stringi
 if (sp.deaths !== before.deaths) errors.push('Spectate counted as a death');
 if (sp.follow == null) errors.push('Spectate: not following anyone');
 const first = sp.follow;
+// (Read straight after the key: the one switched to may not live long, and then the camera goes back to the leader.)
+const watchable = () => page.evaluate(() => window.stickSoldiers.state.game.soldiers.filter(s => s.alive && !s.spectating && s !== window.stickSoldiers.state.me).length);
+const choices = await watchable();
 await page.keyboard.press('KeyD');
-await page.waitForTimeout(150);
 sp = await S();
-if (sp.follow === first) errors.push('Spectate: D didn\'t switch who to follow');
+if (sp.follow === first && choices > 1) errors.push('Spectate: D didn\'t switch who to follow');
+await page.waitForTimeout(150);
 await page.screenshot({ path: `${outDir}/spectate.png` });
 await page.keyboard.press('Space');
 await page.keyboard.down('KeyD');

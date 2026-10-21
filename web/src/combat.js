@@ -79,6 +79,16 @@ export function spawn(game, p) {
 
 // ---- Firing -------------------------------------------------------------------------
 
+/** How fast weapon def's shots fly in this match (bullets go faster with the bullet speed option). */
+export function shotSpeed(game, def) {
+  return def.kind === 'bullet' ? def.speed * (game.options?.bulletSpeed || 1) : def.speed;
+}
+
+/** Updates between shots of weapon def in this match (the time between shots option). */
+export function shotDelay(game, def) {
+  return def.rof * (game.options?.fireDelay || 1);
+}
+
 /**
  * Use the soldier's current weapon if it's ready. `input.firePressed` is true
  * on the tick the button went down (remote detonation and some tools need a click each time).
@@ -125,7 +135,7 @@ export function fire(game, s, input = {}) {
     // (Blocks for the Builder run out even in modes with endless ammo.)
     inv.ammo--;
   }
-  s.cooldown = def.rof;
+  s.cooldown = shotDelay(game, def);
   s.spawnProtect = 0;
   s.anim.recoil = def.kind === 'rocket' || def.kind === 'rail' ? 4 : def.kind === 'melee' || def.kind === 'build' ? 0 : 2.5;
   // (Building makes its own sound, where the block goes.)
@@ -169,8 +179,10 @@ const LAUNCH = {
   bullet(game, s, def, id, m) {
     const n = def.pellets || 1;
     for (let i = 0; i < n; i++) {
-      const [vx, vy] = aimed(game, s, def.spread, def.speed * (n > 1 ? 0.85 + game.rng() * 0.3 : 1), n > 1 ? CROUCH_PELLETS : CROUCH_SPREAD);
-      spawn(game, { kind: 'bullet', sprite: def.damage >= 40 ? 'slug' : 'bullet', x: m.x, y: m.y, vx, vy, owner: s, weapon: id, life: def.range / def.speed, damage: def.damage, knock: def.knock });
+      const speed = shotSpeed(game, def);
+      const [vx, vy] = aimed(game, s, def.spread, speed * (n > 1 ? 0.85 + game.rng() * 0.3 : 1), n > 1 ? CROUCH_PELLETS : CROUCH_SPREAD);
+      // (Knock-back as at the usual speed: hits push the same however fast bullets fly.)
+      spawn(game, { kind: 'bullet', sprite: def.damage >= 40 ? 'slug' : 'bullet', x: m.x, y: m.y, vx, vy, owner: s, weapon: id, life: def.range / speed, damage: def.damage, knock: def.knock });
     }
     if (n === 1) game.fx?.shell(s.shoulderX + m.dx * 6, s.shoulderY + m.dy * 6, s.facing);
     return true;

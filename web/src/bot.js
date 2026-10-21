@@ -7,6 +7,7 @@ import { angleDiff, clamp } from './util.js';
 import { CELL } from './grid.js';
 import { inZone } from './objectives.js';
 import { botWantsGadget } from './gadgets.js';
+import { shotSpeed } from './combat.js';
 
 const SIGHT = 1300;  // how far bots look for enemies
 const LOOKS = 6;     // in big games, sight lines a bot checks each time it looks around
@@ -845,7 +846,7 @@ export class BotController {
       desired = tx < sx ? Math.PI : 0;
     } else {
       if (def.speed && !['rail', 'seeker', 'flyer', 'strike'].includes(def.kind)) {
-        const lead = (dist / def.speed) * (0.5 + this.profile.skill * 0.15);
+        const lead = (dist / shotSpeed(game, def)) * (0.5 + this.profile.skill * 0.15);
         tx += seen.vx * lead;
         ty += seen.vy * lead * 0.4;
       }

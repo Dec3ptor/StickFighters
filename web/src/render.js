@@ -303,14 +303,19 @@ export class Renderer {
         case 'flame': drawFlame(ctx, p); break;
         case 'fire': drawFirePatch(ctx, p, t); break;
         case 'gas': drawGas(ctx, p); break;
-        case 'bullet':
+        case 'bullet': {
+          // A streak behind it: how far it goes in 0.7 updates, but no more than 40 px (fast
+          // bullets), and not back past the gun it came from.
+          const sp = Math.hypot(p.vx, p.vy) || 1;
+          const len = Math.min(0.7 * sp, 40, Math.max(0, (p0.age ?? 9) - 1 + this.alpha) * sp);
           ctx.strokeStyle = 'rgba(40,40,40,0.75)';
           ctx.lineWidth = p.sprite === 'slug' ? 1.6 : 1;
           ctx.beginPath();
-          ctx.moveTo(p.x - p.vx * 0.7, p.y - p.vy * 0.7);
+          ctx.moveTo(p.x - (p.vx / sp) * len, p.y - (p.vy / sp) * len);
           ctx.lineTo(p.x, p.y);
           ctx.stroke();
           break;
+        }
         case 'arrow': {
           ctx.save();
           ctx.translate(p.x, p.y);

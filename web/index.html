@@ -131,7 +131,15 @@
                   <select id="fog"><option value="off">Off</option><option value="on">On</option></select>
                 </label>
               </div>
-              <p class="muted-note"><b>Only what they see or hear</b>: bots spot you only on their screen, in front of them and in a clear line; behind them, they only hear you (shots, explosions, jetpacks, landings, running close by; creeping along crouched is silent). <b>Fog of war</b>: you only see what your soldier can see; the rest is greyed out, anyone there is hidden (teammates too, though big maps' minimap still shows them), and sounds from there show as orange ripples (or arrows at the screen's edge). Also in Settings.</p>
+              <div class="field-pair">
+                <label class="field">Bullet speed: <output id="bulletSpeedOut">3×</output>
+                  <input type="range" id="bulletSpeed" min="1" max="6" step="0.25" value="3">
+                </label>
+                <label class="field">Between shots: <output id="fireDelayOut">75%</output>
+                  <input type="range" id="fireDelay" min="20" max="100" step="5" value="75">
+                </label>
+              </div>
+              <p class="muted-note"><b>Bullet speed</b>: how fast guns' bullets fly (1× is the original; rockets, grenades and arrows aren't changed; bullets still go as far). <b>Between shots</b>: the wait between shots, for every weapon (100% is the original; 50% fires twice as fast). Online, the host's choice counts. <b>Only what they see or hear</b>: bots spot you only on their screen, in front of them and in a clear line; behind them, they only hear you (shots, explosions, jetpacks, landings, running close by; creeping along crouched is silent). <b>Fog of war</b>: you only see what your soldier can see; the rest is greyed out, anyone there is hidden (teammates too, though big maps' minimap still shows them), and sounds from there show as orange ripples (or arrows at the screen's edge). Also in Settings.</p>
             </div>
             <!-- Hidden unless SHOW_SPEED_MENU is true in src/config.js -->
             <label class="field hidden" id="speedField">Game speed
@@ -253,6 +261,14 @@
         </label>
         <label class="field">Fog of war
           <select id="setFog"><option value="off">Off</option><option value="on">On</option></select>
+        </label>
+      </div>
+      <div class="field-pair">
+        <label class="field">Bullet speed: <output id="setBulletSpeedOut">3×</output>
+          <input type="range" id="setBulletSpeed" min="1" max="6" step="0.25" value="3">
+        </label>
+        <label class="field">Between shots: <output id="setFireDelayOut">75%</output>
+          <input type="range" id="setFireDelay" min="20" max="100" step="5" value="75">
         </label>
       </div>
       <p class="muted-note">For the next game you start or host (a match already running keeps its own). The same choices are in the game setup.</p>

@@ -43,6 +43,13 @@ expect(await visible('#setBotVision') && await visible('#setFog'), 'experimental
 await page.selectOption('#setFog', 'on');
 expect(await page.inputValue('#fog') === 'on', 'fog of war chosen in settings shows in the game setup');
 await page.selectOption('#setFog', 'off');
+// Bullet speed and time between shots: sliders, also shown in the game setup.
+expect(await page.inputValue('#setBulletSpeed') === '3' && await page.inputValue('#setFireDelay') === '75', 'bullets 3x and 75% between shots by default');
+const slide = (sel, v) => page.$eval(sel, (el, v) => { el.value = v; el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); }, v);
+await slide('#setBulletSpeed', '4');
+await slide('#setFireDelay', '50');
+expect(await page.inputValue('#bulletSpeed') === '4' && await page.inputValue('#fireDelay') === '50', 'the sliders chosen in settings show in the game setup');
+expect(await page.textContent('#setBulletSpeedOut') === '4×' && await page.textContent('#fireDelayOut') === '50%', 'with their values');
 // Sprint: hold (the default) or toggle.
 expect(await page.inputValue('#sprintMode') === 'hold', 'sprint is hold-to-sprint by default');
 await page.selectOption('#sprintMode', 'toggle');
@@ -57,6 +64,8 @@ await page.evaluate(() => {
   window.stickSoldiers.startMatch({ ...s, map: 'ssdm1.json', mode: 'ffa', bots: 3 });
 });
 await page.waitForFunction(() => window.stickSoldiers.state.me?.alive && window.stickSoldiers.state.game.tick > 60, null, { timeout: 20000 });
+const shotOptions = await page.evaluate(() => { const o = window.stickSoldiers.state.game.options; return [o.bulletSpeed, o.fireDelay]; });
+expect(shotOptions[0] === 4 && shotOptions[1] === 0.5, `the match uses them (${shotOptions})`);
 await page.keyboard.press('Escape');
 await page.click('#pauseSettings');
 await page.selectOption('#graphics', 'webgl');
@@ -124,6 +133,8 @@ await page.waitForFunction(() => window.stickSoldiers);
 const saved = await page.evaluate(() => ({ kind: window.stickSoldiers.renderer.kind, prefs: { ...window.stickSoldiers.prefs } }));
 expect(saved.kind === 'webgl' && saved.prefs.graphics === 'webgl', `graphics remembered (${saved.kind})`);
 expect(saved.prefs.showFps === true && saved.prefs.showPing === false && saved.prefs.fpsCap === 'auto', `other settings remembered (${JSON.stringify(saved.prefs)})`);
+const sliders = [await page.inputValue('#bulletSpeed'), await page.inputValue('#fireDelay'), await page.textContent('#bulletSpeedOut')];
+expect(sliders.join() === '4,50,4×', `bullet speed and time between shots remembered (${sliders})`);
 
 console.log(JSON.stringify({ autoLabel, capped, full, hz, readout, saved, errors }, null, 2));
 await browser.close();

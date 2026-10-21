@@ -33,7 +33,9 @@ export class Game {
    *   botVision: 'classic' (bots see everyone nearby in a clear line) | 'sight' (only what's on their
    *   screen in front of them, plus what they hear), fog: true (players only see what's in their line of sight),
    *   destruction: true (explosions blow holes in the map),
-   *   classes: true (everyone spawns with a class's kit and uses gadgets: classes.js) }
+   *   classes: true (everyone spawns with a class's kit and uses gadgets: classes.js),
+   *   bulletSpeed: bullets fly this many times as fast (guns' bullets, not rockets, grenades or arrows),
+   *   fireDelay: the time between shots, times this (every weapon) }
    */
   constructor({ mapData, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1, options = {} }) {
     // Speed rescales shared constants, so set it before anything reads them.
@@ -41,7 +43,7 @@ export class Game {
     this.map = new GameMap(mapData);
     this.mode = mode;
     this.rules = modeOf(mode);
-    this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, destruction: false, classes: false, ...options };
+    this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, destruction: false, classes: false, bulletSpeed: 1, fireDelay: 1, ...options };
     // Every change to the map so far, in order (online players repeat them): holes blown
     // ([x, y, radius]: destructible maps) and blocks built (['+', l, t, r, b, built]: the Engineer's Builder).
     this.carves = [];
