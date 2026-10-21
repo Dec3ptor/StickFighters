@@ -139,10 +139,13 @@ test('bot matches on destructible maps: holes get blown and everything keeps wor
     const rng = makeRng(5);
     for (let i = 0; i < 12; i++) {
       const p = BOT_PROFILES[i % BOT_PROFILES.length];
-      const s = game.addSoldier({ name: p.name + i, isBot: true, team: 1 + (i % 2), profile: p }, new BotController(nav, 'normal', p, rng));
-      s.weapons.Bazooka = { ammo: 20 };
+      game.addSoldier({ name: p.name + i, isBot: true, team: 1 + (i % 2), profile: p }, new BotController(nav, 'normal', p, rng));
     }
-    for (let i = 0; i < 2400; i++) game.update();
+    for (let i = 0; i < 2400; i++) {
+      game.update();
+      // Bazookas for everyone (from time to time: respawning starts them with the usual kit).
+      if (i % 300 === 1) for (const s of game.soldiers) if (s.alive) s.weapons.Bazooka = { ammo: 20 };
+    }
     assert.ok(game.carves.length >= 2, `${m.name}: ${game.carves.length} holes`);
     assert.ok(game.stats.kills > 10, `${m.name}: ${game.stats.kills} kills`);
     assert.ok(game.soldiers.every(s => Number.isFinite(s.x) && Number.isFinite(s.y)));

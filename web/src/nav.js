@@ -79,19 +79,31 @@ export class NavGraph {
     for (const s of this.map.solids) this._nodesOn(s);
   }
 
-  /** Spots to stand on along the top of solid s (only inside `area` { l, t, r, b }, if given). */
+  /**
+   * Spots to stand on along the top of solid s (only inside `area` { l, t, r, b }, if given).
+   * Worked out from where there's room for a soldier on it (partly hanging over its ends,
+   * less wherever a block is in the way of the body), with spots at both ends of every
+   * stretch of room and about NODE_STEP apart between: so even a nook a few pixels wide
+   * that holes left has a spot (a soldier who ends up there isn't off the route map).
+   */
   _nodesOn(s, area = null) {
     if (s.bounce) return;
-    const y = s.t - BODY.bottom;
+    const y = s.t - BODY.bottom, hw = BODY.halfW;
     if (area && (y < area.t || y > area.b)) return;
-    // A soldier can stand partly hanging over an edge, so sample past the ends too.
-    const x0 = s.l - BODY.halfW + 1, x1 = s.r + BODY.halfW - 1;
-    const n = Math.max(1, Math.round((x1 - x0) / NODE_STEP));
-    for (let i = 0; i <= n; i++) {
-      const x = x0 + ((x1 - x0) * i) / n;
-      if (area && (x < area.l || x > area.r)) continue;
-      if (this._taken(x, y)) continue;
-      if (this._standable(x, y)) this._addNode({ id: this.nodes.length, x, y, links: [] });
+    let room = [[s.l - hw + 1, s.r + hw - 1]];
+    this.map.query(s.l - hw, y + BODY.top, s.r + hw, y + BODY.bottom, o => {
+      // (The body overlaps block o anywhere strictly between o.l - hw and o.r + hw.)
+      if (o !== s && o.t < y + BODY.bottom && o.b > y + BODY.top) room = without(room, o.l - hw, o.r + hw);
+      return false;
+    });
+    for (const [a, b] of room) {
+      const n = Math.round((b - a) / NODE_STEP);
+      for (let i = 0; i <= n; i++) {
+        const x = n ? a + ((b - a) * i) / n : (a + b) / 2;
+        if (area && (x < area.l || x > area.r)) continue;
+        if (this._taken(x, y)) continue;
+        if (this._standable(x, y)) this._addNode({ id: this.nodes.length, x, y, links: [] });
+      }
     }
   }
 
@@ -254,7 +266,7 @@ export class NavGraph {
     };
     this.jumps.forEach((j, i) => {
       const r = attempt(i, t => ({ move: jumpSteer(j, t), jump: true, jumpPressed: t === 0 }));
-      if (r) this._addLink(a, r.node, { type: 'jump', move: j, cost: r.ticks + JUMP_COST / this.timeScale });
+      if (r) this._addLink(a, r.node, { type: 'jump', move: j, cost: r.ticks + JUMP_COST / this.timeScale, ticks: r.ticks });
     });
     this.drops.forEach((d, k) => {
       if ((d.dir < 0 && walkL) || (d.dir > 0 && walkR)) return; // (walking that way instead)
@@ -263,8 +275,64 @@ export class NavGraph {
         if (airborne && fellAt < 0) fellAt = t;
         return { move: dropSteer(d, fellAt < 0 ? -1 : t - fellAt) };
       });
-      if (r) this._addLink(a, r.node, { type: 'drop', move: d, cost: r.ticks + 3 });
+      if (r) this._addLink(a, r.node, { type: 'drop', move: d, cost: r.ticks + 3, ticks: r.ticks });
     });
+  }
+
+  /**
+   * Ways out of somewhere that isn't a spot: a soldier standing at (x, y) where the
+   * route map has none (in the moment before a patch adds one, say). Every jump and
+   * drop, and walking either way, tried with the real physics from right there.
+   * Returns the quickest move that lands on a spot (one with a way back to the main
+   * part of the map, if any does) as a link ({ type, move or dir, to, cost, ticks }),
+   * or null if none does.
+   */
+  escape(x, y) {
+    const from = { x, y, id: -1 }, box = { l: x, t: y, r: x, b: y };
+    const trapped = this.trapped();
+    let best = null;
+    const consider = link => {
+      const a = trapped[link.to.id], b = best && trapped[best.to.id];
+      if (!best || a < b || (a === b && link.cost < best.cost)) best = link;
+    };
+    for (const dir of [-1, 1]) {
+      const body = makeBody(x, y);
+      body.onGround = true;
+      for (let t = 1; t <= 60 / this.timeScale; t++) {
+        stepBody(body, { move: dir }, this.map);
+        if (!body.onGround) break;
+        const n = this.nodeAt(body.x, body.y, 4);
+        if (n) { consider({ type: 'walk', dir, to: n, cost: t, ticks: t }); break; }
+      }
+    }
+    this.jumps.forEach(j => {
+      const r = this._simulate(from, t => ({ move: jumpSteer(j, t), jump: true, jumpPressed: t === 0 }), box);
+      if (r) consider({ type: 'jump', move: j, to: r.node, cost: r.ticks + JUMP_COST / this.timeScale, ticks: r.ticks });
+    });
+    this.drops.forEach(d => {
+      let fellAt = -1;
+      const r = this._simulate(from, (t, body, airborne) => {
+        if (airborne && fellAt < 0) fellAt = t;
+        return { move: dropSteer(d, fellAt < 0 ? -1 : t - fellAt) };
+      }, box);
+      if (r) consider({ type: 'drop', move: d, to: r.node, cost: r.ticks + 3, ticks: r.ticks });
+    });
+    return best;
+  }
+
+  /**
+   * The spot nearest (x, y) (within maxDist) that the search got to (and `ok` allows):
+   * where to head for when the spot nearest a place can't be got to (an enemy on a
+   * ledge cut off by holes, say). Null if there's none.
+   */
+  nearestReached(search, x, y, maxDist, ok = () => true) {
+    let best = null, bd = maxDist * maxDist;
+    for (const n of this.nodesNear(x, y, maxDist, maxDist)) {
+      if (search.cost[n.id] === Infinity || !ok(n)) continue;
+      const dy = (n.y - y) * 1.6, d = (n.x - x) ** 2 + dy * dy;
+      if (d < bd) { bd = d; best = n; }
+    }
+    return best;
   }
 
   /**
@@ -561,6 +629,18 @@ export class NavGraph {
     for (let id = goal.id; search.prev[id] >= 0; id = search.prev[id]) links.push(search.via[id]);
     return links.reverse();
   }
+}
+
+/** Stretches [[a, b], ...] less the open stretch (l, r). */
+function without(stretches, l, r) {
+  const out = [];
+  for (const [a, b] of stretches) {
+    if (r <= a || l >= b) { out.push([a, b]); continue; }
+    // (What's left can be a single point, as the stretch taken out is open: a soldier wedged in exactly.)
+    if (l >= a) out.push([a, l]);
+    if (r <= b) out.push([r, b]);
+  }
+  return out;
 }
 
 // Scratch space for costsFrom()'s heap (grown when needed).
