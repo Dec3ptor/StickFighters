@@ -11,7 +11,7 @@ fs.mkdirSync(outDir, { recursive: true });
 
 const server = await serve(0);
 const relay = await startRelay();
-const url = `http://localhost:${server.address().port}/?relay=${encodeURIComponent(relay.url)}`;
+const url = `http://localhost:${server.address().port}/?game=original&relay=${encodeURIComponent(relay.url)}`;
 const browser = await chromium.launch({
   ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}),
   // (No graphics card here: WebGL runs in software, so "auto" means the canvas.)

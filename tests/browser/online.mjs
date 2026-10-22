@@ -14,7 +14,7 @@ const server = await serve(0);
 // PUBLIC_RELAYS=1 uses the real public relays (as on the live site) instead of a local one.
 const publicRelays = !!process.env.PUBLIC_RELAYS;
 const relay = publicRelays ? null : await startRelay();
-const url = `http://localhost:${server.address().port}/${relay ? `?relay=${encodeURIComponent(relay.url)}` : ''}`;
+const url = `http://localhost:${server.address().port}/?game=original${relay ? `&relay=${encodeURIComponent(relay.url)}` : ''}`;
 const browser = await chromium.launch({
   ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}),
   // Use plain local addresses for WebRTC (headless browsers can't resolve the private .local names).

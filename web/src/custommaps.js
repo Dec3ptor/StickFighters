@@ -8,6 +8,7 @@
 //     spawns: [{ x, y, team, sector? }],                     team 1 = blue, 2 = red; sector: Rush (see below)
 //     items: [{ type: 'health'|'armour'|'jetpack'|'weapon', x, y, weapon? }],
 //     loadout?: { weapons: [ids], armour: 0-100, jetpack: bool },      what everyone spawns with
+//     theme?: 'dusk'|'night'|...,                            its look in Remastered (rm/themes.js; else from its name)
 //     objectives?: [                                         for the objective modes (see modes.js)
 //       { type: 'hill', left, top, right, bottom },           King of the hill: an area to hold
 //       { type: 'flag', team, x, y },                         Capture the flag: a team's flag stand (y = the floor)
@@ -97,6 +98,7 @@ export function normalizeMap(raw) {
   if (loadout) out.loadout = loadout;
   const objectives = normalizeObjectives(raw.objectives);
   if (objectives.length) out.objectives = objectives;
+  if (typeof raw.theme === 'string' && /^[a-z]{1,20}$/.test(raw.theme)) out.theme = raw.theme;
   return out;
 }
 
@@ -150,6 +152,7 @@ function pack(map) {
       : [o.type === 'hill' ? 'h' : 'p', o.left, o.top, o.right, o.bottom, ...(o.label ? [o.label] : [])])) } : {}),
     i: map.items.map(it => (it.type === 'weapon' ? [it.type, it.x, it.y, it.weapon] : [it.type, it.x, it.y])),
     ...(map.loadout ? { l: [map.loadout.weapons, map.loadout.armour, map.loadout.jetpack ? 1 : 0] } : {}),
+    ...(map.theme ? { t: map.theme } : {}),
   };
 }
 
@@ -163,6 +166,7 @@ function unpack(o) {
       : { type: k === 'h' ? 'hill' : 'point', left: a[0], top: a[1], right: a[2], bottom: a[3], label: a[4] })),
     items: (o.i || []).map(([type, x, y, weapon]) => ({ type, x, y, weapon })),
     loadout: Array.isArray(o.l) ? { weapons: o.l[0], armour: o.l[1], jetpack: !!o.l[2] } : null,
+    theme: o.t,
   });
 }
 

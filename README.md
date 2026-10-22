@@ -2,7 +2,9 @@
 
 A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-on, black-and-white stick-figure shooter where you grab weapons, armour and jetpacks lying around the map and frag your way to the limit. Now with online multiplayer, eight game modes (Battlefield-style Conquest and Rush among them) and 35 weapons, many of them borrowed from the Worms games.
 
-**Play it:** <https://dec3ptor.github.io/StickFighters/>
+Two games on one site: the **Original**, drawn as it was, and **Stick Soldiers Remastered**, the same game in 2.5D, with scenery in layers, solid blocks, lighting and weather (see [Stick Soldiers Remastered](#stick-soldiers-remastered)).
+
+**Play it:** <https://dec3ptor.github.io/StickFighters/> (Remastered straight away: <https://dec3ptor.github.io/StickFighters/remastered/>)
 
 ## What's in it
 
@@ -18,6 +20,7 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
   - Every map, the originals included, has hills, flags, capture points and M-COMs for all four objective modes. Picking a map in the setup switches to the mode it's made for and raises the bots to its smallest player count.
 - **Destructible maps** (setup → **Destruction**, on by default): explosions blow holes in walls, floors and platforms, so you can blast a way through a wall, drop enemies through the floor, or dig into a hill. The bigger the blast, the bigger the hole (a bazooka goes through a wall; the Holy Hand Grenade takes a big bite out of anything). Floors that spawn points, flags, M-COMs, hills and capture points stand on can't be destroyed, so every mode keeps working; neither can jump pads, or platforms a map maker marks indestructible. Blocks that can't be destroyed are lightly hatched. Bots find their way through new holes, and in online games everyone sees the same holes, including players who join late.
 - **A map maker** with mirror editing, spawn loadouts, test play, share links and **community maps** anyone can browse and play.
+- **Stick Soldiers Remastered**: the same game in 2.5D, picked when you first visit (see [Stick Soldiers Remastered](#stick-soldiers-remastered)).
 - **Health, armour, jetpacks and jump pads**, placed where the original had them. Dead soldiers drop their weapon. Picking up a new weapon only takes it out if you're holding the starting pistol; otherwise it goes in your inventory (the message says which key selects it).
 - **Experimental options** (in the game setup and in **Settings**, under **Experimental**):
   - **Bot vision: only what they see or hear.** Bots spot enemies only on their own screen (a view about as big as yours), in front of them and in a clear line. Behind them, they can only hear you: gunfire, explosions, jetpacks, hard landings and running close by. Creeping along crouched is silent. A bot that hears something turns round and goes to have a look, and a bot standing still looks over its shoulder now and then. The default is the classic bots, which notice anyone nearby in a clear line.
@@ -39,6 +42,35 @@ A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-o
   - **Sprint**: hold `Shift` to sprint, or press it to start and stop. The scoreboard (`Tab`) shows everyone's ping in online games.
   - They're remembered between visits. `?renderer=webgl` / `?renderer=canvas` and `?fps` in the address override them.
 - **Game speed fixed at 75%** of the original tuning: movement, jumps, bullets, grenades and fire rates are slowed, while the game keeps updating 60 times a second. Jumps keep their height, so every map stays climbable. A hidden speed picker can be switched back on with `SHOW_SPEED_MENU` in `web/src/config.js`.
+
+## Stick Soldiers Remastered
+
+The first time you visit, you pick a game: the **Original** (black-and-white stick figures on white, as in 2003) or **Stick Soldiers Remastered**. After that you go straight into the one you played last, and the menu's **Play the original** / **Play Remastered** button switches at any time. Addresses can say which: `?game=remastered` or `?game=original`, and `/remastered/` goes straight to Remastered. Links to a map or to join a game open in the game they were made in. Everything that happens in a match is the same in both: maps, weapons, modes, bots, physics, settings and online play. Players in an online game can even play it in different looks; invite links open in the host's.
+
+What Remastered changes is the picture:
+
+- **Scenery in layers.** Each map has a look: a sunset city, night ops in the rain, a frozen ridge, a desert outpost, an overgrown jungle, a foundry, a twilight keep, a war-torn frontline, a harbour or a hangar. Each has a sky (the sun or moon, clouds, stars) and three layers of scenery (mountains, skylines, forests, factories, ships...) that scroll slower and look hazier the further away they are. Dark shapes close up (ferns, rocks, rubble, crates) slide past faster than the fight along the bottom of the screen.
+- **Solid blocks.** Blocks have depth: you see the tops of floors below you, the undersides of ledges above and the sides of walls, and they shift as you move, as if seen by a camera. They're textured (concrete, rock, rusted metal, stone, sandstone...) and shaded by the look's light, with a lip of grass, snow, sand or tiles along their tops. Holes blown in them get sides too.
+- **Soldiers**: still stick figures, but with shading, a helmet in their team's colour (their own colour in free-for-all), a vest when they have armour, a backpack or a jetpack with a flame, an outline so they stand out against any background, and a shadow on the ground. They still fall apart when they die.
+- **Light and weather.** Muzzle flashes, tracers, explosions, rockets, fire, jetpacks, jump pads and pickups glow and light up what's around them. Night maps are dark except where something's lit. Rain, snow, dust, embers, ash or drifting motes fall at different depths.
+- **Menus and HUD**: dark glass panels over the map's scenery and a modern font. The HUD is the same as the original's, restyled, with shadowed text so it reads over any background.
+- **Quality** (Settings, instead of Graphics): **Auto** (the default) starts on High and steps down a level if your computer can't keep up for a few seconds running. **High** draws everything; **Medium** fills the blocks' sides with plain colours and has less weather and a simpler darkness at night; **Low** has flat colours, fewer layers of scenery, and no lights or weather.
+- **Map maker**: **Look in Remastered** (in the map's settings) picks the look for your map; otherwise one is picked from its name, the same one every time. Share links and community uploads keep it.
+
+| Look | Maps |
+|---|---|
+| Sunset city | Fire in the Hole, Skyline |
+| Night ops | Fatality Zone |
+| Frozen ridge | Sniping Grounds, Summit |
+| Desert outpost | King of the Hill, Crossfire |
+| Overgrown | Habitat, Valley |
+| Foundry | Hells Steeple, Foundry |
+| Twilight keep | Two Towers, Twin Keeps, Citadel |
+| Frontline | Frontline |
+| Harbor | Harbor |
+| Hangar | Fraghouse, Pit Stop |
+
+Remastered asks more of the computer than the original, mostly of the graphics card. Everything in it is drawn in code when a map starts: nothing extra is downloaded.
 
 ## Game modes
 
@@ -154,6 +186,7 @@ Click **Map maker** on the main menu, or **+ Make a new map** under **Your maps*
 - **Mirror editing** (`M`): anything you add, move, resize or delete is copied to the other side of a mirror line (purple; you can move it). Spawns can swap blue and red on the other side. **Copy left → right** and **Copy right → left** rebuild one half from the other, and **Mirror to other side** copies one thing.
 - **Objectives**: draw hills (`L`) and capture points (`C`) by dragging (or click for a standard size), and click to place each team's flag stand (`B`) and Rush M-COM stations (`R`, with a sector: sector 1 falls first). Capture points get letters A, B, C… (change them on the right). Spawn points can belong to a Rush sector, so the attack and the defence move up as sectors fall. Leave a mode's objectives out and the game works some out from the layout.
 - **Everyone spawns with**: pick weapons, armour and a jetpack that every player starts with on your map (in free-for-all and team games).
+- **Look in Remastered**: the scenery, materials and weather your map has in Stick Soldiers Remastered (a sunset city, a frozen ridge, a jungle...). Leave it on **Picked from the map's name** and one is picked for you, the same one every time.
 - **Map check** runs the bots' route planner over your map. It flags pits you can't climb out of, areas you can't get to, spawns inside walls or over the void, and pickups and objectives nobody can reach. Click a problem to see where it is. Test play won't start while the map has errors.
 - **Test play** starts a match on your map with the menu's settings, in the mode picked next to the button. The menu (`Esc`) then has **Back to map maker**.
 - **Saving** is automatic, in your browser. Your maps are under **Your maps** in the setup, with an **Edit** button.
@@ -175,8 +208,11 @@ npm test             # game logic: physics, bots, weapons, modes, netcode, lobby
 npx playwright install chromium
 npm run test:browser # in Chromium: plays matches, uses the map maker, checks WebGL draws the same as the canvas,
                      # checks smooth drawing above 60 fps, the settings screen, classes (the Loadout screen, the class
-                     # picker, building in both renderers), and plays online between three browsers
+                     # picker, building in both renderers), Remastered (the game picker, switching games, matches in
+                     # several looks, on the site as it's published), and plays online between three browsers
 ```
+
+Add `?game=original` or `?game=remastered` to the address to skip the game picker.
 
 There's no build step: the game is plain JavaScript modules in `web/`, and the browser loads them directly. Two libraries are copied into `web/vendor/`: [PixiJS](https://pixijs.com/) 8.22 (`pixi.min.js`, MIT licence), for WebGL drawing, and [noble-secp256k1](https://github.com/paulmillr/noble-secp256k1), for signing relay messages. PixiJS is only downloaded on computers that draw with WebGL.
 
@@ -185,6 +221,8 @@ There's no build step: the game is plain JavaScript modules in `web/`, and the b
 Every push runs the tests. Pushes to the repo's default branch then publish `web/` to GitHub Pages (`.github/workflows/pages.yml`). Work happens on `main`, so `main` should be the default branch: **Settings → General → Default branch**.
 
 GitHub Pages has to be switched on once: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+
+Before publishing, `tools/stamp.mjs` adds the release to the address of every module, the page's script and the stylesheet (`main.js?v=1a2b3c4d`), so a browser holding files from the last release never mixes old and new code, and every module is always loaded by the same address wherever it's imported from. A test checks the stamped site, and the Remastered browser test plays on it.
 
 ## Project layout
 
@@ -208,12 +246,14 @@ GitHub Pages has to be switched on once: **Settings → Pages → Build and depl
 | `web/src/stickman.js`, `sprites.js` | The stick figures, and drawings of weapons, animals and crates |
 | `web/src/render.js`, `hud.js`, `maptiles.js` | Drawing the world and the HUD (with a 2D canvas, or anything that draws like one); the map kept in tiles (`?tiles=on`) |
 | `web/src/glrender.js`, `glctx.js` | WebGL drawing: picks WebGL or the canvas, and lets the drawing code above draw through PixiJS |
+| `web/src/rm/` | Stick Soldiers Remastered's drawing: `renderer.js` (the renderer, built on the original's), `themes.js` (each look, as data), `backdrop.js` (sky, scenery layers, foreground), `blocks.js` (2.5D blocks), `textures.js` (materials), `soldiers.js`, `fx.js` (lights, darkness, weather, glows), `hudstyle.js` (the HUD's colours and font), `color.js` |
+| `web/remastered/` | The `/remastered/` address: goes to the site with `?game=remastered` |
 | `web/src/framerate.js` | Frame rate: measures the screen's refresh rate, caps, and the auto setting |
 | `web/src/audio.js`, `input.js`, `main.js` | Sound, controls and page wiring |
 | `web/data/` | The 8 maps and the leg animations, decoded from the original game |
 | `web/sounds/` | The original game's sound effects ([credits](web/sounds/CREDITS.md)) |
 | `tests/` | Headless tests (`npm test`) and browser tests (`tests/browser/`) |
-| `tools/` | Local web server, local Nostr relay, relay probe, and `ss2/extract.py` (rebuilds `reference/ss2/` from the original `ss2.zip`) |
+| `tools/` | Local web server, local Nostr relay, relay probe, `stamp.mjs` (release addresses for publishing), and `ss2/extract.py` (rebuilds `reference/ss2/` from the original `ss2.zip`) |
 | [`tools/maps/`](tools/maps/README.md) | The new maps, built in code (`designs/`), with a checker (reachability, objectives, travel times, bot matches) and a picture tool |
 | [`reference/ss2/`](reference/ss2/README.md) | Everything decoded from the original game, with previews |
 | [`docs/ss2-file-formats.md`](docs/ss2-file-formats.md) | The original game's file formats |
@@ -233,6 +273,7 @@ GitHub Pages has to be switched on once: **Settings → Pages → Build and depl
 - **Objective modes.** Everything a mode tracks (flags, capture progress, M-COM fuses) is plain data in `game.modeState`, which the host sends in every snapshot, so players see the same thing without any extra messages. Bots ask the mode where they should be (a hill, a flag, the point they've picked, an M-COM), then go there and hold it: they move about inside the area and fight from there, and on the way they sometimes stop to fight. Roles come from each bot's id, so some defend and some attack, and they spread over several objectives instead of crowding one. Rush defenders guard an M-COM from a few steps away rather than standing on it, so it can still be armed.
 - **Classes.** Kits replace the mode's loadout at spawn (`applyKit`), so with classes off nothing changes. Weapon upgrades never touch the weapon definitions: `weaponFor(s, id)` gives a view of the weapon with the soldier's upgrade applied (a bigger magazine, a scaled blast...), which firing, reloading, pickups and the HUD use; it reads through to the real numbers, so it follows the game speed. Gadget timers are written like weapon numbers, in updates at full speed, and stretched by the game speed (a 15 s recharge is 20 s at 75%). Spawn beacons are plain data in `game.beacons`, sent in snapshots; shots and blasts reach them through small calls next to the hit checks and `explode()`, which is left as it is.
 - **Building.** Built blocks are ordinary map boxes, marked as built (drawn as sandbags, and breakable on any map). Repairs fill in what's missing of the map as it was at the start (a copy is kept) around where you aim, less whatever's there now and anyone standing there; repaired blocks are plain map again. Each new block patches the bots' route map just as a hole does, and online it goes in the same ordered list as the holes, so block numbers line up for everyone. Bots walk on, around and over built blocks but don't build themselves.
+- **Remastered.** It's a second renderer, so nothing about the game changes: `RemasteredRenderer` extends the original's canvas renderer, keeping its camera, objectives, pickups and rarer effects, and draws the rest its own way. A block's back is its front shrunk 7% toward a vanishing point a little above the middle of the screen, and only its open edges (not touching another block) get sides; which edges are open is worked out once per block, and again only near a hole or a new wall. Sides are drawn furthest from the vanishing point first, then the fronts. Each scenery layer is drawn once into a strip that repeats sideways; every frame the strips are copied into a picture at 45–75% of the screen's resolution and stretched over the screen in one go, and when the camera hasn't moved, last frame's picture is used again. Textures are small repeating pictures made in code and laid in world units, so neighbouring blocks join up seamlessly. Night darkness is drawn at a quarter of the resolution with the lights cut out of it. The HUD is the original's code, drawn through a stand-in for the canvas that swaps colours and fonts as they're set, so both games always have the same HUD.
 - **Same game everywhere.** Offline, hosting and joining all run the same `Game` code. The host records every sound and effect as it happens and sends them on, and players draw trails (rocket smoke, jetpack flames) themselves, from what's in the snapshots.
 
 ## Ideas for what's next

@@ -12,7 +12,7 @@ fs.mkdirSync(outDir, { recursive: true });
 const server = await serve(0);
 // Online features talk to a local relay instead of the public ones.
 const relay = await startRelay();
-const url = `http://localhost:${server.address().port}/?relay=${encodeURIComponent(relay.url)}`;
+const url = `http://localhost:${server.address().port}/?game=original&relay=${encodeURIComponent(relay.url)}`;
 const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const errors = [];
 const expect = (ok, what) => { if (!ok) errors.push(what); };
@@ -122,6 +122,11 @@ expect(boxHard === 'false,true,true,false' && unmarked === 'false,false,true,fal
 expect(allHard === 'true,true,true,false' && hardUndone === unmarked, `all indestructible (not the jump pad), then undo: ${JSON.stringify(marking)}`);
 await page.keyboard.press('KeyV');
 
+// The map's look in Remastered (in the map's own settings, with nothing selected).
+await page.evaluate(() => { const e = window.stickSoldiers.editor; e.sel = null; e.refreshPanel(); });
+await page.selectOption('#mapTheme', 'arctic');
+expect(await page.evaluate(() => window.stickSoldiers.editor.map.theme) === 'arctic', 'a look picked for Remastered');
+
 await page.click('#edCheck');
 await page.waitForTimeout(300);
 const report = await page.$$eval('.ed-problem', els => els.map(e => e.textContent));
@@ -135,9 +140,10 @@ await page.waitForFunction(() => window.stickSoldiers.state.game && window.stick
 await page.waitForTimeout(2500);
 const playing = await page.evaluate(() => {
   const g = window.stickSoldiers.state.game;
-  return { map: g.map.name, tick: g.tick, destruction: !!g.options.destruction, saved: window.stickSoldiers.editor.record.data.platforms.map(p => !!p.hard).join() };
+  return { map: g.map.name, tick: g.tick, destruction: !!g.options.destruction, saved: window.stickSoldiers.editor.record.data.platforms.map(p => !!p.hard).join(), theme: g.map.theme };
 });
 expect(playing.map === 'Playwright Arena' && playing.tick > 60, `test play: ${JSON.stringify(playing)}`);
+expect(playing.theme === 'arctic', `the map's look goes with it (${playing.theme})`);
 expect(playing.destruction && playing.saved === 'false,false,true,false', `played with Destruction on, the indestructible ledge saved: ${JSON.stringify(playing)}`);
 await page.screenshot({ path: `${outDir}/editor-testplay.png` });
 await page.keyboard.press('Escape');
@@ -167,6 +173,8 @@ const shared = {
 expect(shared.toast.startsWith('Added to your maps: "Playwright Arena"'), `share link toast: ${shared.toast}`);
 expect(shared.selected === 'Playwright Arena', `share link should select the map, selected ${shared.selected}`);
 expect(shared.hash === '', 'the share code should be removed from the address bar');
+const sharedTheme = await friend.evaluate(async () => (await import('./src/mapstore.js')).listMaps().find(m => m.name === 'Playwright Arena')?.data.theme);
+expect(sharedTheme === 'arctic', `the share link keeps the map's look (${sharedTheme})`);
 await friend.screenshot({ path: `${outDir}/menu-shared.png` });
 
 // ...pasting a link into a tab that's already open works too, and the same link twice doesn't duplicate it.

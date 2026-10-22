@@ -7,6 +7,7 @@ import { BotController, BOT_PROFILES } from './bot.js';
 import { Input, PlayerController } from './input.js';
 import { createRenderer, autoGraphics } from './glrender.js';
 import { Renderer } from './render.js';
+import { RemasteredRenderer, drawRemasteredPreview } from './rm/renderer.js';
 import { FramePacer } from './framerate.js';
 import { drawHud } from './hud.js';
 import { SoundSystem } from './audio.js';
@@ -52,13 +53,17 @@ let editor = null;
 let lobby = null;
 const pacer = new FramePacer();
 const params = new URLSearchParams(location.search);
+// Which game: 'original' (the 2003 look) or 'remastered' (2.5D), from ?game= in the address,
+// or the one played last time (see boot()). The first time, the picker asks.
+const EDITIONS = ['original', 'remastered'];
+let edition = EDITIONS.includes(params.get('game')) ? params.get('game') : null;
 // Classes (kits, gadgets, the Loadout screen) are switched off for now: ?classes in the
 // address turns them back on (to try them, and for their tests).
 const CLASSES_ON = params.has('classes');
 // (?tiles=on: the canvas keeps the map in tiles, maptiles.js. Off by default: slower with a graphics card.)
 if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
-const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold' };
+const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto' };
 let community = null;
 let watcher = null;
 // Classes on: the class and loadouts we play with (saved apart from the settings: kitchoice.js).
@@ -80,6 +85,8 @@ const DEFAULTS = {
   // (graphicsPicked: graphics was chosen in Settings, not just the default saved.)
   graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true,
   sprint: 'hold', // Shift: 'hold' to sprint, or 'toggle' it on and off
+  quality: 'auto', // Remastered's graphics: 'auto', 'high', 'medium' or 'low'
+  edition: null,   // the game last picked
 };
 
 function loadSettings() {
@@ -299,6 +306,7 @@ function buildMapCards(selected, { follow = false } = {}) {
       audio.unlock();
       audio.play('menuMove');
       rememberMenu();
+      menuScenery();
     };
     card.addEventListener('click', pick);
     card.addEventListener('keydown', e => { if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); pick(); } });
@@ -751,6 +759,7 @@ function openSettings() {
   $('setFireDelay').value = $('fireDelay').value;
   showShotSliders();
   $('graphics').value = prefs.graphics;
+  $('quality').value = prefs.quality;
   $('sprintMode').value = prefs.sprint === 'toggle' ? 'toggle' : 'hold';
   $('fpsCap').value = String(prefs.fpsCap);
   $('showFps').checked = prefs.showFps;
@@ -766,6 +775,11 @@ function closeSettings() {
 
 /** The notes under the settings: what's being used right now. */
 function settingsNotes() {
+  if (renderer.kind === 'remastered') {
+    const q = renderer.quality, names = { high: 'High', medium: 'Medium', low: 'Low' };
+    $('quality').options[0].textContent = renderer.auto ? `Auto (${names[q]})` : 'Auto';
+    $('qualityNote').textContent = renderer.auto && q !== 'high' ? `Auto turned the quality down to ${names[q]} so your computer keeps up.` : 'Auto starts on High and turns it down if your computer can\'t keep up.';
+  }
   const auto = autoGraphics();
   $('graphics').options[0].textContent = `Auto (${auto === 'webgl' ? 'WebGL' : 'Canvas'})`;
   let g = renderer.kind === 'webgl' ? 'Drawing with WebGL, on the graphics card.' : 'Drawing with the canvas.';
@@ -780,9 +794,91 @@ function settingsNotes() {
   $('fpsNote').textContent = f;
 }
 
+/** A renderer for the game being played: Remastered's, or the original's (canvas or WebGL). */
+function makeRenderer(el) {
+  return edition === 'remastered' ? new RemasteredRenderer(el, prefs.quality) : createRenderer(el, params.get('renderer') || prefs.graphics);
+}
+
+/** Draw with renderer r from now on (made on a copy of the canvas: it takes the old one's place). */
+function useRenderer(r) {
+  r.cam = { ...renderer.cam };
+  r.shake = renderer.shake;
+  canvas.replaceWith(r.canvas);
+  renderer.destroy();
+  renderer = r;
+  canvas = r.canvas;
+  input.attach(canvas);
+}
+
+/** Play the original or Remastered (from the picker): the look changes, everything else stays. */
+async function setEdition(kind) {
+  kind = EDITIONS.includes(kind) ? kind : 'original';
+  const changed = kind !== edition;
+  edition = kind;
+  document.documentElement.dataset.game = kind;
+  const url = new URL(location.href);
+  url.searchParams.set('game', kind);
+  history.replaceState(history.state, '', url);
+  saveSettings({ ...loadSettings(), edition: kind });
+  if (changed || (kind === 'remastered') !== (renderer.kind === 'remastered')) useRenderer(await makeRenderer(canvas.cloneNode(false)));
+  editionText();
+  menuScenery();
+  show('gamePicker', false);
+}
+
+/** The names on the menu and the tab for the game being played. */
+function editionText() {
+  const rm = edition === 'remastered';
+  $('gameSub').textContent = rm ? 'Remastered' : '';
+  $('gameTag').textContent = rm ? 'The same fights in 2.5D: scenery in layers, solid blocks, lighting and weather.' : 'The 2003 stick-figure shooter, remade for the browser.';
+  $('switchGame').textContent = rm ? 'Play the original' : 'Play Remastered';
+  document.title = rm ? 'Stick Soldiers Remastered' : 'Stick Soldiers';
+}
+
+/** Remastered: the menus show the scenery of the map picked. */
+function menuScenery() {
+  if (!renderer.setMenuMap) return;
+  const key = selectedMap();
+  const data = key && !key.includes(':') ? maps.data.get(key) : key?.startsWith('custom:') ? getMap(key.slice(7))?.data : null;
+  renderer.setMenuMap(data || null);
+}
+
+/** Show the game picker (both games, side by side). */
+function openGamePicker() {
+  for (const b of document.querySelectorAll('[data-edition]')) b.classList.toggle('current', b.dataset.edition === (edition || loadSettings().edition));
+  drawPickerArt();
+  show('gamePicker', true);
+  document.querySelector(`[data-edition="${edition || loadSettings().edition || 'remastered'}"]`)?.focus();
+}
+
+/** The pictures on the picker's two cards. */
+function drawPickerArt() {
+  const og = document.querySelector('[data-edition="original"] canvas'), rm = document.querySelector('[data-edition="remastered"] canvas');
+  if (og && !og.dataset.drawn) { og.dataset.drawn = 1; drawOriginalArt(og); }
+  if (rm && !rm.dataset.drawn) { rm.dataset.drawn = 1; drawRemasteredPreview(rm); }
+}
+
+/** A little paper scene in the original's style: black outlines, white blocks, stick figures. */
+function drawOriginalArt(cv) {
+  const ctx = cv.getContext('2d'), w = cv.width, h = cv.height;
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 3; ctx.fillStyle = '#fff';
+  for (const [x, y, bw, bh] of [[20, 190, 400, 40], [60, 120, 110, 18], [270, 110, 120, 18], [190, 150, 60, 40]]) { ctx.fillRect(x, y, bw, bh); ctx.strokeRect(x, y, bw, bh); }
+  const stick = (x, y, dir) => {
+    ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(x, y - 44, 8, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y - 36); ctx.lineTo(x, y - 14); ctx.lineTo(x - 9, y); ctx.moveTo(x, y - 14); ctx.lineTo(x + 9, y);
+    ctx.moveTo(x, y - 30); ctx.lineTo(x + dir * 18, y - 28); ctx.stroke();
+    ctx.fillStyle = '#111'; ctx.fillRect(x + dir * 12 - (dir < 0 ? 16 : 0), y - 31, 16, 4);
+  };
+  stick(115, 120, 1); stick(330, 110, -1); stick(220, 190, 1);
+}
+
 /** Switch between WebGL and canvas drawing (from Settings), even mid-match. */
 let switching = false, nextChoice = null;
 async function setGraphics(choice) {
+  if (edition === 'remastered') return; // (Remastered has its own quality setting)
   if (switching) { nextChoice = choice; return; } // (picked again while switching: do that next)
   const want = choice === 'auto' ? autoGraphics() : choice;
   if (renderer.kind === want) { settingsNotes(); return; }
@@ -790,13 +886,7 @@ async function setGraphics(choice) {
   try {
     const r = await createRenderer(canvas.cloneNode(false), want);
     if (r.kind === renderer.kind) { r.destroy(); return; } // WebGL failed, and we're already on the canvas
-    r.cam = { ...renderer.cam };
-    r.shake = renderer.shake;
-    canvas.replaceWith(r.canvas);
-    renderer.destroy();
-    renderer = r;
-    canvas = r.canvas;
-    input.attach(canvas);
+    useRenderer(r);
   } finally {
     switching = false;
     settingsNotes();
@@ -903,7 +993,7 @@ async function hostMatch(game, settings, map, nav, rng) {
 
 function inviteLink() {
   const h = state.net?.handle;
-  return h ? `${location.origin}${location.pathname}#join=${inviteCode(h.invite)}` : '';
+  return h ? `${location.origin}${location.pathname}${edition === 'remastered' ? '?game=remastered' : ''}#join=${inviteCode(h.invite)}` : '';
 }
 
 async function joinGame(target) {
@@ -1051,8 +1141,9 @@ function frame(now) {
   if (!$('settings').classList.contains('hidden') && now - (state.notesAt || 0) > 500) { state.notesAt = now; settingsNotes(); }
   const g = state.game;
   if (!g) {
-    // Nothing playing: keep the canvas blank behind the menus.
-    renderer.clear();
+    // Nothing playing: keep the canvas blank behind the menus (Remastered: its scenery,
+    // except under the map maker and the picker, which cover it).
+    if ($('editor').classList.contains('hidden') && $('gamePicker').classList.contains('hidden')) renderer.clear();
     return;
   }
   const client = state.mode === 'client' ? state.net?.client : null;
@@ -1087,7 +1178,8 @@ function frame(now) {
   // Holding K to self-destruct: shown as it counts down (it goes off after a second).
   const holdingK = me.alive && input.down('KeyK') && !state.menuOpen && !state.chatOpen;
   state.destructSince = holdingK ? state.destructSince ?? now : null;
-  drawHud(renderer, g, me, {
+  const hudR = renderer.hud || renderer;
+  drawHud(hudR, g, me, {
     selfDestruct: holdingK ? (now - state.destructSince) / 1000 : 0,
     showScores: input.down('Tab') && !state.chatOpen, watching, chat: state.chat,
     spectating: me.spectating ? { free: !!free, target: watching } : null,
@@ -1097,6 +1189,7 @@ function frame(now) {
     perf: perf.on ? perf.text : null,
     picking: state.pickerOpen,
   });
+  if (hudR !== renderer) renderer.classButton = hudR.classButton;
   if (!state.menuOpen && !g.over && !state.chatOpen && !state.pickerOpen && !watchMode) {
     // Reloading: a ring round the crosshair fills up, complete when the gun's ready. That's
     // the pistol's magazine, and the wait between shots of slow guns (sniper rifle, rockets...).
@@ -1113,6 +1206,8 @@ function frame(now) {
   const end = performance.now();
   if (perf.on) countFrame(now, end - drawStart);
   pacer.drawn(now + (end - workStart), end - workStart);
+  // Remastered on Auto quality: lower it if the frame rate can't keep up.
+  if (renderer.adapt?.(pacer, now) && !$('settings').classList.contains('hidden')) settingsNotes();
   if (g.over) matchOver(g);
 }
 
@@ -1240,6 +1335,10 @@ function wire() {
   $('pauseSettings').addEventListener('click', openSettings);
   $('settingsDone').addEventListener('click', closeSettings);
   $('graphics').addEventListener('change', () => { prefs.graphics = $('graphics').value; prefs.graphicsPicked = true; savePrefs(); setGraphics(prefs.graphics); });
+  $('quality').addEventListener('change', () => { prefs.quality = $('quality').value; savePrefs(); renderer.setQuality?.(prefs.quality); settingsNotes(); });
+  // The game picker.
+  for (const b of document.querySelectorAll('[data-edition]')) b.addEventListener('click', () => { audio.unlock(); audio.play('menuMove'); setEdition(b.dataset.edition); });
+  $('switchGame').addEventListener('click', () => { audio.unlock(); audio.play('menuMove'); setEdition(edition === 'remastered' ? 'original' : 'remastered'); });
   $('fpsCap').addEventListener('change', () => { prefs.fpsCap = $('fpsCap').value; pacer.setMode(prefs.fpsCap); savePrefs(); settingsNotes(); });
   $('showFps').addEventListener('change', () => { prefs.showFps = $('showFps').checked; perf.on = prefs.showFps || params.has('fps'); savePrefs(); });
   $('showPing').addEventListener('change', () => { prefs.showPing = $('showPing').checked; savePrefs(); });
@@ -1361,6 +1460,10 @@ function takeInvite() {
 
 async function boot() {
   const settings = loadSettings();
+  // Which game, if the address doesn't say: links to a map or to join a game open in
+  // the original (Remastered's links say so); otherwise the one played last time.
+  if (!edition) edition = /^#(map|join)=/.test(location.hash) ? 'original' : EDITIONS.includes(settings.edition) ? settings.edition : null;
+  document.documentElement.dataset.game = edition || 'original';
   profile = loadKit();
   // (Classes switched off: nothing about them in the menus.)
   document.body.classList.toggle('no-classes', !CLASSES_ON);
@@ -1370,7 +1473,7 @@ async function boot() {
   const [index, legs, r] = await Promise.all([
     fetch('data/maps/index.json').then(r => r.json()),
     fetch('data/animations/legs.json').then(r => r.json()),
-    createRenderer(canvas, params.get('renderer') || prefs.graphics),
+    makeRenderer(canvas),
   ]);
   renderer = r;
   canvas = renderer.canvas;
@@ -1409,6 +1512,10 @@ async function boot() {
 
   buildMenu(settings);
   wire();
+  // (Nothing picked yet, the first time: ask.)
+  editionText();
+  menuScenery();
+  if (!edition) openGamePicker();
   showTab(shared?.key ? 'offline' : state.tab);
   requestAnimationFrame(frame);
   startBackgroundTicker();
@@ -1425,7 +1532,7 @@ async function boot() {
   });
   // For automated tests and debugging in the console.
   window.stickSoldiers = {
-    state, get renderer() { return renderer; }, pacer, prefs, perf, setGraphics, startMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab,
+    state, get renderer() { return renderer; }, get edition() { return edition; }, setEdition, openGamePicker, pacer, prefs, perf, setGraphics, startMatch, endMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab,
     get profile() { return profile; }, openPicker, openLoadout,
   };
 }

@@ -11,12 +11,31 @@
 <body>
   <canvas id="game" aria-label="Game"></canvas>
 
+  <section id="gamePicker" class="screen hidden" aria-label="Choose a game">
+    <div class="pick">
+      <h1 class="pick-title">Stick Soldiers</h1>
+      <p class="pick-tag">Two ways to play the same game. You can switch any time from the menu, and play online together either way.</p>
+      <div class="pick-cards">
+        <button type="button" class="game-card og-card" data-edition="original">
+          <canvas width="440" height="250" aria-hidden="true"></canvas>
+          <span class="gc-name">Original</span>
+          <span class="gc-text">The 2003 classic as it was: black-and-white stick figures, drawn on paper.</span>
+        </button>
+        <button type="button" class="game-card rm-card" data-edition="remastered">
+          <canvas width="440" height="250" aria-hidden="true"></canvas>
+          <span class="gc-name">Remastered <em>New</em></span>
+          <span class="gc-text">The same fights in 2.5D: scenery in layers, solid blocks with depth, lighting, weather and new soldiers.</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
   <section id="menu" class="screen">
     <div class="panel">
       <header class="menu-head">
         <div>
-          <h1>Stick Soldiers</h1>
-          <p class="tag">The 2003 stick-figure shooter, remade for the browser.</p>
+          <h1><span id="gameTitle">Stick Soldiers</span><span id="gameSub" class="sub"></span></h1>
+          <p class="tag"><span id="gameTag">The 2003 stick-figure shooter, remade for the browser.</span> <button type="button" id="switchGame" class="small switch-game">Play Remastered</button></p>
         </div>
         <label class="field name-field">Your name <input id="name" maxlength="14" autocomplete="off" spellcheck="false"></label>
       </header>
@@ -222,14 +241,23 @@
   <section id="settings" class="screen hidden" aria-label="Settings">
     <div class="panel small">
       <h2>Settings</h2>
-      <label class="field">Graphics
+      <label class="field og-only">Graphics
         <select id="graphics">
           <option value="auto">Auto</option>
           <option value="webgl">WebGL (uses the graphics card)</option>
           <option value="canvas">Canvas (the default)</option>
         </select>
       </label>
-      <p id="graphicsNote" class="muted-note"></p>
+      <p id="graphicsNote" class="muted-note og-only"></p>
+      <label class="field rm-only">Quality
+        <select id="quality">
+          <option value="auto">Auto</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+      </label>
+      <p id="qualityNote" class="muted-note rm-only"></p>
       <label class="field">Frame rate
         <select id="fpsCap">
           <option value="auto">Auto</option>

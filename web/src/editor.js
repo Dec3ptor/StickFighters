@@ -9,6 +9,7 @@ import { drawWeapon, drawHealth, drawArmour, drawJetpack, HATCH, HATCH_GAP } fro
 import { RULES } from './config.js';
 import { MODES } from './modes.js';
 import { platformSeams, fillSeams, hatch } from './map.js';
+import { THEMES } from './rm/themes.js';
 
 const TOOLS = [
   { id: 'select', label: 'Select', key: 'KeyV', short: 'V', hint: 'Click to select. Drag to move, drag the corner squares to resize. Drag empty space to move the view.' },
@@ -97,6 +98,7 @@ export class Editor {
     this.map = JSON.parse(JSON.stringify({
       name: record.data.name, platforms: record.data.platforms, spawns: record.data.spawns, items: record.data.items,
       objectives: record.data.objectives || [], loadout: record.data.loadout || null,
+      ...(record.data.theme ? { theme: record.data.theme } : {}),
     }));
     this.mirror.placed = false;
     if (this.mirror.on) this.centreMirror();
@@ -870,6 +872,7 @@ export class Editor {
       html += `<h3>Map</h3><p class="ed-stats">${count(m.platforms.length, 'platform')}${hardCount ? ` (${hardCount} indestructible)` : ''} &middot; ${count(m.spawns.length, 'spawn')} (${blue} blue, ${m.spawns.length - blue} red) &middot; ${count(m.items.length, 'pickup')}<br>${Math.round(b.right - b.left)} &times; ${Math.round(b.bottom - b.top)} px</p>
         <p class="ed-stats">Objectives: ${count(ob('hill'), 'hill')} &middot; ${count(ob('flag'), 'flag')} &middot; ${count(ob('point'), 'capture point')} &middot; ${count(ob('mcom'), 'M-COM')}${sectors ? ` in ${count(sectors, 'sector')}` : ''}</p>
         <p class="ed-note">Modes whose objectives you leave out get some worked out from the layout.</p>`;
+      html += `<label class="ed-field">Look in Remastered<select id="mapTheme"><option value="">Picked from the map's name</option>${Object.entries(THEMES).map(([id, t]) => `<option value="${id}"${m.theme === id ? ' selected' : ''}>${t.name}</option>`).join('')}</select></label>`;
       html += this.loadoutPanel();
     }
     const mir = this.mirror;
@@ -982,6 +985,7 @@ export class Editor {
       if (c.checked) l.weapons.push(c.value);
       this.changed();
     });
+    on('mapTheme', 'change', edit(el => { if (el.value) this.map.theme = el.value; else delete this.map.theme; }));
     on('loArmour', 'change', edit(el => { lo().armour = +el.value; }));
     on('loJet', 'change', edit(el => { lo().jetpack = el.checked; }));
     const det = this.$('#loDetails');
@@ -1070,7 +1074,9 @@ export class Editor {
   async shareLink() {
     try {
       const code = await encodeShare(this.map);
-      const url = `${location.origin}${location.pathname}#map=${code}`;
+      // (Opens in the game being played: Remastered's links keep ?game=remastered.)
+      const game = new URLSearchParams(location.search).get('game') === 'remastered' ? '?game=remastered' : '';
+      const url = `${location.origin}${location.pathname}${game}#map=${code}`;
       try { await navigator.clipboard.writeText(url); this.setStatus('Share link copied'); }
       catch { prompt('Copy this link to share your map:', url); }
     } catch (e) {

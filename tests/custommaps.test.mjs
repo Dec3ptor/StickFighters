@@ -55,6 +55,14 @@ test('share links round-trip every game map', async () => {
   await assert.rejects(decodeShare('not-a-map'), /damaged/);
 });
 
+test("a map's look in Remastered is kept, in saves and share links", async () => {
+  const map = normalizeMap({ ...loadMap('ssdm1.json'), theme: 'arctic' });
+  assert.equal(map.theme, 'arctic');
+  assert.equal((await decodeShare(await encodeShare(map))).theme, 'arctic');
+  assert.equal(normalizeMap({ ...loadMap('ssdm1.json'), theme: '<b>bad</b>' }).theme, undefined, 'only a plain name');
+  assert.equal(normalizeMap(loadMap('ssdm1.json')).theme, undefined, 'none unless one was picked');
+});
+
 test('.ssm files round-trip, matching the original game format', () => {
   for (const m of mapIndex()) {
     // (The original format has no objectives or Rush sectors: everything else comes back.)

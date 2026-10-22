@@ -300,7 +300,7 @@ button.big { font-size: 18px; padding: 13px 24px; letter-spacing: 0.04em; }
 .setup-head h2 { margin: 0; font-size: 20px; }
 .seg-small { font-weight: normal; }
 .seg-small label { padding: 3px 9px; font-size: 12px; white-space: nowrap; }
-.field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; align-items: end; }
 .field-pair .field { margin-top: 8px; }
 .map-card small.by { display: block; }
 .map-card .save { position: absolute; top: 5px; right: 5px; font-size: 11px; padding: 2px 7px; border-width: 1.5px; }
@@ -337,3 +337,116 @@ button.big { font-size: 18px; padding: 13px 24px; letter-spacing: 0.04em; }
 .picker-actions { display: flex; gap: 8px; justify-content: flex-end; }
 /* Classes are switched off for now (?classes in the address turns them on). */
 .no-classes .classes-only { display: none !important; }
+
+/* ---- The game picker (both games) ---- */
+#gamePicker {
+  background: radial-gradient(ellipse at 70% 0%, #2a2350 0%, #12131f 55%, #08090f 100%);
+  color: #eef2f7;
+  z-index: 40;
+  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.pick { width: min(980px, 100%); text-align: center; }
+.pick-title { margin: 0; font-size: clamp(34px, 7vw, 64px); font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+.pick-tag { color: #a9b2c0; margin: 8px auto 26px; max-width: 560px; }
+.pick-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+@media (max-width: 760px) { .pick-cards { grid-template-columns: 1fr; } }
+.game-card {
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px; text-align: left;
+  padding: 12px 12px 16px; border-radius: 16px; font-weight: normal; cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.game-card canvas { width: 100%; height: auto; aspect-ratio: 440 / 250; display: block; border-radius: 10px; }
+.game-card .gc-name { font-size: 24px; font-weight: 800; letter-spacing: 0.04em; margin-top: 6px; }
+.game-card .gc-name em { font-style: normal; font-size: 12px; vertical-align: middle; padding: 2px 8px; margin-left: 6px; border-radius: 99px; background: linear-gradient(90deg, #3d7ff0, #8a5cff); color: #fff; letter-spacing: 0.06em; }
+.game-card .gc-text { font-size: 14px; line-height: 1.45; }
+.game-card:hover, .game-card:focus-visible { transform: translateY(-4px); }
+.og-card { background: #fff; color: #111; border: 2px solid #111; box-shadow: 8px 8px 0 rgba(255,255,255,0.12); }
+.og-card canvas { border: 2px solid #111; border-radius: 0; }
+.og-card .gc-text { color: #555; }
+.rm-card { background: rgba(20,24,38,0.85); color: #eef2f7; border: 1px solid rgba(255,255,255,0.14); box-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(122,92,255,0.25); }
+.rm-card .gc-text { color: #a9b2c0; }
+.rm-card:hover, .rm-card:focus-visible { box-shadow: 0 24px 60px rgba(0,0,0,0.55), 0 0 30px rgba(122,92,255,0.45); }
+.game-card.current { outline: 3px solid #4a8bff; outline-offset: 3px; }
+.switch-game { margin-left: 8px; vertical-align: middle; }
+h1 .sub { display: none; }
+
+/* Settings only for one of the games. */
+.rm-only { display: none !important; }
+html[data-game="remastered"] .rm-only { display: block !important; }
+html[data-game="remastered"] .og-only { display: none !important; }
+
+/* ---- Stick Soldiers Remastered: dark glass over the scenery ---- */
+html[data-game="remastered"] {
+  --ink: #eef2f7;
+  --paper: rgba(14, 18, 28, 0.84);
+  --muted: #9aa5b4;
+  --line: rgba(255, 255, 255, 0.14);
+  --soft: rgba(255, 255, 255, 0.07);
+  --accent: #4a8bff;
+  background: #0b0f17;
+}
+html[data-game="remastered"] body {
+  background: #0b0f17;
+  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+/* (The map maker keeps the original's look.) */
+html[data-game="remastered"] #editor {
+  --ink: #111; --paper: #fff; --muted: #666; --line: #222; --soft: #f3f3f3; --accent: #111;
+  color: var(--ink); font-family: Arial, Helvetica, sans-serif;
+}
+html[data-game="remastered"] .screen { background: rgba(5, 8, 14, 0.3); }
+html[data-game="remastered"] .screen.overlay-low { background: transparent; }
+html[data-game="remastered"] #gamePicker { background: radial-gradient(ellipse at 70% 0%, #2a2350 0%, #12131f 55%, #08090f 100%); }
+html[data-game="remastered"] .screen .panel {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+}
+html[data-game="remastered"] header h1 { letter-spacing: 0.08em; }
+html[data-game="remastered"] h1 .sub {
+  display: block; font-size: 0.42em; letter-spacing: 0.42em; margin-top: 6px;
+  background: linear-gradient(90deg, #6aa2ff, #a07bff, #ff8a6a); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+html[data-game="remastered"] .screen button {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+html[data-game="remastered"] .screen button:hover { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.28); }
+html[data-game="remastered"] .screen button.primary {
+  background: linear-gradient(90deg, #3d7ff0, #7a5cff);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(77, 110, 255, 0.35);
+}
+html[data-game="remastered"] .screen button.primary:hover { filter: brightness(1.12); background: linear-gradient(90deg, #3d7ff0, #7a5cff); }
+html[data-game="remastered"] .screen :is(input[type="text"], input:not([type]), select) {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+}
+html[data-game="remastered"] .screen select option { background: #141a26; color: #eef2f7; }
+html[data-game="remastered"] .screen input[type="range"] { accent-color: #6a8cff; }
+html[data-game="remastered"] .screen .tabs { border-bottom: 1px solid var(--line); gap: 6px; }
+html[data-game="remastered"] .screen .tab {
+  border: 1px solid var(--line); border-bottom: none; border-radius: 10px 10px 0 0; margin-right: 0;
+  background: rgba(255, 255, 255, 0.04);
+}
+html[data-game="remastered"] .screen .tab[aria-pressed="true"] { background: linear-gradient(180deg, rgba(74, 139, 255, 0.35), rgba(74, 139, 255, 0.12)); color: #fff; }
+html[data-game="remastered"] .screen .seg { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+html[data-game="remastered"] .screen .seg label + label { border-left: 1px solid var(--line); }
+html[data-game="remastered"] .screen .seg label:has(input:checked) { background: rgba(74, 139, 255, 0.45); color: #fff; }
+html[data-game="remastered"] .screen .map-card { border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, 0.04); }
+html[data-game="remastered"] .screen .map-card canvas { border-radius: 8px; filter: invert(0.9) hue-rotate(180deg); }
+html[data-game="remastered"] .screen .map-card[aria-checked="true"] { border-color: #6a8cff; box-shadow: 0 0 0 1px #6a8cff, 0 0 22px rgba(106, 140, 255, 0.35); }
+html[data-game="remastered"] .screen .map-card .made-for { background: linear-gradient(90deg, #3d7ff0, #7a5cff); color: #fff; border-radius: 99px; }
+html[data-game="remastered"] .screen kbd { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.25); color: var(--ink); border-radius: 4px; }
+html[data-game="remastered"] footer { border-top-color: var(--line); }
+html[data-game="remastered"] #loading { background: rgba(5, 8, 14, 0.75); color: #eef2f7; }
+html[data-game="remastered"] .toast { background: linear-gradient(90deg, #3d7ff0, #7a5cff); color: #fff; border-radius: 10px; }
+html[data-game="remastered"] .note { color: #ff7a6a; }

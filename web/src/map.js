@@ -11,6 +11,7 @@ const MAX_SOLIDS = 6000;
 export class GameMap {
   constructor(data) {
     this.name = data.name;
+    this.theme = data.theme || null; // its look in Remastered (picked in the map maker), if it has one
     this.bounds = { ...data.bounds };
     // hard: can't be destroyed (marked in the map, or jump pads).
     this.solids = data.platforms.map((p, i) => ({

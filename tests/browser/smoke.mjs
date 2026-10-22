@@ -11,7 +11,7 @@ fs.mkdirSync(outDir, { recursive: true });
 const server = await serve(0);
 // Online features talk to a local relay instead of the public ones.
 const relay = await startRelay();
-const url = `http://localhost:${server.address().port}/?relay=${encodeURIComponent(relay.url)}`;
+const url = `http://localhost:${server.address().port}/?game=original&relay=${encodeURIComponent(relay.url)}`;
 
 const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });

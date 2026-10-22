@@ -62,12 +62,13 @@ export class Fog {
 
   /**
    * The shadows: behind every block (as seen from the eye) out of sight, drawn
-   * under the map (the blocks themselves are drawn over them). view: the part of
-   * the world on screen; only blocks there can hide anything on screen.
+   * under the map (the blocks themselves are drawn over them; Remastered darkens
+   * over everything instead, with `fill`). view: the part of the world on screen;
+   * only blocks there can hide anything on screen.
    */
-  drawShadows(ctx, view) {
+  drawShadows(ctx, view, fill = FOG) {
     const { x: ex, y: ey } = this.eye;
-    ctx.fillStyle = FOG;
+    ctx.fillStyle = fill;
     ctx.beginPath();
     this.map.query(view.l, view.t, view.r, view.b, s => {
       if (ex >= s.l && ex <= s.r && ey >= s.t && ey <= s.b) return false;
