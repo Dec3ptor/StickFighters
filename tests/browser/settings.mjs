@@ -1,5 +1,6 @@
 // The Settings screen: switching graphics mid-match (WebGL and back), the frame
-// rate cap, the frame rate readout, and everything being remembered next visit.
+// rate cap, the frame rate readout, the volume (here and in the game's menu), the
+// dropdowns left alone while it's open, and everything being remembered next visit.
 // Usage: node tests/browser/settings.mjs [outDir]
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -36,6 +37,17 @@ expect(autoLabel === 'Auto (Canvas)', `auto says what it picks (${autoLabel})`);
 expect(/canvas/i.test(await page.textContent('#graphicsNote')), 'note says it draws with the canvas');
 expect(/refreshes \d+ times a second/.test(await page.textContent('#fpsNote')), 'note gives the screen refresh rate');
 await page.screenshot({ path: `${outDir}/settings-menu.png` });
+// Left open, the dropdowns aren't touched (changing an open dropdown's options closes it, losing the choice).
+const rewrites = await page.evaluate(() => new Promise(res => {
+  let n = 0;
+  const obs = new MutationObserver(list => { n += list.length; });
+  for (const id of ['graphics', 'fpsCap']) obs.observe(document.getElementById(id), { subtree: true, childList: true, characterData: true });
+  setTimeout(() => { obs.disconnect(); res(n); }, 2000);
+}));
+expect(rewrites === 0, `the dropdowns were rewritten ${rewrites} times while the screen sat open`);
+// Volume: 60% to start with (the game was a bit loud).
+const vol0 = await page.evaluate(() => ({ slider: document.getElementById('setVolume').value, out: document.getElementById('setVolumeOut').textContent, level: window.stickSoldiers.audio.level }));
+expect(vol0.slider === '60' && vol0.out === '60%' && Math.abs(vol0.level - 0.6) < 1e-9, `volume starts at 60% (${JSON.stringify(vol0)})`);
 expect(await page.inputValue('#graphics') === 'canvas', 'draws with the canvas by default');
 expect(await kind() === 'canvas', 'the canvas is in use');
 // Experimental options: the same as the game setup's.
@@ -122,8 +134,14 @@ const readout = await page.evaluate(() => window.stickSoldiers.perf.text);
 expect(/^Canvas · \d+ fps · [\d.]+ ms drawing$/.test(readout || ''), `frame rate shown (${readout})`);
 await page.screenshot({ path: `${outDir}/settings-fps.png` });
 
-// 5. Choices are remembered next time.
+// 5. The volume, from the game's menu: Settings shows the same.
 await page.keyboard.press('Escape');
+await page.$eval('#volume', el => { el.value = '30'; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
+const vol1 = await page.evaluate(() => ({ out: document.getElementById('volumeOut').textContent, other: document.getElementById('setVolume').value, level: window.stickSoldiers.audio.level }));
+expect(vol1.out === '30%' && vol1.other === '30' && Math.abs(vol1.level - 0.3) < 1e-9, `the menu's volume slider (${JSON.stringify(vol1)})`);
+await page.screenshot({ path: `${outDir}/settings-pause-volume.png` });
+
+// 6. Choices are remembered next time.
 await page.click('#pauseSettings');
 await page.selectOption('#graphics', 'webgl');
 await page.waitForFunction(() => window.stickSoldiers.renderer.kind === 'webgl', null, { timeout: 15000 });
@@ -132,11 +150,12 @@ await page.reload();
 await page.waitForFunction(() => window.stickSoldiers);
 const saved = await page.evaluate(() => ({ kind: window.stickSoldiers.renderer.kind, prefs: { ...window.stickSoldiers.prefs } }));
 expect(saved.kind === 'webgl' && saved.prefs.graphics === 'webgl', `graphics remembered (${saved.kind})`);
-expect(saved.prefs.showFps === true && saved.prefs.showPing === false && saved.prefs.fpsCap === 'auto', `other settings remembered (${JSON.stringify(saved.prefs)})`);
+expect(saved.prefs.showFps === true && saved.prefs.showPing === false && saved.prefs.fpsCap === 'auto' && saved.prefs.volume === 30, `other settings remembered (${JSON.stringify(saved.prefs)})`);
+expect(Math.abs(await page.evaluate(() => window.stickSoldiers.audio.level) - 0.3) < 1e-9, 'the volume remembered');
 const sliders = [await page.inputValue('#bulletSpeed'), await page.inputValue('#fireDelay'), await page.textContent('#bulletSpeedOut')];
 expect(sliders.join() === '4,50,4×', `bullet speed and time between shots remembered (${sliders})`);
 
-console.log(JSON.stringify({ autoLabel, capped, full, hz, readout, saved, errors }, null, 2));
+console.log(JSON.stringify({ autoLabel, rewrites, vol0, vol1, capped, full, hz, readout, saved, errors }, null, 2));
 await browser.close();
 server.close();
 await relay.close();

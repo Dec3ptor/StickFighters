@@ -65,7 +65,7 @@ const CLASSES_ON = params.has('classes');
 // (?tiles=on: the canvas keeps the map in tiles, maptiles.js. Off by default: slower with a graphics card.)
 if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
-const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', lockMouse: true, fullscreen: false };
+const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', lockMouse: true, fullscreen: false, volume: 60 };
 // Locking the mouse to the game: ?lock=on / ?lock=off in the address. (Browsers driven by tests
 // move the mouse oddly while it's locked, so it's off for them unless the address asks.)
 const LOCK_PARAM = params.get('lock');
@@ -94,6 +94,7 @@ const DEFAULTS = {
   quality: 'auto', // Remastered's graphics: 'auto', 'high', 'medium' or 'low'
   lockMouse: true,  // lock the mouse to the game while playing (Esc frees it)
   fullscreen: false, // play in full screen (with the keyboard's browser shortcuts kept for the game, where browsers allow it)
+  volume: 60,       // sound volume, percent (100: as loud as it goes; it was a bit much, so 60 to start with)
   edition: null,   // the game last picked
 };
 
@@ -856,6 +857,16 @@ function closeLoadout() { show('loadout', false); }
 
 function savePrefs() { saveSettings({ ...loadSettings(), ...prefs }); }
 
+/** The sound volume (percent), from either slider (the pause menu's or Settings'): both show it. */
+function setVolume(v, save = true) {
+  v = Math.round(Math.min(100, Math.max(0, Number.isFinite(+v) ? +v : 60)));
+  prefs.volume = v;
+  audio.setVolume(v / 100);
+  for (const id of ['volume', 'setVolume']) if ($(id).value !== String(v)) $(id).value = String(v);
+  for (const id of ['volumeOut', 'setVolumeOut']) $(id).textContent = `${v}%`;
+  if (save) savePrefs();
+}
+
 function openSettings() {
   // Experimental: the same choices as the game setup's.
   $('setBotVision').value = $('botVision').value;
@@ -880,25 +891,37 @@ function closeSettings() {
   show('settings', false);
 }
 
-/** The notes under the settings: what's being used right now. */
+/** Set an element's text, only if it's different (no needless changes to the page). */
+function setText(el, text) { if (el.textContent !== text) el.textContent = text; }
+
+/**
+ * A dropdown's Auto option, saying what Auto is doing now. Not while the dropdown's in use:
+ * changing its options while it's open closes it (Chrome), and the choice is lost.
+ */
+function autoLabel(id, text) {
+  const el = $(id);
+  if (document.activeElement !== el) setText(el.options[0], text);
+}
+
+/** The notes under the settings: what's being used right now (kept up to date while they're open). */
 function settingsNotes() {
   if (renderer.kind === 'remastered') {
     const q = renderer.quality, names = { high: 'High', medium: 'Medium', low: 'Low' };
-    $('quality').options[0].textContent = renderer.auto ? `Auto (${names[q]})` : 'Auto';
-    $('qualityNote').textContent = renderer.auto && q !== 'high' ? `Auto turned the quality down to ${names[q]} so your computer keeps up.` : 'Auto starts on High and turns it down if your computer can\'t keep up.';
+    autoLabel('quality', renderer.auto ? `Auto (${names[q]})` : 'Auto');
+    setText($('qualityNote'), renderer.auto && q !== 'high' ? `Auto turned the quality down to ${names[q]} so your computer keeps up.` : 'Auto starts on High and turns it down if your computer can\'t keep up.');
   }
   const auto = autoGraphics();
-  $('graphics').options[0].textContent = `Auto (${auto === 'webgl' ? 'WebGL' : 'Canvas'})`;
+  autoLabel('graphics', `Auto (${auto === 'webgl' ? 'WebGL' : 'Canvas'})`);
   let g = renderer.kind === 'webgl' ? 'Drawing with WebGL, on the graphics card.' : 'Drawing with the canvas.';
   if (prefs.graphics === 'webgl' && renderer.kind !== 'webgl') g += " WebGL isn't available in this browser.";
   else if (prefs.graphics === 'auto' && auto === 'canvas') g += ' WebGL would run without a graphics card here, which is slower.';
-  $('graphicsNote').textContent = g;
+  setText($('graphicsNote'), g);
   const hz = pacer.refresh, target = Math.round(pacer.target);
-  $('fpsCap').options[0].textContent = pacer.mode === 'auto' ? `Auto (${target} fps)` : 'Auto';
+  autoLabel('fpsCap', pacer.mode === 'auto' ? `Auto (${target} fps)` : 'Auto');
   let f = `Your screen refreshes ${hz} times a second, so that's the most it can show.`;
   if (pacer.mode === 'auto') f += pacer.divisor > 1 ? ` Auto is drawing ${target} fps: your computer couldn't keep up with ${hz}, and it'll try again soon.` : ' Auto matches it.';
   else if (pacer.mode > hz) f += ` ${pacer.mode} fps needs a faster screen.`;
-  $('fpsNote').textContent = f;
+  setText($('fpsNote'), f);
 }
 
 /** A renderer for the game being played: Remastered's, or the original's (canvas or WebGL). */
@@ -1240,8 +1263,13 @@ function simulate(now) {
 // refreshes (60, 120, 144 Hz...), with everything drawn in between updates.
 function frame(now) {
   requestAnimationFrame(frame);
-  // The frame rate setting: skip this screen refresh if it's too soon to draw again.
-  if (!pacer.frame(now, !!state.game)) return;
+  // The frame rate setting: skip this screen refresh if it's too soon to draw again. (Not
+  // counted while a menu's open over the game: that's no measure of how it plays.)
+  if (!pacer.frame(now, !!state.game && !state.menuOpen)) return;
+  // Behind the menus nothing's being played: drawn at most 30 times a second, so the menus
+  // stay quick to use. (An online game still runs.)
+  if ((!state.game || state.menuOpen) && now - (state.menuDrawAt ?? -1e9) < 32) { simulate(now); return; }
+  state.menuDrawAt = now;
   const workStart = performance.now();
   const dt = Math.min(100, Math.max(0, now - (state.frameAt ?? now)));
   state.frameAt = now;
@@ -1320,7 +1348,7 @@ function frame(now) {
   if (perf.on) countFrame(now, end - drawStart);
   pacer.drawn(now + (end - workStart), end - workStart);
   // Remastered on Auto quality: lower it if the frame rate can't keep up.
-  if (renderer.adapt?.(pacer, now) && !$('settings').classList.contains('hidden')) settingsNotes();
+  if (!state.menuOpen && renderer.adapt?.(pacer, now) && !$('settings').classList.contains('hidden')) settingsNotes();
   if (g.over) matchOver(g);
 }
 
@@ -1455,6 +1483,10 @@ function wire() {
   for (const b of document.querySelectorAll('[data-edition]')) b.addEventListener('click', () => { audio.unlock(); audio.play('menuMove'); setEdition(b.dataset.edition); });
   $('switchGame').addEventListener('click', () => { audio.unlock(); audio.play('menuMove'); setEdition(edition === 'remastered' ? 'original' : 'remastered'); });
   $('fpsCap').addEventListener('change', () => { prefs.fpsCap = $('fpsCap').value; pacer.setMode(prefs.fpsCap); savePrefs(); settingsNotes(); });
+  for (const id of ['volume', 'setVolume']) {
+    $(id).addEventListener('input', () => setVolume($(id).value, false));
+    $(id).addEventListener('change', () => setVolume($(id).value));
+  }
   $('showFps').addEventListener('change', () => { prefs.showFps = $('showFps').checked; perf.on = prefs.showFps || params.has('fps'); savePrefs(); });
   $('showPing').addEventListener('change', () => { prefs.showPing = $('showPing').checked; savePrefs(); });
   $('sprintMode').addEventListener('change', () => { prefs.sprint = $('sprintMode').value === 'toggle' ? 'toggle' : 'hold'; savePrefs(); });
@@ -1603,6 +1635,7 @@ async function boot() {
   // (Classes switched off: nothing about them in the menus.)
   document.body.classList.toggle('no-classes', !CLASSES_ON);
   for (const k in prefs) prefs[k] = settings[k];
+  setVolume(prefs.volume, false);
   pacer.setMode(prefs.fpsCap);
   perf.on ||= prefs.showFps;
   const [index, legs, r] = await Promise.all([

@@ -38,6 +38,7 @@ Two games on one site: the **Original**, drawn as it was, and **Stick Soldiers R
 - **Smooth on high refresh rate screens**: the game draws a frame every time your screen refreshes (60, 120, 144, 240 Hz...). It still updates 60 times a second, and everything moving (soldiers, bullets, rockets, particles, falling crates, running legs) is drawn part way between updates, while your gun follows the mouse on every frame.
 - **Drawn with the plain 2D canvas** by default, or with **WebGL** (through [PixiJS](https://pixijs.com/)) if you pick it in Settings. Both draw exactly the same picture. **Auto** picks WebGL on computers with a graphics card and the canvas on ones without, where it's faster.
 - **Settings** (on the main menu and the pause menu):
+  - **Volume**: 60% to start with (100% is as loud as the game used to be). Also on the pause menu (`Esc`), next to **Mute sound** (`M`).
   - **Graphics**: Canvas (the default), WebGL or Auto. Switches straight away, even mid-match.
   - **Experimental**: the same bot vision, fog of war, bullet speed and between-shots choices as the game setup, for the next game you start or host.
   - **Frame rate**: Auto, or a cap from 30 to 240 fps. Auto draws at your screen's refresh rate; if your computer can't keep up, it drops to an even fraction of it (144 → 72) so frames stay evenly spaced, and tries the full rate again later.
@@ -168,7 +169,7 @@ Bots pick hammers up too, and use them for what they're for: steps out of a pit,
 | Hammer (`0`), or the Builder (Engineer, classes) | click to put up a wall, or repair what explosions broke; right click switches between a wall and a plank |
 | Change class (classes) | `C` (or click the class box) while waiting to respawn, then `1`–`4` or click a class; or **Change class** in the menu (`Esc`). It applies when you next spawn |
 | Chat (online) | `Enter` or `T` |
-| Scores / menu / mute | `Tab` / `Esc` / `M` |
+| Scores / menu / mute | `Tab` / `Esc` / `M` (the volume: on the menu, or in Settings) |
 
 During a match the browser's own `Ctrl` shortcuts (bookmark, save, select all...) are blocked, so holding `Ctrl` to crouch never opens one, and closing or leaving the page asks first.
 

@@ -238,6 +238,9 @@
       <button id="quit">Quit to menu</button>
       <button id="pauseSettings">Settings</button>
       <button id="fullscreen">Full screen</button>
+      <label class="field volume">Volume: <output id="volumeOut">60%</output>
+        <input type="range" id="volume" min="0" max="100" step="5" value="60">
+      </label>
       <label class="check"><input type="checkbox" id="mute"> Mute sound</label>
     </div>
   </section>
@@ -274,6 +277,9 @@
         </select>
       </label>
       <p id="fpsNote" class="muted-note"></p>
+      <label class="field volume">Volume: <output id="setVolumeOut">60%</output>
+        <input type="range" id="setVolume" min="0" max="100" step="5" value="60">
+      </label>
       <label class="check"><input type="checkbox" id="showFps"> Show frame rate</label>
       <label class="check"><input type="checkbox" id="showPing"> Show ping in online games</label>
       <label class="field">Sprint (<kbd>Shift</kbd>)

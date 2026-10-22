@@ -28,6 +28,9 @@ export const SAMPLES = {
   menuSelect: ['menu3', 1.4],
 };
 
+// The loudest everything's played (volume 100%); the volume setting starts at 60% of it.
+const FULL = 0.5;
+
 // Sounds that aren't placed in the world (always full volume, centred).
 const UI_SOUNDS = new Set(['hitmarker', 'gameover', 'click', 'menuMove', 'menuSelect', 'levelUp', 'chat',
   'objGood', 'objBad', 'flagTaken', 'flagReturned', 'captured', 'alarm', 'pointTaken', 'pointLost', 'hillMoved', 'armed', 'disarmed', 'destroyed', 'sector',
@@ -38,7 +41,7 @@ export class SoundSystem {
     this.base = base;
     this.ctx = null;
     this.muted = false;
-    this.volume = 0.5;
+    this.level = 0.6;         // the volume setting: 0-1 of the loudest (FULL)
     this.playing = new Map(); // name -> count playing right now
     this.raw = new Map();     // file -> ArrayBuffer, waiting to be decoded
     this.buffers = new Map(); // file -> decoded AudioBuffer
@@ -68,7 +71,7 @@ export class SoundSystem {
     if (!AC) return;
     this.ctx = new AC();
     this.master = this.ctx.createGain();
-    this.master.gain.value = this.volume;
+    this.master.gain.value = this.gain;
     this.master.connect(this.ctx.destination);
     const len = this.ctx.sampleRate;
     this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
@@ -77,9 +80,18 @@ export class SoundSystem {
     this.decode();
   }
 
+  /** What everything's played at: the volume setting, or nothing when muted. */
+  get gain() { return this.muted ? 0 : FULL * this.level; }
+
   setMuted(m) {
     this.muted = m;
-    if (this.master) this.master.gain.value = m ? 0 : this.volume;
+    if (this.master) this.master.gain.value = this.gain;
+  }
+
+  /** The volume setting, 0 to 1 (1: as loud as the game's sounds go). */
+  setVolume(v) {
+    this.level = Math.min(1, Math.max(0, +v || 0));
+    if (this.master) this.master.gain.setTargetAtTime(this.gain, this.ctx.currentTime, 0.02);
   }
 
   /**

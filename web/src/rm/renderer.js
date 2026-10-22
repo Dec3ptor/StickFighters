@@ -50,8 +50,6 @@ export class RemasteredRenderer extends Renderer {
     this.quality = this.auto ? 'high' : q;
     this.adaptedAt = performance.now();
     this.flat = this.quality === 'low';
-    this.look = null;
-    this.menuLook = null;
   }
 
   /**
@@ -70,35 +68,44 @@ export class RemasteredRenderer extends Renderer {
     this.quality = next;
     this.flat = next === 'low';
     this.adaptedAt = now;
-    this.look = null;
-    this.menuLook = null;
     return true;
   }
 
-  /** The look for a map: its theme, scenery, materials (made when the map changes). */
+  /**
+   * The look for a map at the quality in use: its theme, scenery, materials. Made when the
+   * map changes, and for each quality the first time it's used; kept while the map's the
+   * same, so switching quality back costs nothing (the materials and the blocks' edges are
+   * the same whatever the quality).
+   */
   lookFor(map) {
-    if (this.look?.map === map) return this.look;
-    const theme = themeFor(map);
-    this.gibHalo = null;
-    this.look = {
-      map, theme, at: performance.now(),
-      backdrop: new Backdrop(theme, seedOf(map.name), this.quality),
-      mats: makeMaterials(this.ctx, theme),
-      blocks: new Blocks(),
-      weather: this.quality === 'low' ? null : new Weather(theme.weather, this.quality),
-      ground: map.bounds.bottom,
-      floor: lowest(map),
-    };
-    return this.look;
+    const q = this.quality;
+    if (this.look?.map === map && this.look.quality === q) return this.look;
+    if (this.looks?.map !== map) { this.looks = { map }; this.gibHalo = null; }
+    let look = this.looks[q];
+    if (!look) {
+      const other = this.looks.high || this.looks.medium || this.looks.low, theme = other?.theme || themeFor(map);
+      look = this.looks[q] = {
+        map, theme, quality: q, at: performance.now(),
+        backdrop: new Backdrop(theme, seedOf(map.name), q),
+        mats: other?.mats || makeMaterials(this.ctx, theme),
+        blocks: other?.blocks || new Blocks(),
+        weather: q === 'low' ? null : new Weather(theme.weather, q),
+        ground: map.bounds.bottom,
+        floor: lowest(map),
+      };
+    }
+    return (this.look = look);
   }
 
   /** Behind the menus: the scenery of the map picked (or a sunset city), slowly panning. */
   clear() {
     const now = performance.now(), dt = Math.min(100, now - this.frameAt);
     this.frameAt = now;
-    const theme = this.menuTheme || { id: 'dusk', ...THEMES.dusk };
-    if (this.menuLook?.theme.id !== theme.id) {
-      this.menuLook = { theme, backdrop: new Backdrop(theme, 11, this.quality), weather: this.quality === 'low' ? null : new Weather(theme.weather, this.quality) };
+    const theme = this.menuTheme || { id: 'dusk', ...THEMES.dusk }, q = this.quality;
+    if (this.menuLook?.theme.id !== theme.id || this.menuLook.quality !== q) {
+      // (Kept for each quality while the scenery's the same, as for a map's look.)
+      if (this.menuLooks?.id !== theme.id) this.menuLooks = { id: theme.id };
+      this.menuLook = this.menuLooks[q] ||= { theme, quality: q, backdrop: new Backdrop(theme, 11, q), weather: q === 'low' ? null : new Weather(theme.weather, q) };
     }
     const t = now / 1000;
     this.cam.x = t * 22;
