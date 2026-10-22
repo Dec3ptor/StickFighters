@@ -22,13 +22,17 @@ const BACKOFF = 4000;     // ms before the first try at a higher rate again (dou
 const BACKOFF_MAX = 60000;
 const TRIES = 3;          // failed tries at a higher rate before the rate's left alone (a try that fails is a second of judder)
 const SAMPLES = 90;       // browser frames used to measure the screen's rate
-const CHANGE_AFTER = 3000; // ms the screen has to measure differently while playing before that's believed
+const RECENT = 30;        // the latest few: enough to see a faster rate
+const LOWER_AFTER = 3000; // ms the screen has to measure slower before that's believed
+const SORT = new Float64Array(SAMPLES); // (scratch for measuring, so it makes no garbage)
 
 export class FramePacer {
   constructor() {
     this.mode = 'auto';      // 'auto', 'half' (every other refresh) or a number (fps cap)
     this.refresh = 60;       // the screen's refresh rate, as measured
-    this.gaps = [];          // recent gaps between browser frames (ms)
+    this.gaps = new Float64Array(SAMPLES); // recent gaps between browser frames (ms), a ring
+    this.gapCount = 0;
+    this.gapAt = 0;          // where the next gap goes in the ring
     this.prev = null;        // time of the last browser frame
     this.lastDraw = -Infinity;
     this.divisor = 1;        // auto: draw every n-th refresh
@@ -39,7 +43,7 @@ export class FramePacer {
     this.tries = 0;          // auto: tries at a higher rate that failed since the last fresh start
     this.slow = 0;           // windows in a row that fell short (two step down: one is a hiccup)
     this.graceUntil = 0;     // windows ending before this aren't judged (see restart())
-    this.changeSince = null; // playing: since when the screen has measured a different rate from this.refresh
+    this.lowerSince = null;  // since when the screen has measured slower than this.refresh
     this.lastWork = 0;       // ms the last frame's work took (a gap after a long frame says nothing about the screen)
     this.avgWork = 0;        // ms a drawn frame's work takes, lately
     this.shed = null;        // function(now): draw lighter if possible, returning whether it did; asked before the rate's lowered
@@ -79,12 +83,11 @@ export class FramePacer {
   }
 
   /**
-   * Call on every browser frame. `playing`: a match is being drawn (menus are
-   * cheap, so they're when the screen's real rate is measured). Returns whether
-   * to draw this frame.
+   * Call on every browser frame. `playing`: a match is being drawn (only then are
+   * frames judged, and capped). Returns whether to draw this frame.
    */
   frame(now, playing) {
-    this.measure(now, playing);
+    this.measure(now);
     if (!playing) { this.win = null; return true; }
     const target = this.target;
     if (target >= this.refresh * 0.98) { this.lastDraw = now; return true; }
@@ -153,36 +156,50 @@ export class FramePacer {
   }
 
   /** After a frame that wasn't judged (a menu drawn): how long its work took (ms). */
-  worked(workMs) { this.lastWork = workMs; }
+  worked(workMs) {
+    this.lastWork = workMs;
+    this.avgWork += (workMs - this.avgWork) * 0.1;
+  }
 
   /**
-   * Measure the screen's refresh rate from the gaps between browser frames. In menus the
-   * measurement is reliable. While playing, a change (the window moved to another monitor,
-   * the browser saving power) is believed after a few seconds of it, and a slower rate
-   * only while frames are quick to draw, since a slow computer makes frames late too.
+   * Measure the screen's refresh rate from the gaps between browser frames: a low
+   * percentile, since most frames arrive on time even when some are late. A faster rate is
+   * believed at once, from the latest frames (frames can't come faster than the screen
+   * shows them: the first measurement, or a menu that was slow to show); a slower one (the
+   * window moved to another monitor, the browser saving power) after a few seconds of it,
+   * and only while frames are quick to draw, since a slow computer makes frames late too.
    * A change is a fresh start.
    */
-  measure(now, playing) {
+  measure(now) {
     const gap = this.prev == null ? null : now - this.prev;
     const work = this.lastWork;
     this.prev = now;
     this.lastWork = 0;
     if (gap == null || gap <= 0 || gap > 250) return; // first frame, or back from a hidden tab
     if (work > gap * 0.5) return; // (the frame before took most of the gap: it was late, the screen wasn't)
-    this.gaps.push(gap);
-    if (this.gaps.length > SAMPLES) this.gaps.shift();
-    if (this.gaps.length < 30) return;
-    // A low percentile: most frames arrive on time even when some are late.
-    const sorted = [...this.gaps].sort((a, b) => a - b);
-    const hz = snapHz(1000 / sorted[Math.floor(sorted.length * 0.2)]);
-    if (hz === this.refresh) { this.changeSince = null; return; }
-    if (playing) {
-      if (hz < this.refresh && !(this.avgWork < 0.5 * (1000 / hz))) { this.changeSince = null; return; }
-      if (this.changeSince == null) { this.changeSince = now; return; }
-      if (now - this.changeSince < CHANGE_AFTER) return;
-    }
+    this.gaps[this.gapAt] = gap;
+    this.gapAt = (this.gapAt + 1) % SAMPLES;
+    if (this.gapCount < SAMPLES) this.gapCount++;
+    if (this.gapCount < RECENT) return;
+    const recent = snapHz(1000 / this.lowGap(RECENT));
+    if (recent > this.refresh) { this.setRefresh(recent, now); return; }
+    const hz = snapHz(1000 / this.lowGap(SAMPLES));
+    if (hz >= this.refresh || !(this.avgWork < 0.5 * (1000 / hz))) { this.lowerSince = null; return; }
+    if (this.lowerSince == null) this.lowerSince = now;
+    else if (now - this.lowerSince >= LOWER_AFTER) this.setRefresh(hz, now);
+  }
+
+  /** The 20th percentile of the last n gaps (fewer if there aren't n yet). */
+  lowGap(n) {
+    n = Math.min(n, this.gapCount);
+    for (let i = 0; i < n; i++) SORT[i] = this.gaps[(this.gapAt - 1 - i + SAMPLES) % SAMPLES];
+    const sorted = SORT.subarray(0, n).sort();
+    return sorted[Math.floor(n * 0.2)];
+  }
+
+  setRefresh(hz, now) {
     this.refresh = hz;
-    this.changeSince = null;
+    this.lowerSince = null;
     this.restart(now, true);
   }
 }

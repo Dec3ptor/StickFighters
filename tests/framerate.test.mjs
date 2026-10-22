@@ -189,3 +189,18 @@ test('the screen getting slower or faster while playing (another monitor) is not
   for (let k = 0; k < 200; k++) { m.frame(t, false); m.worked(25); t += 1000 / 30; }
   assert.equal(m.refresh, 60, 'unmeasured: menus that slow the browser\'s frames down say nothing about the screen');
 });
+
+test('a menu that\'s slow to show doesn\'t fool it for long: a faster rate while playing is believed at once', () => {
+  // A pause menu the browser takes long to show: 30 frames a second on a 60 Hz screen, for a while.
+  const p = onScreen(60);
+  run(p, { hz: 30, ms: 7000, start: 1000, playing: false });
+  assert.equal(p.refresh, 30, 'a slower rate, seen for a few seconds, is believed');
+  p.setMode(30);
+  // Back to the game: the screen's real rate is seen within a few frames, and the cap kept to.
+  const { drawn } = run(p, { hz: 60, ms: 2000, start: 8000 });
+  assert.equal(p.refresh, 60);
+  assert.ok(Math.abs(drawn - 60) <= 5, `${drawn} frames in 2 s`);
+  // A moment of slow frames doesn't lower it.
+  run(p, { hz: 30, ms: 2000, start: 10000, playing: false });
+  assert.equal(p.refresh, 60);
+});
