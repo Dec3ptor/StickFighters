@@ -238,6 +238,12 @@
       "x": -57,
       "y": 54,
       "weapon": "Hammer"
+    },
+    {
+      "type": "weapon",
+      "x": 57,
+      "y": 54,
+      "weapon": "Hammer"
     }
   ],
   "objectives": [

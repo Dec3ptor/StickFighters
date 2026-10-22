@@ -115,7 +115,10 @@ export default function () {
   m.spawn(-680, -165, 1, 2);
   for (const x of [930, 980, 1005]) m.spawn(x, 0, 2, 2);
   m.spawn(1000, -400, 2, 2);
-  // A hammer for anyone to build with (near the middle).
-  m.item('Hammer', -81, 210);
+  // Hammers and jetpacks, for getting past what's in the way (a hole blown in a floor, a
+  // ledge too high to jump to): one a few seconds from anywhere.
+  m.item('Hammer', -81, 210).item('Hammer', 81, 210);
+  m.item('jetpack', -404, 0).item('jetpack', 404, 0);
+  m.item('Hammer', -825, -345).item('Hammer', 825, -345);
   return m;
 }

@@ -175,7 +175,9 @@ export default function () {
   rush(2, 3, [[2740, FARM], [2760, FARM], [3100, FARM], [3130, FARM], [3150, FARM]]);
   rush(1, 4, [[2240, -250], [2260, -250], [2250, CV], [2300, CV], [2350, CV]]);
   rush(2, 4, [[3600, BASE], [3640, BASE], [3860, BASE], [3900, BASE], [3880, FARM]]);
-  // A hammer for anyone to build with (near the middle).
+  // Hammers and jetpacks, for getting past what's in the way (a hole blown in a floor, a
+  // ledge too high to jump to): one a few seconds from anywhere.
   m.item('Hammer', -6, -260);
+  m.item('Hammer', -3057, -180).item('Hammer', 3057, -180);
   return m;
 }

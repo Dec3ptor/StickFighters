@@ -31,11 +31,14 @@ function withBot(map, x, y, kit = {}, { mode = 'ffa', destruction = false, setup
   return { game, nav, bot, feed, ctl: game.controllers.get(bot) };
 }
 
+/** A pickup lying on the floor at floorY. */
+const item = (what, x, floorY) => what === 'jetpack' ? { type: 'jetpack', x, y: floorY - 26 } : { type: 'weapon', weapon: what, x, y: floorY - 26 };
+
 /** A pit `depth` deep and `width` across in a floor, with the bot standing at the bottom. */
-function pit(depth, width, kit) {
+function pit(depth, width, kit, items = []) {
   const W = width / 2;
   const map = {
-    name: 'pit', bounds: { left: -950, top: -400, right: 950, bottom: depth + 150 }, items: [],
+    name: 'pit', bounds: { left: -950, top: -400, right: 950, bottom: depth + 150 }, items,
     platforms: [
       { left: -900, top: 0, right: -W, bottom: depth + 40 },
       { left: W, top: 0, right: 900, bottom: depth + 40 },
@@ -54,6 +57,36 @@ function pit(depth, width, kit) {
   };
   return t;
 }
+
+test('on every map, a jetpack or a hammer is a few seconds from anywhere anyone can get to', () => {
+  for (const m of mapIndex()) {
+    const mapData = loadMap(m.file);
+    const game = new Game({ mapData, mode: 'ffa', effects: false, seed: 1, speed: DEFAULT_SPEED });
+    const nav = new NavGraph(game.map);
+    // Travel time from every spot to the nearest one (the links turned round, cheapest first).
+    const n = nav.nodes.length, into = Array.from({ length: n }, () => []);
+    for (const a of nav.nodes) for (const l of a.links) into[l.to.id].push([a.id, l.cost]);
+    const cost = new Float64Array(n).fill(Infinity), done = new Uint8Array(n), open = [];
+    for (const it of mapData.items) {
+      if (it.type !== 'jetpack' && it.weapon !== 'Hammer') continue;
+      const at = nav.landing(it.x, it.y);
+      if (at) { cost[at.id] = 0; open.push(at.id); }
+    }
+    while (open.length) {
+      let bi = 0;
+      for (let i = 1; i < open.length; i++) if (cost[open[i]] < cost[open[bi]]) bi = i;
+      const v = open.splice(bi, 1)[0];
+      if (done[v]) continue;
+      done[v] = 1;
+      for (const [u, w] of into[v]) if (cost[v] + w < cost[u]) { cost[u] = cost[v] + w; open.push(u); }
+    }
+    // (Spots anyone can get to: from where they spawn.)
+    const from = nav.costsFrom(game.map.spawns.map(p => nav.landing(p.x, p.y)).find(Boolean)).cost;
+    let worst = 0;
+    for (let v = 0; v < n; v++) if (from[v] < Infinity) worst = Math.max(worst, cost[v]);
+    assert.ok(worst < 10 * 60, `${m.file}: ${(worst / 60).toFixed(1)} s from a jetpack or hammer`);
+  }
+});
 
 test('the Hammer is on every map, and anyone can pick it up and build with it', () => {
   for (const m of mapIndex()) {
@@ -167,10 +200,10 @@ const SCENES = {
   },
 };
 
-function hillScene(name, kit) {
+function hillScene(name, kit, items = []) {
   const sc = SCENES[name];
   const map = {
-    name, bounds: { left: -950, top: -700, right: 950, bottom: 760 }, platforms: sc.platforms, items: [],
+    name, bounds: { left: -950, top: -700, right: 950, bottom: 760 }, platforms: sc.platforms, items,
     spawns: [{ x: -600, y: -30 }, { x: -700, y: -30 }], objectives: [{ type: 'hill', ...sc.hill }],
   };
   const t = withBot(map, -500, -12, kit, {
@@ -198,6 +231,38 @@ test("bots build (or fly) their way to an objective they can't get to: up to a l
   const t = hillScene('ledge', {});
   run(t.game, 60 * 15);
   assert.ok(!t.onHill() && t.bot.alive && t.game.map.builtCount === 0);
+});
+
+test('a bot cut off with no way past of its own goes and gets a jetpack or hammer it can reach, then uses it', () => {
+  const kinds = t => { const seen = new Set(); const think = t.ctl.think.bind(t.ctl); t.ctl.think = (g, so) => { think(g, so); seen.add(t.ctl.goalKind); }; return seen; };
+  // In a pit, with one lying at the bottom.
+  for (const what of ['jetpack', 'Hammer']) {
+    const t = pit(300, 300, {}, [item(what, 100, 300)]);
+    const seen = kinds(t);
+    const ticks = run(t.game, 1800, t.out);
+    assert.ok(t.out(), `${what} in the pit: still in at ${t.bot.x.toFixed(0)},${t.bot.y.toFixed(0)}`);
+    // (A hammer is a weapon too: a bot with just a pistol may well want it anyway.)
+    const got = what === 'jetpack' ? t.bot.body.hasJetpack : t.game.map.builtCount > 0;
+    assert.ok(ticks < 900 && t.bot.deaths === 0 && got, `${what} in the pit: out after ${(ticks / 60).toFixed(1)} s, ${[...seen]}`);
+  }
+  // A hill up on a ledge or across a chasm, with one lying back the other way.
+  for (const [name, what, x] of [['ledge', 'jetpack', -800], ['block', 'Hammer', -800], ['chasm', 'Hammer', -800], ['chasm', 'jetpack', -300]]) {
+    const t = hillScene(name, {}, [item(what, x, 0)]);
+    const seen = kinds(t);
+    const ticks = run(t.game, 60 * 30, t.onHill);
+    assert.ok(t.onHill(), `${name}, ${what} at ${x}: not on the hill (at ${t.bot.x.toFixed(0)},${t.bot.y.toFixed(0)})`);
+    const got = what === 'jetpack' ? t.bot.body.hasJetpack : t.game.map.builtCount > 0;
+    assert.ok(ticks < 60 * 20 && got, `${name}, ${what}: took ${(ticks / 60).toFixed(1)} s, ${[...seen]}`);
+  }
+  // Nothing in the way: no detour for one.
+  const map = {
+    name: 'open', bounds: { left: -950, top: -700, right: 950, bottom: 200 }, platforms: [{ left: -900, top: 0, right: 900, bottom: 40 }],
+    items: [item('jetpack', -850, 0)], spawns: [{ x: -600, y: -30 }, { x: -700, y: -30 }], objectives: [{ type: 'hill', left: 400, top: -90, right: 600, bottom: 0 }],
+  };
+  const t = withBot(map, -500, -12, {}, { mode: 'koth' });
+  const seen = kinds(t);
+  run(t.game, 60 * 10);
+  assert.ok(!seen.has('tool') && !t.bot.body.hasJetpack, [...seen].join(', '));
 });
 
 test('a bot hurt in a fight at range puts up a wall between itself and the enemy', () => {

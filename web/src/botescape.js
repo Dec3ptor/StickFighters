@@ -13,6 +13,7 @@ import { BODY, PHYS } from './config.js';
 import { angleDiff } from './util.js';
 
 const STEP = { up: 78, low: 60, out: 42 };   // a step's top above our feet, and its middle across from us
+const HAMMER_CLIMB = 8 * 70;                   // about how high a hammer's blocks make steps
 const TOOLS = ['Hammer', 'Builder'];
 
 /** The building tool a soldier has blocks left for (the Hammer, or the Engineer's Builder), or null. */
@@ -28,6 +29,21 @@ export const blocksLeft = s => TOOLS.reduce((n, id) => n + (s.weapons[id]?.ammo 
 export function flyFuel(s, to) {
   const up = Math.max(0, s.y - to.y) + 20;
   return 10 + up * (PHYS.jetDrain / PHYS.jetMaxUp) * 1.05;
+}
+
+/** True if soldier s has a way of its own up or over to `to` (a spot): blocks to build with, or a jetpack that can fly that high. */
+export function canGetPast(s, to) {
+  return blocksLeft(s) >= 2 || (!!s.body.hasJetpack && flyFuel(s, to) <= 100);
+}
+
+/**
+ * True if picking up item `it` would give soldier s a way up or over to `to`, starting
+ * from `from` (a spot): a jetpack that can fly that high (if it hasn't one already), or a
+ * hammer (if it's out of blocks) whose blocks make steps that high.
+ */
+export function toolFor(s, it, to, from = s) {
+  if (it.type === 'jetpack') return !s.body.hasJetpack && flyFuel(from, to) <= 100;
+  return it.type === 'weapon' && it.weapon === 'Hammer' && blocksLeft(s) < 2 && from.y - to.y < HAMMER_CLIMB;
 }
 
 /** What a click with a building tool, aimed at (x, y), would put up (a plank, or a wall). Leaves the soldier as it was. */
@@ -57,11 +73,17 @@ export function launchSpot(game, nav, search, to, ok, reach = 700) {
   for (const n of nav.nodesNear(to.x, to.y, reach, reach)) {
     if (search.cost[n.id] === Infinity || !ok(n)) continue;
     const dy = n.y - to.y;
-    if (dy > 20 && game.map.raycast(n.x, n.y - 24, n.x, to.y - 40)) continue;
+    if (dy > 20 && !openAbove(game.map, n.x, n.y - 24, to.y - 40)) continue;
     const v = Math.abs(n.x - to.x) + Math.max(0, dy) * 0.5 + Math.max(0, -dy) * 2 + search.cost[n.id] * 0.3;
     if (v < bs) { bs = v; best = n; }
   }
   return best;
+}
+
+/** True if nothing's in the way of a soldier at x going straight up from y to y2 (a ray up each side of them). */
+function openAbove(map, x, y, y2) {
+  const w = BODY.halfW + 1;
+  return !map.raycast(x - w, y, x - w, y2) && !map.raycast(x + w, y, x + w, y2);
 }
 
 /** Where to get out of a pit to: the nearest spot with a way on to the rest of the map (ones above first). */
@@ -109,17 +131,23 @@ export function fly(game, s, f, inp) {
   inp.jump = true;                       // (held: a jump let go of early is cut short)
   const dx = f.to.x - s.x, high = s.y < f.to.y - 26, d = Math.sign(dx);
   // (Open sky from our head up past its height, at x: somewhere we can fly up.)
-  const open = x => !map.raycast(x, s.y - 20, x, Math.min(s.y - 40, f.to.y - 50));
+  const top = Math.min(s.y - 40, f.to.y - 50);
+  const open = x => openAbove(map, x, s.y - 20, top);
+  // (And from up there, a clear line over to it: not up the far side of a wall.)
+  const way = x => open(x) && map.clearLine(x, top, f.to.x, f.to.y - 20);
+  // Something in the way across: up and over it.
+  const wall = Math.abs(dx) > 8 && map.raycast(s.x, s.y - 4, s.x + d * 40, s.y - 4);
   // Across once high enough; lower down, only where it's open above (not in under a ledge).
-  const across = Math.abs(dx) > 8 && (high || (!map.raycast(s.x, s.y - 4, s.x + d * 40, s.y - 4) && open(s.x + d * 16)));
+  const across = Math.abs(dx) > 8 && !wall && (high || open(s.x + d * 16));
   inp.move = across ? d : 0;
-  // Up while below it (or not yet over it), then let it drop onto the spot.
-  inp.jet = s.y > f.to.y - 34 && !(Math.abs(dx) < 10 && s.y < f.to.y - 6);
-  // (Under a ceiling: out from under it, the nearer way, then up.)
+  // Up while below it (or not yet over it, or a wall's in the way), then let it drop onto the spot.
+  inp.jet = (s.y > f.to.y - 34 || !!wall) && !(Math.abs(dx) < 10 && s.y < f.to.y - 6);
+  // (Under a ceiling: out from under it to where there's a way up and over, the nearer way.)
   if (inp.jet && !across && !open(s.x)) {
     if (!f.out || game.tick - f.outAt > 30) {
       f.outAt = game.tick;
       f.out = 0;
+      for (let k = 12; k <= 480 && !f.out; k += 12) f.out = way(s.x + d * k) ? d : way(s.x - d * k) ? -d : 0;
       for (let k = 12; k <= 360 && !f.out; k += 12) f.out = open(s.x + d * k) ? d : open(s.x - d * k) ? -d : 0;
     }
     inp.move = f.out || d || 1;

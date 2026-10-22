@@ -247,6 +247,16 @@
       "x": 400,
       "y": 174,
       "weapon": "Hammer"
+    },
+    {
+      "type": "jetpack",
+      "x": 62,
+      "y": 478
+    },
+    {
+      "type": "jetpack",
+      "x": 746,
+      "y": 478
     }
   ],
   "objectives": [

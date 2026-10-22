@@ -331,8 +331,8 @@ test('spawn beacon: you and your team spawn on it; enemies shoot it or blow it u
 test('bots spread over the classes and use their gadgets', () => {
   const mapData = loadMap('crossfire.json');
   const game = new Game({ mapData, mode: 'conquest', fragLimit: 0, seed: 11, effects: false, speed: DEFAULT_SPEED, options: { classes: true } });
-  const nav = new NavGraph(game.map);
-  game.useNav(nav);
+  // (The match's own route map: the one that's kept up to date as blocks go up or get blown away.)
+  const nav = game.useNav(new NavGraph(game.map));
   const rng = makeRng(3);
   for (let i = 0; i < 12; i++) {
     const p = BOT_PROFILES[i % BOT_PROFILES.length];

@@ -88,7 +88,7 @@ test('bots walk along flat floors instead of hopping', () => {
   assert.ok(game.map);
 });
 
-test("King of the Hill's pit is a trap: nobody spawns in it, bots keep out, and a bot stuck in it self-destructs", () => {
+test("King of the Hill's pit is a trap: nobody spawns in it, bots keep out, a bot that falls in flies out with a jetpack lying there, or self-destructs", () => {
   const { game, nav } = botMatch('ssdm3.json', { bots: 6, mode: 'ffa', seed: 3 });
   const trapped = nav.trapped();
   // Its two spawn points down there aren't used.
@@ -100,15 +100,30 @@ test("King of the Hill's pit is a trap: nobody spawns in it, bots keep out, and 
     assert.ok(n && !trapped[n.id], `spawned in the pit at ${p.x},${p.y}`);
   }
   game.removeSoldier(fresh);
-  // A bot dropped into the pit with nothing to do there blows itself up and respawns up top.
+  // A bot dropped into the pit with nothing to do there grabs a jetpack lying at the bottom and flies out.
   const feed = [];
   const add = game.addFeed.bind(game);
   game.addFeed = e => { feed.push(e.text); add(e); };
   const stuck = game.soldiers[0];
-  for (const o of game.soldiers) if (o !== stuck) game.kill(o, stuck); // nobody to fight for a while
-  stuck.spawnAt({ x: 164, y: 528 }, 0);
-  game.controllers.get(stuck).onSpawn(game, stuck);
+  const drop = () => {
+    for (const o of game.soldiers) if (o !== stuck && o.alive) game.kill(o, stuck); // nobody to fight for a while
+    stuck.spawnAt({ x: 164, y: 528 }, 0);
+    stuck.body.hasJetpack = false;
+    game.controllers.get(stuck).onSpawn(game, stuck);
+  };
+  const jetpacks = game.pickups.items.filter(it => it.type === 'jetpack' && it.y > 468);
+  assert.equal(jetpacks.length, 2, 'two jetpacks at the bottom of the pit');
+  drop();
+  // (Out: standing somewhere up top.)
+  const out = () => stuck.body.onGround && stuck.y < 460 && !game.trapped(stuck);
   let t = 0;
+  while (stuck.alive && !out() && t++ < 900) game.update();
+  assert.ok(stuck.alive && out() && t < 600, `still in the pit after ${t} updates`);
+  assert.ok(stuck.body.hasJetpack && jetpacks.some(it => !it.active), 'flew out with one');
+  // With them taken, the last resort: it blows itself up and respawns up top.
+  for (const it of jetpacks) { it.active = false; it.timer = 1e9; }
+  drop();
+  t = 0;
   while (stuck.alive && t++ < 900) game.update();
   assert.ok(!stuck.alive && t < 600, `still in the pit after ${t} updates`);
   assert.ok(feed.some(f => f === `${stuck.name} self-destructed`), feed.join('; '));
@@ -158,8 +173,8 @@ test("a team walled into its own part of the map doesn't self-destruct over and 
     spawns: [{ x: -700, y: -30, team: 1 }, { x: -600, y: -30, team: 1 }, { x: 700, y: -30, team: 2 }],
   };
   const game = new Game({ mapData: map, mode: 'team', effects: false, seed: 2, speed: DEFAULT_SPEED });
-  const nav = new NavGraph(game.map);
-  game.useNav(nav);
+  // (The match's own route map: the one that's kept up to date as blocks go up or get blown away.)
+  const nav = game.useNav(new NavGraph(game.map));
   const feed = [];
   const add = game.addFeed.bind(game);
   game.addFeed = e => { feed.push(e.text); add(e); };

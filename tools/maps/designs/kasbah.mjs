@@ -174,7 +174,13 @@ export default function () {
   m.hill(1255, 1495, ST);
   m.hill(1800, 2050, TUN);
   m.hill(PAL[0], 2600, ASITE);
-  // A hammer for anyone to build with (near the middle).
+  // Hammers and jetpacks, for getting past what's in the way (a hole blown in a floor, a
+  // ledge too high to jump to): one a few seconds from anywhere.
   m.item('Hammer', 1860, -60);
+  m.item('Hammer', 623, -200);
+  m.item('jetpack', 3159, 0);
+  m.item('Hammer', 1989, 220);
+  m.item('jetpack', 2073, -330);
+  m.item('Hammer', 2727, -260);
   return m;
 }

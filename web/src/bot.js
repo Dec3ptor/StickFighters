@@ -8,7 +8,7 @@ import { CELL } from './grid.js';
 import { inZone } from './objectives.js';
 import { botWantsGadget } from './gadgets.js';
 import { shotSpeed, smokeBetween } from './combat.js';
-import { buildTool, blocksLeft, flyFuel, exitSpot, launchSpot, fly, climb, coverSpot } from './botescape.js';
+import { buildTool, blocksLeft, flyFuel, canGetPast, toolFor, exitSpot, launchSpot, fly, climb, coverSpot } from './botescape.js';
 
 const SIGHT = 1300;  // how far bots look for enemies
 const LOOKS = 6;     // in big games, sight lines a bot checks each time it looks around
@@ -105,6 +105,7 @@ function reachable(game, n, it) {
 function wants(s, it) {
   if (it.type === 'health' || (it.type === 'crate' && it.health)) return s.health < RULES.maxHealth || s.burnTicks > 0;
   if (it.type === 'armour') return s.armour < RULES.maxArmour;
+  if (it.type === 'jetpack') return !s.body.hasJetpack || s.body.fuel < 100;
   if (it.type === 'weapon' || it.type === 'crate') {
     const def = WEAPONS[it.weapon], inv = s.weapons[it.weapon];
     return !!def && (!inv || inv.ammo < (def.maxAmmo ?? def.ammo ?? 1));
@@ -135,6 +136,9 @@ const FAIL_COST = 45, MAX_PENALTY = 270;
 const RACE_MARGIN = 15, NEAR_ITEM = 90;
 // A bot that gives way on an item leaves it alone this long (4 seconds).
 const YIELD_TICKS = 240;
+// Cut off from where it wants to be with no way past of its own, a bot will go this far
+// (seconds of travel, about) for a jetpack or a hammer to get past with.
+const TOOL_VALUE = 30;
 // When the route map changes, bots plan again over this many updates (a few at a time).
 const REPLAN_SPREAD = 30;
 // Bots sprint when at least this many steps of straight walking lie ahead (about 100 px).
@@ -497,7 +501,7 @@ export class BotController {
       // Nowhere to go from here: fly out, or build a way out; failing that (nobody to
       // fight, for a few seconds), self-destruct.
       if (!this.target && this.startEscape(game, s, exitSpot(this.nav, s))) return;
-      this.lastResort(game, s, !this.target);
+      this.lastResort(game, s, true, true);
       return;
     }
     this.offGraph = null;
@@ -519,6 +523,14 @@ export class BotController {
       if (!ok(n) || search.cost[n.id] === Infinity) n = this.nav.nearestReached(search, x, y, 700, ok);
       return n ? { n, c: search.cost[n.id] } : { n: null, c: Infinity };
     };
+    const def = WEAPONS[s.current];
+    const far = def.bot?.far ?? def.range ?? 400;
+    const reach = def.kind === 'melee' ? far + 4 : ['rail', 'seeker', 'strike'].includes(def.kind) ? 1400 : Math.min(far * 0.9, 650);
+    const inRange = this.target && Math.hypot(this.target.x - s.x, this.target.y - s.y) < reach && onScreen(def, this.target.x - s.x, this.target.y - s.y, 0.9);
+    // Where it wants to be but can't get to at all from here (a spot): out of the pit it's in
+    // (with nobody to fight down here), or the objective, or the enemy it's after, past a gap
+    // or up a ledge (a hole blown in a bridge, say).
+    const cutOff = this.cutOff(game, s, search, { inPit, ok, obj, inObj, inRange });
 
     let goal = null, kind = null;
     if (this.forceRoam) {
@@ -536,7 +548,7 @@ export class BotController {
     }
     const items = game.pickups.items.filter(it => it.active && !((this.ignore.get(it) || 0) > game.tick));
     let goalItem = null;
-    const best = (filter, value) => {
+    const best = (filter, value, within = pickupReach) => {
       let pick = null, pv = -Infinity, item = null;
       for (const it of items) {
         if (!filter(it)) continue;
@@ -549,7 +561,7 @@ export class BotController {
         // Stick with the item already on the way to (a reach judged afresh each time
         // would flip a bot back and forth between an item and its objective).
         const mine = it === this.goalItem;
-        if (c > (mine ? pickupReach * 2 + 60 : pickupReach)) continue;
+        if (c > (mine ? within * 2 + 60 : within)) continue;
         const v = value(it) - c / 60 - detour + (mine ? 1.5 : 0);
         // (Not one someone else will get to first.)
         if (v > pv && !this.beaten(game, s, it, c)) { pv = v; pick = n; item = it; }
@@ -564,24 +576,32 @@ export class BotController {
       kind = 'health';
     }
     if (!goal) {
-      const owned = Object.keys(s.weapons).filter(id => s.has(id));
+      const owned = Object.keys(s.weapons).filter(id => s.has(id) && !WEAPONS[id].tool);
       const topValue = Math.max(...owned.map(id => weaponValue(id)));
       // Just the pistol: a proper gun is worth a longer detour on the way.
       if (busy && topValue < 3) pickupReach = Math.max(pickupReach, 300);
       const isWeapon = it => (it.type === 'weapon' || (it.type === 'crate' && it.landed && !it.health)) && WEAPONS[it.weapon];
+      // (A tool lying about, the hammer, isn't a gun: worth picking up on the way past, no more.
+      // Cut off from somewhere, a bot goes out of its way for one: below.)
+      const tool = it => it.type === 'weapon' && WEAPONS[it.weapon].tool;
       goal = best(
         it => isWeapon(it) && wantsItem(game, s, it),
         // (In a fight, a new gun is worth less, unless it's the one we're already going for.)
-        it => (s.weapons[it.weapon] ? 1.5 : weaponValue(it.weapon) + 2) + (topValue < 3 ? 6 : 0) - (this.target && it !== this.goalItem ? 3 : 0) + (it.type === 'crate' ? 1.5 : 0),
+        it => tool(it) ? 1.2 - (this.target ? 3 : 0)
+          : (s.weapons[it.weapon] ? 1.5 : weaponValue(it.weapon) + 2) + (topValue < 3 ? 6 : 0) - (this.target && it !== this.goalItem ? 3 : 0) + (it.type === 'crate' ? 1.5 : 0),
       );
       kind = 'weapon';
     }
+    // Cut off, with no way of its own past it (no blocks to build with, no jetpack that can
+    // fly that high): a jetpack or a hammer it can get to, first, even a long way off, if
+    // that would get it there (from a spot with room to fly or build from).
+    if (!goal && cutOff && this.escapeFails < 3 && !canGetPast(s, cutOff)) {
+      const from = inPit ? s : launchSpot(game, this.nav, search, cutOff, ok);
+      if (from) goal = best(it => toolFor(s, it, cutOff, from), () => TOOL_VALUE, Infinity);
+      kind = 'tool';
+    }
     if (!goal && s.armour < 50) { goal = best(it => it.type === 'armour', () => 3); kind = 'armour'; }
 
-    const def = WEAPONS[s.current];
-    const far = def.bot?.far ?? def.range ?? 400;
-    const reach = def.kind === 'melee' ? far + 4 : ['rail', 'seeker', 'strike'].includes(def.kind) ? 1400 : Math.min(far * 0.9, 650);
-    const inRange = this.target && Math.hypot(this.target.x - s.x, this.target.y - s.y) < reach && onScreen(def, this.target.x - s.x, this.target.y - s.y, 0.9);
     if (!goal && obj && (!inObj || obj.hold)) {
       // On the way, an enemy in range sometimes makes the bot stop and fight (not when it's urgent).
       const stopToFight = !inObj && inRange && !obj.urgent && this.rng() < 0.4;
@@ -644,25 +664,19 @@ export class BotController {
     // (Where it really wants to be: the objective, or the enemy it's after.)
     const want = obj && !inObj ? { x: (obj.zone.left + obj.zone.right) / 2, y: obj.zone.bottom - 12 }
       : kind === 'chase' && this.target ? { x: this.target.x, y: this.target.y } : null;
-    // Somewhere it wants to be that it can't get to at all (a ledge too high, across a gap
-    // holes left, an enemy up there): over to a spot with room above to fly or build from;
-    // once there, fly there with the jetpack, or build a way (steps up, a bridge across).
+    // Cut off from it, with a way of its own past (blocks, a jetpack): over to a spot with room
+    // above to fly or build from; once there, fly there, or build a way (steps up, a bridge across).
     let toward = null;
-    if (want && !inPit && ['roam', 'hunt', 'chase'].includes(kind) && this.escapeFails < 3 && game.tick - this.towardAt > 600) {
-      // (Somewhere to stand there: not an enemy up in the air with a jetpack, say.)
-      const to = this.nav.nearest(want.x, want.y, 90);
-      const able = to && (blocksLeft(s) >= 2 || (s.body.hasJetpack && flyFuel(s, { x: s.x, y: Math.min(s.y, to.y) }) <= 100));
-      if (able && search.cost[to.id] === Infinity) {
-        const from = launchSpot(game, this.nav, search, to, ok);
-        if (from) { goal = from; kind = 'toward'; toward = { to, want }; }
-      }
+    if (cutOff && !inPit && want && ['roam', 'hunt', 'chase'].includes(kind) && this.escapeFails < 3 && game.tick - this.towardAt > 600 && canGetPast(s, cutOff)) {
+      const from = launchSpot(game, this.nav, search, cutOff, ok);
+      if (from) { goal = from; kind = 'toward'; toward = { to: cutOff, want }; }
     }
     this.goalKind = kind;
-    this.goalItem = ['health', 'weapon', 'armour'].includes(kind) ? goalItem : null;
+    this.goalItem = ['health', 'weapon', 'armour', 'tool'].includes(kind) ? goalItem : null;
     // In a pit, nobody to fight and nothing to pick up: fly or build a way out (with no
     // way of its own, after a few seconds, self-destruct: lastResort).
     if (inPit && !this.target && !this.goalItem && this.startEscape(game, s, exitSpot(this.nav, s))) return;
-    this.lastResort(game, s, inPit && !this.target && !this.goalItem);
+    this.lastResort(game, s, inPit, !this.goalItem);
     this.path = this.nav.pathTo(search, goal) || [];
     this.li = 0;
     this.start = start;
@@ -671,14 +685,36 @@ export class BotController {
   }
 
   /**
-   * Stuck (`idle`: in a pit, or somewhere off the route map, with nobody to fight and
-   * nothing to pick up) and no way out of its own: after a few seconds of that,
-   * self-destruct to respawn, the last resort. (A jetpack filling up is a way out.)
+   * Where the bot wants to be but can't get to at all from here, as a route map spot (or
+   * null): out of the pit it's in (with nobody to fight down here); or the objective (no
+   * spot in it it can get to); or, with no objective, the enemy it's after (out of range).
+   * Not anywhere nobody could stand (an enemy up in the air with a jetpack, say).
    */
-  lastResort(game, s, idle) {
-    if (!idle) { this.trappedSince = -1; return; }
+  cutOff(game, s, search, { inPit, ok, obj, inObj, inRange }) {
+    if (inPit) return this.target ? null : exitSpot(this.nav, s);
+    if (obj && !inObj) {
+      const zone = this.zoneNodes(obj);
+      if (!zone.length || zone.some(n => search.cost[n.id] < Infinity && ok(n))) return null;
+      // (Down a pit it could drop into but not get out of again: not worth being stuck for.)
+      if (zone.some(n => search.cost[n.id] < Infinity)) return null;
+      const at = this.nav.nearest((obj.zone.left + obj.zone.right) / 2, obj.zone.bottom - 12, 90);
+      return at && search.cost[at.id] === Infinity ? at : zone[0];
+    }
+    if (obj || !this.target || inRange) return null;
+    const at = this.nav.nearest(this.target.x, this.target.y, 90);
+    return at && search.cost[at.id] === Infinity ? at : null;
+  }
+
+  /**
+   * Stuck (in a pit, or somewhere off the route map) with nobody to fight, and no way out
+   * of its own: after a few seconds of that, self-destruct to respawn, the last resort.
+   * (A jetpack filling up is a way out. Going for something to pick up down there doesn't
+   * stop the clock: it self-destructs once it has it.)
+   */
+  lastResort(game, s, stuck, idle) {
+    if (!stuck || this.target) { this.trappedSince = -1; return; }
     if (this.trappedSince < 0) this.trappedSince = game.tick;
-    if (game.tick - this.trappedSince > 240 && this.helpless(game, s) && game.respawnEscapes(s)) this.destructing = true;
+    if (idle && game.tick - this.trappedSince > 240 && this.helpless(game, s) && game.respawnEscapes(s)) this.destructing = true;
   }
 
   /**

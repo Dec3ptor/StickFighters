@@ -312,7 +312,12 @@ export default function () {
   m.item('M4', 7180, PLAT); m.item('health', 7260, PLAT); m.item('jetpack', 7380, PLAT);
   m.item('armour', 7300, -480); m.item('jetpack', 7360, -480); m.item('NinjaRope', 7150, -490);
   m.item('GrenadeLauncher', 6960, -490); m.item('M4', 7000, -640);
-  // A hammer for anyone to build with (near the middle).
+  // Hammers and jetpacks, for getting past what's in the way (a hole blown in a floor, a
+  // ledge too high to jump to): one a few seconds from anywhere.
   m.item('Hammer', 3644, -210);
+  m.item('Hammer', 2082, 170);
+  m.item('jetpack', 4714, -180);
+  m.item('Hammer', 6624, -340);
+  m.item('Hammer', 2762, 0);
   return m;
 }
