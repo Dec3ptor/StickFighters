@@ -1,5 +1,6 @@
 // Where the objective modes are fought: king of the hill's hills, capture the
-// flag's flag stands, conquest's capture points and rush's M-COM stations.
+// flag's flag stands, conquest's capture points, rush's M-COM stations and
+// defuse's bomb sites.
 //
 // Maps can place their own (see custommaps.js for the format). A map without
 // them (most custom maps) gets some worked out from its layout, so every map
@@ -14,6 +15,7 @@ export const STAND = BODY.bottom;
 // Sizes of the areas made for maps that don't place their own.
 const HILL_W = 150, HILL_H = 90;
 const POINT_W = 170, POINT_H = 100;
+const SITE_W = 200, SITE_H = 110;
 
 /**
  * Places a soldier can stand: { x, y (the floor), solid, width (of that floor) },
@@ -79,11 +81,26 @@ export function objectivesOf(map, type) {
     return [flags[0] || made[0], flags[1] || made[1]];
   }
   if (own.length) {
-    // M-COMs in sector order, then left to right; points keep the map's order.
+    // M-COMs in sector order, then left to right; bomb sites in letter order; points keep the map's order.
     if (type === 'mcom') return [...own].sort((a, b) => a.sector - b.sector);
+    if (type === 'site') return [...own].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
     return own;
   }
+  if (type === 'site') return defaultSites(map);
   return defaults(map)[type];
+}
+
+/**
+ * Bomb sites for a map without its own: around the M-COMs Rush's attackers go for
+ * first (blue attacks there, as the bomb's carriers do), A and B.
+ */
+function defaultSites(map) {
+  if (map.madeSites) return map.madeSites;
+  const mcoms = objectivesOf(map, 'mcom');
+  const first = mcoms.filter(m => m.sector === mcoms[0]?.sector);
+  const list = (first.length >= 2 ? first : mcoms).slice(0, 2);
+  map.madeSites = list.map((m, i) => ({ type: 'site', label: String.fromCharCode(65 + i), left: m.x - SITE_W / 2, top: m.y - SITE_H, right: m.x + SITE_W / 2, bottom: m.y }));
+  return map.madeSites;
 }
 
 /** Objectives worked out from a map's layout (remembered with the map). */

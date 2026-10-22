@@ -9,7 +9,7 @@ import { holdSpawn } from '../gadgets.js';
 // Effects every player draws for themselves from what they can see (rocket
 // smoke, jetpack flames, burning soldiers), so they aren't sent.
 const FX_SKIP = new Set(['smoke', 'fire', 'sparkle', 'spark']);
-export const FX_METHODS = new Set(['blood', 'sparks', 'muzzle', 'shell', 'explosion', 'trail', 'ring', 'gibs', 'whack', 'plane', 'rubble', 'built']);
+export const FX_METHODS = new Set(['blood', 'sparks', 'muzzle', 'shell', 'explosion', 'trail', 'ring', 'gibs', 'whack', 'plane', 'rubble', 'built', 'bang']);
 const MAX_CHAT = 140;
 
 /** Drives a remote player's soldier from the inputs they send. */
@@ -31,6 +31,8 @@ export class RemoteController {
       next.switchTo ||= old.switchTo;
       next.cycle ||= old.cycle;
       next.gadget ||= old.gadget;
+      next.drop ||= old.drop;
+      next.reload ||= old.reload;
     }
   }
 
@@ -38,7 +40,7 @@ export class RemoteController {
     const next = this.queue.shift();
     if (next) { this.last = next; this.ackSeq = next.seq; return next; }
     // Nothing new arrived in time: keep doing the same thing (but don't repeat clicks).
-    return { ...this.last, jumpPressed: false, firePressed: false, switchTo: null, cycle: 0, gadget: false };
+    return { ...this.last, jumpPressed: false, firePressed: false, switchTo: null, cycle: 0, gadget: false, drop: false, reload: false };
   }
 }
 
@@ -192,6 +194,18 @@ export class NetHost {
           holdSpawn(p.soldier, !!data.hold);
         }
         break;
+      case 'buy': {
+        // Defuse: buying (the host checks they can: buy zone, buy time, money, side).
+        const g = this.game, s = p.soldier;
+        if (!g?.rules.buyItem || !s) break;
+        const t = Date.now();
+        p.buys = (p.buys || []).filter(x => t - x < 1000);
+        if (p.buys.length >= 12) break;
+        p.buys.push(t);
+        const why = g.rules.buyItem(g, s, String(data.item ?? '').slice(0, 24));
+        if (why) g.notify(s, why);
+        break;
+      }
       case 'spectate':
         // They want to sit out and watch (or join again).
         p.spectating = !!data.on;

@@ -7,7 +7,7 @@ import { angleDiff, clamp } from './util.js';
 import { CELL } from './grid.js';
 import { inZone } from './objectives.js';
 import { botWantsGadget } from './gadgets.js';
-import { shotSpeed } from './combat.js';
+import { shotSpeed, smokeBetween } from './combat.js';
 
 const SIGHT = 1300;  // how far bots look for enemies
 const LOOKS = 6;     // in big games, sight lines a bot checks each time it looks around
@@ -111,6 +111,12 @@ function wants(s, it) {
   return true;
 }
 
+/** The same, as the mode allows (Defuse: one gun of each sort). */
+function wantsItem(game, s, it) {
+  if (game.rules.canPickUp && it.type === 'weapon' && !game.rules.canPickUp(game, s, it)) return false;
+  return wants(s, it);
+}
+
 /**
  * Steering to walk dx pixels and stop there, easing off early so momentum
  * doesn't carry the soldier past it (and off the ledge a jump starts from).
@@ -180,6 +186,8 @@ export class BotController {
     this.idleTrapped = 0;
     this.airTicks = 0;
     this.bounces = 0;
+    this.throwing = null;
+    this.lookAway = null;
     this.ignore = this.ignore || new Map();
   }
 
@@ -236,6 +244,8 @@ export class BotController {
     this.me = s;
     const inp = { move: 0, jump: false, jumpPressed: false, aim: this.aim ?? s.aim, fire: false, aimDist: 200 };
     if (!s.alive) return inp;
+    // Held still by the mode (Defuse's freeze at the start of a round): not stuck.
+    if (game.rules.frozen?.(game, s)) { this.history.length = 0; this.stuck = 0; }
     // (In huge games, look around a little less often.)
     const look = game.soldiers.length > 1000 ? 6 : 3;
     if (game.tick % look === s.id % look) this.perceive(game, s);
@@ -244,7 +254,7 @@ export class BotController {
     if (game.classesOn && game.tick % 20 === s.id % 20 && botWantsGadget(game, s, this)) inp.gadget = true;
     this.watchdog(game, s);
     const it = this.goalItem;
-    if (it && (!it.active || (it.dropped && it.life <= 0) || !wants(s, it))) {
+    if (it && (!it.active || (it.dropped && it.life <= 0) || !wantsItem(game, s, it))) {
       // Someone else took it, or we picked up the same thing elsewhere: find something else to do.
       this.goalItem = null;
       this.grabTicks = 0;
@@ -261,6 +271,10 @@ export class BotController {
     this.steer(game, s, inp);
     this.fight(game, s, inp);
     this.detonate(game, s, inp);
+    // Defuse: flashbangs and smoke, thrown where the mode says (not in the middle of a fight).
+    if (game.rules.botThrow) this.utility(game, s, inp);
+    // Defuse: hold E to plant the bomb, or to defuse it.
+    if (game.rules.botUse) inp.use = game.rules.botUse(game, s, this);
     // Stuck in a pit with nothing left to do there: self-destruct (held until it goes off).
     if (this.destructing) inp.selfDestruct = true;
     inp.firePressed = inp.fire && !this.prevFire;
@@ -306,7 +320,9 @@ export class BotController {
 
   canSee(game, s, o) {
     const sx = s.shoulderX, sy = s.shoulderY;
-    return game.map.clearLine(sx, sy, o.x, o.y - 8) || game.map.clearLine(sx, sy, o.x, o.y - 17);
+    if (!game.map.clearLine(sx, sy, o.x, o.y - 8) && !game.map.clearLine(sx, sy, o.x, o.y - 17)) return false;
+    // (Nobody sees through smoke.)
+    return !smokeBetween(game, sx, sy, o.x, o.y - 12);
   }
 
   /** Bot vision 'sight': is `o` where this bot could see them (on its screen, in front of it)? */
@@ -338,7 +354,8 @@ export class BotController {
 
   perceive(game, s) {
     if (game.options.botVision === 'sight') this.listen(game, s);
-    const best = game.crowded ? this.lookAround(game, s) : this.lookAtAll(game, s);
+    // Blinded by a flashbang: nothing to see until it wears off.
+    const best = s.flashTicks > 40 ? null : game.crowded ? this.lookAround(game, s) : this.lookAtAll(game, s);
     if (best !== this.target) {
       // Already in a fight (or just were): quicker onto the next one than spotting someone out of the blue.
       this.quick = !!this.target || (!!this.lastSeen && game.tick - this.lastSeen.tick < 60);
@@ -445,7 +462,7 @@ export class BotController {
     for (const o of game.near(it.x - NEAR_ITEM, it.y - NEAR_ITEM, it.x + NEAR_ITEM, it.y + NEAR_ITEM)) {
       if (o.isBot || !o.alive || o === s) continue;
       const d = Math.hypot(o.x - it.x, o.y - it.y);
-      if (d < NEAR_ITEM && d / PHYS.runSpeed < eta - RACE_MARGIN && wants(o, it) && knows(o)) return true;
+      if (d < NEAR_ITEM && d / PHYS.runSpeed < eta - RACE_MARGIN && wantsItem(game, o, it) && knows(o)) return true;
     }
     return false;
   }
@@ -538,7 +555,7 @@ export class BotController {
       if (busy && topValue < 3) pickupReach = Math.max(pickupReach, 300);
       const isWeapon = it => (it.type === 'weapon' || (it.type === 'crate' && it.landed && !it.health)) && WEAPONS[it.weapon];
       goal = best(
-        it => isWeapon(it) && wants(s, it),
+        it => isWeapon(it) && wantsItem(game, s, it),
         // (In a fight, a new gun is worth less, unless it's the one we're already going for.)
         it => (s.weapons[it.weapon] ? 1.5 : weaponValue(it.weapon) + 2) + (topValue < 3 ? 6 : 0) - (this.target && it !== this.goalItem ? 3 : 0) + (it.type === 'crate' ? 1.5 : 0),
       );
@@ -806,13 +823,46 @@ export class BotController {
 
   // ---- Aiming and shooting --------------------------------------------------
 
+  /**
+   * A flashbang or smoke grenade to throw (the mode's choice: game.rules.botThrow gives
+   * { id, x, y }): out it comes, a lob onto that spot, then (a flashbang) a look away
+   * until it's gone off.
+   */
+  utility(game, s, inp) {
+    let u = this.throwing;
+    if (u && (this.target || game.tick > u.until || !(s.weapons[u.id]?.ammo > 0))) u = this.throwing = null;
+    if (!u && !this.target && s.body.onGround && game.tick % 20 === s.id % 20) {
+      u = game.rules.botThrow(game, s, this);
+      if (u) this.throwing = u = { ...u, until: game.tick + 90 };
+    }
+    if (!u) return;
+    if (s.current !== u.id) { inp.switchTo = u.id; return; }
+    inp.switchTo = undefined;
+    const def = WEAPONS[u.id], sx = s.shoulderX, sy = s.shoulderY;
+    const want = lobAngle(u.x - sx, u.y - sy, def.speed, def.gravity ?? MOTION.grenadeGravity);
+    // (Too far to throw from here after all: not now.)
+    if (want == null) { this.throwing = null; return; }
+    const cur = this.aim ?? s.aim;
+    this.aim = cur + clamp(angleDiff(cur, want), -this.d.turn, this.d.turn);
+    inp.aim = this.aim;
+    inp.aimDist = 9999;
+    if (Math.abs(angleDiff(this.aim, want)) < 0.04 && s.cooldown <= 0) {
+      inp.fire = !this.prevFire;
+      if (inp.fire) {
+        this.throwing = null;
+        if (def.flash) this.lookAway = { x: u.x, until: game.tick + (def.fuse || 90) + 15 };
+      }
+    }
+  }
+
   fight(game, s, inp) {
     const t = this.target;
     const sx = s.shoulderX, sy = s.shoulderY;
     if (!t) {
-      // Look where we're going, or where the enemy was last seen.
+      // Look where we're going, or where the enemy was last seen (or away from our own flashbang).
       let want;
-      if (this.lastSeen && game.tick - this.lastSeen.tick < 120) want = Math.atan2(this.lastSeen.y - 10 - sy, this.lastSeen.x - sx);
+      if (this.lookAway && game.tick < this.lookAway.until) want = this.lookAway.x < s.x ? -0.05 : Math.PI + 0.05;
+      else if (this.lastSeen && game.tick - this.lastSeen.tick < 120) want = Math.atan2(this.lastSeen.y - 10 - sy, this.lastSeen.x - sx);
       else if (Math.abs(s.body.vx) > 0.5) want = s.body.vx < 0 ? Math.PI + 0.05 : -0.05;
       else if (game.options.botVision === 'sight') {
         // Standing still with only its eyes to go on: look the other way now and then.
@@ -864,6 +914,8 @@ export class BotController {
 
     if (this.seen < (this.quick ? this.reaction * 0.55 : this.reaction)) return;
     if (this.steering(game, s)) return; // the super sheep is steered by our aim
+    // (Not a flashbang or smoke grenade at someone: they're for throwing ahead. Out comes a gun soon.)
+    if (def.kind === 'thrown' && !b.score) return;
     // (It fires once its aim is where it means it to be, and that doesn't look well off the target.)
     const off = Math.max(Math.abs(angleDiff(this.aim, want)), Math.abs(this.aimOff) * 0.6);
     const cone = def.kind === 'rail' ? this.d.fireCone * 0.35

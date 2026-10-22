@@ -35,6 +35,29 @@ export function drawWeapon(ctx, def, lying) {
       ctx.fillRect(8, 1.1, 2, 3.5);
       ctx.fillRect(-5, -1.3, 3, 3.4);
       break;
+    case 'ak':
+      // A wooden stock and grip, a curved magazine, the gas tube over the barrel.
+      ctx.fillRect(-1, -1.3, L + 1, 2.4);
+      ctx.fillRect(4, -2.4, L - 9, 1.2);
+      ctx.fillStyle = '#7a4a24';
+      ctx.fillRect(-6, -1.4, 5, 3.2);
+      ctx.fillRect(1, 1, 1.8, 3.2);
+      ctx.fillRect(11, -1.2, 4, 2.2);
+      ctx.fillStyle = look.color;
+      ctx.beginPath();
+      ctx.moveTo(6, 1); ctx.lineTo(8.6, 1); ctx.quadraticCurveTo(9.6, 4, 11, 6); ctx.lineTo(8.6, 6.6); ctx.quadraticCurveTo(7.4, 4.2, 6, 1);
+      ctx.fill();
+      break;
+    case 'knife':
+      ctx.fillStyle = '#2a2a2a';
+      ctx.fillRect(0, -1.1, 4, 2.2);
+      ctx.fillStyle = '#555';
+      ctx.fillRect(4, -2, 1, 4);
+      ctx.fillStyle = look.color;
+      ctx.beginPath();
+      ctx.moveTo(5, -1.2); ctx.lineTo(L, -1.2); ctx.lineTo(L + 2.4, 0.2); ctx.lineTo(5, 1.2); ctx.closePath();
+      ctx.fill();
+      break;
     case 'shotgun':
       ctx.fillRect(-3, -1.3, L + 3, 2.6);
       ctx.fillStyle = '#3a2e22';
@@ -145,6 +168,46 @@ export function drawSprite(ctx, name, opts = {}) {
       ctx.fillStyle = '#2b2b2b';
       ctx.beginPath(); ctx.arc(0, 0, 2.6, 0, Math.PI * 2); ctx.fill();
       if (opts.lit) { ctx.fillStyle = '#ff3b2f'; ctx.beginPath(); ctx.arc(0, -2.5, 1.2, 0, Math.PI * 2); ctx.fill(); }
+      break;
+    case 'hegrenade':
+      // A frag grenade: olive body, lever and pin.
+      ctx.fillStyle = '#4f5a2e';
+      ctx.beginPath(); ctx.ellipse(0, 0.5, 2.6, 3.2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#9a9a8a';
+      ctx.fillRect(-1, -3.8, 2, 1.4);
+      ctx.fillRect(1, -3.6, 1.2, 3);
+      if (opts.lit) { ctx.fillStyle = '#ff3b2f'; ctx.fillRect(-0.4, -4.4, 0.8, 0.8); }
+      break;
+    case 'flashbang':
+      ctx.fillStyle = '#c9ccd1';
+      ctx.beginPath(); ctx.rect(-1.9, -3.6, 3.8, 7.2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#5a6068';
+      ctx.fillRect(-1.9, -1.2, 3.8, 0.9);
+      ctx.fillRect(-1.9, 1, 3.8, 0.9);
+      ctx.fillStyle = '#9a9a8a';
+      ctx.fillRect(1.6, -3.4, 1, 3);
+      break;
+    case 'smokegrenade':
+      ctx.fillStyle = '#5d6670';
+      ctx.beginPath(); ctx.rect(-2.1, -3.6, 4.2, 7.2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#d8dde2';
+      ctx.fillRect(-2.1, -0.5, 4.2, 1.2);
+      ctx.fillStyle = '#9a9a8a';
+      ctx.fillRect(1.8, -3.4, 1, 3);
+      break;
+    case 'c4':
+      // The bomb: a brick of explosive, a keypad with a little screen, wires.
+      ctx.fillStyle = '#b8a77a';
+      ctx.beginPath(); ctx.rect(-5, -3, 10, 6); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#2b2b2b';
+      ctx.fillRect(-3.4, -2.2, 4.4, 4.4);
+      ctx.fillStyle = opts.armed && Math.floor(t / 12) % 2 ? '#ff3b2f' : '#7fd36a';
+      ctx.fillRect(-2.8, -1.6, 3.2, 1.3);
+      ctx.strokeStyle = '#c0392b';
+      ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.moveTo(1.4, -2.5); ctx.quadraticCurveTo(3.6, -4.6, 4.4, -1.6); ctx.stroke();
+      ctx.strokeStyle = '#2b6fd6';
+      ctx.beginPath(); ctx.moveTo(1.4, 2.5); ctx.quadraticCurveTo(3.6, 4.4, 4.4, 1.4); ctx.stroke();
       break;
     case 'bomblet':
       ctx.fillStyle = '#333';

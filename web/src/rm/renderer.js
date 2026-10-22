@@ -15,7 +15,7 @@ import { Backdrop } from './backdrop.js';
 import { Blocks } from './blocks.js';
 import { makeMaterials } from './textures.js';
 import { drawSoldier, drawShadows, drawName } from './soldiers.js';
-import { Lights, Weather, LIGHT, glowSprite, fireballSprite, smokeSprite, drawVignette } from './fx.js';
+import { Lights, Weather, LIGHT, glowSprite, fireballSprite, smokeSprite, cloudSprite, drawVignette } from './fx.js';
 import { styledContext } from './hudstyle.js';
 import { css } from './color.js';
 import { GameMap } from '../map.js';
@@ -247,10 +247,23 @@ export class RemasteredRenderer extends Renderer {
     ctx.lineCap = 'round';
     for (const p0 of game.projectiles) {
       if (p0.delay > 0 || (cull && !this.inView(p0.x, p0.y))) continue;
-      const front = p0.kind === 'flame' || p0.kind === 'gas' || p0.kind === 'fire';
+      const front = p0.kind === 'flame' || p0.kind === 'gas' || p0.kind === 'fire' || p0.kind === 'cloud';
       if (front !== top) continue;
       const p = between(p0, this.alpha);
       if (this.fogNow && !this.fogNow.sees(p.x, p.y)) continue;
+      if (p.kind === 'cloud') {
+        // A smoke grenade's cloud: soft puffs, thick enough that nobody can be seen inside.
+        const r = p.r || 10, fade = Math.min(1, (p.life ?? 99) / 90), spr = cloudSprite(), t = game.tick;
+        ctx.globalAlpha = fade;
+        for (let i = 0; i < 11; i++) {
+          const a = (i / 11) * Math.PI * 2 + (p.id % 7) * 0.7, d = r * (i % 2 ? 0.38 : 0.62);
+          const q = r * (0.75 + (i % 3) * 0.12), wob = Math.sin(t * 0.015 + i * 1.9) * r * 0.06;
+          ctx.drawImage(spr, p.x + Math.cos(a) * d + wob - q, p.y + Math.sin(a) * d * 0.7 - q, q * 2, q * 2);
+        }
+        ctx.drawImage(spr, p.x - r, p.y - r, r * 2, r * 2);
+        ctx.globalAlpha = 1;
+        continue;
+      }
       if (p.kind === 'bullet') {
         const sp = Math.hypot(p.vx, p.vy) || 1;
         const len = Math.min(0.9 * sp, 46, Math.max(0, (p0.age ?? 9) - 1 + this.alpha) * sp);
@@ -381,6 +394,17 @@ export class RemasteredRenderer extends Renderer {
         ctx.fillStyle = theme?.ink || '#111';
         ctx.beginPath(); ctx.arc(x, y, p.r, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1;
+        return;
+      }
+      case 'bang': {
+        // A flashbang: a white-hot flash that lights everything around it.
+        const k = p.life / p.max, r = 26 + (1 - k) * 60;
+        this.lights.add(x, y, 260, '#ffffff', 1.4 * k);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = k;
+        ctx.drawImage(glowSprite('#ffffff'), x - r, y - r, r * 2, r * 2);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
         return;
       }
       case 'trail': {

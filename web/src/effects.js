@@ -75,6 +75,15 @@ export class Effects {
     }
   }
 
+  /** A flashbang going off: a blinding white flash. */
+  bang(x, y) {
+    this.add({ kind: 'bang', x, y, life: 16, max: 16 });
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 1.5 + Math.random() * 3;
+      this.add({ kind: 'spark', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.5, life: 10 + Math.random() * 8 });
+    }
+  }
+
   /** A hole blown in the map (destructible maps): chunks and dust, and any stains there go. */
   rubble(x, y, r) {
     this.stains = this.stains.filter(s => Math.hypot(s.x - x, s.y - y) > r + 2);

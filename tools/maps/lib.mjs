@@ -90,6 +90,12 @@ export class MapBuilder {
     return this;
   }
 
+  /** Defuse: a bomb site (label 'A' or 'B') from l to r, standing on the floor at floorY. */
+  site(label, l, r, floorY, h = 110) {
+    this.objectives.push({ type: 'site', label, left: l, top: floorY - h, right: r, bottom: floorY });
+    return this;
+  }
+
   /** Rush: an M-COM station on the floor at floorY, in a sector (1 falls first). */
   mcom(sector, x, floorY) {
     this.objectives.push({ type: 'mcom', sector, x, y: floorY });

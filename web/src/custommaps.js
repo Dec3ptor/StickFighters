@@ -13,9 +13,12 @@
 //       { type: 'hill', left, top, right, bottom },           King of the hill: an area to hold
 //       { type: 'flag', team, x, y },                         Capture the flag: a team's flag stand (y = the floor)
 //       { type: 'point', label, left, top, right, bottom },   Conquest: an area to capture, labelled A, B, C...
-//       { type: 'mcom', sector, x, y } ] }                    Rush: a station to blow up (y = the floor); sectors
+//       { type: 'mcom', sector, x, y },                       Rush: a station to blow up (y = the floor); sectors
 //                                                            1, 2, 3... fall in order, and spawns with a sector
 //                                                            are used while that sector is being fought over
+//       { type: 'site', label, left, top, right, bottom } ]   Defuse: a bomb site (A, B) where the attackers plant
+//                                                            the bomb; blue's spawns are the attackers' (T), red's
+//                                                            the defenders' (CT), whichever team is playing them
 
 import { GameMap } from './map.js';
 import { NavGraph } from './nav.js';
@@ -26,7 +29,7 @@ import { setGameSpeed } from './speed.js';
 import { inZone, mcomZone, STAND } from './objectives.js';
 
 export const ITEM_TYPES = ['health', 'armour', 'jetpack', 'weapon'];
-export const OBJECTIVE_TYPES = ['hill', 'flag', 'point', 'mcom'];
+export const OBJECTIVE_TYPES = ['hill', 'flag', 'point', 'mcom', 'site'];
 export const LIMITS = { maxSize: 8000, maxPlatforms: 600, maxSpawns: 96, maxItems: 200, maxObjectives: 32, maxSectors: 8, minSize: 4, nameLength: 32, loadoutWeapons: 12 };
 export const BOUNCE = { min: 2, max: 12, standard: 7 }; // jump pad strength (stored as a negative bounce)
 const MARGIN = 40;
@@ -108,13 +111,13 @@ export function normalizeObjectives(raw) {
   for (const [i, o] of (Array.isArray(raw) ? raw : []).slice(0, LIMITS.maxObjectives).entries()) {
     if (!o || !OBJECTIVE_TYPES.includes(o.type)) continue;
     const what = `Objective ${i + 1}`;
-    if (o.type === 'hill' || o.type === 'point') {
+    if (o.type === 'hill' || o.type === 'point' || o.type === 'site') {
       let l = number(o.left, `${what} left`), t = number(o.top, `${what} top`), r = number(o.right, `${what} right`), b = number(o.bottom, `${what} bottom`);
       if (l > r) [l, r] = [r, l];
       if (t > b) [t, b] = [b, t];
       if (r - l < 16 || b - t < 16) continue;
       const z = { type: o.type, left: l, top: t, right: r, bottom: b };
-      if (o.type === 'point') z.label = String(o.label ?? '').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase();
+      if (o.type !== 'hill') z.label = String(o.label ?? '').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase();
       out.push(z);
     } else if (o.type === 'flag') {
       out.push({ type: 'flag', team: Number(o.team) === 2 ? 2 : 1, x: number(o.x, `${what} x`), y: number(o.y, `${what} y`) });
@@ -123,9 +126,11 @@ export function normalizeObjectives(raw) {
       out.push({ type: 'mcom', sector, x: number(o.x, `${what} x`), y: number(o.y, `${what} y`) });
     }
   }
-  // Capture points get letters in order where they have none (A, B, C...).
-  let n = 0;
-  for (const o of out) if (o.type === 'point') { if (!o.label) o.label = String.fromCharCode(65 + n); n++; }
+  // Capture points and bomb sites get letters in order where they have none (A, B, C...).
+  for (const type of ['point', 'site']) {
+    let n = 0;
+    for (const o of out) if (o.type === type) { if (!o.label) o.label = String.fromCharCode(65 + n); n++; }
+  }
   return out;
 }
 
@@ -149,7 +154,7 @@ function pack(map) {
     p: map.platforms.map(p => (p.hard ? [p.left, p.top, p.right, p.bottom, 0, 1] : p.bounce ? [p.left, p.top, p.right, p.bottom, p.bounce] : [p.left, p.top, p.right, p.bottom])),
     s: map.spawns.map(s => (s.sector ? [s.x, s.y, s.team, s.sector] : [s.x, s.y, s.team])),
     ...(map.objectives ? { o: map.objectives.map(o => (o.type === 'flag' ? ['f', o.x, o.y, o.team] : o.type === 'mcom' ? ['m', o.x, o.y, o.sector]
-      : [o.type === 'hill' ? 'h' : 'p', o.left, o.top, o.right, o.bottom, ...(o.label ? [o.label] : [])])) } : {}),
+      : [o.type === 'hill' ? 'h' : o.type === 'site' ? 's' : 'p', o.left, o.top, o.right, o.bottom, ...(o.label ? [o.label] : [])])) } : {}),
     i: map.items.map(it => (it.type === 'weapon' ? [it.type, it.x, it.y, it.weapon] : [it.type, it.x, it.y])),
     ...(map.loadout ? { l: [map.loadout.weapons, map.loadout.armour, map.loadout.jetpack ? 1 : 0] } : {}),
     ...(map.theme ? { t: map.theme } : {}),
@@ -163,7 +168,7 @@ function unpack(o) {
     platforms: (o.p || []).map(([left, top, right, bottom, bounce, hard]) => ({ left, top, right, bottom, bounce, hard: !!hard })),
     spawns: (o.s || []).map(([x, y, team, sector]) => ({ x, y, team, sector })),
     objectives: (o.o || []).map(([k, ...a]) => (k === 'f' ? { type: 'flag', x: a[0], y: a[1], team: a[2] } : k === 'm' ? { type: 'mcom', x: a[0], y: a[1], sector: a[2] }
-      : { type: k === 'h' ? 'hill' : 'point', left: a[0], top: a[1], right: a[2], bottom: a[3], label: a[4] })),
+      : { type: k === 'h' ? 'hill' : k === 's' ? 'site' : 'point', left: a[0], top: a[1], right: a[2], bottom: a[3], label: a[4] })),
     items: (o.i || []).map(([type, x, y, weapon]) => ({ type, x, y, weapon })),
     loadout: Array.isArray(o.l) ? { weapons: o.l[0], armour: o.l[1], jetpack: !!o.l[2] } : null,
     theme: o.t,

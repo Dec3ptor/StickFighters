@@ -166,12 +166,18 @@ export class NetClient {
       if (inp.aimDist != null) me.aimDist = inp.aimDist;
       me.buildPlank = !!inp.plank; // (the Builder: for our own screen)
       if (inp.switchTo && me.has(inp.switchTo)) { me.current = inp.switchTo; this.switchSeq = inp.seq; }
-      me.move(this.heavy(inp), g.map);
+      me.move(this.heavy(this.allowed(inp)), g.map);
       if (me.body.jetting && g.tick % 2 === 0) g.fx?.fire(me.x + me.facing * 3, me.y - 4);
     }
     this.trails();
     g.fx?.update(g.map, MOTION.timeScale);
     this.decay();
+  }
+
+  /** What the mode lets us do (Defuse: held still while frozen, planting or defusing), as the host works it out. */
+  allowed(inp) {
+    const g = this.game;
+    return g.rules.input ? g.rules.input(g, this.me, inp) : inp;
   }
 
   /** The minigun slows you down while it spins (same rule as the host). */
@@ -249,6 +255,7 @@ export class NetClient {
     if (!this.switchSeq || snap.ack >= this.switchSeq || !me.has(me.current)) me.current = s.current;
     me.reloadTimer = a.reloadTimer; me.cooldown = a.cooldown; me.spin = a.spin;
     me.cls = s.cls; me.gadgetCharge = a.gadgetCharge; me.mods = a.mods; me.holdSpawn = a.holdSpawn;
+    me.flashTicks = a.flashTicks; me.flashFull = a.flashFull;
 
     const b = me.body;
     if (!s.alive || s.kamikaze) {
@@ -263,7 +270,7 @@ export class NetClient {
       hasJetpack: a.hasJetpack, fuel: a.fuel, momentum: a.momentum, rope: a.rope ? { ...a.rope } : null,
       stamina: a.stamina, winded: a.winded, sprinting: a.sprinting,
     });
-    for (const inp of this.pending) stepBody(b, this.heavy(inp), this.game.map);
+    for (const inp of this.pending) stepBody(b, this.heavy(this.allowed(inp)), this.game.map);
     if (!wasAlive) { me.prevX = b.x; me.prevY = b.y; me.drawDX = me.drawDY = 0; return; }
     // Small differences are smoothed out over a few frames; big ones (a teleport, a respawn) jump.
     const ex = oldX - b.x, ey = oldY - b.y;
@@ -406,6 +413,9 @@ export class NetClient {
   }
 
   sendChat(text) { this.link.send({ t: 'chat', text: String(text).slice(0, 140) }, true); }
+
+  /** Defuse: buy something (the host checks we can, and takes the money). */
+  sendBuy(item) { this.link.send({ t: 'buy', item: String(item) }, true); }
 
   /** Classes on: our class (for our next spawn) and loadouts; hold: we're choosing a class, so wait to respawn. */
   sendKit({ cls, loadouts, hold = false }) { this.link.send({ t: 'kit', cls, loadouts, hold }, true); }

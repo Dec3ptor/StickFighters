@@ -6,7 +6,7 @@ import { GameMap } from './map.js';
 import { Soldier } from './soldier.js';
 import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
-import { fire, updateProjectiles, damage, explode, soldierBox, canHurt } from './combat.js';
+import { fire, updateProjectiles, damage, explode, soldierBox, canHurt, reload, refill } from './combat.js';
 import { buildPose } from './stickman.js';
 import { RULES, TICK_RATE, MOTION, PHYS } from './config.js';
 import { setGameSpeed } from './speed.js';
@@ -179,8 +179,8 @@ export class Game {
   }
 
   /**
-   * Destructible maps: the floors that spawn points, flags, M-COMs, hills and
-   * capture points stand on can't be destroyed (so every mode keeps working).
+   * Destructible maps: the floors that spawn points, flags, M-COMs, hills,
+   * capture points and bomb sites stand on can't be destroyed (so every mode keeps working).
    */
   protectFloors() {
     const map = this.map;
@@ -190,7 +190,7 @@ export class Game {
     };
     for (const p of map.spawns) floorUnder(p.x, p.y);
     for (const type of ['flag', 'mcom']) for (const o of objectivesOf(map, type)) floorUnder(o.x, o.y - 4);
-    for (const type of ['hill', 'point']) {
+    for (const type of ['hill', 'point', 'site']) {
       for (const z of objectivesOf(map, type)) {
         map.query(z.left, z.bottom - 3, z.right, z.bottom + 3, s => {
           if (Math.abs(s.t - z.bottom) <= 3 && s.r > z.left && s.l < z.right) s.hard = true;
@@ -374,7 +374,12 @@ export class Game {
       return;
     }
     if (s.spawnProtect > 0) s.spawnProtect--;
+    if (s.flashTicks > 0) s.flashTicks = Math.max(0, s.flashTicks - 1);
+    // (The mode can hold soldiers still: Defuse's freeze time at the start of a round.)
+    if (this.rules.input) input = this.rules.input(this, s, input);
     if (input.aimDist != null) s.aimDist = input.aimDist;
+    // Holding E (or fire with the bomb in hand): Defuse's planting and defusing.
+    s.using = !!input.use || (!!input.fire && s.current === 'C4');
 
     if (s.kamikaze) { this.updateKamikaze(s, input); return; }
 
@@ -406,14 +411,19 @@ export class Game {
 
     if (s.cooldown > 0) s.cooldown--;
     // Timers aren't whole numbers at reduced game speed, so count down to <= 0.
-    // (Magazines refill to the soldier's size: Extended mag makes them bigger.)
+    // (Magazines refill to the soldier's size: Extended mag makes them bigger. Guns with
+    // spare ammo reload from it; pistols with endless ammo reload in your pocket too.)
     if (s.reloadTimer > 0 && (s.reloadTimer -= 1) <= 0) {
       s.reloadTimer = 0;
-      const inv = s.weapons[s.current];
-      if (WEAPONS[s.current].mag && inv) inv.mag = weaponFor(s, s.current).mag;
-      for (const id in s.weapons) if (WEAPONS[id].mag) s.weapons[id].mag = weaponFor(s, id).mag;
-      if (WEAPONS[s.current].mag) this.sound('reload', s.x, s.y);
+      const id = s.weapons[s.reloading] ? s.reloading : s.current;
+      s.reloading = null;
+      const reloaded = refill(s, id);
+      for (const w in s.weapons) if (s.weapons[w].ammo === Infinity && weaponFor(s, w).mag) refill(s, w);
+      if (reloaded) this.sound('reload', s.x, s.y);
     }
+    if (input.reload) reload(s);
+    // Dropping the weapon in hand (Defuse: G, to give it to a teammate).
+    if (input.drop) this.rules.drop?.(this, s);
     if (input.gadget && this.classesOn) useGadget(this, s);
     if (input.plank != null) s.buildPlank = !!input.plank; // (the Builder: a plank rather than a wall)
     if (input.fire) fire(this, s, input);
@@ -570,8 +580,8 @@ export class Game {
 
   kill(victim, killer, weapon, opts = {}) {
     if (!victim.alive) return;
-    // A fall or burn soon after being hurt counts for whoever hurt you.
-    if ((!killer || killer === victim) && weapon !== 'Kamikaze' && victim.lastHurtBy && this.tick - victim.lastHurtTick < RULES.creditFallTicks) {
+    // A fall or burn soon after being hurt counts for whoever hurt you (not Defuse's bomb going off).
+    if ((!killer || killer === victim) && weapon !== 'Kamikaze' && !opts.world && victim.lastHurtBy && this.tick - victim.lastHurtTick < RULES.creditFallTicks) {
       killer = victim.lastHurtBy;
       weapon = weapon || victim.lastHurtWeapon;
     }
@@ -598,13 +608,14 @@ export class Game {
       if (!killer.isBot) this.notify(killer, `You ${how} ${victim.name}${opts.headshot ? ' (headshot!)' : ''}`);
       if (!victim.isBot) this.notify(victim, `You were fragged by ${killer.name}`);
     } else {
-      // Kamikaze is meant to kill you, so it doesn't cost a frag.
-      if (weapon !== 'Kamikaze') {
+      // Kamikaze is meant to kill you, so it doesn't cost a frag (nor does being caught by Defuse's bomb).
+      if (weapon !== 'Kamikaze' && !opts.world) {
         victim.frags--;
         if (teamFrags) this.teamScore[victim.team]--;
       }
       if (opts.fall) { this.stats.falls++; text = `${victim.name} fell off the map`; }
       else if (weapon === 'Kamikaze') text = `${victim.name} went out with a bang`;
+      else if (opts.world) text = `${victim.name} was caught in the blast`;
       else if (opts.selfDestruct) { this.stats.suicides++; text = `${victim.name} self-destructed`; }
       else { this.stats.suicides++; text = `${victim.name} blew themselves up`; }
     }
@@ -613,9 +624,10 @@ export class Game {
     // Classes on: bots choose where to respawn (their beacon, now and then a teammate's).
     if (this.classesOn && victim.isBot) victim.deployAt = botDeploy(this, victim, this.rng);
 
-    // Drop the weapon in hand.
+    // Drop the weapon in hand (the mode can choose what's dropped: Defuse drops your best gun and the bomb).
     const inv = victim.weapons[victim.current];
-    if (this.rules.dropWeapons && victim.current !== 'Platinum' && WEAPONS[victim.current] && !WEAPONS[victim.current].hidden &&
+    if (this.rules.dropOnDeath) this.rules.dropOnDeath(this, victim, opts);
+    else if (this.rules.dropWeapons && victim.current !== 'Platinum' && WEAPONS[victim.current] && !WEAPONS[victim.current].hidden &&
         inv && inv.ammo > 0 && inv.ammo !== Infinity && !opts.fall) {
       this.pickups.drop(victim.current, inv.ammo, victim.x, victim.y - 8, victim.body.vx * 0.5);
     }

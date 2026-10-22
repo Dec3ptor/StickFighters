@@ -23,7 +23,13 @@
 //   build     the Engineer's Builder: put up a block, or repair the map, where you aim (building.js)
 //
 // Payloads (on thrown/rocket/strike bombs): blast {radius, damage, knock},
-// cluster {count, ...bomblet}, fire {count, life}, gas {count, life, dpt}.
+// cluster {count, ...bomblet}, fire {count, life}, gas {count, life, dpt},
+// flash {radius, duration} (blinds whoever sees it), smoke {radius, life} (a cloud to hide in).
+//
+// `cs`: the weapon in the Defuse mode's shop (defuse.js): its price and kill reward
+// (money), a magazine and spare ammo (mag, reserve, reload: guns reload there, from
+// what you carry), dmg (damage times this there), side ('T' or 'CT' only), max (how
+// many you can carry: grenades). `shop`: only in that shop (not on maps or in crates).
 
 const deg = d => (d * Math.PI) / 180;
 
@@ -50,6 +56,16 @@ export const WEAPONS = {
     mag: 8, reload: 70, infinite: true, sound: 'pistol',
     look: { type: 'pistol', length: 10, color: '#666' },
     bot: { near: 0, far: 700, score: 2, value: 0 },
+    cs: { price: 200, reward: 300, mag: 12, reserve: 72, reload: 80, dmg: 1.3 },
+  },
+  // Cut from the original game (an older weapon table has it): a very accurate pistol.
+  Beretta: {
+    name: 'Beretta', short: 'Beretta', slot: 0, kind: 'bullet',
+    rof: 20, damage: 20, knock: 1.2, spread: deg(0.8), speed: 32, range: 760,
+    mag: 15, reload: 80, infinite: true, sound: 'pistol',
+    look: { type: 'pistol', length: 12, color: '#3c3c3c' },
+    bot: { near: 0, far: 720, score: 3, value: 1 },
+    cs: { price: 300, reward: 300, mag: 15, reserve: 60, reload: 90, dmg: 1.4 },
   },
   Magnum: {
     name: 'Magnum', short: 'Magnum', slot: 0, kind: 'bullet',
@@ -57,6 +73,7 @@ export const WEAPONS = {
     ammo: 12, maxAmmo: 24, sound: 'magnum',
     look: { type: 'pistol', length: 14, color: '#9a9a9a' },
     bot: { near: 0, far: 850, score: 5, value: 3 },
+    cs: { price: 700, reward: 300, mag: 7, reserve: 35, reload: 110, dmg: 1.4 },
   },
 
   // ---- 2: Automatics -------------------------------------------------------------
@@ -66,6 +83,16 @@ export const WEAPONS = {
     ammo: 100, maxAmmo: 200, sound: 'uzi',
     look: { type: 'smg', length: 13, color: '#444' },
     bot: { near: 0, far: 450, score: 6, value: 3 },
+    cs: { price: 1050, reward: 600, mag: 30, reserve: 100, reload: 110, dmg: 1.35 },
+  },
+  // Cut from the original game: a quick, steady submachine gun.
+  MP5K: {
+    name: 'MP5K', short: 'MP5K', slot: 1, kind: 'bullet',
+    rof: 6, damage: 10, knock: 0.5, spread: deg(3.2), speed: 31, range: 640,
+    ammo: 60, maxAmmo: 150, sound: 'uzi',
+    look: { type: 'smg', length: 15, color: '#2c2f33' },
+    bot: { near: 0, far: 500, score: 6, value: 3 },
+    cs: { price: 1500, reward: 600, mag: 30, reserve: 120, reload: 130, dmg: 1.45 },
   },
   Minigun: {
     name: 'Minigun', short: 'Minigun', slot: 1, kind: 'bullet',
@@ -73,6 +100,7 @@ export const WEAPONS = {
     ammo: 300, maxAmmo: 500, heavy: 0.55, sound: 'minigun',
     look: { type: 'minigun', length: 22, color: '#3a3a3a' },
     bot: { near: 0, far: 500, score: 8, value: 5 },
+    cs: { price: 5200, reward: 300, mag: 100, reserve: 200, reload: 300, dmg: 1.3 },
   },
 
   // ---- 3: Rifles -----------------------------------------------------------------
@@ -82,6 +110,16 @@ export const WEAPONS = {
     ammo: 60, maxAmmo: 150, sound: 'rifle',
     look: { type: 'rifle', length: 20, color: '#555' },
     bot: { near: 0, far: 800, score: 7, value: 4 },
+    cs: { price: 3100, reward: 300, mag: 30, reserve: 90, reload: 160, dmg: 1.6, side: 'CT' },
+  },
+  // Cut from the original game: hits harder than the M4, fires a little slower and kicks more.
+  AK47: {
+    name: 'AK-47', short: 'AK-47', slot: 2, kind: 'bullet',
+    rof: 11, damage: 15, knock: 1.4, spread: deg(3), speed: 34, range: 850,
+    ammo: 40, maxAmmo: 120, sound: 'ak',
+    look: { type: 'ak', length: 20, color: '#4a4a4a' },
+    bot: { near: 0, far: 800, score: 7, value: 4 },
+    cs: { price: 2700, reward: 300, mag: 30, reserve: 90, reload: 150, dmg: 1.65, side: 'T' },
   },
   Longbow: {
     name: 'Longbow', short: 'Bow', slot: 2, kind: 'arrow',
@@ -98,6 +136,7 @@ export const WEAPONS = {
     ammo: 8, maxAmmo: 24, sound: 'shotgun',
     look: { type: 'shotgun', length: 19, color: '#5a4a3a' },
     bot: { near: 0, far: 280, score: 10, value: 4 },
+    cs: { price: 1100, reward: 900, mag: 8, reserve: 32, reload: 170, dmg: 1.3 },
   },
 
   // ---- 5: Precision --------------------------------------------------------------
@@ -107,6 +146,8 @@ export const WEAPONS = {
     ammo: 10, maxAmmo: 20, sound: 'sniper', laser: true, zoom: true,
     look: { type: 'sniper', length: 24, color: '#333' },
     bot: { near: 300, far: 2200, score: 9, value: 4 },
+    // (In the shop it's a heavy sniper rifle: one shot to the body, armour or not.)
+    cs: { price: 4750, reward: 100, mag: 5, reserve: 30, reload: 200, dmg: 3 },
   },
   MagicBullet: {
     name: 'Magic Bullet', short: 'Magic', slot: 4, kind: 'seeker',
@@ -152,6 +193,35 @@ export const WEAPONS = {
     bot: { near: 200, far: 420, score: 10, value: 9, lob: true },
   },
 
+  // The Defuse mode's grenades (shop only): a frag grenade, a flashbang and a smoke grenade.
+  HEGrenade: {
+    name: 'HE Grenade', short: 'HE', slot: 5, kind: 'thrown', shop: true,
+    rof: 45, speed: 8.5, gravity: 0.25, bounce: 0.4, fuse: 96, spread: deg(1), range: 500,
+    blast: { radius: 90, damage: 98, knock: 8 },
+    ammo: 1, maxAmmo: 1, sound: 'throw', sprite: 'hegrenade',
+    look: { type: 'held', sprite: 'hegrenade' },
+    bot: { near: 130, far: 450, score: 7, value: 2, lob: true },
+    cs: { price: 300, reward: 300, max: 1 },
+  },
+  Flashbang: {
+    name: 'Flashbang', short: 'Flash', slot: 5, kind: 'thrown', shop: true,
+    rof: 40, speed: 8.5, gravity: 0.25, bounce: 0.4, fuse: 90, spread: deg(1), range: 500,
+    flash: { radius: 560, duration: 210 },
+    ammo: 1, maxAmmo: 2, sound: 'throw', sprite: 'flashbang', burst: 'flashbang',
+    look: { type: 'held', sprite: 'flashbang' },
+    bot: { score: 0, value: 1 },
+    cs: { price: 200, reward: 300, max: 2 },
+  },
+  SmokeGrenade: {
+    name: 'Smoke Grenade', short: 'Smoke', slot: 5, kind: 'thrown', shop: true,
+    rof: 40, speed: 8, gravity: 0.25, bounce: 0.3, fuse: 100, spread: deg(1), range: 480,
+    smoke: { radius: 100, life: 1080 },
+    ammo: 1, maxAmmo: 1, sound: 'throw', sprite: 'smokegrenade', burst: 'smoke',
+    look: { type: 'held', sprite: 'smokegrenade' },
+    bot: { score: 0, value: 1 },
+    cs: { price: 300, reward: 300, max: 1 },
+  },
+
   // ---- 7: Rockets ----------------------------------------------------------------
   Bazooka: {
     name: 'Bazooka', short: 'Bazooka', slot: 6, kind: 'rocket',
@@ -194,6 +264,7 @@ export const WEAPONS = {
     ammo: 3, maxAmmo: 6, sound: 'throw', sprite: 'petrol', burst: 'smash',
     look: { type: 'held', sprite: 'petrol' },
     bot: { near: 90, far: 420, score: 8, value: 4, lob: true },
+    cs: { price: 400, reward: 300, max: 1 },
   },
   Skunk: {
     name: 'Skunk', short: 'Skunk', slot: 7, kind: 'thrown',
@@ -314,6 +385,14 @@ export const WEAPONS = {
     look: { type: 'prod', length: 14, color: '#8a6a3a' },
     bot: { near: 0, far: 22, score: 3, value: 0 },
   },
+  // The Defuse mode's knife (everyone has one there): a stab in the back does triple damage.
+  Knife: {
+    name: 'Knife', short: 'Knife', slot: 10, kind: 'melee', shop: true,
+    rof: 30, reach: 22, damage: 34, backstab: 3, knock: 1.5, lift: 0.5, ammo: Infinity, sound: 'knife', silent: true,
+    look: { type: 'knife', length: 10, color: '#a8adb3' },
+    bot: { near: 0, far: 22, score: 9, value: 0 },
+    cs: { reward: 1500 },
+  },
   BaseballBat: {
     name: 'Baseball Bat', short: 'Bat', slot: 10, kind: 'melee',
     rof: 45, reach: 26, damage: 30, knock: 15, lift: 4, ammo: 4, maxAmmo: 6, sound: 'bat',
@@ -341,6 +420,14 @@ export const WEAPONS = {
     look: { type: 'pistol', length: 11, color: '#b8962e' },
     bot: { near: 0, far: 900, score: 9, value: 0 },
   },
+  // The Defuse mode's bomb: one attacker carries it, and plants it at a bomb site by
+  // holding E (or holding fire with it in hand) there (defuse.js does the rest).
+  C4: {
+    name: 'C4 Bomb', short: 'C4', slot: 8, kind: 'plant', hidden: true,
+    rof: 30, ammo: 1, maxAmmo: 1, sound: 'click',
+    look: { type: 'held', sprite: 'c4' },
+    bot: { score: 0, value: 0 },
+  },
   // The Engineer's tool (classes on): ammo is blocks, which come back over time (gadgets.js).
   Builder: {
     name: 'Builder', short: 'Builder', slot: 9, kind: 'build', hidden: true, tool: true,
@@ -355,14 +442,15 @@ for (const id in WEAPONS) WEAPONS[id].id = id;
 /** Weapons in slot order (and table order within a slot). */
 export const WEAPON_ORDER = Object.keys(WEAPONS).filter(id => !WEAPONS[id].hidden).sort((a, b) => WEAPONS[a].slot - WEAPONS[b].slot);
 
-/** Weapons that can be placed on maps, given out at spawn, or found in crates. */
-export const PICKUP_WEAPONS = WEAPON_ORDER.filter(id => id !== 'Platinum' && id !== 'Prod');
+/** Weapons that can be placed on maps, given out at spawn, or found in crates (not the Defuse mode's shop-only ones). */
+export const PICKUP_WEAPONS = WEAPON_ORDER.filter(id => id !== 'Platinum' && id !== 'Prod' && !WEAPONS[id].shop);
 
 /** Everyone spawns with these. */
 export const STARTING_WEAPONS = ['Platinum', 'Prod'];
 
 /** Weapons that don't take over your hands when you pick them up (tools you choose to use). */
-export const NO_AUTO_SWITCH = new Set(['Teleport', 'NinjaRope', 'Kamikaze', 'Dynamite', 'Mine', 'Earthquake', 'Prod', 'BattleAxe', 'BaseballBat', 'FirePunch', 'Builder']);
+export const NO_AUTO_SWITCH = new Set(['Teleport', 'NinjaRope', 'Kamikaze', 'Dynamite', 'Mine', 'Earthquake', 'Prod', 'BattleAxe', 'BaseballBat', 'FirePunch', 'Builder',
+  'Knife', 'HEGrenade', 'Flashbang', 'SmokeGrenade', 'C4']);
 
 /** Headshots with bullets and shotgun pellets do double damage (the sniper rifle and bow have their own). */
 export const HEADSHOT_MULTIPLIER = 2;
@@ -372,7 +460,7 @@ export const slotWeapons = slot => WEAPON_ORDER.filter(id => WEAPONS[id].slot ==
 
 /** Supply crates: how likely each weapon is (rarer for the big ones). */
 export const CRATE_WEIGHTS = {
-  Magnum: 6, Uzi: 6, Minigun: 4, M4: 6, Longbow: 5, Shotgun: 6, SR: 4, MagicBullet: 3,
+  Magnum: 6, Beretta: 4, Uzi: 6, MP5K: 5, Minigun: 4, M4: 6, AK47: 5, Longbow: 5, Shotgun: 6, SR: 4, MagicBullet: 3,
   GrenadeLauncher: 5, ClusterBomb: 5, BananaBomb: 3, HolyHandGrenade: 1.5,
   Bazooka: 4, HomingMissile: 3, Mortar: 4, Flamer: 4, PetrolBomb: 5, Skunk: 4,
   Sheep: 4, SuperSheep: 2, OldWoman: 3, MadCow: 2, Dynamite: 4, Mine: 5,

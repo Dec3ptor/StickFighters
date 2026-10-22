@@ -30,7 +30,8 @@ export const SAMPLES = {
 
 // Sounds that aren't placed in the world (always full volume, centred).
 const UI_SOUNDS = new Set(['hitmarker', 'gameover', 'click', 'menuMove', 'menuSelect', 'levelUp', 'chat',
-  'objGood', 'objBad', 'flagTaken', 'flagReturned', 'captured', 'alarm', 'pointTaken', 'pointLost', 'hillMoved', 'armed', 'disarmed', 'destroyed', 'sector']);
+  'objGood', 'objBad', 'flagTaken', 'flagReturned', 'captured', 'alarm', 'pointTaken', 'pointLost', 'hillMoved', 'armed', 'disarmed', 'destroyed', 'sector',
+  'buy', 'planted', 'defused', 'roundStart', 'roundStartFreeze', 'roundWin', 'roundLose', 'flashRing']);
 
 export class SoundSystem {
   constructor(base = 'sounds/') {
@@ -274,4 +275,34 @@ const SOUNDS = {
   disarmed: (a, o, t) => { a.tone(o, t, { dur: 0.3, from: 1200, to: 400, type: 'triangle', gain: 0.2 }); return 0.3; },
   destroyed: (a, o, t) => { [392, 523, 659].forEach((f, i) => a.tone(o, t + i * 0.1, { dur: 0.2, from: f, type: 'square', gain: 0.07 })); return 0.4; },
   sector: (a, o, t) => { [392, 494, 587, 784].forEach((f, i) => a.tone(o, t + i * 0.14, { dur: 0.22, from: f, type: 'triangle', gain: 0.2 })); return 0.8; },
+
+  // ---- Defuse (Counter-Strike style) ----
+  ak: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.11, freq: 1500, q: 0.5, gain: 1 }); a.tone(o, t, { dur: 0.08, from: 120, to: 45, gain: 0.55 }); return 0.12; },
+  knife: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.1, freq: 5200, sweepTo: 2600, q: 2, gain: 0.35 }); return 0.11; },
+  // A flashbang: a sharp bang. Anyone it blinds hears a ringing (flashRing).
+  flashbang: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.35, freq: 2600, q: 0.4, gain: 1.4, attack: 0.001 }); a.tone(o, t, { dur: 0.2, from: 140, to: 50, gain: 0.8 }); return 0.4; },
+  flashRing: (a, o, t) => { a.tone(o, t, { dur: 2.6, from: 3500, to: 3300, gain: 0.07, attack: 0.02 }); return 2.6; },
+  smoke: (a, o, t) => { a.noiseBurst(o, t, { dur: 1.6, freq: 3200, type: 'highpass', gain: 0.35, attack: 0.1 }); return 1.6; },
+  buy: (a, o, t) => { a.tone(o, t, { dur: 0.05, from: 1600, type: 'square', gain: 0.05 }); a.noiseBurst(o, t + 0.05, { dur: 0.05, freq: 3500, q: 3, gain: 0.25 }); return 0.12; },
+  planting: (a, o, t) => { for (let i = 0; i < 6; i++) a.tone(o, t + i * 0.12, { dur: 0.05, from: [1200, 1500, 1100, 1400, 1250, 1600][i], type: 'square', gain: 0.04 }); return 0.75; },
+  planted: (a, o, t) => {
+    a.tone(o, t, { dur: 0.12, from: 2000, type: 'square', gain: 0.05 });
+    [330, 247].forEach((f, i) => a.tone(o, t + 0.2 + i * 0.25, { dur: 0.32, from: f, type: 'sawtooth', gain: 0.07 }));
+    return 0.8;
+  },
+  bombBeep: (a, o, t) => { a.tone(o, t, { dur: 0.08, from: 2600, type: 'square', gain: 0.06 }); return 0.09; },
+  defusing: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.06, freq: 2500, q: 5, gain: 0.35 }); a.noiseBurst(o, t + 0.1, { dur: 0.05, freq: 1900, q: 5, gain: 0.3 }); return 0.17; },
+  defused: (a, o, t) => { [784, 988, 1175].forEach((f, i) => a.tone(o, t + i * 0.1, { dur: 0.2, from: f, type: 'triangle', gain: 0.22 })); return 0.5; },
+  bombBlast: (a, o, t) => {
+    a.noiseBurst(o, t, { dur: 2.2, freq: 500, type: 'lowpass', q: 0.3, gain: 2, sweepTo: 60 });
+    a.tone(o, t, { dur: 1.6, from: 70, to: 22, gain: 1 });
+    return 2.2;
+  },
+  roundStartFreeze: (a, o, t) => { a.tone(o, t, { dur: 0.25, from: 523, type: 'triangle', gain: 0.12 }); return 0.25; },
+  roundStart: (a, o, t) => { [523, 659, 784].forEach((f, i) => a.tone(o, t + i * 0.07, { dur: 0.14, from: f, type: 'square', gain: 0.06 })); return 0.3; },
+  roundWin: (a, o, t) => {
+    [523, 659, 784, 1046].forEach((f, i) => a.tone(o, t + i * 0.11, { dur: i === 3 ? 0.55 : 0.15, from: f, type: 'triangle', gain: 0.24 }));
+    return 0.9;
+  },
+  roundLose: (a, o, t) => { [523, 466, 392].forEach((f, i) => a.tone(o, t + i * 0.16, { dur: i === 2 ? 0.5 : 0.18, from: f, type: 'triangle', gain: 0.22 })); return 0.8; },
 };

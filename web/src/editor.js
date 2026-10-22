@@ -25,10 +25,13 @@ const TOOLS = [
   { id: 'point', label: 'Capture point', key: 'KeyC', short: 'C', hint: 'Conquest: drag to draw a capture point. Points are lettered A, B, C… (change a letter on the right).' },
   { id: 'flag', label: 'Flag', key: 'KeyB', short: 'B', hint: "Capture the flag: click to place a team's flag stand. Pick blue or red on the right." },
   { id: 'mcom', label: 'M-COM', key: 'KeyR', short: 'R', hint: 'Rush: click to place an M-COM station for blue to blow up. Sector 1 falls first: pick the sector on the right.' },
+  { id: 'site', label: 'Bomb site', key: 'KeyX', short: 'X', hint: "Defuse: drag to draw a bomb site, where the attackers (blue's spawn points) plant the bomb. Sites are lettered A and B." },
 ];
 const ITEM_TOOLS = new Set(['weapon', 'health', 'armour', 'jetpack']);
-const AREA_TOOLS = new Set(['hill', 'point']);
-const OBJECTIVE_NAMES = { hill: 'Hill', point: 'Capture point', flag: 'Flag', mcom: 'M-COM' };
+const AREA_TOOLS = new Set(['hill', 'point', 'site']);
+const OBJECTIVE_NAMES = { hill: 'Hill', point: 'Capture point', flag: 'Flag', mcom: 'M-COM', site: 'Bomb site' };
+// (Capture points and bomb sites have letters.)
+const LETTERED = new Set(['point', 'site']);
 const SECTORS = [1, 2, 3, 4, 5, 6, 7, 8];
 /** Platforms, hills and capture points are boxes; everything else is a point. */
 const isBox = o => o && o.left !== undefined;
@@ -317,7 +320,7 @@ export class Editor {
     const copy = JSON.parse(JSON.stringify(o));
     if (isBox(copy)) { copy.left += step * 2; copy.right += step * 2; copy.top += step * 2; copy.bottom += step * 2; }
     else { copy.x += step * 2; }
-    if (copy.type === 'point') copy.label = this.nextLabel();
+    if (LETTERED.has(copy.type)) copy.label = this.nextLabel(copy.type);
     const list = this.listOf(this.sel.kind);
     const twin = this.selectedTwin();
     list.push(copy);
@@ -338,9 +341,9 @@ export class Editor {
     this.changed();
   }
 
-  /** The next free capture point letter. */
-  nextLabel() {
-    const used = new Set(this.map.objectives.filter(o => o.type === 'point').map(o => o.label));
+  /** The next free capture point (or bomb site) letter. */
+  nextLabel(type = 'point') {
+    const used = new Set(this.map.objectives.filter(o => o.type === type).map(o => o.label));
     for (let i = 0; i < 26; i++) if (!used.has(String.fromCharCode(65 + i))) return String.fromCharCode(65 + i);
     return 'Z';
   }
@@ -407,17 +410,17 @@ export class Editor {
     if (kind === 'platform') return { ...o, left: this.mx(o.right), right: this.mx(o.left) };
     if (kind === 'spawn') return { ...o, x: this.mx(o.x), team: this.mirror.swapTeams ? 3 - o.team : o.team };
     if (kind === 'objective') {
-      if (isBox(o)) return { ...o, left: this.mx(o.right), right: this.mx(o.left), ...(o.type === 'point' ? { label: this.mirrorLabel(o) } : {}) };
+      if (isBox(o)) return { ...o, left: this.mx(o.right), right: this.mx(o.left), ...(LETTERED.has(o.type) ? { label: this.mirrorLabel(o) } : {}) };
       if (o.type === 'flag') return { ...o, x: this.mx(o.x), team: 3 - o.team };
     }
     return { ...o, x: this.mx(o.x) };
   }
 
-  /** A mirrored capture point's letter: its twin's if it has one, else the next free one. */
+  /** A mirrored capture point's (or bomb site's) letter: its twin's if it has one, else the next free one. */
   mirrorLabel(o) {
     const l = this.mx(o.right), r = this.mx(o.left);
-    const twin = this.map.objectives.find(q => q.type === 'point' && Math.abs(q.left - l) < 0.6 && Math.abs(q.right - r) < 0.6 && Math.abs(q.top - o.top) < 0.6);
-    return twin ? twin.label : this.nextLabel();
+    const twin = this.map.objectives.find(q => q.type === o.type && Math.abs(q.left - l) < 0.6 && Math.abs(q.right - r) < 0.6 && Math.abs(q.top - o.top) < 0.6);
+    return twin ? twin.label : this.nextLabel(o.type);
   }
 
   /** Index of the object mirroring list[i]: i itself if it sits across the line, -1 if it has no twin. */
@@ -452,7 +455,7 @@ export class Editor {
       } else o.x = this.mirror.x;
       return;
     }
-    list[twin] = { ...this.mirrored(kind, o), ...(o.type === 'point' ? { label: list[twin].label } : {}) };
+    list[twin] = { ...this.mirrored(kind, o), ...(LETTERED.has(o.type) ? { label: list[twin].label } : {}) };
   }
 
   /** Put the mirror line in the middle of the map (on the grid). */
@@ -514,9 +517,9 @@ export class Editor {
       if (a <= m && b >= m && isBox(o)) { obs.push({ ...o, left: Math.min(a, this.mx(b)), right: Math.max(b, this.mx(a)) }); continue; }
       if (fromLeft ? b <= m : a >= m) obs.push(o, this.mirrored('objective', o));
     }
-    // Flags: one per team. Capture points: lettered left to right again.
+    // Flags: one per team. Capture points and bomb sites: lettered left to right again.
     this.map.objectives = obs.filter((o, i) => o.type !== 'flag' || obs.findIndex(q => q.type === 'flag' && q.team === o.team) === i);
-    this.map.objectives.filter(o => o.type === 'point').sort((a, b) => a.left - b.left).forEach((o, i) => { o.label = String.fromCharCode(65 + i); });
+    for (const type of LETTERED) this.map.objectives.filter(o => o.type === type).sort((a, b) => a.left - b.left).forEach((o, i) => { o.label = String.fromCharCode(65 + i); });
     this.sel = null;
     this.changed();
     this.setStatus(`Copied the ${fromLeft ? 'left' : 'right'} side to the ${fromLeft ? 'right' : 'left'}`);
@@ -703,7 +706,7 @@ export class Editor {
     });
     this.$('#edExport').addEventListener('click', () => this.download(`${this.fileName()}.json`, 'application/json', JSON.stringify(normalizeMap(this.map), null, 2)));
     this.$('#edExportSSM').addEventListener('click', () => {
-      if ((this.map.objectives?.length || this.map.platforms.some(p => p.hard)) && !confirm("The original game's .ssm format can't hold hills, flags, capture points, M-COMs, Rush sectors or indestructible platforms, so those won't be in the file. Export anyway?")) return;
+      if ((this.map.objectives?.length || this.map.platforms.some(p => p.hard)) && !confirm("The original game's .ssm format can't hold hills, flags, capture points, M-COMs, Rush sectors, bomb sites or indestructible platforms, so those won't be in the file. Export anyway?")) return;
       this.download(`${this.fileName()}.ssm`, 'application/octet-stream', encodeSSM(this.map));
     });
     this.$('#edImport').addEventListener('click', () => this.$('#edFile').click());
@@ -713,7 +716,7 @@ export class Editor {
     this.$('#edOpenDialog').addEventListener('close', () => this.canvas.focus());
   }
 
-  /** A hill or capture point drawn from (l, t) to (r, b): standing on the floor below, if there's one. */
+  /** A hill, capture point or bomb site drawn from (l, t) to (r, b): standing on the floor below, if there's one. */
   addArea(l, t, r, b) {
     if (r - l < 40) { const c = (l + r) / 2; l = c - 80; r = c + 80; }      // a click: a standard size
     if (b - t < 40) t = b - 90;
@@ -723,7 +726,7 @@ export class Editor {
     }
     this.remember();
     const o = { type: this.tool, left: l, top: t, right: r, bottom: b };
-    if (this.tool === 'point') o.label = this.nextLabel();
+    if (LETTERED.has(this.tool)) o.label = this.nextLabel(this.tool);
     const m = this.mirror.x;
     if (this.mirror.on && l < m && r > m) { o.left = Math.min(l, this.mx(r)); o.right = Math.max(r, this.mx(l)); }
     this.map.objectives.push(o);
@@ -822,9 +825,9 @@ export class Editor {
     } else if (o && this.sel.kind === 'objective') {
       if (isBox(o)) {
         html += `<h3>${OBJECTIVE_NAMES[o.type]}</h3>
-          ${o.type === 'point' ? `<label class="ed-field">Letter<input id="oLabel" maxlength="2" value="${esc(o.label || '')}" autocomplete="off" spellcheck="false"></label>` : ''}
+          ${LETTERED.has(o.type) ? `<label class="ed-field">Letter<input id="oLabel" maxlength="2" value="${esc(o.label || '')}" autocomplete="off" spellcheck="false"></label>` : ''}
           <div class="ed-grid">${num('oX', 'X', o.left)}${num('oY', 'Y', o.top)}${num('oW', 'Width', o.right - o.left)}${num('oH', 'Height', o.bottom - o.top)}</div>
-          <p class="ed-note">${o.type === 'hill' ? 'King of the hill: a team scores every second it has the hill to itself. With several hills, they take turns.' : 'Conquest: stand in it to capture it. Teams spawn on points they hold.'}</p>`;
+          <p class="ed-note">${o.type === 'hill' ? 'King of the hill: a team scores every second it has the hill to itself. With several hills, they take turns.' : o.type === 'site' ? "Defuse: the attackers plant the bomb here (they start at blue's spawn points, the defenders at red's). Two sites, A and B, is usual." : 'Conquest: stand in it to capture it. Teams spawn on points they hold.'}</p>`;
       } else if (o.type === 'flag') {
         html += `<h3>Flag</h3>${teamButtons('oTeam', o.team)}<div class="ed-grid">${num('oPX', 'X', o.x)}${num('oPY', 'Y', o.y)}</div>
           <p class="ed-note">Capture the flag: one per team, at its base. Y is the floor the stand is on.</p>`;
@@ -862,7 +865,7 @@ export class Editor {
       if (this.tool === 'spawn') html += `<h3>Placing spawn points</h3>${teamButtons('toolTeam', this.team)}<label class="ed-field">Rush sector<select id="toolSpawnSector">${sectorOptions(this.spawnSector, true)}</select></label>`;
       if (this.tool === 'flag') html += `<h3>Placing flags</h3>${teamButtons('toolTeam', this.team)}<p class="ed-note">One flag per team: placing another moves it.</p>`;
       if (this.tool === 'mcom') html += `<h3>Placing M-COMs</h3><label class="ed-field">Sector<select id="toolSector">${sectorOptions(this.sector)}</select></label><p class="ed-note">Blue attacks from sector 1 onward. Two per sector is usual.</p>`;
-      if (AREA_TOOLS.has(this.tool)) html += `<h3>Drawing ${this.tool === 'hill' ? 'hills' : 'capture points'}</h3><p class="ed-note">Drag out the area soldiers stand in, or click for a standard size. It sits on the floor below.</p>`;
+      if (AREA_TOOLS.has(this.tool)) html += `<h3>Drawing ${this.tool === 'hill' ? 'hills' : this.tool === 'site' ? 'bomb sites' : 'capture points'}</h3><p class="ed-note">Drag out the area soldiers stand in, or click for a standard size. It sits on the floor below.</p>`;
       if (this.tool === 'weapon') html += `<h3>Placing weapons</h3><label class="ed-field">Weapon<select id="toolWeapon">${weaponOptions(this.weapon)}</select></label>`;
       if (this.tool === 'pad') html += `<h3>Drawing jump pads</h3><label class="ed-range">Strength <output>${this.padStrength || BOUNCE.standard}</output><input type="range" id="toolBounce" min="${BOUNCE.min}" max="${BOUNCE.max}" step="0.5" value="${this.padStrength || BOUNCE.standard}"></label><p class="ed-note">7 launches a bit higher than a jump (about 220 px); 12 about four times as high (660 px).</p>`;
       const m = this.map, b = computeBounds(m.platforms, m.spawns, m.items, undefined, m.objectives);
@@ -870,7 +873,7 @@ export class Editor {
       const ob = type => m.objectives.filter(o => o.type === type).length;
       const sectors = new Set(m.objectives.filter(o => o.type === 'mcom').map(o => o.sector)).size;
       html += `<h3>Map</h3><p class="ed-stats">${count(m.platforms.length, 'platform')}${hardCount ? ` (${hardCount} indestructible)` : ''} &middot; ${count(m.spawns.length, 'spawn')} (${blue} blue, ${m.spawns.length - blue} red) &middot; ${count(m.items.length, 'pickup')}<br>${Math.round(b.right - b.left)} &times; ${Math.round(b.bottom - b.top)} px</p>
-        <p class="ed-stats">Objectives: ${count(ob('hill'), 'hill')} &middot; ${count(ob('flag'), 'flag')} &middot; ${count(ob('point'), 'capture point')} &middot; ${count(ob('mcom'), 'M-COM')}${sectors ? ` in ${count(sectors, 'sector')}` : ''}</p>
+        <p class="ed-stats">Objectives: ${count(ob('hill'), 'hill')} &middot; ${count(ob('flag'), 'flag')} &middot; ${count(ob('point'), 'capture point')} &middot; ${count(ob('mcom'), 'M-COM')}${sectors ? ` in ${count(sectors, 'sector')}` : ''} &middot; ${count(ob('site'), 'bomb site')}</p>
         <p class="ed-note">Modes whose objectives you leave out get some worked out from the layout.</p>`;
       html += `<label class="ed-field">Look in Remastered<select id="mapTheme"><option value="">Picked from the map's name</option>${Object.entries(THEMES).map(([id, t]) => `<option value="${id}"${m.theme === id ? ' selected' : ''}>${t.name}</option>`).join('')}</select></label>`;
       html += this.loadoutPanel();
@@ -947,7 +950,7 @@ export class Editor {
     on('oH', 'change', edit(el => { o.bottom = o.top + Math.max(16, +el.value || 16); }));
     on('oPX', 'change', edit(el => { o.x = +el.value || 0; }));
     on('oPY', 'change', edit(el => { o.y = +el.value || 0; }));
-    on('oLabel', 'change', edit(el => { o.label = el.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || this.nextLabel(); }));
+    on('oLabel', 'change', edit(el => { o.label = el.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || this.nextLabel(o.type); }));
     on('oSector', 'change', edit(el => { o.sector = +el.value || 1; this.sector = o.sector; }));
     for (const r of this.root.querySelectorAll('input[name=oTeam]')) r.addEventListener('change', () => {
       this.remember();
@@ -1251,7 +1254,7 @@ export class Editor {
     const dr = this.drag;
     if (dr?.mode === 'create') {
       const l = Math.min(dr.x0, dr.x1), t = Math.min(dr.y0, dr.y1);
-      ctx.fillStyle = this.tool === 'pad' ? 'rgba(124,154,61,0.25)' : this.tool === 'hill' ? 'rgba(150,70,200,0.18)' : this.tool === 'point' ? 'rgba(215,170,20,0.2)' : 'rgba(0,0,0,0.08)';
+      ctx.fillStyle = this.tool === 'pad' ? 'rgba(124,154,61,0.25)' : this.tool === 'hill' ? 'rgba(150,70,200,0.18)' : this.tool === 'point' ? 'rgba(215,170,20,0.2)' : this.tool === 'site' ? 'rgba(200,80,30,0.18)' : 'rgba(0,0,0,0.08)';
       ctx.fillRect(l, t, Math.abs(dr.x1 - dr.x0), Math.abs(dr.y1 - dr.y0));
       ctx.setLineDash([4 * px, 3 * px]);
       ctx.strokeStyle = '#111';
@@ -1354,11 +1357,11 @@ export class Editor {
   }
 }
 
-/** A hill, capture point, flag stand or M-COM, as the map maker shows them. */
+/** A hill, capture point, bomb site, flag stand or M-COM, as the map maker shows them. */
 function drawObjective(ctx, o, px) {
   ctx.save();
   if (isBox(o)) {
-    const color = o.type === 'hill' ? '150,70,200' : '200,150,10';
+    const color = o.type === 'hill' ? '150,70,200' : o.type === 'site' ? '200,80,30' : '200,150,10';
     ctx.fillStyle = `rgba(${color},0.12)`;
     ctx.fillRect(o.left, o.top, o.right - o.left, o.bottom - o.top);
     ctx.setLineDash([6 * px, 4 * px]);
@@ -1369,7 +1372,7 @@ function drawObjective(ctx, o, px) {
     ctx.fillStyle = `rgb(${color})`;
     ctx.font = `bold ${o.type === 'hill' ? 11 : 16}px Arial, sans-serif`;
     ctx.textBaseline = 'top';
-    ctx.fillText(o.type === 'hill' ? 'HILL' : o.label || '?', o.left + 4, o.top + 4);
+    ctx.fillText(o.type === 'hill' ? 'HILL' : o.type === 'site' ? `SITE ${o.label || '?'}` : o.label || '?', o.left + 4, o.top + 4);
   } else if (o.type === 'flag') {
     ctx.fillStyle = '#111';
     ctx.fillRect(o.x - 10, o.y - 3, 20, 3);

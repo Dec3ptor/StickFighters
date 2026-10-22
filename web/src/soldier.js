@@ -51,6 +51,8 @@ export class Soldier {
     this.spin = 0;          // minigun spin-up
     this.kamikaze = null;
     this.lastInSlot = {};
+    this.flashTicks = 0;    // blinded by a flashbang for this long (flashFull: how long it was at first)
+    this.flashFull = 0;
   }
 
   get x() { return this.body.x; }
@@ -74,6 +76,8 @@ export class Soldier {
     this.kamikaze = null;
     this.spawnProtect = protectTicks;
     this.burnTicks = 0;
+    this.flashTicks = 0;
+    this.reloading = null;
     this.burnBy = null;
     this.lastHurtBy = null;
     this.lastHurtWeapon = null;
@@ -84,11 +88,13 @@ export class Soldier {
 
   has(id) {
     const w = this.weapons[id];
-    return !!w && (w.ammo > 0 || (WEAPONS[id].mag && w.mag > 0));
+    return !!w && (w.ammo > 0 || w.mag > 0);
   }
 
   select(id) {
     if (id === this.current || !this.has(id) || this.kamikaze) return false;
+    // (Defuse: switching weapons stops a reload, as in Counter-Strike.)
+    if (this.shop && this.reloadTimer > 0) { this.reloadTimer = 0; this.reloading = null; }
     this.current = id;
     this.lastInSlot[WEAPONS[id].slot] = id;
     this.cooldown = Math.max(this.cooldown, 12);

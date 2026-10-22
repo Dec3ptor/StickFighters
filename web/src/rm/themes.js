@@ -217,6 +217,7 @@ export const MAP_THEMES = {
   'Sniping Grounds': 'arctic', 'Fatality Zone': 'night', 'Hells Steeple': 'foundry', 'Two Towers': 'castle',
   'Crossfire': 'desert', 'Pit Stop': 'hangar', 'Summit': 'arctic', 'Twin Keeps': 'castle', 'Foundry': 'foundry',
   'Skyline': 'dusk', 'Citadel': 'castle', 'Frontline': 'warzone', 'Harbor': 'harbor', 'Valley': 'jungle',
+  'Kasbah': 'desert',
 };
 
 export const THEME_IDS = Object.keys(THEMES);

@@ -119,7 +119,12 @@ export function fire(game, s, input = {}) {
 
   if (def.mag) {
     if (s.reloadTimer > 0) return false;
-    if (inv.mag <= 0) { s.reloadTimer = def.reload; return false; }
+    if (inv.mag <= 0) {
+      // Empty: reload from the spare ammo (endless for the pistol), or swap to something else.
+      if (inv.ammo > 0) startReload(s, id, def);
+      else s.selectBest();
+      return false;
+    }
   } else if (inv.ammo <= 0) {
     s.selectBest();
     return false;
@@ -130,7 +135,7 @@ export function fire(game, s, input = {}) {
 
   if (def.mag) {
     inv.mag--;
-    if (inv.mag === 0) s.reloadTimer = def.reload;
+    if (inv.mag === 0 && inv.ammo > 0) startReload(s, id, def);
   } else if ((!game.rules.infiniteAmmo || def.tool) && inv.ammo !== Infinity) {
     // (Blocks for the Builder run out even in modes with endless ammo.)
     inv.ammo--;
@@ -148,6 +153,33 @@ export function fire(game, s, input = {}) {
 }
 
 const GUN_KINDS = new Set(['bullet', 'rail', 'rocket', 'seeker']);
+
+/** Start reloading weapon `id` (def: as the soldier has it). */
+function startReload(s, id, def) {
+  s.reloadTimer = def.reload;
+  s.reloading = id;
+}
+
+/**
+ * Reload the weapon in hand now (R), if its magazine isn't full and there's spare
+ * ammo for it. Returns true if a reload started.
+ */
+export function reload(s) {
+  const id = s.current, def = weaponFor(s, id), inv = s.weapons[id];
+  if (!def?.mag || !inv || s.reloadTimer > 0 || inv.mag >= def.mag || !(inv.ammo > 0)) return false;
+  startReload(s, id, def);
+  return true;
+}
+
+/** A reload has finished: fill weapon `id`'s magazine from its spare ammo. */
+export function refill(s, id) {
+  const def = weaponFor(s, id), inv = s.weapons[id];
+  if (!def?.mag || !inv) return false;
+  const take = Math.max(0, Math.min(def.mag - (inv.mag || 0), inv.ammo));
+  inv.mag = (inv.mag || 0) + take;
+  if (inv.ammo !== Infinity) inv.ammo -= take;
+  return take > 0;
+}
 
 function muzzlePoint(game, s, def) {
   const dx = Math.cos(s.aim), dy = Math.sin(s.aim);
@@ -342,6 +374,9 @@ const LAUNCH = {
     s.anim.swing = 1;
     return true;
   },
+
+  // The Defuse mode's bomb: holding fire plants it at a bomb site (defuse.js), it isn't fired.
+  plant() { return false; },
 };
 
 /** A spot near (x, y) where a soldier fits, inside the map, or null. */
@@ -391,7 +426,9 @@ function meleeHit(game, s, def, id) {
   game.sound(def.sound, o.x, o.y);
   game.fx?.whack(o.x, o.y - 10);
   if (def.uppercut) for (let i = 0; i < 6; i++) game.fx?.fire(o.x + (game.rng() - 0.5) * 8, o.y - 10 + (game.rng() - 0.5) * 8);
-  const amount = def.halve ? Math.max(def.damage, o.health / 2) : def.damage;
+  let amount = def.halve ? Math.max(def.damage, o.health / 2) : def.damage;
+  // A stab in the back (they're facing away from you) does more.
+  if (def.backstab && Math.sign(o.x - s.x || s.facing) === o.facing) amount *= def.backstab;
   if (amount > 0) damage(game, o, amount, s, id, { dirX: dx, dirY: dy, knock: 0, melee: true });
 }
 
@@ -479,7 +516,54 @@ function detonate(game, p, direct = null) {
       });
     }
   }
+  if (c.flash) flash(game, p.x, p.y - 2, c.flash);
+  if (c.smoke) {
+    spawn(game, { kind: 'cloud', sprite: 'cloud', cfg: c.smoke, x: p.x, y: p.y - 10, vx: 0, vy: 0, owner: p.owner, weapon: p.weapon, life: c.smoke.life, r: 8 });
+  }
   if (c.burst) game.sound(c.burst, p.x, p.y);
+}
+
+/**
+ * A flashbang going off at (x, y): everyone who can see it (in a clear line, within
+ * its radius) is blinded for a while: longer the closer they are, and less if they're
+ * facing away. Teammates and the thrower too, as in Counter-Strike.
+ */
+export function flash(game, x, y, f) {
+  game.fx?.bang?.(x, y);
+  game.noise(x, y, 900, null);
+  for (const s of game.near(x - f.radius, y - f.radius, x + f.radius, y + f.radius)) {
+    if (!s.alive) continue;
+    const hx = s.x, hy = s.y - 17;
+    const d = Math.hypot(hx - x, hy - y);
+    if (d > f.radius || !game.map.clearLine(x, y, hx, hy)) continue;
+    const near = Math.sqrt(1 - d / f.radius);
+    const facing = d < 30 || Math.sign(x - s.x) === s.facing ? 1 : 0.4;
+    const ticks = f.duration * near * facing;
+    if (ticks > (s.flashTicks || 0)) { s.flashTicks = ticks; s.flashFull = ticks; }
+    if (ticks > 60 && !s.isBot) game.sound('flashRing', null, null, s.id);
+  }
+}
+
+/** The smoke clouds big enough to hide behind (looked for once an update). */
+function cloudsOf(game) {
+  if (game.cloudsTick !== game.tick || !game.clouds) {
+    game.cloudsTick = game.tick;
+    game.clouds = game.projectiles.filter(p => p.kind === 'cloud' && !p.dead && p.r >= 30);
+  }
+  return game.clouds;
+}
+
+/** True if a smoke cloud is between (x0, y0) and (x1, y1) (it blocks sight, not bullets). */
+export function smokeBetween(game, x0, y0, x1, y1) {
+  for (const p of cloudsOf(game)) {
+    if (p.dead) continue;
+    const r = p.r * 0.85;
+    // Distance from the cloud's middle to the segment.
+    const dx = x1 - x0, dy = y1 - y0, len2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - x0) * dx + (p.y - y0) * dy) / len2));
+    if (Math.hypot(x0 + dx * t - p.x, y0 + dy * t - p.y) < r) return true;
+  }
+  return false;
 }
 
 /** A thrown bomb whose fuse ran out while bouncing off someone: go off now. */
@@ -495,6 +579,14 @@ function sweepHit(game, p, wall) {
 }
 
 const STEP = {
+  /** A smoke grenade's cloud: billows out to full size, stays a while, then thins out. */
+  cloud(game, p) {
+    const c = p.cfg;
+    p.r = Math.min(c.radius, p.r + c.radius / 40);
+    if (p.life < 90) p.r = Math.max(10, p.r - c.radius / 120);
+    return p.life > 0;
+  },
+
   bullet(game, p) {
     const wall = game.map.raycast(p.x, p.y, p.x + p.vx, p.y + p.vy);
     const hit = sweepHit(game, p, wall);
@@ -899,8 +991,10 @@ export function damage(game, target, amount, attacker, weapon, opts = {}) {
   if (!target.alive || target.spawnProtect > 0 || game.over) return;
   if (!canHurt(game, attacker, target)) return;
   let dmg = game.rules.damage(game, amount, attacker, target, weapon);
-  if (target.armour > 0 && !opts.burn) {
-    const soak = Math.min(target.armour, dmg * RULES.armourAbsorb);
+  // (Where the mode has helmets, armour only covers a headshot if you have one.)
+  const covered = !(opts.headshot && game.rules.helmets && !target.helmet);
+  if (target.armour > 0 && !opts.burn && covered) {
+    const soak = Math.min(target.armour, dmg * (game.rules.armourAbsorb ?? RULES.armourAbsorb));
     target.armour -= soak;
     dmg -= soak;
   }

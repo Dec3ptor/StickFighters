@@ -3,10 +3,11 @@
 // items out of reach), plus what the objective modes need:
 //   - both teams can get to every hill, flag, capture point and M-COM
 //   - every Rush sector has somewhere for both teams to spawn
-//   - how long each team takes to get to each objective (to keep it fair)
+//   - how long each team takes to get to each objective (to keep it fair); for
+//     defuse's bomb sites, the defenders (red's spawns) should get there first
 // and, with --play, bot matches in the objective modes to see how they go.
 //
-// Usage: node tools/maps/check.mjs <design or map> [--play koth,ctf,conquest,rush] [--bots 16] [--seconds 120]
+// Usage: node tools/maps/check.mjs <design or map> [--play koth,ctf,conquest,rush,defuse] [--bots 16] [--seconds 120]
 import { loadMap } from './load.mjs';
 import { checkMap } from '../../web/src/custommaps.js';
 import { GameMap } from '../../web/src/map.js';
@@ -29,13 +30,13 @@ function landing(map, x, y) {
 
 /** Spots bots stand on that count as being at an objective. */
 function nodesAt(nav, o) {
-  if (o.type === 'hill' || o.type === 'point') return nav.nodes.filter(n => inZone(n, o));
+  if (o.type === 'hill' || o.type === 'point' || o.type === 'site') return nav.nodes.filter(n => inZone(n, o));
   if (o.type === 'mcom') return nav.nodes.filter(n => inZone(n, mcomZone(o)));
   return nav.nodes.filter(n => Math.abs(n.x - o.x) <= 14 && Math.abs(n.y - (o.y - STAND)) < 3);
 }
 
 const nameOf = o => (o.type === 'hill' ? 'The hill' : o.type === 'flag' ? `The ${o.team === 1 ? 'blue' : 'red'} flag`
-  : o.type === 'point' ? `Point ${o.label}` : `M-COM (sector ${o.sector})`) + ` at ${Math.round(o.x ?? (o.left + o.right) / 2)}, ${Math.round(o.y ?? o.bottom)}`;
+  : o.type === 'point' ? `Point ${o.label}` : o.type === 'site' ? `Bomb site ${o.label}` : `M-COM (sector ${o.sector})`) + ` at ${Math.round(o.x ?? (o.left + o.right) / 2)}, ${Math.round(o.y ?? o.bottom)}`;
 
 /**
  * The objective modes' checks. Returns { problems: [{ level, text }], travel, stats }
@@ -64,10 +65,10 @@ export function checkObjectives(data) {
   const main = [...votes].sort((a, b) => b[1] - a[1])[0]?.[0];
 
   const own = new Set((data.objectives || []).map(o => o.type));
-  for (const type of ['hill', 'flag', 'point', 'mcom']) {
-    if (!own.has(type)) add('note', `No ${type === 'mcom' ? 'M-COM' : type}s placed: the game works some out from the layout.`);
+  for (const type of ['hill', 'flag', 'point', 'mcom', 'site']) {
+    if (!own.has(type)) add('note', `No ${type === 'mcom' ? 'M-COM' : type === 'site' ? 'bomb site' : type}s placed: the game works some out from the layout.`);
   }
-  const all = ['hill', 'flag', 'point', 'mcom'].flatMap(t => objectivesOf(map, t));
+  const all = ['hill', 'flag', 'point', 'mcom', 'site'].flatMap(t => objectivesOf(map, t));
   const at = new Map();
   for (const o of all) {
     const nodes = nodesAt(nav, o).filter(n => comp[n.id] === main);
@@ -82,9 +83,11 @@ export function checkObjectives(data) {
     const near = map.spawns.filter(s => s.team !== f.team && Math.hypot(s.x - f.x, s.y - f.y) < 300).length;
     if (near) add('warning', `${nameOf(f)} has ${near} enemy spawn point${near > 1 ? 's' : ''} within 300 px.`);
   }
-  // Points: labels unique.
+  // Points and bomb sites: labels unique.
   const labels = objectivesOf(map, 'point').map(p => p.label);
   if (new Set(labels).size !== labels.length) add('error', `Capture point labels repeat: ${labels.join(', ')}`);
+  const sites = objectivesOf(map, 'site').map(p => p.label);
+  if (new Set(sites).size !== sites.length) add('error', `Bomb site labels repeat: ${sites.join(', ')}`);
 
   // Rush: sectors in order, with spawns for both teams in each.
   const sectors = [...new Set(objectivesOf(map, 'mcom').map(m => m.sector))].sort((a, b) => a - b);
@@ -99,6 +102,8 @@ export function checkObjectives(data) {
   }
 
   // How far each team's spawn points are from each objective (seconds, roughly).
+  // (Defuse: blue's spawn points are the attackers' and red's the defenders', whichever
+  // team plays them; the defenders should reach every bomb site first.)
   const from = { 1: [], 2: [] };
   for (const { s, n } of spawnNodes) if (comp[n.id] === main) from[s.team]?.push({ s, cost: nav.costsFrom(n).cost });
   const travel = all.map(o => {
@@ -115,6 +120,10 @@ export function checkObjectives(data) {
     }
     return row;
   });
+  for (const row of travel) {
+    if (!row.name.startsWith('Bomb site') || row[1] == null || row[2] == null) continue;
+    if (row[2] >= row[1]) add('warning', `${row.name}: the defenders (red's spawns) don't get there before the attackers (${row[2].toFixed(1)} s vs ${row[1].toFixed(1)} s).`);
+  }
   return { problems, travel, stats: { nodes: nav.nodes.length, links: nav.linkCount, buildMs, nav, map } };
 }
 

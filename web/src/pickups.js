@@ -24,8 +24,8 @@ export class Pickups {
     this.spots = crates ? crateSpots(map) : [];
   }
 
-  /** Drop a weapon where a soldier died. */
-  drop(id, ammo, x, y, vx) {
+  /** Drop a weapon where a soldier died. extra: more about it (Defuse: what's in its magazine, how long it lies there). */
+  drop(id, ammo, x, y, vx, extra = null) {
     // In huge games, the oldest dropped weapons go first (there'd be thousands).
     let dropped = 0;
     for (const it of this.items) if (it.dropped && it.type === 'weapon') dropped++;
@@ -33,7 +33,7 @@ export class Pickups {
       const i = this.items.findIndex(it => it.dropped && it.type === 'weapon');
       this.items.splice(i, 1);
     }
-    this.items.push({ type: 'weapon', weapon: id, ammo, x, y, vx, vy: -MOTION.itemToss, active: true, dropped: true, life: RULES.droppedWeaponTicks, bob: 0 });
+    this.items.push({ type: 'weapon', weapon: id, ammo, x, y, vx, vy: -MOTION.itemToss, active: true, dropped: true, life: RULES.droppedWeaponTicks, bob: 0, ...extra });
   }
 
   update(game) {
@@ -163,6 +163,8 @@ function give(game, s, it) {
       }
       return giveWeapon(game, s, it.weapon, null, it, true);
     case 'weapon':
+      // (Defuse: one gun of each sort, so you only pick one up if you've none of that sort.)
+      if (game.rules.canPickUp && !game.rules.canPickUp(game, s, it)) return false;
       return giveWeapon(game, s, it.weapon, it.ammo, it, false);
     case 'medkit': case 'ammo':
       return takeSupply(game, s, it);
@@ -177,7 +179,8 @@ function giveWeapon(game, s, id, ammo, it, crate) {
   const inv = s.weapons[id];
   const amount = ammo ?? def.ammo;
   if (!inv) {
-    s.weapons[id] = def.mag ? { ammo: Infinity, mag: def.mag } : { ammo: amount };
+    // (A gun with a magazine comes with what was left in it, and its spare ammo: endless for most.)
+    s.weapons[id] = def.mag ? { ammo: it.mag != null ? amount ?? Infinity : def.ammo ?? Infinity, mag: it.mag ?? def.mag } : { ammo: amount };
     // Only take it out if it's an upgrade on the starting pistol (or a melee fallback, or
     // something out of ammo): don't swap out a weapon the player chose to hold.
     const basic = s.current === 'Platinum' || !s.has(s.current) || WEAPONS[s.current]?.kind === 'melee';

@@ -64,6 +64,23 @@ export function smokeSprite() {
   return cv;
 }
 
+/** A puff of a smoke grenade's cloud: light grey, thick in the middle, soft at the edge. */
+export function cloudSprite() {
+  let cv = sprites.get('cloud');
+  if (cv) return cv;
+  cv = canvas(128);
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(222,224,228,0.95)');
+  g.addColorStop(0.55, 'rgba(204,207,212,0.8)');
+  g.addColorStop(0.85, 'rgba(190,193,198,0.3)');
+  g.addColorStop(1, 'rgba(190,193,198,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  sprites.set('cloud', cv);
+  return cv;
+}
+
 // ---- Lights ----------------------------------------------------------------------------------
 
 export const LIGHT = {

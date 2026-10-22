@@ -28,6 +28,8 @@ import { CLASSES, CLASS_IDS, weaponFor } from './classes.js';
 import { shotDelay } from './combat.js';
 import { holdSpawn } from './gadgets.js';
 import { loadKit, saveKit, KIT_KEY } from './kitchoice.js';
+import { BuyMenu } from './buymenu.js';
+import { canShop } from './defuse.js';
 import { renderLoadout, renderPicker } from './loadout.js';
 
 const $ = id => document.getElementById(id);
@@ -205,8 +207,8 @@ function modeFields() {
     $('goal').value = String(m.goal.options.includes(saved) ? saved : m.goal.value);
   }
   show('sideField', !!m.teams);
-  $('side').options[0].textContent = mode === 'rush' ? 'Blue (attack)' : 'Blue';
-  $('side').options[1].textContent = mode === 'rush' ? 'Red (defend)' : 'Red';
+  $('side').options[0].textContent = mode === 'rush' ? 'Blue (attack)' : mode === 'defuse' ? 'Blue (T first)' : 'Blue';
+  $('side').options[1].textContent = mode === 'rush' ? 'Red (defend)' : mode === 'defuse' ? 'Red (CT first)' : 'Red';
   show('livesField', mode === 'oitc');
   show('gunField', mode === 'gungame');
   show('crateField', m.crates);
@@ -397,6 +399,7 @@ const SIZE_FIT = {
   ctf: { small: 0, medium: 1, original: 1.5, large: 2.5 },
   conquest: { large: 0, medium: 1, small: 2.5, original: 3 },
   rush: { large: 0, medium: 1, small: 2.5, original: 3 },
+  defuse: { medium: 0, small: 0.5, large: 1.5, original: 2.5 },
 };
 
 /** How well a game map suits a mode (lower is better), for ordering the map list. */
@@ -554,6 +557,7 @@ function enterMatch(game, me) {
 
 function endMatch(to = state.returnTo) {
   closePicker();
+  closeBuy();
   state.game = null;
   state.spectating = false;
   state.mode = 'offline';
@@ -589,6 +593,7 @@ function toast(text) {
 
 function setPaused(p) {
   if (!state.game || (state.game.over && p)) return;
+  if (p) closeBuy();
   const online = state.mode !== 'offline';
   state.paused = online ? false : p;
   input.enabled = !p;
@@ -619,8 +624,15 @@ function setSpectating(on) {
   setPaused(false);
 }
 
-/** Watching (spectating, or out of lives): who there is to watch, in a steady order. */
-const watchable = (g, me) => g.soldiers.filter(s => s.alive && s !== me && !s.spectating);
+/** Watching (spectating, or out of lives): who there is to watch, in a steady order (Defuse: your teammates, while any are left). */
+function watchable(g, me) {
+  const list = g.soldiers.filter(s => s.alive && s !== me && !s.spectating);
+  if (g.rules.teamWatch && !me.spectating) {
+    const mates = list.filter(s => s.team === me.team);
+    if (mates.length) return mates;
+  }
+  return list;
+}
 
 /** Who the camera follows: the one picked, while they're alive, otherwise the leader. */
 function watchTarget(g, me) {
@@ -694,6 +706,40 @@ function syncKit(hold = state.pickerOpen) {
 function localNote(text) {
   const g = state.game;
   if (g && state.me) g.notes.push({ text, tick: g.tick, to: state.me.id });
+}
+
+// ---- Defuse: the buy menu ----------------------------------------------------------------
+
+let buyMenu = null;
+const getBuyMenu = () => (buyMenu ||= new BuyMenu($('buyMenu'), { buy: id => buyItem(id), close: () => closeBuy() }));
+
+/** B: the buy menu, while you can buy (the game carries on; your soldier stands still while it's open). */
+function openBuy() {
+  const g = state.game, me = state.me;
+  if (!g?.rules.buyItem || !me || state.menuOpen || state.chatOpen || g.over) return;
+  if (!canShop(g, me)) {
+    localNote(!me.alive ? "You can buy when you're back next round" : g.modeState?.buy > 0 ? 'Buy in your spawn area' : 'Buy time is over: it\'s at the start of each round');
+    return;
+  }
+  getBuyMenu().show(g, me);
+  input.enabled = false;
+  input.clear();
+}
+
+function closeBuy() {
+  if (!buyMenu?.open) return;
+  buyMenu.hide();
+  if (state.game && !state.menuOpen && !state.chatOpen && !state.game.over) input.enabled = true;
+}
+
+/** Buy something: straight away offline or hosting; online, the host does it. */
+function buyItem(id) {
+  const g = state.game, me = state.me;
+  if (!g || !me) return;
+  if (state.mode === 'client') { state.net?.client?.sendBuy(id); audio.play('click'); return; }
+  const why = g.rules.buyItem(g, me, id);
+  if (why) { localNote(why); audio.play('menuMove'); }
+  buyMenu?.refresh(g, me);
 }
 
 /** The class picker (C while waiting to respawn, or the pause menu's Change class). */
@@ -921,7 +967,7 @@ function stopWatching() { watcher?.stop(); watcher = null; }
 
 const MODE_SHORT = {
   ffa: 'Free-for-all', team: 'Team', gungame: 'Gun game', oitc: 'One in the chamber',
-  koth: 'King of the hill', ctf: 'Capture the flag', conquest: 'Conquest', rush: 'Rush',
+  koth: 'King of the hill', ctf: 'Capture the flag', conquest: 'Conquest', rush: 'Rush', defuse: 'Defuse',
 };
 
 function renderGameList(list) {
@@ -1190,6 +1236,11 @@ function frame(now) {
     picking: state.pickerOpen,
   });
   if (hudR !== renderer) renderer.classButton = hudR.classButton;
+  // Defuse's buy menu: kept up to date, and closed when you can't buy any more.
+  if (buyMenu?.open) {
+    if (canShop(g, me)) buyMenu.refresh(g, me);
+    else { closeBuy(); if (me.alive) localNote(g.modeState?.buy > 0 ? 'You left your buy zone' : 'Buy time is over'); }
+  }
   if (!state.menuOpen && !g.over && !state.chatOpen && !state.pickerOpen && !watchMode) {
     // Reloading: a ring round the crosshair fills up, complete when the gun's ready. That's
     // the pistol's magazine, and the wait between shots of slow guns (sniper rifle, rockets...).
@@ -1250,6 +1301,7 @@ function matchOver(g) {
   const now = performance.now();
   if (!state.overShown) {
     state.overShown = true;
+    closeBuy();
     input.enabled = false;
     document.body.classList.remove('playing');
     state.overAt = now;
@@ -1386,6 +1438,12 @@ function wire() {
       }
       return;
     }
+    // Defuse: the buy menu takes the keys while it's open (number keys, B or Esc to close).
+    if (buyMenu?.open) {
+      if (!e.repeat && buyMenu.key(e.code, state.game, state.me)) e.preventDefault();
+      return;
+    }
+    if (e.code === 'KeyB' && !e.repeat && state.game.rules.buyItem && !state.menuOpen) { e.preventDefault(); openBuy(); return; }
     if (e.code === 'Escape') { e.preventDefault(); setPaused(!state.menuOpen); }
     // Watching (spectating, or out of lives): A/D (or the arrows) switch who you follow,
     // and spectating, Space gives a free camera (where A/D move it instead).

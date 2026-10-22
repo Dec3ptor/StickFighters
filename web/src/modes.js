@@ -4,6 +4,7 @@
 
 import { WEAPONS, STARTING_WEAPONS } from './weapons.js';
 import { objectiveModes } from './objmodes.js';
+import { defuseMode } from './defuse.js';
 
 /** Gun game: every kill moves you one weapon along. A kill with the last one wins. */
 export const GUN_GAME_LADDER = [
@@ -196,8 +197,9 @@ const oitc = {
 };
 
 const { koth, ctf, conquest, rush } = objectiveModes(team);
+const defuse = defuseMode(team);
 
-export const MODES = { ffa: deathmatch, team, gungame, oitc, koth, ctf, conquest, rush };
+export const MODES = { ffa: deathmatch, team, gungame, oitc, koth, ctf, conquest, rush, defuse };
 export const MODE_IDS = Object.keys(MODES);
 
 export const modeOf = id => MODES[id] || MODES.ffa;

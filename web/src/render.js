@@ -295,7 +295,7 @@ export class Renderer {
     const cull = game.crowded;
     for (const p0 of game.projectiles) {
       if (p0.delay > 0 || (cull && !this.inView(p0.x, p0.y))) continue;
-      const front = p0.kind === 'flame' || p0.kind === 'gas' || p0.kind === 'fire';
+      const front = p0.kind === 'flame' || p0.kind === 'gas' || p0.kind === 'fire' || p0.kind === 'cloud';
       if (front !== top) continue;
       const p = between(p0, this.alpha);
       if (this.fogNow && !this.fogNow.sees(p.x, p.y)) continue; // (fog of war: out of sight)
@@ -303,6 +303,7 @@ export class Renderer {
         case 'flame': drawFlame(ctx, p); break;
         case 'fire': drawFirePatch(ctx, p, t); break;
         case 'gas': drawGas(ctx, p); break;
+        case 'cloud': drawCloud(ctx, p, t); break;
         case 'bullet': {
           // A streak behind it: how far it goes in 0.7 updates, but no more than 40 px (fast
           // bullets), and not back past the gun it came from.
@@ -613,6 +614,18 @@ export class Renderer {
         ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(p.x1, p.y1); ctx.stroke();
         ctx.globalAlpha = 1;
         break;
+      case 'bang': {
+        // A flashbang: a white burst.
+        const k = p.life / p.max;
+        ctx.fillStyle = '#fff';
+        ctx.globalAlpha = k * 0.9;
+        ctx.beginPath(); ctx.arc(x, y, 10 + (1 - k) * 40, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(x, y, 12 + (1 - k) * 46, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
+        break;
+      }
       case 'ring': {
         const k = p.life / p.max;
         ctx.strokeStyle = p.color;
@@ -726,6 +739,21 @@ function drawFirePatch(ctx, p, t) {
   ctx.beginPath(); ctx.moveTo(p.x - 4, p.y); ctx.quadraticCurveTo(p.x - 2, p.y - 6 - flick, p.x, p.y - 9 - flick); ctx.quadraticCurveTo(p.x + 2, p.y - 6, p.x + 4, p.y); ctx.fill();
   ctx.fillStyle = 'rgba(255,225,110,0.9)';
   ctx.beginPath(); ctx.moveTo(p.x - 2, p.y); ctx.quadraticCurveTo(p.x, p.y - 5 - flick, p.x + 2, p.y); ctx.fill();
+}
+
+/** A smoke grenade's cloud: thick grey puffs you can't see through. */
+export function drawCloud(ctx, p, t) {
+  const r = p.r || 10, fade = Math.min(1, (p.life ?? 99) / 90);
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2 + (p.id % 7) * 0.7;
+    const d = r * (i % 2 ? 0.42 : 0.6);
+    const wob = Math.sin(t * 0.02 + i * 1.7) * r * 0.05;
+    const g = 196 - (i % 3) * 14;
+    ctx.fillStyle = `rgba(${g},${g},${g + 4},${(0.92 * fade).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * d + wob, p.y + Math.sin(a) * d * 0.72, r * 0.56, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = `rgba(212,212,216,${(0.96 * fade).toFixed(3)})`;
+  ctx.beginPath(); ctx.arc(p.x, p.y, r * 0.7, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawGas(ctx, p) {

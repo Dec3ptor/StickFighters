@@ -9,14 +9,15 @@
 import { WEAPONS } from '../weapons.js';
 import { CLASS_IDS, UPGRADE_IDS } from '../classes.js';
 
-export const PROTOCOL = 10;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 11;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
 const WEAPON_INDEX = new Map(WEAPON_IDS.map((id, i) => [id, i]));
-const KINDS = ['bullet', 'rail', 'arrow', 'seeker', 'thrown', 'rocket', 'flame', 'fire', 'gas', 'walker', 'flyer', 'placed', 'donkey'];
+const KINDS = ['bullet', 'rail', 'arrow', 'seeker', 'thrown', 'rocket', 'flame', 'fire', 'gas', 'walker', 'flyer', 'placed', 'donkey', 'cloud'];
 const SPRITES = ['', 'bullet', 'slug', 'arrow', 'magic', 'grenade', 'bomblet', 'cluster', 'banana', 'holy', 'petrol', 'napalm', 'skunk',
-  'rocket', 'homing', 'mortar', 'bomb', 'flame', 'fire', 'gas', 'sheep', 'supersheep', 'oldwoman', 'cow', 'dynamite', 'mine', 'donkey'];
+  'rocket', 'homing', 'mortar', 'bomb', 'flame', 'fire', 'gas', 'sheep', 'supersheep', 'oldwoman', 'cow', 'dynamite', 'mine', 'donkey',
+  'hegrenade', 'flashbang', 'smokegrenade', 'cloud'];
 const ITEM_TYPES = ['health', 'armour', 'jetpack', 'weapon', 'crate', 'medkit', 'ammo'];
 
 export const weaponIndex = id => WEAPON_INDEX.get(id) ?? 255;
@@ -76,7 +77,7 @@ export const messageType = data => (data instanceof Uint8Array ? data : new Uint
 
 // ---- Inputs ----------------------------------------------------------------------------
 
-/** A player's inputs: the newest last. Each is { seq, move, jump, jumpPressed, crouch, jet, fire, firePressed, alt, selfDestruct, sprint, gadget, plank, aim, aimDist, switchTo, cycle }. */
+/** A player's inputs: the newest last. Each is { seq, move, jump, jumpPressed, crouch, jet, fire, firePressed, alt, selfDestruct, sprint, gadget, plank, use, drop, reload, aim, aimDist, switchTo, cycle }. */
 export function encodeInputs(inputs) {
   const w = new Writer(16 + inputs.length * 13);
   w.u8(MSG.input);
@@ -85,7 +86,7 @@ export function encodeInputs(inputs) {
   for (const i of inputs) {
     w.i8(Math.round((i.move || 0) * 100));
     w.u8((i.jump ? 1 : 0) | (i.jumpPressed ? 2 : 0) | (i.crouch ? 4 : 0) | (i.jet ? 8 : 0) | (i.fire ? 16 : 0) | (i.firePressed ? 32 : 0) | (i.alt ? 64 : 0) | (i.selfDestruct ? 128 : 0));
-    w.u8((i.sprint ? 1 : 0) | (i.gadget ? 2 : 0) | (i.plank ? 4 : 0));
+    w.u8((i.sprint ? 1 : 0) | (i.gadget ? 2 : 0) | (i.plank ? 4 : 0) | (i.use ? 8 : 0) | (i.drop ? 16 : 0) | (i.reload ? 32 : 0));
     w.u16(angleToU16(i.aim ?? 0));
     w.u16(clampU16(i.aimDist ?? 200));
     w.u8(i.switchTo ? weaponIndex(i.switchTo) + 1 : 0);
@@ -109,7 +110,8 @@ export function decodeInputs(data) {
     const cycle = Math.sign(r.i8());
     out.push({
       seq: last - (n - 1 - k), move, jump: !!(f & 1), jumpPressed: !!(f & 2), crouch: !!(f & 4), jet: !!(f & 8),
-      fire: !!(f & 16), firePressed: !!(f & 32), alt: !!(f & 64), selfDestruct: !!(f & 128), sprint: !!(f2 & 1), gadget: !!(f2 & 2), plank: !!(f2 & 4), aim, aimDist,
+      fire: !!(f & 16), firePressed: !!(f & 32), alt: !!(f & 64), selfDestruct: !!(f & 128), sprint: !!(f2 & 1), gadget: !!(f2 & 2), plank: !!(f2 & 4),
+      use: !!(f2 & 8), drop: !!(f2 & 16), reload: !!(f2 & 32), aim, aimDist,
       switchTo: sw ? weaponAt(sw - 1) : null, cycle: cycle || 0,
     });
   }
@@ -215,7 +217,8 @@ export function encodeSnapshot(game, me, ackSeq, world) {
       const inv = me.weapons[id];
       w.u8(weaponIndex(id));
       w.u16(inv.ammo === Infinity ? NO_AMMO : clampU16(Math.min(inv.ammo, 65000)));
-      w.u8(clampU8(inv.mag ?? 0));
+      // (The magazine plus one; 0 for a weapon without one.)
+      w.u8(inv.mag == null ? 0 : clampU8(inv.mag + 1));
     }
     w.u16(clampU16(me.reloadTimer)); w.u16(clampU16(me.cooldown)); w.u8(clampU8(me.spin)); w.u16(clampU16(me.burnTicks));
     // Classes on: the gadget's recharge, and the upgrades on our weapons (for the HUD).
@@ -224,6 +227,8 @@ export function encodeSnapshot(game, me, ackSeq, world) {
     w.u8(mods.length);
     for (const [id, up] of mods) { w.u8(weaponIndex(id)); w.u8(UPGRADE_IDS.indexOf(up)); }
     w.u8(me.holdSpawn > 0 ? 1 : 0);
+    // Blinded by a flashbang: for how long (in pairs of updates), and how long it was at first.
+    w.u8(clampU8((me.flashTicks || 0) / 2)); w.u8(clampU8((me.flashFull || 0) / 2));
   }
   w.bytes(world);
   return w.done();
@@ -245,7 +250,8 @@ export function decodeSnapshot(data) {
     for (let i = 0; i < n; i++) {
       const id = weaponAt(r.u8()), ammo = r.u16(), mag = r.u8();
       if (!id) continue;
-      me.weapons[id] = WEAPONS[id].mag ? { ammo: Infinity, mag } : { ammo: ammo === NO_AMMO ? Infinity : ammo };
+      me.weapons[id] = { ammo: ammo === NO_AMMO ? Infinity : ammo };
+      if (mag) me.weapons[id].mag = mag - 1;
     }
     me.reloadTimer = r.u16(); me.cooldown = r.u16(); me.spin = r.u8(); me.burnTicks = r.u16();
     me.gadgetCharge = r.u16();
@@ -256,6 +262,7 @@ export function decodeSnapshot(data) {
       if (id && up) me.mods[id] = up;
     }
     me.holdSpawn = r.u8() ? 1 : 0;
+    me.flashTicks = r.u8() * 2; me.flashFull = r.u8() * 2;
     snap.me = me;
   }
   snap.over = !!r.u8();

@@ -92,6 +92,7 @@
                   <option value="ctf">Capture the flag</option>
                   <option value="conquest">Conquest</option>
                   <option value="rush">Rush</option>
+                  <option value="defuse">Defuse (Counter-Strike style)</option>
                 </optgroup>
               </select>
             </label>
@@ -197,6 +198,7 @@
                 <tr class="classes-only"><td>Gadget (classes on)</td><td><kbd>G</kbd>: medkit, ammo box, spawn beacon, or the Engineer's Builder</td></tr>
                 <tr class="classes-only"><td>Builder (Engineer)</td><td>click to build a wall or repair broken map; right click turns it into a plank</td></tr>
                 <tr class="classes-only"><td>Change class</td><td><kbd>C</kbd> while waiting to respawn, or from the menu (<kbd>Esc</kbd>)</td></tr>
+                <tr><td>Defuse</td><td><kbd>B</kbd> buy menu (at the start of a round, in your spawn); hold <kbd>E</kbd> to plant the bomb at a site or defuse it; <kbd>G</kbd> drop your gun or the bomb; <kbd>R</kbd> reload</td></tr>
                 <tr><td>Self-destruct</td><td>hold <kbd>K</kbd> (to get out of a pit you can't climb out of)</td></tr>
                 <tr><td>Spectate</td><td><kbd>Esc</kbd> then <b>Spectate</b>: <kbd>A</kbd> <kbd>D</kbd> or click to switch player, <kbd>Space</kbd> for a free camera; <b>Join game</b> to play again</td></tr>
                 <tr><td>Chat (online)</td><td><kbd>Enter</kbd> or <kbd>T</kbd></td></tr>
@@ -327,6 +329,7 @@
       <button id="toMenu">Menu</button>
     </div>
   </section>
+  <section id="buyMenu" class="buy hidden" aria-label="Buy menu"></section>
   <form id="chatForm" class="chat hidden" autocomplete="off">
     <input id="chatInput" maxlength="140" placeholder="Say something (Enter to send, Esc to cancel)" spellcheck="false">
   </form>

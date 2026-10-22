@@ -111,11 +111,43 @@ function upgraded(def, up) {
   return m;
 }
 
-/** The weapon `id` as soldier s has it: with their upgrade on it, if any. */
+/**
+ * The weapon `id` as soldier s has it: with their upgrade on it, if any, or as the
+ * Defuse mode's shop sells it (s.shop: a magazine and spare ammo, weapons.js `cs`).
+ */
 export function weaponFor(s, id) {
   const def = WEAPONS[id];
+  if (s?.shop && def?.cs) return shopWeapon(def);
   const up = s?.mods?.[id];
   return up && def ? upgraded(def, up) : def;
+}
+
+const shopMade = new Map();
+
+/**
+ * A weapon as the Defuse mode's shop has it: guns with a magazine and spare ammo
+ * (`ammo` is the spare ammo it comes with), grenades one at a time. It reads
+ * through to the real definition, so it follows game speed changes.
+ */
+function shopWeapon(def) {
+  let m = shopMade.get(def.id);
+  if (m) return m;
+  const cs = def.cs;
+  m = Object.create(def);
+  const props = {};
+  if (cs.mag) {
+    props.mag = { get: () => cs.mag };
+    props.reload = { get: () => cs.reload ?? def.reload };
+    props.ammo = { get: () => cs.reserve ?? 0 };
+    props.maxAmmo = { get: () => cs.reserve ?? 0 };
+    props.infinite = { value: false };
+  } else if (cs.max) {
+    props.ammo = { get: () => 1 };
+    props.maxAmmo = { get: () => cs.max };
+  }
+  Object.defineProperties(m, props);
+  shopMade.set(def.id, m);
+  return m;
 }
 
 // ---- Kits ------------------------------------------------------------------------------

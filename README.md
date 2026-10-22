@@ -1,6 +1,6 @@
 # Stick Soldiers
 
-A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-on, black-and-white stick-figure shooter where you grab weapons, armour and jetpacks lying around the map and frag your way to the limit. Now with online multiplayer, eight game modes (Battlefield-style Conquest and Rush among them) and 35 weapons, many of them borrowed from the Worms games.
+A browser remake of **Stick Soldiers II** (Whitespace Unlimited, 2003): a side-on, black-and-white stick-figure shooter where you grab weapons, armour and jetpacks lying around the map and frag your way to the limit. Now with online multiplayer, nine game modes (Battlefield-style Conquest and Rush, and a Counter-Strike-style Defuse, among them) and 43 weapons, many of them borrowed from the Worms games.
 
 Two games on one site: the **Original**, drawn as it was, and **Stick Soldiers Remastered**, the same game in 2.5D, with scenery in layers, solid blocks, lighting and weather (see [Stick Soldiers Remastered](#stick-soldiers-remastered)).
 
@@ -9,16 +9,16 @@ Two games on one site: the **Original**, drawn as it was, and **Stick Soldiers R
 ## What's in it
 
 - **Online multiplayer**: quick match, a server browser, hosting your own game (public, or invite-link only), chat, and bots that fill empty slots and make room as people join. No game server: players connect directly to each other (see [Online play](#online-play)).
-- **Eight modes**: free-for-all, team deathmatch, **gun game** and **one in the chamber**, plus four objective modes for two teams: **king of the hill**, **capture the flag**, and Battlefield-style **Conquest** and **Rush**.
+- **Nine modes**: free-for-all, team deathmatch, **gun game** and **one in the chamber**, plus five objective modes for two teams: **king of the hill**, **capture the flag**, Battlefield-style **Conquest** and **Rush**, and **Defuse**, played like Counter-Strike: rounds with no respawning, a buy menu and an economy, and a bomb to plant or defuse (see [Defuse](#defuse)).
 - **Battlefield-style classes** (switched off for now: add `?classes` to the address to try them): **Assault**, **Engineer**, **Support** and **Recon**, each spawning with its own kit and a gadget on `G` (medkits, ammo boxes, spawn beacons, and the Engineer's **Builder**, which puts up walls and planks and repairs what explosions broke), with a **Loadout** screen for each class's weapons and upgrades (see [Classes](#classes)).
-- **35 weapons**: the original eight with their original numbers, plus Worms-style ones like sheep, the Holy Hand Grenade, air strikes and the ninja rope (full list below). **Supply crates** parachute in with random weapons.
+- **43 weapons**: the original eight with their original numbers, plus Worms-style ones like sheep, the Holy Hand Grenade, air strikes and the ninja rope, and Counter-Strike-style ones: the AK-47, MP5K and Beretta (cut from the original game), a knife, and HE, flash and smoke grenades (full list below). **Supply crates** parachute in with random weapons.
 - **All 8 original maps**, decoded from the original game's files: Fire in the Hole, Habitat, King of the Hill, Fraghouse, Sniping Grounds, Fatality Zone, Hells Steeple and Two Towers.
 - **10 new maps**, from small to huge:
   - **Small** (4–16 players): **Summit** (a stepped mountain, made for king of the hill) and **Pit Stop** (a garage with three rotating hills), and **Crossfire** (bunkers and three lanes) and **Twin Keeps** (two castles across a moat), made for capture the flag.
   - **Medium** (8–24 players): **Foundry** (catwalks over molten pits) and **Skyline** (rooftops with deadly gaps).
   - **Large** (16–64 players, up to 8,000 px wide): **Frontline** (trenches, a ruined village and the defenders' HQ) and **Citadel** (from the beach up to a hilltop keep), made for Rush, and **Harbor** (ships, container stacks and a gantry crane) and **Valley** (hills, caves and a river gorge, with 7 capture points), made for Conquest.
-  - Every map, the originals included, has hills, flags, capture points and M-COMs for all four objective modes. Picking a map in the setup switches to the mode it's made for and raises the bots to its smallest player count.
-- **Destructible maps** (setup → **Destruction**, on by default): explosions blow holes in walls, floors and platforms, so you can blast a way through a wall, drop enemies through the floor, or dig into a hill. The bigger the blast, the bigger the hole (a bazooka goes through a wall; the Holy Hand Grenade takes a big bite out of anything). Floors that spawn points, flags, M-COMs, hills and capture points stand on can't be destroyed, so every mode keeps working; neither can jump pads, or platforms a map maker marks indestructible. Blocks that can't be destroyed are lightly hatched. Bots find their way through new holes, and in online games everyone sees the same holes, including players who join late.
+  - Every map, the originals included, has hills, flags, capture points, M-COMs and bomb sites for all five objective modes. Picking a map in the setup switches to the mode it's made for and raises the bots to its smallest player count.
+- **Destructible maps** (setup → **Destruction**, on by default): explosions blow holes in walls, floors and platforms, so you can blast a way through a wall, drop enemies through the floor, or dig into a hill. The bigger the blast, the bigger the hole (a bazooka goes through a wall; the Holy Hand Grenade takes a big bite out of anything). Floors that spawn points, flags, M-COMs, hills, capture points and bomb sites stand on can't be destroyed, so every mode keeps working; neither can jump pads, or platforms a map maker marks indestructible. Blocks that can't be destroyed are lightly hatched. Bots find their way through new holes, and in online games everyone sees the same holes, including players who join late.
 - **A map maker** with mirror editing, spawn loadouts, test play, share links and **community maps** anyone can browse and play.
 - **Stick Soldiers Remastered**: the same game in 2.5D, picked when you first visit (see [Stick Soldiers Remastered](#stick-soldiers-remastered)).
 - **Health, armour, jetpacks and jump pads**, placed where the original had them. Dead soldiers drop their weapon. Picking up a new weapon only takes it out if you're holding the starting pistol; otherwise it goes in your inventory (the message says which key selects it).
@@ -84,10 +84,37 @@ Remastered asks more of the computer than the original, mostly of the graphics c
 | Capture the flag | Take the other team's flag from their base and bring it to yours; you can only score while your own flag is at home. Kill a carrier and they drop it; touch your own dropped flag to send it home (it goes home by itself after 20 s, or straight away if it falls off the map). First to 1–10 captures wins. |
 | Conquest | Like Battlefield: stand in a lettered capture point to take it (about 7 s alone, faster with more of your team, and an enemy point has to be neutralised first). Every death costs your team a ticket, and the team holding fewer points loses tickets every few seconds. Run out and you lose. You can spawn on points your team holds: while you wait, number keys pick **Auto** (the usable place nearest where you died: a point your team holds with no enemies on it, or your base), **Base**, or a point. |
 | Rush | Like Battlefield: blue attacks and red defends. Blue arms an M-COM station by standing at it for 2 seconds with no defenders there; red disarms it the same way (7 s). An armed M-COM blows after 14 s, taking anyone close with it. Destroy every M-COM in a sector and the fight moves to the next sector, spawn points move up, and blue's tickets refill. Both teams respawn at their most forward spawn point (nearest the M-COMs still standing), unless enemies are right there. Blue loses a ticket per death; out of tickets with nothing ticking, blue loses. |
+| Defuse | Like Counter-Strike: rounds, with no respawning. The attackers (Terrorists) plant a bomb at site A or B; the defenders (Counter-Terrorists) stop them, or defuse it. Money from kills and rounds buys weapons and gear at the start of each round. Teams swap sides at half time; first to the rounds to win (3–13, 7 to start with). See [Defuse](#defuse). |
 
 In the objective modes, kills don't change the team score; your place on the scoreboard is your score (objective points plus frags). Tickets and points to win are set in the setup (Auto tickets scale with the number of players), and **Your team** picks blue or red (attack or defend, in Rush). The HUD shows how things stand, with markers at the screen's edge pointing to objectives you can't see, and big maps get a minimap.
 
-Modes live in [`web/src/modes.js`](web/src/modes.js) and [`objmodes.js`](web/src/objmodes.js): each one decides what you spawn with, which pickups are around, how damage, kills and scores work, where you spawn, and who wins. Adding a mode means adding an entry there. Where the objectives are comes from the map (see [Map maker](#map-maker)); maps without them get some worked out from their layout ([`objectives.js`](web/src/objectives.js)), so every map plays every mode.
+Modes live in [`web/src/modes.js`](web/src/modes.js), [`objmodes.js`](web/src/objmodes.js) and [`defuse.js`](web/src/defuse.js): each one decides what you spawn with, which pickups are around, how damage, kills and scores work, where you spawn, and who wins. Adding a mode means adding an entry there. Where the objectives are comes from the map (see [Map maker](#map-maker)); maps without them get some worked out from their layout ([`objectives.js`](web/src/objectives.js)), so every map plays every mode.
+
+### Defuse
+
+Two teams take turns at attacking and defending a pair of bomb sites, A and B, as in Counter-Strike's bomb defusal.
+
+- **Rounds.** Everyone starts each round at their side's spawn, frozen for 7 seconds while they buy. Then there are 1:45 to plant the bomb. Nobody respawns until the next round: the dead watch their teammates. A round ends when a side is wiped out, the bomb goes off (40 s after it's planted) or is defused, or time runs out (a defenders' win). The result shows for a few seconds, then everyone's back at the spawns for the next round. Survivors keep their weapons and armour; the dead start again with a knife and a pistol.
+- **Sides.** Blue starts as the attackers (Terrorists, at blue's spawn points) and red as the defenders (Counter-Terrorists, at red's). After half the rounds, the teams swap sides and money starts again. Level at the end, it's **overtime**: $10,000 each, and a team needs four of the next six rounds (sides swap after three); level again, another overtime.
+- **The bomb.** One attacker starts each round with it. Hold `E` (or fire, with the bomb in your hands) at a site for 3 seconds to plant it; you stand still while you do. The round clock stops, the bomb beeps faster and faster, and after 40 seconds it goes off: everyone near it dies, walls or not. Defenders hold `E` by the bomb for 10 seconds to defuse it (5 with a defuse kit); let go and it starts again. When its carrier dies, the bomb drops; any attacker can pick it up (`G` throws it to a teammate). Off-screen markers show the sites, and attackers see where a dropped bomb is.
+- **Money.** You start with $800 (at most $16,000). A kill pays $300 ($600 with an SMG, $900 with the shotgun, $1,500 with the knife, $100 with the sniper rifle). Winning a round pays everyone on the team $3,250 ($3,500 for blowing up or defusing the bomb). Losing pays $1,400, plus $500 for each round lost in a row before it (up to $3,400); a win brings that back down a step. Attackers who planted the bomb but lost get $800 more, the planter and defuser $300 each, and attackers still alive when time runs out get nothing.
+- **Buying** (`B`, in your spawn area during the first 20 seconds of a round): weapons and gear in columns. Click, or press a column's number then an item's. What you can't buy says why. You carry one pistol and one main gun: buying another drops the one you had, for a teammate. `G` drops the gun in your hands. Walking over a dropped gun picks it up if you've none of that sort.
+
+| | Items |
+|---|---|
+| Pistols | Platinum $200, Beretta $300, Magnum $700 |
+| SMGs | Uzi $1,050, MP5K $1,500 |
+| Heavy | Shotgun $1,100, Minigun $5,200 |
+| Rifles | AK-47 $2,700 (Terrorists), M4 Carbine $3,100 (Counter-Terrorists), Sniper Rifle $4,750 |
+| Gear | Kevlar Vest $650, Kevlar + Helmet $1,000, Defuse Kit $400 (Counter-Terrorists) |
+| Grenades | HE Grenade $300, Flashbang $200 (two), Smoke Grenade $300, Petrol Bomb $400; four grenades at most |
+
+- **Guns have magazines** and a limited amount of spare ammo (an AK-47: 30 in the magazine, 90 spare). They reload by themselves when the magazine runs out; `R` reloads early. Guns hit a little harder than in the other modes.
+- **Armour** soaks up less than elsewhere, and only covers your head if you bought the helmet (headshots go straight through a vest without one).
+- **Grenades.** A **flashbang** blinds everyone who sees it go off (the screen goes white): longer the closer they are, less if they were looking away; teammates too. A **smoke grenade** puts up a cloud for about 24 seconds that nobody can see through (bots neither), though bullets still go through it. The **HE grenade** is a short-fused frag grenade; the **petrol bomb** sets the floor alight.
+- **On screen**: each team's rounds won and its side at the top, the round clock (a blinking bomb once it's planted) and who's still alive; your money at the bottom left, with what you just earned; prompts to plant or defuse, with progress bars; who won each round and how. `Tab` shows your teammates' money and the rounds so far.
+- **Bots** buy like players do: a vest or a better pistol on the first round, a rifle and armour once they can afford them, saving up (or buying an SMG when the team keeps losing) when they can't, a defuse kit, and grenades. Attackers go to a site with the bomb carrier, smoke off the far side and throw a flashbang in, plant, and guard the bomb; defenders spread over the sites, rush to defuse once it's planted, and fight first, defuse once it's clear. Flashed bots can't see, and smoke hides you from them.
+- Any map can host Defuse: maps without bomb sites get two, around the M-COMs Rush's attackers go for first. In the map maker, the **Bomb site** tool (`X`) draws them.
 
 ## Weapons
 
@@ -95,17 +122,17 @@ Number keys pick a slot; press the same key again to cycle through what you own 
 
 | Key | Weapons |
 |---|---|
-| `1` Pistols | Platinum (infinite, reloads), Magnum |
-| `2` Automatics | Uzi, Minigun (spins up first, slows you down while firing) |
-| `3` Rifles | M4 Carbine, Longbow (arrows drop with distance and stick in walls) |
+| `1` Pistols | Platinum (infinite, reloads), Beretta (infinite, a bigger magazine), Magnum |
+| `2` Automatics | Uzi, MP5K, Minigun (spins up first, slows you down while firing) |
+| `3` Rifles | M4 Carbine, AK-47 (harder hitting, less accurate), Longbow (arrows drop with distance and stick in walls) |
 | `4` Shotguns | Shotgun |
 | `5` Precision | Sniper Rifle (laser, zoom), Magic Bullet (homes in on the nearest enemy) |
-| `6` Grenades | Grenade Launcher, Cluster Bomb, Banana Bomb (very bouncy, bursts into more bananas), Holy Hand Grenade (sings, then a huge blast) |
+| `6` Grenades | Grenade Launcher, Cluster Bomb, Banana Bomb (very bouncy, bursts into more bananas), Holy Hand Grenade (sings, then a huge blast); in Defuse, HE Grenade, Flashbang and Smoke Grenade |
 | `7` Rockets | Bazooka, Homing Missile, Mortar (falls, then bursts) |
 | `8` Fire & gas | Flamethrower, Petrol Bomb (leaves burning petrol), Skunk (poison gas) |
 | `9` Animals & explosives | Sheep (walks, hops walls, click to explode), Super Sheep (flies where you point), Old Woman, Mad Cows, Dynamite, Mines |
 | `0` Specials | Air Strike, Napalm Strike, Concrete Donkey (smashes through every floor it falls through), Earthquake, Teleport, Kamikaze, Ninja Rope |
-| `F` Melee | Prod (everyone has one: no damage, but great for pushing people off ledges), Baseball Bat (home runs), Battle Axe (halves their health), Fire Punch (uppercut) |
+| `F` Melee | Prod (everyone has one: no damage, but great for pushing people off ledges), Baseball Bat (home runs), Battle Axe (halves their health), Fire Punch (uppercut); in Defuse, the Knife (three times the damage in the back) |
 
 Air strikes, napalm, the donkey and teleports go where your mouse is. Weapons are defined as data in [`web/src/weapons.js`](web/src/weapons.js), with their behaviour in [`web/src/combat.js`](web/src/combat.js).
 
@@ -124,6 +151,7 @@ Air strikes, napalm, the donkey and teleports go where your mouse is. Weapons ar
 | Ninja rope | click to fire, `W` / `S` to climb, `A` / `D` to swing, click again to let go |
 | Self-destruct | hold `K` for a second (the way out of a pit you can't climb out of; counts as a suicide) |
 | Spectate | **Spectate** in the menu (`Esc`): sit out and watch (it isn't a death, unless you'd just been hurt; a flag you carry drops). `A` / `D` (or the arrows, or a click) switch who you follow; `Space` gives a free camera (`WASD` or arrows to move, `Shift` faster; `Space` or a click follows whoever's nearest). **Join game** in the menu to play again |
+| Defuse | `B` buy menu (then number keys or clicks); hold `E` to plant or defuse the bomb; `R` reload; `G` drop the gun in your hands (or the bomb). `E` still switches weapons everywhere else |
 | Gadget (classes, switched off for now) | `G`: drop a medkit or ammo box, place a spawn beacon, or take out the Engineer's Builder (`G` again puts it away) |
 | Builder (Engineer, classes) | click to put up a wall, or repair what explosions broke; right click switches between a wall and a plank |
 | Change class (classes) | `C` (or click the class box) while waiting to respawn, then `1`–`4` or click a class; or **Change class** in the menu (`Esc`). It applies when you next spawn |
@@ -184,7 +212,7 @@ Click **Map maker** on the main menu, or **+ Make a new map** under **Your maps*
 - **Indestructible platforms** (explosions can't break them when Destruction is on; they're hatched): tick **Indestructible** under **Drawing platforms** to draw them that way, or use the Indestructible tool (`I`) on platforms you've drawn: click one to mark it (click again to unmark), or drag a box to mark every platform inside it (hold `Shift` to unmark). **All indestructible** and **All breakable** do the whole map. A selected platform has its own **Indestructible** box too.
 - **Edit** with the select tool (`V`): drag things to move them, and drag the corner squares to resize. Right-click or `Del` deletes, `Ctrl+D` duplicates, arrow keys nudge, and `Ctrl+Z` / `Ctrl+Y` undo and redo. The mouse wheel zooms, dragging empty space moves the view, and `F` fits the whole map.
 - **Mirror editing** (`M`): anything you add, move, resize or delete is copied to the other side of a mirror line (purple; you can move it). Spawns can swap blue and red on the other side. **Copy left → right** and **Copy right → left** rebuild one half from the other, and **Mirror to other side** copies one thing.
-- **Objectives**: draw hills (`L`) and capture points (`C`) by dragging (or click for a standard size), and click to place each team's flag stand (`B`) and Rush M-COM stations (`R`, with a sector: sector 1 falls first). Capture points get letters A, B, C… (change them on the right). Spawn points can belong to a Rush sector, so the attack and the defence move up as sectors fall. Leave a mode's objectives out and the game works some out from the layout.
+- **Objectives**: draw hills (`L`), capture points (`C`) and Defuse's bomb sites (`X`) by dragging (or click for a standard size), and click to place each team's flag stand (`B`) and Rush M-COM stations (`R`, with a sector: sector 1 falls first). Capture points and bomb sites get letters A, B, C… (change them on the right). Spawn points can belong to a Rush sector, so the attack and the defence move up as sectors fall. Leave a mode's objectives out and the game works some out from the layout.
 - **Everyone spawns with**: pick weapons, armour and a jetpack that every player starts with on your map (in free-for-all and team games).
 - **Look in Remastered**: the scenery, materials and weather your map has in Stick Soldiers Remastered (a sunset city, a frozen ridge, a jungle...). Leave it on **Picked from the map's name** and one is picked for you, the same one every time.
 - **Map check** runs the bots' route planner over your map. It flags pits you can't climb out of, areas you can't get to, spawns inside walls or over the void, and pickups and objectives nobody can reach. Click a problem to see where it is. Test play won't start while the map has errors.
@@ -232,6 +260,7 @@ Before publishing, `tools/stamp.mjs` adds the release to the address of every mo
 | `web/src/game.js` | One match: soldiers, spawning, frags, win conditions (no browser code, so tests can run it) |
 | `web/src/modes.js` | Game modes: free-for-all, team, gun game, one in the chamber |
 | `web/src/objmodes.js`, `objectives.js`, `objdraw.js` | The objective modes (king of the hill, capture the flag, conquest, rush); where their objectives are (or worked out from a map's layout); drawing them, their HUD and the minimap |
+| `web/src/defuse.js`, `buymenu.js` | Defuse: rounds, money, buying, the bomb, and what bots buy and do; the buy menu |
 | `web/src/physics.js` | Movement, collision and the ninja rope, shared by players, bots and the bots' route planner |
 | `web/src/combat.js`, `weapons.js` | Firing, projectiles, payloads, explosions, damage; weapon data |
 | `web/src/classes.js`, `gadgets.js` | Classes, kits and weapon upgrades; gadgets (medkits, ammo boxes, spawn beacons, the Builder) |
@@ -274,11 +303,12 @@ Before publishing, `tools/stamp.mjs` adds the release to the address of every mo
 - **Classes.** Kits replace the mode's loadout at spawn (`applyKit`), so with classes off nothing changes. Weapon upgrades never touch the weapon definitions: `weaponFor(s, id)` gives a view of the weapon with the soldier's upgrade applied (a bigger magazine, a scaled blast...), which firing, reloading, pickups and the HUD use; it reads through to the real numbers, so it follows the game speed. Gadget timers are written like weapon numbers, in updates at full speed, and stretched by the game speed (a 15 s recharge is 20 s at 75%). Spawn beacons are plain data in `game.beacons`, sent in snapshots; shots and blasts reach them through small calls next to the hit checks and `explode()`, which is left as it is.
 - **Building.** Built blocks are ordinary map boxes, marked as built (drawn as sandbags, and breakable on any map). Repairs fill in what's missing of the map as it was at the start (a copy is kept) around where you aim, less whatever's there now and anyone standing there; repaired blocks are plain map again. Each new block patches the bots' route map just as a hole does, and online it goes in the same ordered list as the holes, so block numbers line up for everyone. Bots walk on, around and over built blocks but don't build themselves.
 - **Remastered.** It's a second renderer, so nothing about the game changes: `RemasteredRenderer` extends the original's canvas renderer, keeping its camera, objectives, pickups and rarer effects, and draws the rest its own way. A block's back is its front shrunk 7% toward a vanishing point a little above the middle of the screen, and only its open edges (not touching another block) get sides; which edges are open is worked out once per block, and again only near a hole or a new wall. Sides are drawn furthest from the vanishing point first, then the fronts. Each scenery layer is drawn once into a strip that repeats sideways; every frame the strips are copied into a picture at 45–75% of the screen's resolution and stretched over the screen in one go, and when the camera hasn't moved, last frame's picture is used again. Textures are small repeating pictures made in code and laid in world units, so neighbouring blocks join up seamlessly. Night darkness is drawn at a quarter of the resolution with the lights cut out of it. The HUD is the original's code, drawn through a stand-in for the canvas that swaps colours and fonts as they're set, so both games always have the same HUD.
+- **Defuse.** The rounds, money, gear and the bomb are plain data in `game.modeState`, like the other objective modes', so online players see them with nothing extra: the host runs the rules and players only draw them. Buying is the one thing players send (a message the host checks as it would its own: money, buy zone, buy time, side). The mode has a few more hooks than the others: it can hold soldiers still or change their input (the freeze, planting), say what `E` does where you stand, decide what you can pick up, and drop what it likes when you die. Shop weapons are views of the usual weapon (`weaponFor`, as for class upgrades) with a magazine, spare ammo and Counter-Strike's prices, so the other modes' weapons are unchanged. Bots ask the mode where to be (as in the other objective modes), when to hold `E`, and where to throw flashbangs and smoke.
 - **Same game everywhere.** Offline, hosting and joining all run the same `Game` code. The host records every sound and effect as it happens and sends them on, and players draw trails (rocket smoke, jetpack flames) themselves, from what's in the snapshots.
 
 ## Ideas for what's next
 
-- The rest of the weapons cut from the original (AK-47, MP5K, 20 mm cannon, Beretta, C4, blaster, "Shocker")
+- The rest of the weapons cut from the original (20 mm cannon, blaster, "Shocker")
 - Host migration, so a game survives the host leaving
 - Touch controls for phones and tablets
 

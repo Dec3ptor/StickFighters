@@ -3,7 +3,8 @@
 import { WEAPONS, SLOTS } from './weapons.js';
 import { RULES } from './config.js';
 import { GUN_GAME_LADDER } from './modes.js';
-import { drawObjectiveHud, drawMinimap, bigMap, drawDeploy } from './objdraw.js';
+import { drawObjectiveHud, drawMinimap, bigMap, drawDeploy, drawMoney } from './objdraw.js';
+import { moneyOf } from './defuse.js';
 import { CLASSES, weaponFor } from './classes.js';
 import { GADGETS, rechargeTicks } from './gadgets.js';
 
@@ -23,13 +24,23 @@ export function drawHud(r, game, me, opts = {}) {
   ctx.setTransform(d, 0, 0, d, 0, 0);
   ctx.textBaseline = 'middle';
 
+  // Blinded by a flashbang: the screen goes white, and clears as it wears off.
+  if (me.alive && me.flashTicks > 0) {
+    ctx.fillStyle = '#fff';
+    ctx.globalAlpha = Math.min(1, me.flashTicks / 75);
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
   if (me.alive) {
     drawStatus(ctx, game, me, W, H);
     drawWeaponBar(ctx, me, W, H);
   }
 
   const standings = game.standings();
-  drawScores(ctx, game, me, H, standings);
+  // (Defuse: your money where the scores go; Tab shows everyone.)
+  if (game.mode === 'defuse' && game.modeState) drawMoney(ctx, game, me, W, H);
+  else drawScores(ctx, game, me, H, standings);
   drawFeed(ctx, game, W, opts.chat);
   drawTop(ctx, game, me, W, standings, r, H);
   if (bigMap(game.map) && !game.over) drawMinimap(r, ctx, game, me, W);
@@ -74,7 +85,7 @@ export function drawHud(r, game, me, opts = {}) {
       if (deploy) drawDeploy(ctx, game, me, W, H / 2 - 30);
       if (game.classesOn) r.classButton = drawClassChoice(ctx, me, W, deploy ? H / 2 + 34 : H / 2 - 30);
     } else {
-      ctx.fillText("You're out", W / 2, H / 2 - 70);
+      ctx.fillText(game.rules.outText?.(game, me) ?? "You're out", W / 2, H / 2 - 70);
       if (opts.watching) {
         ctx.font = `14px ${FONT}`;
         ctx.fillText(`Watching ${opts.watching.name}`, W / 2, H / 2 - 46);
@@ -144,8 +155,10 @@ function drawStatus(ctx, game, me, W, H) {
   if (def && inv) {
     let frac = 1, label = def.name;
     if (def.mag) {
+      // (With spare ammo: what's in the magazine, then what's left to reload with.)
+      const spare = inv.ammo === Infinity ? '' : `  ·  ${inv.ammo}`;
       frac = me.reloadTimer > 0 ? 1 - me.reloadTimer / def.reload : inv.mag / def.mag;
-      label = me.reloadTimer > 0 ? `${def.name}: reloading` : `${def.name}  ${inv.mag}/${def.mag}`;
+      label = me.reloadTimer > 0 ? `${def.name}: reloading${spare}` : `${def.name}  ${inv.mag}/${def.mag}${spare}`;
     } else if (def.tool) {
       // The Builder: blocks left.
       frac = inv.ammo / (me.kitAmmo?.[me.current] || def.maxAmmo || 1);
@@ -281,11 +294,11 @@ function drawWeaponBar(ctx, me, W, H) {
     }
     ctx.textAlign = 'center';
     if (show) {
-      const def = WEAPONS[show], inv = me.weapons[show];
+      const def = weaponFor(me, show), inv = me.weapons[show];
       ctx.font = `${def.short.length > 8 ? 8 : 10}px ${FONT}`;
       ctx.fillText(def.short, x + size / 2, 24);
       ctx.font = `9px ${FONT}`;
-      ctx.fillText(def.mag ? '∞' : inv.ammo === Infinity ? '' : String(inv.ammo), x + size / 2, 37);
+      ctx.fillText(def.mag ? (inv.ammo === Infinity ? '∞' : `${inv.mag}/${inv.ammo}`) : inv.ammo === Infinity ? '' : String(inv.ammo), x + size / 2, 37);
     } else {
       ctx.font = `9px ${FONT}`;
       ctx.fillText(slot.name.split(' ')[0], x + size / 2, 26);
@@ -378,6 +391,8 @@ function drawScoreboard(ctx, game, me, W, H, opts, standings) {
   cols.push(['Deaths', s => String(s.deaths)], ['Frags', s => String(s.frags)]);
   if (extra) cols.push([rules.scoreLabel, s => String(rules.score(s))]);
   if (game.classesOn) cols.push(['Class', s => CLASSES[s.cls]?.name ?? '']);
+  // Defuse: your teammates' money (not the other team's).
+  if (game.mode === 'defuse' && game.modeState) cols.push(['Money', s => (s.team === me.team ? `$${moneyOf(game, s)}` : '')]);
   function pingText(s) {
     if (s.isBot) return '';
     if (s.id === opts.hostId) return 'host';
@@ -405,9 +420,12 @@ function drawScoreboard(ctx, game, me, W, H, opts, standings) {
   ctx.fillText('Name', x + 20, y + 48);
   ctx.textAlign = 'right';
   cols.forEach(([head], i) => ctx.fillText(head, colX(i), y + 48));
+  // (Round by round: the dead are greyed out until the next round.)
+  const rounds = game.mode === 'defuse' && !game.over;
   list.forEach((s, i) => {
     const ry = y + 70 + i * rowH;
     ctx.font = `${s === me ? 'bold ' : ''}13px ${FONT}`;
+    ctx.globalAlpha = rounds && !s.alive && !s.spectating ? 0.45 : 1;
     const color = rules.teams ? TEAM[s.team] : '#222';
     ctx.fillStyle = color;
     ctx.textAlign = 'left';
@@ -421,12 +439,48 @@ function drawScoreboard(ctx, game, me, W, H, opts, standings) {
     if (s.isBot) { ctx.fillStyle = '#aaa'; ctx.font = `10px ${FONT}`; ctx.textAlign = 'left'; ctx.fillText('bot', x + 26 + nameW, ry); }
     else if (s.spectating) { ctx.fillStyle = '#999'; ctx.font = `10px ${FONT}`; ctx.textAlign = 'left'; ctx.fillText('spectating', x + 26 + nameW, ry); }
   });
+  ctx.globalAlpha = 1;
   if (more) {
     ctx.font = `12px ${FONT}`;
     ctx.fillStyle = '#888';
     ctx.textAlign = 'left';
     ctx.fillText(`…and ${more} more`, x + 20, y + 70 + list.length * rowH);
   }
+  if (game.mode === 'defuse') drawRounds(ctx, game, W / 2, y + h + 8);
+}
+
+/**
+ * Defuse: the rounds so far, under the scores (as Counter-Strike shows them): who won
+ * each, and how (wiped out, bomb, defused, time).
+ */
+function drawRounds(ctx, game, cx, y) {
+  const list = game.modeState?.history || [];
+  if (!list.length) return;
+  const size = 16, gap = 3, n = Math.min(list.length, 30), shown = list.slice(-n);
+  const w = n * (size + gap) - gap;
+  ctx.fillStyle = 'rgba(255,255,255,0.94)';
+  ctx.fillRect(cx - w / 2 - 8, y, w + 16, size + 30);
+  ctx.textAlign = 'center';
+  ctx.font = `10px ${FONT}`;
+  ctx.fillStyle = '#888';
+  ctx.fillText('Rounds', cx, y + 9);
+  shown.forEach((h, i) => {
+    const team = +h[0], how = h[2];
+    const x = cx - w / 2 + i * (size + gap), by = y + 18, mx = x + size / 2, my = by + size / 2;
+    ctx.fillStyle = TEAM[team] || '#888';
+    ctx.fillRect(x, by, size, size);
+    ctx.fillStyle = ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    if (how === 't') {
+      // Time ran out: a little clock.
+      ctx.beginPath(); ctx.arc(mx, my, 5, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(mx, my - 3.5); ctx.lineTo(mx, my); ctx.lineTo(mx + 2.5, my); ctx.stroke();
+    } else {
+      // Wiped out (×), the bomb went off (B), or it was defused (D).
+      ctx.font = `bold ${how === 'e' ? 13 : 10}px ${FONT}`;
+      ctx.fillText(how === 'e' ? '×' : how === 'b' ? 'B' : 'D', mx, my + 1);
+    }
+  });
 }
 
 function ordinal(n) {
