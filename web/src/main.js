@@ -554,6 +554,7 @@ function enterMatch(game, me) {
   state.me = me;
   state.paused = false;
   state.menuOpen = false;
+  pacer.restart(performance.now()); // (the first seconds of a match are no measure of how it plays)
   state.overShown = false;
   state.nextMatchAt = 0;
   state.replay = null;
@@ -953,6 +954,7 @@ function useRenderer(r) {
   renderer = r;
   canvas = r.canvas;
   input.attach(canvas);
+  pacer.restart(performance.now(), true); // (new graphics: a fresh try at the full rate)
 }
 
 /** Play the original or Remastered (from the picker): the look changes, everything else stays. */
@@ -1265,15 +1267,21 @@ function simulate(now) {
   state.acc += dt;
   let n = 0;
   const started = performance.now();
-  while (state.acc >= state.step && n++ < 90) {
+  while (state.acc >= state.step) {
+    // Behind (a hitch, a slow frame): two updates a frame catch up, more only while they're
+    // quick (a burst of them would look like a jump). Too much to do (thousands of bots):
+    // run in slow motion rather than freeze the page.
+    const spent = performance.now() - started;
+    if (n >= 2 && (spent > 4 || n >= 6)) break;
+    if (spent > 50) break;
     if (state.mode === 'client') state.net?.client?.tick();
     else { g.update(); state.net?.host?.afterTick(); }
     state.acc -= state.step;
+    n++;
     perf.updates++;
-    // Too much to do (thousands of bots): run in slow motion rather than freeze the page.
-    if (performance.now() - started > 50) { state.acc = 0; break; }
   }
-  if (n >= 90) state.acc = 0;
+  // What couldn't be caught up on is let go: the game runs a moment behind, not in a rush.
+  if (state.acc > state.step) state.acc = state.step;
 }
 
 // The game updates 60 times a second; frames are drawn as often as the screen
@@ -1282,7 +1290,9 @@ function frame(now) {
   requestAnimationFrame(frame);
   // The frame rate setting: skip this screen refresh if it's too soon to draw again. (Not
   // counted while a menu's open over the game: that's no measure of how it plays.)
-  if (!pacer.frame(now, !!state.game && !state.menuOpen)) return;
+  // (The game updates whether or not this refresh is drawn: input is read and updates come
+  // evenly at 60 Hz, so a capped frame rate doesn't mean updates in pairs.)
+  if (!pacer.frame(now, !!state.game && !state.menuOpen)) { simulate(now); return; }
   // Behind the menus nothing's being played: drawn at most 30 times a second, so the menus
   // stay quick to use. (An online game still runs.)
   if ((!state.game || state.menuOpen) && now - (state.menuDrawAt ?? -1e9) < 32) { simulate(now); return; }
@@ -1410,6 +1420,8 @@ function countFrame(now, drawMs) {
     const fps = Math.round(perf.frames / secs);
     const speed = Math.round((perf.updates / secs / 60) * 100);
     perf.text = `${renderer.kind === 'webgl' ? 'WebGL' : 'Canvas'} · ${fps} fps · ${(perf.ms / perf.frames).toFixed(1)} ms drawing`
+      + (pacer.mode === 'auto' && pacer.divisor > 1 ? ` · auto at ${Math.round(pacer.target)}` : '')
+      + (renderer.auto ? ` · quality ${renderer.quality}` : '')
       + (!state.paused && speed < 95 ? ` · game at ${speed}% speed` : '');
   }
   perf.at = now;
@@ -1585,7 +1597,7 @@ function wire() {
   $('pauseSettings').addEventListener('click', openSettings);
   $('settingsDone').addEventListener('click', closeSettings);
   $('graphics').addEventListener('change', () => { prefs.graphics = $('graphics').value; prefs.graphicsPicked = true; savePrefs(); setGraphics(prefs.graphics); });
-  $('quality').addEventListener('change', () => { prefs.quality = $('quality').value; savePrefs(); renderer.setQuality?.(prefs.quality); settingsNotes(); });
+  $('quality').addEventListener('change', () => { prefs.quality = $('quality').value; savePrefs(); renderer.setQuality?.(prefs.quality); pacer.restart(performance.now(), true); settingsNotes(); });
   // The game picker.
   for (const b of document.querySelectorAll('[data-edition]')) b.addEventListener('click', () => { audio.unlock(); audio.play('menuMove'); setEdition(b.dataset.edition); });
   $('switchGame').addEventListener('click', () => { audio.unlock(); audio.play('menuMove'); setEdition(edition === 'remastered' ? 'original' : 'remastered'); });

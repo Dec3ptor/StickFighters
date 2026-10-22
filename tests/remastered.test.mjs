@@ -120,35 +120,29 @@ test('the HUD in Remastered: light text for dark, dark glass for white panels', 
   assert.equal(ctx.shadowBlur, 0);
 });
 
-test('Auto quality: steps down when it can\'t keep up twice running, not for one hiccup', () => {
+test('Auto quality: a level down each time the frame pacer has to step the rate down, once things have settled', () => {
   const r = Object.create(RemasteredRenderer.prototype);
-  Object.assign(r, { auto: true, quality: 'high', adaptedAt: 0, look: { at: 0 }, slowAt: 0 });
-  const pacer = { mode: 'auto', divisor: 1, setMode() { this.divisor = 1; } };
+  Object.assign(r, { auto: true, quality: 'high', adaptedAt: 0, look: { at: 0 }, seenSteps: null });
+  const pacer = { mode: 'auto', divisor: 1, stepped: 3, retries: 0, restarts: 0, tryAgainSoon() { this.retries++; }, restart() { this.restarts++; } };
+  assert.equal(r.adapt(pacer, 10000), false, 'steps from before it was watching don\'t count');
   assert.equal(r.adapt(pacer, 10000), false, 'keeping up');
-  pacer.divisor = 2;
-  assert.equal(r.adapt(pacer, 10000), false, 'one slow spell is let go');
-  assert.equal(pacer.divisor, 1, '...and the full rate tried again');
-  pacer.divisor = 2;
-  assert.equal(r.adapt(pacer, 12100), true, 'slow again straight after: a step down');
+  pacer.divisor = 2; pacer.stepped = 4;
+  assert.equal(r.adapt(pacer, 10000), true, 'the pacer stepped the rate down (it takes a couple of slow seconds to): a level down');
   assert.equal(r.quality, 'medium');
-  pacer.divisor = 2;
-  assert.equal(r.adapt(pacer, 13000), false, 'not straight after a step');
-  pacer.divisor = 2;
-  assert.equal(r.adapt(pacer, 30000), false);
-  pacer.divisor = 2;
-  assert.equal(r.adapt(pacer, 40000), false, 'two slow spells far apart are hiccups');
-  r.look = { at: 50000 };
-  pacer.divisor = 2;
-  assert.equal(r.adapt(pacer, 51000), false, 'a map just started (its scenery being made) doesn\'t count');
-  pacer.divisor = 2;
-  assert.equal(r.adapt(pacer, 52000), false);
-  assert.equal(r.quality, 'medium');
-  r.slowAt = 0;
-  for (const t of [60000, 62100]) { pacer.divisor = 2; r.adapt(pacer, t); }
+  assert.equal(pacer.divisor, 2, '...the rate stays steady');
+  assert.equal(pacer.retries, 1, '...and the full rate is tried again soon at the new quality');
+  assert.equal(pacer.restarts, 1, '...with the scenery-making moments not judged');
+  pacer.stepped = 5;
+  assert.equal(r.adapt(pacer, 11000), false, 'not straight after a step (the scenery is being made)');
+  r.look = { at: 11000 };
+  assert.equal(r.adapt(pacer, 13000), false, 'nor straight after a new look (a map starting)');
+  r.look = { at: 0 };
+  assert.equal(r.adapt(pacer, 14000), true, 'once that has settled, the step counts');
   assert.equal(r.quality, 'low');
-  pacer.divisor = 2;
-  assert.equal(r.adapt(pacer, 70000), false, 'low is as low as it goes');
-  const fixed = Object.assign(Object.create(RemasteredRenderer.prototype), { auto: false, quality: 'high', adaptedAt: 0, look: null, slowAt: 0 });
-  for (const t of [10000, 12100]) { pacer.divisor = 2; fixed.adapt(pacer, t); }
+  pacer.stepped = 6;
+  assert.equal(r.adapt(pacer, 40000), false, 'low is as low as it goes');
+  const fixed = Object.assign(Object.create(RemasteredRenderer.prototype), { auto: false, quality: 'high', adaptedAt: 0, look: null, seenSteps: null });
+  pacer.stepped = 7;
+  assert.equal(fixed.adapt(pacer, 50000), false);
   assert.equal(fixed.quality, 'high', 'a quality picked in Settings stays');
 });

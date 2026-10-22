@@ -70,6 +70,37 @@ test("auto drops to an even fraction when the computer can't keep up, and goes b
   assert.equal(p.target, 144);
 });
 
+test('auto lets one slow window go (a hiccup), and gives a fresh start a couple of seconds', () => {
+  const p = onScreen(144);
+  // One slow spell (a big explosion: 30 ms frames for half a second), then fine: no step down.
+  run(p, { hz: 144, ms: 600, start: 1000, work: () => 30 });
+  run(p, { hz: 144, ms: 5400, start: 1600, work: () => 1.5 });
+  assert.equal(p.target, 144, 'one slow spell is a hiccup');
+  // A match starting: its first seconds (the route map being built, every bot thinking) aren't judged.
+  p.restart(7000);
+  run(p, { hz: 144, ms: 3000, start: 7000, work: () => 10 });
+  assert.equal(p.target, 144, 'the start of a match isn\'t judged');
+  run(p, { hz: 144, ms: 5000, start: 10000, work: () => 10 });
+  assert.equal(p.target, 72, 'still slow after that: stepped down');
+  assert.equal(p.stepped, 1);
+  // A fresh start (new graphics): the full rate is tried again.
+  p.restart(15000, true);
+  assert.equal(p.target, 144);
+});
+
+test('auto steps down at once when it falls well short, and ignores a window that stalled (a hidden tab)', () => {
+  const p = onScreen(60);
+  // Frames of 30 ms: 30 fps at best, half the rate. One window is enough.
+  run(p, { hz: 60, ms: 2500, start: 1000, work: () => 30 });
+  assert.equal(p.target, 30);
+  const q = onScreen(60);
+  // A window that lasted far longer than it should (the tab was hidden): not judged.
+  q.drawn(1000, 2); q.drawn(1016, 2); q.drawn(1033, 2);
+  q.drawn(9000, 2);
+  assert.equal(q.target, 60);
+  assert.equal(q.slow, 0);
+});
+
 test('auto never goes below 30 fps', () => {
   const p = onScreen(60);
   run(p, { hz: 60, ms: 30000, start: 1000, work: () => 80 });
