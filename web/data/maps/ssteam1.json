@@ -394,6 +394,18 @@
       "type": "armour",
       "x": 704,
       "y": 92
+    },
+    {
+      "type": "weapon",
+      "x": 366,
+      "y": 550,
+      "weapon": "Hammer"
+    },
+    {
+      "type": "weapon",
+      "x": 518,
+      "y": 550,
+      "weapon": "Hammer"
     }
   ],
   "objectives": [

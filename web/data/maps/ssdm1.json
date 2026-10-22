@@ -298,6 +298,18 @@
       "x": -587,
       "y": 66,
       "weapon": "Bazooka"
+    },
+    {
+      "type": "weapon",
+      "x": -425,
+      "y": 14,
+      "weapon": "Hammer"
+    },
+    {
+      "type": "weapon",
+      "x": 425,
+      "y": 14,
+      "weapon": "Hammer"
     }
   ],
   "objectives": [

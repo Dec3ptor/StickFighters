@@ -174,5 +174,7 @@ export default function () {
   m.hill(1255, 1495, ST);
   m.hill(1800, 2050, TUN);
   m.hill(PAL[0], 2600, ASITE);
+  // A hammer for anyone to build with (near the middle).
+  m.item('Hammer', 1860, -60);
   return m;
 }

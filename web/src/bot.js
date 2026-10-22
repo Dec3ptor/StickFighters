@@ -8,6 +8,7 @@ import { CELL } from './grid.js';
 import { inZone } from './objectives.js';
 import { botWantsGadget } from './gadgets.js';
 import { shotSpeed, smokeBetween } from './combat.js';
+import { buildTool, blocksLeft, flyFuel, exitSpot, launchSpot, fly, climb, coverSpot } from './botescape.js';
 
 const SIGHT = 1300;  // how far bots look for enemies
 const LOOKS = 6;     // in big games, sight lines a bot checks each time it looks around
@@ -183,11 +184,16 @@ export class BotController {
     this.history = [];
     this.forceRoam = false;
     this.destructing = false;
-    this.idleTrapped = 0;
     this.airTicks = 0;
     this.bounces = 0;
     this.throwing = null;
     this.lookAway = null;
+    this.escape = null;        // flying out of a pit, or building a way on (botescape.js)
+    this.escapeFails = 0;
+    this.trappedSince = -1;    // (since when it's been stuck with nothing to do and nowhere to go)
+    this.towardAt = -1e9;      // (when it last tried to get somewhere it couldn't by building or flying)
+    this.cover = null;         // a wall for cover being put up
+    this.coverAt = -1e9;
     this.ignore = this.ignore || new Map();
   }
 
@@ -198,12 +204,17 @@ export class BotController {
   watchdog(game, s) {
     if (game.tick % 30 !== s.id % 30) return;
     const h = this.history;
+    // (Flying or building its way out of somewhere, straight up, say: not stuck.)
+    if (this.escape) { h.length = 0; return; }
     h.push({ x: s.x });
     if (h.length > 8) h.shift();
     if (h.length < 8) return;
     const xs = h.map(p => p.x);
     const fighting = this.target && game.tick - (this.lastSeen?.tick ?? -1e9) < 60;
-    if (Math.max(...xs) - Math.min(...xs) > 50 || fighting || this.goalKind === 'fight' || this.goalKind === 'hold') return;
+    // (Or waiting where it is on purpose: holding a point, or at the spot to fly from, for fuel.)
+    if (Math.max(...xs) - Math.min(...xs) > 50 || fighting || ['fight', 'hold', 'toward'].includes(this.goalKind)) return;
+    // (Not in the middle of a jump: dropping it there could land us somewhere worse. Once it's down.)
+    if (this.exec || !s.body.onGround) return;
     if (this.goalItem) this.ignore.set(this.goalItem, game.tick + 2400);
     this.goalItem = null;
     this.forceRoam = true;
@@ -267,9 +278,12 @@ export class BotController {
       this.grabTicks = 0;
       this.thinkIn = Math.min(this.thinkIn, 3);
     }
-    if (--this.thinkIn <= 0 && !this.exec && s.body.onGround) this.think(game, s);
-    this.steer(game, s, inp);
+    if (--this.thinkIn <= 0 && !this.exec && s.body.onGround && !this.escape) this.think(game, s);
+    if (!this.escape) this.steer(game, s, inp);
     this.fight(game, s, inp);
+    // Getting out of a pit or past what's in the way: a jetpack, or building with a hammer.
+    if (this.escape) this.runEscape(game, s, inp);
+    else this.coverUp(game, s, inp);
     this.detonate(game, s, inp);
     // Defuse: flashbangs and smoke, thrown where the mode says (not in the middle of a fight).
     if (game.rules.botThrow) this.utility(game, s, inp);
@@ -480,9 +494,10 @@ export class BotController {
       if (way) { this.path = [way]; this.li = 0; this.start = { x: s.x, y: s.y }; return; }
       this.path = [];
       this.offGraph = this.nav.nearest(s.x, s.y, 200);
-      // Nowhere to go from here and nobody to fight: after a few seconds, self-destruct.
-      this.idleTrapped = !this.target ? this.idleTrapped + 1 : 0;
-      if (this.idleTrapped >= 6 && game.respawnEscapes(s)) this.destructing = true;
+      // Nowhere to go from here: fly out, or build a way out; failing that (nobody to
+      // fight, for a few seconds), self-destruct.
+      if (!this.target && this.startEscape(game, s, exitSpot(this.nav, s))) return;
+      this.lastResort(game, s, !this.target);
       return;
     }
     this.offGraph = null;
@@ -626,15 +641,134 @@ export class BotController {
 
     // In melee range of the target, get right up close.
     if (kind === 'chase' && def.kind === 'melee' && this.target) goal = costTo(this.target.x, this.target.y + 4).n || goal;
+    // (Where it really wants to be: the objective, or the enemy it's after.)
+    const want = obj && !inObj ? { x: (obj.zone.left + obj.zone.right) / 2, y: obj.zone.bottom - 12 }
+      : kind === 'chase' && this.target ? { x: this.target.x, y: this.target.y } : null;
+    // Somewhere it wants to be that it can't get to at all (a ledge too high, across a gap
+    // holes left, an enemy up there): over to a spot with room above to fly or build from;
+    // once there, fly there with the jetpack, or build a way (steps up, a bridge across).
+    let toward = null;
+    if (want && !inPit && ['roam', 'hunt', 'chase'].includes(kind) && this.escapeFails < 3 && game.tick - this.towardAt > 600) {
+      // (Somewhere to stand there: not an enemy up in the air with a jetpack, say.)
+      const to = this.nav.nearest(want.x, want.y, 90);
+      const able = to && (blocksLeft(s) >= 2 || (s.body.hasJetpack && flyFuel(s, { x: s.x, y: Math.min(s.y, to.y) }) <= 100));
+      if (able && search.cost[to.id] === Infinity) {
+        const from = launchSpot(game, this.nav, search, to, ok);
+        if (from) { goal = from; kind = 'toward'; toward = { to, want }; }
+      }
+    }
     this.goalKind = kind;
     this.goalItem = ['health', 'weapon', 'armour'].includes(kind) ? goalItem : null;
-    // In a pit with no way out, nobody to fight and nothing to pick up: after a few
-    // seconds of that, self-destruct to respawn.
-    this.idleTrapped = inPit && !this.target && !this.goalItem ? this.idleTrapped + 1 : 0;
-    if (this.idleTrapped >= 3 && game.respawnEscapes(s)) this.destructing = true;
+    // In a pit, nobody to fight and nothing to pick up: fly or build a way out (with no
+    // way of its own, after a few seconds, self-destruct: lastResort).
+    if (inPit && !this.target && !this.goalItem && this.startEscape(game, s, exitSpot(this.nav, s))) return;
+    this.lastResort(game, s, inPit && !this.target && !this.goalItem);
     this.path = this.nav.pathTo(search, goal) || [];
     this.li = 0;
     this.start = start;
+    // At the spot to go on from: off we go (a jetpack low on fuel: once it's filled up).
+    if (toward && goal === start && this.startEscape(game, s, toward.to, toward.want)) this.towardAt = game.tick;
+  }
+
+  /**
+   * Stuck (`idle`: in a pit, or somewhere off the route map, with nobody to fight and
+   * nothing to pick up) and no way out of its own: after a few seconds of that,
+   * self-destruct to respawn, the last resort. (A jetpack filling up is a way out.)
+   */
+  lastResort(game, s, idle) {
+    if (!idle) { this.trappedSince = -1; return; }
+    if (this.trappedSince < 0) this.trappedSince = game.tick;
+    if (game.tick - this.trappedSince > 240 && this.helpless(game, s) && game.respawnEscapes(s)) this.destructing = true;
+  }
+
+  /**
+   * True if the bot has no way of its own out of the pit it's in (no jetpack that can
+   * fly that high, no blocks to build with, or they've failed): only then does it self-destruct.
+   */
+  helpless(game, s) {
+    const to = this.escapeFails < 3 && exitSpot(this.nav, s);
+    return !to || (!buildTool(s) && !(s.body.hasJetpack && flyFuel(s, to) <= 100));
+  }
+
+  /**
+   * Start getting out (of a pit) or on (to a place it can't get to): fly there with the
+   * jetpack, or build plank steps up (or a bridge across a gap) with a hammer.
+   * to: where to (a route map spot or { x, y }); goal: where it's really going (a bridge
+   * stops once it's across). Returns true if it started.
+   */
+  startEscape(game, s, to, goal = null) {
+    if (!to || this.escapeFails >= 3) return false;
+    // A jetpack: once there's the fuel to get that high (it fills up on the ground).
+    const need = s.body.hasJetpack ? flyFuel(s, to) : Infinity;
+    if (need <= 100 && s.body.fuel >= need) {
+      this.escape = { kind: 'fly', to, start: game.tick, airborne: false };
+      return true;
+    }
+    if (!buildTool(s)) return false;
+    const dir = Math.sign(to.x - s.x) || (this.rng() < 0.5 ? -1 : 1);
+    const feet = s.y + 12;
+    const gap = !game.map.raycast(s.x + dir * 16, feet - 4, s.x + dir * 16, feet + 100);
+    const mode = goal && to.y > s.y - 50 && gap ? 'across' : 'up';
+    this.escape = { kind: 'build', mode, dir, goal, to, phase: 'place', start: game.tick, steps: 0, misses: 0, waited: 0 };
+    this.path = [];
+    this.exec = null;
+    return true;
+  }
+
+  /** Carry on flying or building (botescape.js); hand back to the route once there's a way on. */
+  runEscape(game, s, inp) {
+    const e = this.escape;
+    // Someone to fight right here: that first (not mid-air: carry on).
+    if (this.target && s.body.onGround && e.kind === 'build' && e.phase === 'place') return;
+    const r = e.kind === 'fly' ? fly(game, s, e, inp) : climb(game, s, e, inp, this.nav);
+    if (r === 'flying' || r === 'building') return;
+    this.escape = null;
+    this.thinkIn = 0;
+    if (r === 'failed') { this.escapeFails++; return; }
+    if (r === 'out' && e.link) {
+      // A way on from right here (the route map doesn't know about the new blocks yet).
+      this.path = [e.link];
+      this.li = 0;
+      this.start = { x: s.x, y: s.y };
+      this.thinkIn = 40;
+    }
+    this.escapeFails = 0;
+  }
+
+  /**
+   * In a fight at range, hurt or reloading, with blocks to build with: a wall a step
+   * toward the enemy, to stand behind for a moment.
+   */
+  coverUp(game, s, inp) {
+    const c = this.cover;
+    if (c) {
+      // (Put up where we stand: given up if we've been moved off it.)
+      if (game.tick > c.until || !s.weapons[c.tool] || !s.alive || !s.body.onGround || Math.abs(s.x - c.fromX) > 8 || Math.abs(s.y - c.fromY) > 4) { this.cover = null; return; }
+      inp.move = 0;
+      inp.jump = inp.jumpPressed = false;
+      if (s.current !== c.tool) { inp.switchTo = c.tool; return; }
+      inp.switchTo = undefined;
+      inp.plank = false;
+      inp.aim = Math.atan2(c.y - s.shoulderY, c.x - s.shoulderX);
+      inp.aimDist = Math.hypot(c.x - s.shoulderX, c.y - s.shoulderY);
+      inp.fire = Math.abs(angleDiff(s.aim, inp.aim)) < 0.05 && !s.buildPlank && game.tick % 2 === 0;
+      if (s.weapons[c.tool].ammo < c.ammo) {
+        // Up: stay behind it a moment (then back to the gun: pickWeapon).
+        this.cover = null;
+        this.path = [];
+        this.thinkIn = 90;
+      }
+      return;
+    }
+    const t = this.target;
+    if (!t || !s.body.onGround || game.tick - this.coverAt < 480 || blocksLeft(s) < 2) return;
+    const dx = t.x - s.x;
+    if (Math.abs(dx) < 220 || Math.abs(dx) > 750 || Math.abs(t.y - s.y) > 60) return;
+    if (!(s.health < 60 || s.reloadTimer > 0)) return;
+    this.coverAt = game.tick;
+    const spot = coverSpot(game, s, t.x);
+    const tool = buildTool(s);
+    if (spot && tool) this.cover = { ...spot, tool, ammo: s.weapons[tool].ammo, until: game.tick + 45, fromX: s.x, fromY: s.y };
   }
 
   /** Of these route map spots, the ones with a clear view of point p (remembered for the point, while the map stays as it is). */
@@ -926,8 +1060,8 @@ export class BotController {
 
     if (this.seen < (this.quick ? this.reaction * 0.55 : this.reaction)) return;
     if (this.steering(game, s)) return; // the super sheep is steered by our aim
-    // (Not a flashbang or smoke grenade at someone: they're for throwing ahead. Out comes a gun soon.)
-    if (def.kind === 'thrown' && !b.score) return;
+    // (Not a flashbang or smoke grenade at someone: they're for throwing ahead; nor a hammer. Out comes a gun soon.)
+    if ((def.kind === 'thrown' || def.kind === 'build') && !b.score) return;
     // (It fires once its aim is where it means it to be, and that doesn't look well off the target.)
     const off = Math.max(Math.abs(angleDiff(this.aim, want)), Math.abs(this.aimOff) * 0.6);
     const cone = def.kind === 'rail' ? this.d.fireCone * 0.35

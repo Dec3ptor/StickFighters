@@ -115,5 +115,7 @@ export default function () {
   m.spawn(-680, -165, 1, 2);
   for (const x of [930, 980, 1005]) m.spawn(x, 0, 2, 2);
   m.spawn(1000, -400, 2, 2);
+  // A hammer for anyone to build with (near the middle).
+  m.item('Hammer', -81, 210);
   return m;
 }

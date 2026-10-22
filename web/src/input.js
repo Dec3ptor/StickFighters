@@ -1,5 +1,6 @@
 // Keyboard and mouse, and turning them into a soldier's input each tick.
 
+import { WEAPONS } from './weapons.js';
 
 const GAME_KEYS = new Set([
   'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab',
@@ -198,8 +199,8 @@ export class PlayerController {
     };
     this.prevJump = jump;
     this.prevFire = k.mouse.left;
-    // The Builder: right click turns the block (a wall or a plank).
-    if (((k.mouse.right && !this.prevAlt) || k.mouse.rightClicked) && s.current === 'Builder' && s.alive) this.plank = !this.plank;
+    // Building (the Hammer, the Builder): right click turns the block (a wall or a plank).
+    if (((k.mouse.right && !this.prevAlt) || k.mouse.rightClicked) && WEAPONS[s.current]?.kind === 'build' && s.alive) this.plank = !this.plank;
     this.prevAlt = k.mouse.right;
     k.mouse.clicked = k.mouse.rightClicked = false;
     inp.plank = !!this.plank;

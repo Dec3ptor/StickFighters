@@ -160,9 +160,9 @@ function drawStatus(ctx, game, me, W, H) {
       frac = me.reloadTimer > 0 ? 1 - me.reloadTimer / def.reload : inv.mag / def.mag;
       label = me.reloadTimer > 0 ? `${def.name}: reloading${spare}` : `${def.name}  ${inv.mag}/${def.mag}${spare}`;
     } else if (def.tool) {
-      // The Builder: blocks left.
+      // Building (the Hammer, the Builder): blocks left, and what a click puts up (right click turns it).
       frac = inv.ammo / (me.kitAmmo?.[me.current] || def.maxAmmo || 1);
-      label = `${def.name}  ${inv.ammo} block${inv.ammo === 1 ? '' : 's'}`;
+      label = `${def.name}  ${inv.ammo} block${inv.ammo === 1 ? '' : 's'}  ·  ${me.buildPlank ? 'plank' : 'wall'}`;
     } else if (inv.ammo !== Infinity && !game.rules.infiniteAmmo) {
       frac = inv.ammo / (def.maxAmmo || def.ammo || 1);
       label = `${def.name}  ${inv.ammo}`;

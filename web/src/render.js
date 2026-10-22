@@ -214,7 +214,7 @@ export class Renderer {
    * where it would go: green if it can, red if not.
    */
   drawBuildGhost(game, s) {
-    const inv = s?.alive && s.current === 'Builder' && s.weapons.Builder;
+    const inv = s?.alive && WEAPONS[s.current]?.kind === 'build' && s.weapons[s.current];
     if (!inv) return;
     const plan = buildPlan(game, s);
     const ok = plan.ok && inv.ammo > 0;

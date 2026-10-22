@@ -285,13 +285,14 @@ export class NavGraph {
    * drop, and walking either way, tried with the real physics from right there.
    * Returns the quickest move that lands on a spot (one with a way back to the main
    * part of the map, if any does) as a link ({ type, move or dir, to, cost, ticks }),
-   * or null if none does.
+   * or null if none does. `only(node)`: just moves that land on spots it allows.
    */
-  escape(x, y) {
+  escape(x, y, only = null) {
     const from = { x, y, id: -1 }, box = { l: x, t: y, r: x, b: y };
     const trapped = this.trapped();
     let best = null;
     const consider = link => {
+      if (only && !only(link.to)) return;
       const a = trapped[link.to.id], b = best && trapped[best.to.id];
       if (!best || a < b || (a === b && link.cost < best.cost)) best = link;
     };
@@ -506,13 +507,7 @@ export class NavGraph {
     let main = -1, most = -1;
     for (const [c, k] of spawnsIn.size ? spawnsIn : sizes) if (k > most) { most = k; main = c; }
     // Work back from the main group: every spot with a way into it can get back.
-    // (The links turned round, as flat arrays: the spots with a link into each spot.)
-    const g = this._flat(), e = g.to.length;
-    const intoFrom = new Int32Array(n + 1), into = new Int32Array(e);
-    for (let k = 0; k < e; k++) intoFrom[g.to[k] + 1]++;
-    for (let i = 0; i < n; i++) intoFrom[i + 1] += intoFrom[i];
-    const fill = intoFrom.slice(0, n);
-    for (let i = 0; i < n; i++) for (let k = g.from[i]; k < g.from[i + 1]; k++) into[fill[g.to[k]]++] = i;
+    const { intoFrom, into } = this._into();
     const back = new Uint8Array(n), queue = new Int32Array(n);
     let q = 0;
     for (let i = 0; i < n; i++) if (comp[i] === main) { back[i] = 1; queue[q++] = i; }
@@ -522,6 +517,22 @@ export class NavGraph {
     }
     this._trapped = back.map(b => 1 - b);
     return this._trapped;
+  }
+
+  /**
+   * Spots with a way to `target` (a spot): Uint8Array, 1 = can get there (the target too).
+   * (Worked back from the target, along the links turned round.)
+   */
+  reachers(target) {
+    const n = this.nodes.length, { intoFrom, into } = this._into();
+    const ok = new Uint8Array(n), queue = new Int32Array(n);
+    let q = 0;
+    ok[target.id] = 1; queue[q++] = target.id;
+    while (q) {
+      const v = queue[--q];
+      for (let k = intoFrom[v]; k < intoFrom[v + 1]; k++) { const j = into[k]; if (!ok[j]) { ok[j] = 1; queue[q++] = j; } }
+    }
+    return ok;
   }
 
   /** The spot a soldier dropped at (x, y) lands on (null: none, a pit or a jump pad). */
@@ -547,6 +558,22 @@ export class NavGraph {
     }
     from[n] = k;
     return (this._flatLinks = { from, to, cost, link });
+  }
+
+  /**
+   * The links turned round, as flat arrays: the spots with a link into spot i are
+   * into[intoFrom[i]] to into[intoFrom[i + 1] - 1] (worked out again with _flat()).
+   */
+  _into() {
+    const g = this._flat();
+    if (g.into) return g.into;
+    const n = this.nodes.length, e = g.to.length;
+    const intoFrom = new Int32Array(n + 1), into = new Int32Array(e);
+    for (let k = 0; k < e; k++) intoFrom[g.to[k] + 1]++;
+    for (let i = 0; i < n; i++) intoFrom[i + 1] += intoFrom[i];
+    const fill = intoFrom.slice(0, n);
+    for (let i = 0; i < n; i++) for (let k = g.from[i]; k < g.from[i + 1]; k++) into[fill[g.to[k]]++] = i;
+    return (g.into = { intoFrom, into });
   }
 
   /** Cheapest cost from `start` to every node: { cost: Float64Array, prev: Int32Array, via: [] }. */

@@ -195,5 +195,5 @@ function giveWeapon(game, s, id, ammo, it, crate) {
   return true;
 }
 
-const NO_SWITCH_KINDS = new Set(['teleport', 'rope', 'kamikaze', 'placed', 'quake']);
+const NO_SWITCH_KINDS = new Set(['teleport', 'rope', 'kamikaze', 'placed', 'quake', 'build']);
 const KEY = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'F'];

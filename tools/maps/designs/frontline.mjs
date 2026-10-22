@@ -312,5 +312,7 @@ export default function () {
   m.item('M4', 7180, PLAT); m.item('health', 7260, PLAT); m.item('jetpack', 7380, PLAT);
   m.item('armour', 7300, -480); m.item('jetpack', 7360, -480); m.item('NinjaRope', 7150, -490);
   m.item('GrenadeLauncher', 6960, -490); m.item('M4', 7000, -640);
+  // A hammer for anyone to build with (near the middle).
+  m.item('Hammer', 3644, -210);
   return m;
 }

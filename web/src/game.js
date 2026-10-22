@@ -173,7 +173,10 @@ export class Game {
    * the game works on its own copy. Returns the route map the bots should use.
    */
   useNav(nav) {
-    this.nav = this.options.destruction || this.classesOn ? nav.clone(this.map) : nav;
+    // (Where the map can change, by holes or building (the Hammer turns up wherever there are
+    // pickups or crates), the match works on its own copy of the route map, kept up to date.)
+    const changes = this.options.destruction || this.classesOn || this.rules.pickups || this.rules.crates;
+    this.nav = changes ? nav.clone(this.map) : nav;
     this.spawnSets = null;
     return this.nav;
   }

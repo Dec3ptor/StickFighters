@@ -175,5 +175,7 @@ export default function () {
   rush(2, 3, [[2740, FARM], [2760, FARM], [3100, FARM], [3130, FARM], [3150, FARM]]);
   rush(1, 4, [[2240, -250], [2260, -250], [2250, CV], [2300, CV], [2350, CV]]);
   rush(2, 4, [[3600, BASE], [3640, BASE], [3860, BASE], [3900, BASE], [3880, FARM]]);
+  // A hammer for anyone to build with (near the middle).
+  m.item('Hammer', -6, -260);
   return m;
 }

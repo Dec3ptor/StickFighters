@@ -232,6 +232,12 @@
       "type": "health",
       "x": 429,
       "y": -165
+    },
+    {
+      "type": "weapon",
+      "x": -57,
+      "y": 54,
+      "weapon": "Hammer"
     }
   ],
   "objectives": [

@@ -351,7 +351,8 @@ test('bots spread over the classes and use their gadgets', () => {
     }
   }
   assert.ok(used.size >= 3, `gadgets used: ${[...used]}`);
-  assert.equal(game.map.builtCount, 0, 'bots don\'t build');
+  // (Bots build only for a reason, and not much: a wall for cover when hurt in a fight, a way up or across.)
+  assert.ok(game.map.builtCount <= 10, `bots built ${game.map.builtCount} blocks`);
   // Kits: every bot has its class's weapons (or what it picked up since).
   for (const s of game.soldiers) {
     if (!s.alive) continue;

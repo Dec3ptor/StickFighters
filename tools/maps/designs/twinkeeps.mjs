@@ -125,5 +125,7 @@ export default function () {
   for (const x of [160, 240, 360]) m.spawn(x, -90, 1, 2);          // the bridge
   m.spawn(60, -130, 1, 2);
   for (const x of [1150, 1180, 1260, 1300]) m.spawn(x, 0, 2, 2);   // red keep
+  // A hammer for anyone to build with (near the middle).
+  m.item('Hammer', -88, -130);
   return m;
 }

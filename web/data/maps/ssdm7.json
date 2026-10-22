@@ -305,6 +305,18 @@
       "x": 197,
       "y": 389,
       "weapon": "M4"
+    },
+    {
+      "type": "weapon",
+      "x": -145,
+      "y": -274,
+      "weapon": "Hammer"
+    },
+    {
+      "type": "weapon",
+      "x": 145,
+      "y": -274,
+      "weapon": "Hammer"
     }
   ],
   "objectives": [

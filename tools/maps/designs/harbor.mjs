@@ -175,5 +175,7 @@ export default function () {
   for (const x of [1960, 2020, 2050, 2140, 2180, 2220]) m.spawn(x, F1, 2, 2); // (clear of the stair landing)
   for (const [x, y] of [[1280, -2 * CH], [1330, -2 * CH], [1400, -2 * CH], [1580, -2 * CH], [1620, -2 * CH], [1660, -2 * CH]]) m.spawn(x, y, 1, 3);
   for (const x of [3620, 3540, 3460, 3380, 3300, 3220]) m.spawn(x, VD, 2, 3);
+  // A hammer for anyone to build with (near the middle).
+  m.item('Hammer', -47, -70);
   return m;
 }

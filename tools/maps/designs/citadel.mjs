@@ -278,5 +278,7 @@ export default function () {
   m.item('SR', 5550, -1700); m.item('Bazooka', 6070, -1860);
   m.item('M4', 6200, WARD); m.item('health', 6260, WARD); m.item('jetpack', 6380, WARD);
   m.item('jetpack', 6300, -1230); m.item('armour', 6380, -1230); m.item('NinjaRope', 6160, -1620);
+  // A hammer for anyone to build with (near the middle).
+  m.item('Hammer', 3234, -680);
   return m;
 }

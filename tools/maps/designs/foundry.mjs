@@ -123,5 +123,7 @@ export default function () {
   for (const x of [1080, 1320, 1420, 1490]) m.spawn(x, -260, 2, 2);
   for (const x of [250, 300, 350, 390]) m.spawn(x, -260, 1, 3);
   for (const x of [1820, 1760, 1700, 1640]) m.spawn(x, 0, 2, 3);
+  // A hammer for anyone to build with (near the middle).
+  m.item('Hammer', -194, -260);
   return m;
 }

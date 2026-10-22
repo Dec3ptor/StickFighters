@@ -113,5 +113,7 @@ export default function () {
   for (const x of [776, 806, 836]) m.spawn(x, G, 2, 2);
   for (const x of [912, 938, 964]) m.spawn(x, DECK, 2, 2);
 
+  // A hammer for anyone to build with (near the middle).
+  m.item('Hammer', -48, -500);
   return m;
 }

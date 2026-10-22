@@ -20,7 +20,7 @@
 //   kamikaze  fly at the enemy and explode
 //   rope      a grappling rope to swing on
 //   melee     hit whoever is in front of you
-//   build     the Engineer's Builder: put up a block, or repair the map, where you aim (building.js)
+//   build     building tools (the Hammer, the Engineer's Builder): put up a block, or repair the map, where you aim (building.js)
 //
 // Payloads (on thrown/rocket/strike bombs): blast {radius, damage, knock},
 // cluster {count, ...bomblet}, fire {count, life}, gas {count, life, dpt},
@@ -377,6 +377,14 @@ export const WEAPONS = {
     look: { type: 'held', sprite: 'rope' },
     bot: { score: 0, value: 1 },
   },
+  // Anyone's building tool (a pickup): a click puts up a wall (right click: a plank) where
+  // you aim, or repairs what explosions broke. A block a click; another hammer adds more.
+  Hammer: {
+    name: 'Hammer', short: 'Hammer', slot: 9, kind: 'build', tool: true,
+    rof: 24, ammo: 8, maxAmmo: 16, sound: 'build', semi: true,
+    look: { type: 'held', sprite: 'hammer' },
+    bot: { score: 0, value: 2 },
+  },
 
   // ---- F: Melee -------------------------------------------------------------------
   Prod: {
@@ -449,7 +457,7 @@ export const PICKUP_WEAPONS = WEAPON_ORDER.filter(id => id !== 'Platinum' && id 
 export const STARTING_WEAPONS = ['Platinum', 'Prod'];
 
 /** Weapons that don't take over your hands when you pick them up (tools you choose to use). */
-export const NO_AUTO_SWITCH = new Set(['Teleport', 'NinjaRope', 'Kamikaze', 'Dynamite', 'Mine', 'Earthquake', 'Prod', 'BattleAxe', 'BaseballBat', 'FirePunch', 'Builder',
+export const NO_AUTO_SWITCH = new Set(['Teleport', 'NinjaRope', 'Kamikaze', 'Dynamite', 'Mine', 'Earthquake', 'Prod', 'BattleAxe', 'BaseballBat', 'FirePunch', 'Builder', 'Hammer',
   'Knife', 'HEGrenade', 'Flashbang', 'SmokeGrenade', 'C4']);
 
 /** Headshots with bullets and shotgun pellets do double damage (the sniper rifle and bow have their own). */
@@ -464,6 +472,6 @@ export const CRATE_WEIGHTS = {
   GrenadeLauncher: 5, ClusterBomb: 5, BananaBomb: 3, HolyHandGrenade: 1.5,
   Bazooka: 4, HomingMissile: 3, Mortar: 4, Flamer: 4, PetrolBomb: 5, Skunk: 4,
   Sheep: 4, SuperSheep: 2, OldWoman: 3, MadCow: 2, Dynamite: 4, Mine: 5,
-  AirStrike: 2.5, NapalmStrike: 2, ConcreteDonkey: 1, Earthquake: 1.5, Teleport: 3, Kamikaze: 2, NinjaRope: 3,
+  AirStrike: 2.5, NapalmStrike: 2, ConcreteDonkey: 1, Earthquake: 1.5, Teleport: 3, Kamikaze: 2, NinjaRope: 3, Hammer: 4,
   BaseballBat: 4, BattleAxe: 3, FirePunch: 3,
 };

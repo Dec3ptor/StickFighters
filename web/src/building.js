@@ -1,9 +1,11 @@
-// The Engineer's Builder (classes on). Click where you aim to:
+// Building: the Hammer (a pickup anyone can use) and the Engineer's Builder (classes on).
+// Click where you aim to:
 //   - repair: on a destructible map, put back what explosions broke there
 //     (the map as it was, in a square around where you aim), or
 //   - build: put up a wall (standing on the floor below where you aim) or, after
 //     a right click, a plank (a little platform, or a bridge over a hole).
-// Each click uses a block; blocks come back over time (gadgets.js) and from ammo boxes.
+// Each click uses a block. The Builder's come back over time (gadgets.js) and from ammo
+// boxes; the Hammer's from picking up another one.
 //
 // buildPlan() works out what a click would do, so the player's screen can show it
 // before they click; build() does it. Built blocks are ordinary map blocks that
