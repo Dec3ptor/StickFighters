@@ -340,13 +340,13 @@ export function checkMap(raw) {
     if (!n || fromMain[n.id] === Infinity) { add('warning', `This ${it.type === 'weapon' ? WEAPONS[it.weapon].name : it.type} can't be reached by walking or jumping.`, { x: it.x, y: it.y }); }
   }
   // Objectives: somewhere players can get to, to stand at each one.
-  const NAMES = { hill: 'hill', point: 'capture point', flag: 'flag', mcom: 'M-COM' };
+  const NAMES = { hill: 'hill', point: 'capture point', flag: 'flag', mcom: 'M-COM', site: 'bomb site' };
   for (const o of data.objectives || []) {
-    const at = o.type === 'hill' || o.type === 'point' ? n => inZone(n, o) : o.type === 'mcom' ? n => inZone(n, mcomZone(o))
+    const at = o.type === 'hill' || o.type === 'point' || o.type === 'site' ? n => inZone(n, o) : o.type === 'mcom' ? n => inZone(n, mcomZone(o))
       : n => Math.abs(n.x - o.x) <= 14 && Math.abs(n.y - (o.y - STAND)) < 3;
     if (!nav.nodes.some(n => comp[n.id] === main && at(n))) {
       const x = o.x ?? (o.left + o.right) / 2, y = o.y ?? o.bottom;
-      add('warning', `Players can't get to this ${NAMES[o.type]}${o.type === 'point' ? ` (${o.label})` : ''}: it needs a floor to stand on that they can reach.`, { x, y: y - 20 });
+      add('warning', `Players can't get to this ${NAMES[o.type]}${o.label ? ` (${o.label})` : ''}: it needs a floor to stand on that they can reach.`, { x, y: y - 20 });
     }
   }
   const flags = (data.objectives || []).filter(o => o.type === 'flag');

@@ -65,9 +65,10 @@ test("a map's look in Remastered is kept, in saves and share links", async () =>
 
 test('.ssm files round-trip, matching the original game format', () => {
   for (const m of mapIndex()) {
-    // (The original format has no objectives or Rush sectors: everything else comes back.)
+    // (The original format has no objectives, Rush sectors or indestructible platforms: everything else comes back.)
     const { objectives, ...original } = normalizeMap(loadMap(m.file));
     original.spawns = original.spawns.map(({ sector, ...s }) => s);
+    original.platforms = original.platforms.map(({ hard, ...p }) => p);
     const bytes = encodeSSM(original);
     assert.deepEqual(decodeSSM(bytes), normalizeMap(original), m.name);
   }

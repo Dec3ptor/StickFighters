@@ -162,7 +162,7 @@ export function drawObjectives(r, game) {
       });
       break;
     }
-    case 'defuse': drawDefuse(ctx, game, st, t, w); break;
+    case 'defuse': drawDefuse(ctx, game, st, t, w, r.lights); break;
   }
   ctx.globalAlpha = 1;
 }
@@ -170,8 +170,11 @@ export function drawObjectives(r, game) {
 const T_COLOR = '#d88a1a', CT_COLOR = '#3a6fb8';
 const SIDE_COLOR = { T: T_COLOR, CT: CT_COLOR };
 
-/** Defuse: the bomb sites (a lettered area), and the bomb lying or planted somewhere. */
-function drawDefuse(ctx, game, st, t, w) {
+/**
+ * Defuse: the bomb sites (a lettered area), and the bomb lying or planted somewhere.
+ * (lights: Remastered's, where the bomb's light glows in the dark.)
+ */
+function drawDefuse(ctx, game, st, t, w, lights) {
   const b = st.bomb;
   for (const z of objectivesOf(game.map, 'site')) {
     const hot = b?.s === 'planted' && b.site === z.label;
@@ -192,12 +195,15 @@ function drawDefuse(ctx, game, st, t, w) {
     ctx.save(); ctx.translate(b.x, b.y - 3); drawSprite(ctx, 'c4', { t }); ctx.restore();
     // (Glinting, so it's easy to find.)
     if (blink(t, 20)) { ctx.fillStyle = 'rgba(255,220,120,0.8)'; ctx.fillRect(b.x + 5, b.y - 9, 1.6, 1.6); }
+    lights?.add(b.x, b.y - 4, 30, '#7fd36a', 0.35);
   } else if (b.s === 'planted' || b.s === 'defused') {
     // (A red light blinking on it, quicker as time runs out.)
-    if (b.s === 'planted' && blink(t, b.fuse > 600 ? 30 : b.fuse > 300 ? 15 : 6)) {
+    const on = blink(t, b.fuse > 600 ? 30 : b.fuse > 300 ? 15 : 6);
+    if (b.s === 'planted' && on) {
       ctx.fillStyle = 'rgba(255,60,40,0.35)';
       ctx.beginPath(); ctx.arc(b.x, b.y - 5, 9, 0, Math.PI * 2); ctx.fill();
     }
+    if (b.s === 'planted') lights?.add(b.x, b.y - 5, on ? 70 : 34, '#ff3a26', on ? 0.9 : 0.35);
     ctx.save(); ctx.translate(b.x, b.y - 4); ctx.scale(1.3, 1.3); drawSprite(ctx, 'c4', { t, armed: b.s === 'planted' }); ctx.restore();
     if (b.s === 'planted' && b.defuse > 0) bar(ctx, b.x, b.y - 22, 34, b.defuse, CT_COLOR);
   }

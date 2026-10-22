@@ -1,6 +1,6 @@
 // A picture of a map, to check a design by eye: platforms, jump pads, spawn
 // points (blue/red, with their Rush sector), items, and the objectives
-// (hill, flags, capture points, M-COMs), on a grid with coordinates.
+// (hill, flags, capture points, M-COMs, bomb sites), on a grid with coordinates.
 //
 // Usage: node tools/maps/preview.mjs <design or map> [out.png] [--scale 0.5] [--nav]
 //   --nav also marks every spot bots can stand on: grey = fine, red = a trap
@@ -79,7 +79,7 @@ function crc32(buf) { let c = 0xffffffff; for (const b of buf) c = CRC[(c ^ b) &
 
 const C = {
   ink: [17, 17, 17], floor: [236, 236, 236], pad: [205, 225, 160], grid: [230, 230, 238], gridText: [150, 150, 170],
-  blue: [47, 111, 219], red: [211, 59, 47], item: [230, 140, 20], hill: [150, 70, 200], point: [215, 170, 20], mcom: [70, 70, 70],
+  blue: [47, 111, 219], red: [211, 59, 47], item: [230, 140, 20], hill: [150, 70, 200], point: [215, 170, 20], mcom: [70, 70, 70], site: [200, 40, 30],
   ok: [160, 160, 160], trap: [230, 30, 30], cutoff: [255, 140, 0],
 };
 const TEAM = { 1: C.blue, 2: C.red };
@@ -102,6 +102,11 @@ export function drawMap(data, { scale = null, nav = false } = {}) {
     pic.rect(X(h.left), Y(h.top), X(h.right), Y(h.bottom), C.hill, 0.18);
     pic.outline(X(h.left), Y(h.top), X(h.right), Y(h.bottom), C.hill);
     pic.text(own.has('hill') ? 'HILL' : 'HILL?', X(h.left) + 3, Y(h.top) + 3, C.hill);
+  }
+  for (const z of objectivesOf(map, 'site')) {
+    pic.rect(X(z.left), Y(z.top), X(z.right), Y(z.bottom), C.site, 0.12);
+    pic.outline(X(z.left), Y(z.top), X(z.right), Y(z.bottom), C.site);
+    pic.text(`SITE ${z.label}${own.has('site') ? '' : '?'}`, X(z.left) + 3, Y(z.top) + 3, C.site, 2);
   }
   for (const p of objectivesOf(map, 'point')) {
     pic.rect(X(p.left), Y(p.top), X(p.right), Y(p.bottom), C.point, 0.2);

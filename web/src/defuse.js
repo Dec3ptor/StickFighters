@@ -807,7 +807,7 @@ const around = (x, y, w, h = 90) => ({ left: x - w, top: y - h, right: x + w, bo
  * once it's planted they guard it. Defenders: split between the sites; once it's
  * planted, everyone goes to defuse it.
  */
-function botGoal(game, s) {
+function botGoal(game, s, bot) {
   const st = game.modeState;
   if (!st || st.phase !== 'live' && st.phase !== 'freeze') return null;
   const b = st.bomb, sites = objectivesOf(game.map, 'site');
@@ -819,8 +819,9 @@ function botGoal(game, s) {
     if (b.s === 'carried' && b.by === s.id) return { zone: site(st.target), hold: true, urgent: true };
     if (b.s === 'dropped' && (role < 0.6 || Math.hypot(b.x - s.x, b.y - s.y) < 500)) return { zone: around(b.x, b.y, 10, 46), urgent: true, moving: true };
     if (b.s === 'planted') {
-      // Guard it from a few steps away (standing right on it would be easy to see where it is).
-      return { zone: around(b.x, b.y, 220, 140), avoid: around(b.x, b.y, 40, 60), hold: true };
+      // Guard it from a few steps away, somewhere with a view of it (standing right on it
+      // would give away where it is, and behind cover there'd be no stopping a defuse).
+      return { zone: around(b.x, b.y, 240, 150), avoid: around(b.x, b.y, 40, 60), hold: true, see: { x: b.x, y: b.y - 8 } };
     }
     const target = site(st.target);
     if (role < 0.2 && sites.length > 1) return { zone: sites.find(z => z !== target), hold: true };
@@ -829,7 +830,13 @@ function botGoal(game, s) {
     if (c && role < 0.55 && Math.hypot(c.x - s.x, c.y - s.y) > 260) return { zone: around(c.x, c.y + STAND, 120), moving: true };
     return { zone: target, hold: true };
   }
-  if (b.s === 'planted') return { zone: around(b.x, b.y, 14, 50), hold: true, urgent: true };
+  if (b.s === 'planted') {
+    // Retaking the site: clear it from somewhere with a view of the bomb, then defuse
+    // (straight for the bomb when nobody's in sight, or when time's running out).
+    const need = (gearOf(game, s).kit ? DEFUSE.kitTime : DEFUSE.defuseTime) + 3 * SEC + Math.hypot(b.x - s.x, b.y - s.y) / 2;
+    if (!bot?.target || b.fuse < need) return { zone: around(b.x, b.y, 14, 50), hold: true, urgent: true };
+    return { zone: around(b.x, b.y, 260, 160), avoid: around(b.x, b.y, 30, 60), hold: true, see: { x: b.x, y: b.y - 8 } };
+  }
   if (b.s === 'dropped' && Math.hypot(b.x - s.x, b.y - s.y) < 700) {
     // Defenders keep an eye on a dropped bomb.
     return { zone: around(b.x, b.y, 200, 140), hold: true };

@@ -340,6 +340,7 @@ const DID = {
   ctf: (game, feed) => feed.some(t => / took the /.test(t)),
   conquest: (game, feed) => feed.some(t => / captured [A-Z]/.test(t)),
   rush: (game, feed) => feed.some(t => / armed an M-COM/.test(t)),
+  defuse: (game, feed) => feed.some(t => /The bomb has been planted/.test(t)),
 };
 for (const m of MAPS.filter(m => m.size)) {
   test(`bots play ${m.name} in ${m.mode}`, () => {

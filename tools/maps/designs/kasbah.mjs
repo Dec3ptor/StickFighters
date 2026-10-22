@@ -2,11 +2,12 @@
 // style bomb map). The attackers (T, blue's spawn points) start on the citadel terrace at
 // the far left; the defenders (CT, red's) in a plaza at the far right.
 //
-//   y -330  LONG A   __long doors__/long ramp/ house roof = bridge = house roof == hall roof _
-//   y -260                                                       catwalk/ [ A SITE ]==palace gate==\ CT
-//   y -200  [T SPAWN]\ grand                                            /  the palace              \ stairs  minaret
-//   y    0            \staircase_ mid street: arcades, xbox courtyard _/mid doors_ CT mid ____|  [CT SPAWN] |
-//   y  220              \___________ B tunnels (a cellar) ___________ [ B SITE ] B doors __/B stairs
+//                       long doors                                               palace gate      minaret
+//   y -330  LONG A          []     __/ roofs == plank bridge == roofs == hall roof _     []             |
+//   y -260                  []  __/                                    catwalk  /[ A SITE ]__walkway_  |
+//   y -200  [T SPAWN]___  __[]_/ outside long                                  /    the palace       \ |
+//   y    0              \ grand    mid street: arcades, xbox courtyard ______/mid doors _ CT mid _  CT \|[CT SPAWN]
+//   y  220               \stairs__ B tunnels: arches, a cellar ____ [ B SITE ] B doors _____/B stairs
 //
 // T spawn: the grand staircase falls from the terrace past the street (mid, a hop across
 // the stairwell) down into the B tunnels; Long A starts across the stairwell, through the
@@ -23,7 +24,7 @@
 // Site B: the old cistern (a column, crates). Ways in: the tunnels, the B doors corridor
 // from the CT side's B stairs, and a hatch in CT mid's floor (the crates under it climb out).
 // CT spawn: from the plaza's edge the CT stairs climb to A and the B stairs go down to B,
-// so CTs reach either site in 6-8 seconds; rotating between them takes 11-13.
+// so CTs reach either site in 6-8 seconds (T in 17-18); rotating between them takes 11-14.
 //
 // Physics to design around: a jump climbs about 97 px; the stairs have 10 px risers (walked,
 // not jumped); soldiers are 34 px tall and 12 wide, so a floor passing over a staircase
@@ -119,7 +120,8 @@ export default function () {
   hard(H2[0], 24, B_IN[0] - 24, ROCK);
   m.box(1600, ROCK, 1630, ROCK + 30);               // low arches (no jumping under them)
   m.box(1950, ROCK, 1980, ROCK + 30);
-  m.box(1450, TUN - 35, 1490, TUN);                 // crates
+  m.box(1300, TUN - 55, 1350, TUN);                 // crates (two in the cellar)
+  m.box(1450, TUN - 35, 1490, TUN);
   m.box(1800, TUN - 40, 1840, TUN);
 
   // ---- B site: the cistern under the palace -------------------------------------------------
@@ -131,9 +133,8 @@ export default function () {
   m.box(2516, TUN - 140, 2570, TUN - 70);
   hard(B_IN[1] + 24, 24, 2986, ROCK);               // rock over the B doors corridor
 
-  // ---- A site: the palace roof, the walkway and the minaret gate ------------------------------
+  // ---- A site: the palace roof, the walkway and the palace gate -------------------------------
   hard(PAL[0], ASITE, PAL[1], CEIL);                // the palace (CT mid runs under it)
-  m.box(2700, ST - 32, 2750, ST);                   // cover in CT mid
   m.box(2340, ASITE - 40, 2390, ASITE);             // cover on A: a crate,
   m.box(2480, ASITE - 60, 2540, ASITE);             // a stack of two (the middle of the site stays clear),
   m.box(2495, ASITE - 95, 2530, ASITE - 60);
@@ -145,6 +146,7 @@ export default function () {
   hardFloor(3286, 3330, ST - 60, 12);               // ...from a step over the plaza's edge
   const bStairs = stairs(J, ST, 2986, TUN, { base: TUN });   // the B stairs, down to the B doors corridor
   m.floor(2564, bStairs(ST + 24), ST);              // CT mid's floor: from the hatch (x 2520..2564) to the B stairwell
+  m.box(2700, ST - 32, 2750, ST);                   // cover in CT mid
   hard(J, ST, R, TUN);                              // the plaza's ground
   hard(R - 60, -560, R, ST);                        // the minaret in the plaza's corner,
   m.box(R - 70, -470, R, -460);                     // its balcony,

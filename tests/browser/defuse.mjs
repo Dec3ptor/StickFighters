@@ -1,6 +1,7 @@
 // Defuse in a browser: picked in the menu, the buy menu (B, number keys, clicks),
-// planting the bomb with E, the round's result and the scoreboard; then the buy menu
-// in Remastered. Usage: node tests/browser/defuse.mjs [outDir]
+// planting the bomb with E, the round's result and the scoreboard; then a round in
+// Remastered (its buy menu, smoke and a flashbang, planting, the bomb going off).
+// Usage: node tests/browser/defuse.mjs [outDir]
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import { serve } from '../../tools/serve.mjs';
@@ -111,24 +112,100 @@ await page.waitForFunction(() => window.stickSoldiers.state.game.modeState.round
 i = await info();
 check(i.alive && i.phase === 'freeze', `round 2: ${JSON.stringify(i)}`);
 
-// Remastered: the buy menu in its style.
+// Remastered: a round in its look. The other soldiers stand still, so nothing gets in the way.
 await page.goto('about:blank');
 await page.goto(`${base}&game=remastered`);
 await page.waitForFunction(() => window.stickSoldiers);
 await page.evaluate(([map]) => {
   const s = window.stickSoldiers.readMenu();
-  window.stickSoldiers.startMatch({ ...s, map, mode: 'defuse', bots: 3, goal: 3 });
+  window.stickSoldiers.startMatch({ ...s, map, mode: 'defuse', bots: 3, goal: 3, side: 1 });
 }, [map]);
 await page.waitForFunction(() => window.stickSoldiers.state.game?.modeState?.phase === 'freeze', null, { timeout: 30000 });
+check(await page.evaluate(() => window.stickSoldiers.renderer.kind === 'remastered'), 'Remastered draws it');
+await page.evaluate(() => {
+  const { state } = window.stickSoldiers, g = state.game, me = state.me;
+  for (const s of g.soldiers) if (s !== me) g.controllers.set(s, { input: () => ({ move: 0, aim: 0, aimDist: 200 }) });
+});
 await page.keyboard.press('KeyB');
 await page.waitForTimeout(300);
 check((await info()).menu, 'Remastered: B opens the buy menu');
+// A smoke grenade (6, 3) and a flashbang (6, 2): $300 and $200 of our $800.
+for (const k of ['Digit6', 'Digit3', 'Digit6', 'Digit2']) await page.keyboard.press(k);
+await page.waitForTimeout(200);
+i = await info();
+check(i.weapons.includes('SmokeGrenade') && i.weapons.includes('Flashbang') && i.money === 300, `Remastered: bought grenades with the keys: ${JSON.stringify(i)}`);
 await page.screenshot({ path: `${outDir}/defuse-buy-remastered.png` });
 await page.keyboard.press('Escape');
 await page.waitForTimeout(100);
 check(!(await info()).menu, 'Esc closes the buy menu');
+await page.waitForFunction(() => window.stickSoldiers.state.game.modeState.phase === 'live', null, { timeout: 30000 });
+/** Throw grenade `id` at our own feet (the mouse straight below us). */
+const throwDown = async id => {
+  await page.evaluate(id => window.stickSoldiers.state.me.select(id), id);
+  await page.waitForTimeout(200);
+  const at = await page.evaluate(() => {
+    const { renderer: r, state } = window.stickSoldiers, me = state.me;
+    return { x: (me.x - r.cam.x) * r.scale + r.w / 2, y: (me.y - r.cam.y) * r.scale + r.h / 2 };
+  });
+  await page.mouse.move(at.x + 4, Math.min(700, at.y + 160));
+  await page.waitForTimeout(150);
+  await page.mouse.down(); await page.waitForTimeout(50); await page.mouse.up();
+};
+await throwDown('SmokeGrenade');
+await page.waitForFunction(() => window.stickSoldiers.state.game.projectiles.some(p => p.kind === 'cloud' && p.r > 40), null, { timeout: 10000 })
+  .catch(() => check(false, 'Remastered: the smoke grenade made a cloud'));
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${outDir}/defuse-smoke-remastered.png` });
+await page.mouse.move(640, 300);
+await page.waitForTimeout(400);
+await throwDown('Flashbang');
+await page.waitForFunction(() => window.stickSoldiers.state.me.flashTicks > 30, null, { timeout: 10000 })
+  .catch(() => check(false, 'Remastered: the flashbang at our feet blinded us'));
+await page.screenshot({ path: `${outDir}/defuse-flashed-remastered.png` });
+// The bomb to us, planted at a site by holding E; then it goes off.
+await page.evaluate(async () => {
+  const { state } = window.stickSoldiers, g = state.game, me = state.me, st = g.modeState;
+  const { objectivesOf, floorBelow } = await import('./src/objectives.js');
+  const z = objectivesOf(g.map, 'site')[0];
+  if (st.bomb.s === 'carried' && st.bomb.by !== me.id) delete g.soldiers.find(s => s.id === st.bomb.by).weapons.C4;
+  g.rules.carry(g, me);
+  me.flashTicks = 0;
+  const floor = floorBelow(g.map, (z.left + z.right) / 2, z.bottom - 40) ?? z.bottom;
+  me.body.x = (z.left + z.right) / 2; me.body.y = floor - 12; me.body.vx = me.body.vy = 0; me.prevX = me.x; me.prevY = me.y;
+  g.moved(me);
+});
+await page.waitForTimeout(300);
+await page.keyboard.down('KeyE');
+await page.waitForFunction(() => window.stickSoldiers.state.game.modeState.bomb.s === 'planted', null, { timeout: 8000 }).catch(() => {});
+await page.keyboard.up('KeyE');
+check((await info()).bomb === 'planted', 'Remastered: held E at a site and planted the bomb');
+await page.waitForTimeout(600);
+await page.screenshot({ path: `${outDir}/defuse-planted-remastered.png` });
+const lit = await page.evaluate(() => window.stickSoldiers.renderer.lights?.list.some(l => l.color === '#ff3a26'));
+check(lit, 'Remastered: the planted bomb glows');
+await page.evaluate(() => {
+  const { state } = window.stickSoldiers, g = state.game, me = state.me, st = g.modeState;
+  // (Out of the blast, to see the result.)
+  me.body.x = st.bomb.x + (st.bomb.x > 0 ? -900 : 900); g.moved(me);
+  st.bomb.fuse = 60;
+});
+await page.waitForFunction(() => window.stickSoldiers.state.game.modeState.phase === 'over', null, { timeout: 20000 }).catch(() => {});
+await page.waitForTimeout(400);
+const rmResult = await page.evaluate(() => window.stickSoldiers.state.game.modeState.result);
+check(rmResult?.why === 'bomb' || rmResult?.why === 'elimination', `Remastered: the round ended with the bomb: ${JSON.stringify(rmResult)}`);
+await page.screenshot({ path: `${outDir}/defuse-result-remastered.png` });
+const drawn = await page.evaluate(() => {
+  const src = document.querySelector('canvas'), c = document.createElement('canvas');
+  c.width = 160; c.height = 90;
+  const g = c.getContext('2d');
+  g.drawImage(src, 0, 0, src.width, src.height, 0, 0, 160, 90);
+  const d = g.getImageData(0, 0, 160, 90).data, seen = new Set();
+  for (let k = 0; k < d.length; k += 4) seen.add(((d[k] >> 4) << 8) | ((d[k + 1] >> 4) << 4) | (d[k + 2] >> 4));
+  return seen.size;
+});
+check(drawn > 40, `Remastered: the scene is drawn (${drawn} colours)`);
 
-console.log(JSON.stringify({ map, goal, result, errors }, null, 2));
+console.log(JSON.stringify({ map, goal, result, rmResult, errors }, null, 2));
 await browser.close();
 server.close();
 await relay.close();

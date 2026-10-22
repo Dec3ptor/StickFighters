@@ -574,7 +574,9 @@ export class BotController {
         if (inObj && this.rng() * 40 < this.profile.camp) goal = start; // hold still here a while
         else {
           let pv = Infinity;
-          for (const n of this.zoneNodes(obj)) {
+          // (Spots that can see a point, where the mode wants that: Defuse's guards watch the bomb.)
+          const nodes = this.zoneNodes(obj), watch = obj.see ? this.watching(game, nodes, obj.see) : null;
+          for (const n of watch?.length ? watch : nodes) {
             const c = search.cost[n.id];
             if (c === Infinity || !ok(n) || (obj.avoid && inZone(n, obj.avoid))) continue;
             // Getting there: the quickest way in. Already there: move about inside, nearby.
@@ -633,6 +635,16 @@ export class BotController {
     this.path = this.nav.pathTo(search, goal) || [];
     this.li = 0;
     this.start = start;
+  }
+
+  /** Of these route map spots, the ones with a clear view of point p (remembered for the point, while the map stays as it is). */
+  watching(game, nodes, p) {
+    const key = `${Math.round(p.x)}|${Math.round(p.y)}|${game.map.version}|${nodes.length}`;
+    if (this.watchKey !== key) {
+      this.watchKey = key;
+      this.watchList = nodes.filter(n => game.map.clearLine(n.x, n.y - 17, p.x, p.y));
+    }
+    return this.watchList;
   }
 
   /** Route map spots inside an objective's area (remembered, unless the area moves about). */

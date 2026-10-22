@@ -115,6 +115,19 @@
     "players": "8-24"
   },
   {
+    "file": "kasbah.json",
+    "name": "Kasbah",
+    "mode": "defuse",
+    "modes": [
+      "defuse",
+      "team",
+      "ffa",
+      "koth"
+    ],
+    "size": "medium",
+    "players": "6-12"
+  },
+  {
     "file": "skyline.json",
     "name": "Skyline",
     "mode": "ctf",
