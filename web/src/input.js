@@ -25,6 +25,14 @@ export class Input {
     this.mouse = { x: 0, y: 0, left: false, right: false, moved: false, clicked: false, rightClicked: false };
     this.wheel = 0;
     this.enabled = false;
+    // The mouse locked to the game (the browser's pointer lock): its cursor is hidden and
+    // only the game gets the mouse, which moves the crosshair by how far the mouse moves.
+    this.locked = false;
+    this.lockedAt = 0;
+    this.releasing = false;     // (we let go of it ourselves: not the player pressing Esc)
+    this.wantsLock = () => false; // main.js: whether the mouse should be locked to the game now
+    this.onPress = null;          // main.js: a click on the game (it can lock the mouse, or go full screen, then)
+    this.onLockLost = null;       // main.js: the player freed the mouse (Esc), so open the menu
 
     window.addEventListener('keydown', e => {
       if (!this.enabled) return;
@@ -43,17 +51,42 @@ export class Input {
     window.addEventListener('blur', release);
     document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
     window.addEventListener('mousemove', e => {
-      const r = this.canvas.getBoundingClientRect();
-      this.mouse.x = e.clientX - r.left;
-      this.mouse.y = e.clientY - r.top;
+      if (this.locked) {
+        // (Just after locking, browsers can report the cursor being moved into the middle.)
+        if (performance.now() - this.lockedAt < 100) return;
+        this.mouse.x = Math.max(0, Math.min(this.canvas.clientWidth, this.mouse.x + (e.movementX || 0)));
+        this.mouse.y = Math.max(0, Math.min(this.canvas.clientHeight, this.mouse.y + (e.movementY || 0)));
+      } else {
+        const r = this.canvas.getBoundingClientRect();
+        this.mouse.x = e.clientX - r.left;
+        this.mouse.y = e.clientY - r.top;
+      }
       this.mouse.moved = true;
     });
+    document.addEventListener('pointerlockchange', () => {
+      const now = !!this.canvas && document.pointerLockElement === this.canvas;
+      if (now === this.locked) return;
+      this.locked = now;
+      if (now) {
+        this.lockedAt = performance.now();
+        // (Asked for just before a menu opened: let go again.)
+        if (!this.wantsLock()) this.unlock();
+        return;
+      }
+      if (!this.releasing) this.onLockLost?.();
+      this.releasing = false;
+    });
+    document.addEventListener('pointerlockerror', () => { this.releasing = false; });
+    this.guard();
     window.addEventListener('mouseup', e => {
       if (e.button === 0) this.mouse.left = false;
       if (e.button === 2) this.mouse.right = false;
     });
     this.onCanvas = {
       mousedown: e => {
+        // (No text selection, Shift + click included, and no middle-click scrolling.)
+        e.preventDefault();
+        this.onPress?.();
         if (e.button === 0) this.mouse.left = this.mouse.clicked = true;
         if (e.button === 2) this.mouse.right = this.mouse.rightClicked = true;
       },
@@ -70,7 +103,47 @@ export class Input {
       this.canvas?.removeEventListener(type, fn);
       canvas.addEventListener(type, fn, type === 'wheel' ? { passive: false } : undefined);
     }
+    // (The mouse was locked to the old one: it's let go of with it.)
+    if (this.locked) this.unlock();
     this.canvas = canvas;
+  }
+
+  /** Lock the mouse to the game (only works from a click or key press; failing that, the next click tries again). */
+  lock() {
+    if (this.locked || !this.canvas?.requestPointerLock) return;
+    try {
+      const p = this.canvas.requestPointerLock();
+      p?.catch?.(() => {});
+    } catch { /* not now */ }
+  }
+
+  /** Let go of the mouse (for a menu): this isn't the player pressing Esc. */
+  unlock() {
+    if (!this.locked) return;
+    this.releasing = true;
+    document.exitPointerLock?.();
+  }
+
+  /**
+   * While a match is being played (the page's body has the class 'playing'), the
+   * browser's own reactions to the mouse, Shift and Ctrl with it included, stay out
+   * of the game: no menu on a right click, no zooming with Ctrl + wheel or scrolling
+   * with Shift + wheel, no selecting text, no dragging, no pasting or scrolling with
+   * the middle button, and no going back or forward with the mouse's side buttons.
+   */
+  guard() {
+    const playing = () => document.body.classList.contains('playing');
+    const typing = e => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || '') || !!e.target?.isContentEditable;
+    window.addEventListener('contextmenu', e => { if (playing() && !typing(e)) e.preventDefault(); });
+    window.addEventListener('auxclick', e => { if (playing()) e.preventDefault(); });
+    for (const type of ['mousedown', 'mouseup']) {
+      window.addEventListener(type, e => { if (playing() && (e.button === 1 || e.button === 3 || e.button === 4)) e.preventDefault(); });
+    }
+    window.addEventListener('selectstart', e => { if (playing() && !typing(e)) e.preventDefault(); });
+    window.addEventListener('dragstart', e => { if (playing()) e.preventDefault(); });
+    window.addEventListener('wheel', e => {
+      if (playing() && (e.ctrlKey || e.target instanceof HTMLCanvasElement)) e.preventDefault();
+    }, { passive: false });
   }
 
   down(...codes) { return codes.some(c => this.keys.has(c)); }

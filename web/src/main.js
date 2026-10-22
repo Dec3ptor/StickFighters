@@ -65,7 +65,11 @@ const CLASSES_ON = params.has('classes');
 // (?tiles=on: the canvas keeps the map in tiles, maptiles.js. Off by default: slower with a graphics card.)
 if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
-const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto' };
+const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', lockMouse: true, fullscreen: false };
+// Locking the mouse to the game: ?lock=on / ?lock=off in the address. (Browsers driven by tests
+// move the mouse oddly while it's locked, so it's off for them unless the address asks.)
+const LOCK_PARAM = params.get('lock');
+const lockAllowed = () => prefs.lockMouse && (LOCK_PARAM === 'on' || (LOCK_PARAM !== 'off' && !navigator.webdriver));
 let community = null;
 let watcher = null;
 // Classes on: the class and loadouts we play with (saved apart from the settings: kitchoice.js).
@@ -88,6 +92,8 @@ const DEFAULTS = {
   graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true,
   sprint: 'hold', // Shift: 'hold' to sprint, or 'toggle' it on and off
   quality: 'auto', // Remastered's graphics: 'auto', 'high', 'medium' or 'low'
+  lockMouse: true,  // lock the mouse to the game while playing (Esc frees it)
+  fullscreen: false, // play in full screen (with the keyboard's browser shortcuts kept for the game, where browsers allow it)
   edition: null,   // the game last picked
 };
 
@@ -553,11 +559,14 @@ function enterMatch(game, me) {
   state.spec = { id: null, free: false, x: 0, y: 0 };
   if (state.spectating && state.mode !== 'client') game.spectate(me, true, { quiet: true });
   canvas.focus?.();
+  grabControls();
 }
 
 function endMatch(to = state.returnTo) {
   closePicker();
   closeBuy();
+  input.unlock();
+  leaveFullscreen();
   state.game = null;
   state.spectating = false;
   state.mode = 'offline';
@@ -593,7 +602,8 @@ function toast(text) {
 
 function setPaused(p) {
   if (!state.game || (state.game.over && p)) return;
-  if (p) closeBuy();
+  // (Menu first, so closing the buy menu doesn't go back to playing.)
+  if (p) { state.menuOpen = true; closeBuy(); input.unlock(); }
   const online = state.mode !== 'offline';
   state.paused = online ? false : p;
   input.enabled = !p;
@@ -608,7 +618,9 @@ function setPaused(p) {
   $('quit').textContent = state.mode === 'host' ? 'End game for everyone' : state.mode === 'client' ? 'Leave game' : 'Quit to menu';
   state.menuOpen = p;
   show('pause', p);
+  fullscreenButton();
   state.last = performance.now();
+  if (!p) grabControls();
 }
 
 // ---- Spectating ---------------------------------------------------------------------------
@@ -708,6 +720,51 @@ function localNote(text) {
   if (g && state.me) g.notes.push({ text, tick: g.tick, to: state.me.id });
 }
 
+// ---- Keeping the controls in the game ------------------------------------------------------
+
+/** True while the match is being played (no menu, chat or picker open over it). */
+function playingNow() {
+  const g = state.game;
+  return !!g && !g.over && !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open &&
+    document.body.classList.contains('playing') && $('settings').classList.contains('hidden');
+}
+
+/**
+ * Back to playing: lock the mouse to the game again, and full screen if that's chosen.
+ * (Browsers only allow these from a click or key press: when they don't, the next click on the game does it.)
+ */
+function grabControls() {
+  if (!playingNow()) return;
+  if (lockAllowed()) input.lock();
+  enterFullscreen();
+}
+
+/** Full screen for playing (Settings): with the keyboard kept for the game where the browser can (Chrome, Edge: even Ctrl+W). */
+function enterFullscreen() {
+  if (!prefs.fullscreen || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+  try {
+    document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+      .then(() => { state.ownFullscreen = true; return navigator.keyboard?.lock?.(); })
+      .catch(() => {});
+  } catch { /* not allowed now */ }
+}
+
+/** Out of full screen (ours, or any: `always`). */
+function leaveFullscreen(always = false) {
+  if (!state.ownFullscreen && !always) return;
+  state.ownFullscreen = false;
+  navigator.keyboard?.unlock?.();
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+}
+
+/** The pause menu's full screen button says what it'll do. */
+function fullscreenButton() {
+  const b = $('fullscreen');
+  if (!b) return;
+  b.classList.toggle('hidden', !document.documentElement.requestFullscreen);
+  b.textContent = document.fullscreenElement ? 'Leave full screen' : 'Full screen';
+}
+
 // ---- Defuse: the buy menu ----------------------------------------------------------------
 
 let buyMenu = null;
@@ -724,12 +781,13 @@ function openBuy() {
   getBuyMenu().show(g, me);
   input.enabled = false;
   input.clear();
+  input.unlock();
 }
 
 function closeBuy() {
   if (!buyMenu?.open) return;
   buyMenu.hide();
-  if (state.game && !state.menuOpen && !state.chatOpen && !state.game.over) input.enabled = true;
+  if (state.game && !state.menuOpen && !state.chatOpen && !state.game.over) { input.enabled = true; grabControls(); }
 }
 
 /** Buy something: straight away offline or hosting; online, the host does it. */
@@ -749,6 +807,7 @@ function openPicker() {
   state.pickerOpen = true;
   input.enabled = false;
   input.clear();
+  input.unlock();
   drawPicker();
   show('classPicker', true);
   syncKit(true);
@@ -764,7 +823,7 @@ function closePicker() {
   show('classPicker', false);
   show('loadout', false);
   syncKit(false);
-  if (state.game && !state.menuOpen && !state.chatOpen && !state.game.over) input.enabled = true;
+  if (state.game && !state.menuOpen && !state.chatOpen && !state.game.over) { input.enabled = true; grabControls(); }
 }
 
 /** Choose the class to spawn as next (and from now on). */
@@ -810,6 +869,8 @@ function openSettings() {
   $('fpsCap').value = String(prefs.fpsCap);
   $('showFps').checked = prefs.showFps;
   $('showPing').checked = prefs.showPing;
+  $('lockMouse').checked = prefs.lockMouse;
+  $('fullscreenPref').checked = prefs.fullscreen;
   settingsNotes();
   show('settings', true);
   $('settingsDone').focus();
@@ -1130,6 +1191,7 @@ function openChat() {
   state.chatOpen = true;
   input.enabled = false;
   input.clear();
+  input.unlock();
   show('chatForm', true);
   $('chatInput').value = '';
   $('chatInput').focus();
@@ -1140,7 +1202,7 @@ function closeChat() {
   state.chatOpen = false;
   show('chatForm', false);
   $('chatInput').blur();
-  if (state.game && !state.menuOpen) input.enabled = true;
+  if (state.game && !state.menuOpen) { input.enabled = true; grabControls(); }
 }
 
 function sendChat(text) {
@@ -1303,6 +1365,7 @@ function matchOver(g) {
     state.overShown = true;
     closeBuy();
     input.enabled = false;
+    input.unlock();
     document.body.classList.remove('playing');
     state.overAt = now;
     if (state.mode === 'host') state.nextMatchAt = now + 12000;
@@ -1395,6 +1458,15 @@ function wire() {
   $('showFps').addEventListener('change', () => { prefs.showFps = $('showFps').checked; perf.on = prefs.showFps || params.has('fps'); savePrefs(); });
   $('showPing').addEventListener('change', () => { prefs.showPing = $('showPing').checked; savePrefs(); });
   $('sprintMode').addEventListener('change', () => { prefs.sprint = $('sprintMode').value === 'toggle' ? 'toggle' : 'hold'; savePrefs(); });
+  $('lockMouse').addEventListener('change', () => { prefs.lockMouse = $('lockMouse').checked; savePrefs(); if (!prefs.lockMouse) input.unlock(); });
+  $('fullscreenPref').addEventListener('change', () => { prefs.fullscreen = $('fullscreenPref').checked; savePrefs(); if (!prefs.fullscreen) leaveFullscreen(true); });
+  $('fullscreen').addEventListener('click', () => {
+    // (From the menu: full screen now, and for the matches after this one.)
+    prefs.fullscreen = !document.fullscreenElement;
+    savePrefs();
+    if (prefs.fullscreen) enterFullscreen(); else leaveFullscreen(true);
+  });
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) { state.ownFullscreen = false; navigator.keyboard?.unlock?.(); } fullscreenButton(); });
   // Mid-match, closing or leaving the page (Ctrl+W, say) asks first.
   window.addEventListener('beforeunload', e => {
     if (state.game && !state.game.over) { e.preventDefault(); e.returnValue = ''; }
@@ -1444,7 +1516,11 @@ function wire() {
       return;
     }
     if (e.code === 'KeyB' && !e.repeat && state.game.rules.buyItem && !state.menuOpen) { e.preventDefault(); openBuy(); return; }
-    if (e.code === 'Escape') { e.preventDefault(); setPaused(!state.menuOpen); }
+    if (e.code === 'Escape') {
+      e.preventDefault();
+      // (Esc also frees a locked mouse, which opens the menu: one press, not two.)
+      if (performance.now() - (state.freedAt || 0) > 400) setPaused(!state.menuOpen);
+    }
     // Watching (spectating, or out of lives): A/D (or the arrows) switch who you follow,
     // and spectating, Space gives a free camera (where A/D move it instead).
     const me = state.me;
@@ -1472,8 +1548,9 @@ function wire() {
         (me.spectating || (!me.alive && !g.rules.canRespawn(g, me)))) cycleWatch(e.button === 2 ? -1 : 1);
     // Waiting to respawn with classes on: a click on "C to change" opens the class picker.
     const b = renderer?.classButton;
+    const mx = input.locked ? input.mouse.x : e.clientX, my = input.locked ? input.mouse.y : e.clientY;
     if (b && state.game && !state.menuOpen && !state.pickerOpen && e.target === canvas &&
-        e.clientX >= b.x && e.clientX <= b.x + b.w && e.clientY >= b.y && e.clientY <= b.y + b.h) openPicker();
+        mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h) openPicker();
   });
   // Offline games pause when you switch away; online ones can't.
   window.addEventListener('blur', () => { if (state.game && !state.game.over && state.mode === 'offline') setPaused(true); });
@@ -1536,6 +1613,14 @@ async function boot() {
   renderer = r;
   canvas = renderer.canvas;
   input = new Input(canvas);
+  // A click on the game locks the mouse to it while playing; Esc frees it (and opens the menu).
+  input.wantsLock = () => lockAllowed() && playingNow();
+  input.onPress = () => grabControls();
+  input.onLockLost = () => {
+    if (!playingNow()) return;
+    state.freedAt = performance.now();
+    setPaused(true);
+  };
   setLegAnimations(legs);
   audio.preload();
   maps.index = index;
@@ -1590,7 +1675,7 @@ async function boot() {
   });
   // For automated tests and debugging in the console.
   window.stickSoldiers = {
-    state, get renderer() { return renderer; }, get edition() { return edition; }, setEdition, openGamePicker, pacer, prefs, perf, setGraphics, startMatch, endMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab,
+    state, get renderer() { return renderer; }, get edition() { return edition; }, get input() { return input; }, setEdition, openGamePicker, pacer, prefs, perf, setGraphics, startMatch, endMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab,
     get profile() { return profile; }, openPicker, openLoadout,
   };
 }

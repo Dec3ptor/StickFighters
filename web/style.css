@@ -24,6 +24,9 @@ canvas#game {
   display: block;
 }
 body.playing canvas#game { cursor: none; }
+/* While playing, no selecting text with the mouse (Shift + click included); the chat box still can. */
+body.playing { -webkit-user-select: none; user-select: none; }
+body.playing input, body.playing textarea { -webkit-user-select: text; user-select: text; }
 
 .hidden { display: none !important; }
 

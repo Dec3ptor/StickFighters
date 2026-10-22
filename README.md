@@ -40,6 +40,7 @@ Two games on one site: the **Original**, drawn as it was, and **Stick Soldiers R
   - **Frame rate**: Auto, or a cap from 30 to 240 fps. Auto draws at your screen's refresh rate; if your computer can't keep up, it drops to an even fraction of it (144 → 72) so frames stay evenly spaced, and tries the full rate again later.
   - **Show frame rate** and **show ping in online games**.
   - **Sprint**: hold `Shift` to sprint, or press it to start and stop. The scoreboard (`Tab`) shows everyone's ping in online games.
+  - **Lock the mouse to the game while playing** (on to start with) and **Full screen while playing** (see [Controls](#controls)).
   - They're remembered between visits. `?renderer=webgl` / `?renderer=canvas` and `?fps` in the address override them.
 - **Game speed fixed at 75%** of the original tuning: movement, jumps, bullets, grenades and fire rates are slowed, while the game keeps updating 60 times a second. Jumps keep their height, so every map stays climbable. A hidden speed picker can be switched back on with `SHOW_SPEED_MENU` in `web/src/config.js`.
 
@@ -161,6 +162,8 @@ Air strikes, napalm, the donkey and teleports go where your mouse is. Weapons ar
 | Scores / menu / mute | `Tab` / `Esc` / `M` |
 
 During a match the browser's own `Ctrl` shortcuts (bookmark, save, select all...) are blocked, so holding `Ctrl` to crouch never opens one, and closing or leaving the page asks first.
+
+**The controls stay in the game.** A click on the game locks the mouse to it: the browser's cursor is hidden and the crosshair moves with the mouse, kept on the screen. `Esc` frees the mouse and opens the menu; going back to the game locks it again. While you play, the browser's own reactions to the mouse are blocked whatever keys you hold (`Shift` to sprint, `Ctrl` to crouch): no right-click menu, no zooming with `Ctrl` + wheel or sideways scrolling with `Shift` + wheel, no selecting text, no middle-click scrolling or pasting, and the mouse's back and forward buttons don't leave the page. **Settings → Lock the mouse to the game** turns the locking off (the rest stays). **Full screen while playing** (or **Full screen** in the menu) plays in full screen, where Chrome and Edge also keep their own shortcuts, even `Ctrl`+`W`, for the game; hold `Esc` to leave full screen.
 
 ## Classes
 

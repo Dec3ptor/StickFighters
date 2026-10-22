@@ -237,6 +237,7 @@
       <button id="toEditor" class="hidden">Back to map maker</button>
       <button id="quit">Quit to menu</button>
       <button id="pauseSettings">Settings</button>
+      <button id="fullscreen">Full screen</button>
       <label class="check"><input type="checkbox" id="mute"> Mute sound</label>
     </div>
   </section>
@@ -281,6 +282,9 @@
           <option value="toggle">Press to start or stop</option>
         </select>
       </label>
+      <label class="check"><input type="checkbox" id="lockMouse"> Lock the mouse to the game while playing</label>
+      <label class="check"><input type="checkbox" id="fullscreenPref"> Full screen while playing</label>
+      <p class="muted-note">With the mouse locked, only the game gets it: no browser menus, zooming or text selection, whatever keys you hold. <kbd>Esc</kbd> frees it and opens the menu. In full screen, Chrome and Edge also keep their own shortcuts (like <kbd>Ctrl</kbd>+<kbd>W</kbd>) for the game: hold <kbd>Esc</kbd> to leave it.</p>
       <h3 class="exp-head">Experimental</h3>
       <div class="field-pair">
         <label class="field">Bot vision
