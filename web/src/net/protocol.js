@@ -39,6 +39,23 @@ const TEXT = new TextEncoder(), UNTEXT = new TextDecoder(), NONE = new Uint8Arra
 // Mode state numbers to 3 decimal places (they're progress bars and positions).
 const short = (k, v) => (typeof v === 'number' && !Number.isInteger(v) ? Math.round(v * 1000) / 1000 : v);
 
+// The end-of-match results from the host, checked (whatever arrives, the results screen must draw).
+const num = v => (Number.isFinite(v) ? v : null);
+const str = (v, n) => String(v ?? '').slice(0, n);
+function cleanAwards(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter(a => a && typeof a === 'object').slice(0, 8).map(a => ({
+    id: str(a.id, 16), title: str(a.title, 32), soldier: num(a.soldier), name: str(a.name, 14), team: num(a.team) ?? 0, text: str(a.text, 60),
+  }));
+}
+function cleanKill(k) {
+  if (!k || typeof k !== 'object' || !Number.isFinite(k.tick)) return null;
+  return {
+    tick: k.tick, killer: num(k.killer), victim: num(k.victim), weapon: k.weapon == null ? null : str(k.weapon, 24),
+    headshot: !!k.headshot, x: num(k.x) ?? 0, y: num(k.y) ?? 0,
+  };
+}
+
 // ---- Byte writer / reader -------------------------------------------------------------
 
 export class Writer {
@@ -358,7 +375,7 @@ export function decodeSnapshot(data) {
   if (el) {
     try {
       const e = JSON.parse(UNTEXT.decode(new Uint8Array(r.view.buffer, r.view.byteOffset + r.o, el)));
-      snap.end = { awards: Array.isArray(e.awards) ? e.awards.slice(0, 8) : [], finalKill: e.finalKill && typeof e.finalKill === 'object' ? e.finalKill : null };
+      snap.end = { awards: cleanAwards(e.awards), finalKill: cleanKill(e.finalKill) };
     } catch { /* ignore a bad one */ }
     r.o += el;
   }

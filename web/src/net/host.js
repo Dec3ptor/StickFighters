@@ -296,7 +296,9 @@ export class NetHost {
         const id = p.soldier.id;
         p.link.send({
           t: 'ev', tick: g.tick,
-          s: e.s.filter(x => x[3] == null || x[3] === id || x[3] === -p.soldier.team).map(x => x.slice(0, 3)),
+          // (A sound to one player, or to a team: a negative number. Soldier 0 is a player,
+          // not team 0: in free-for-all everyone's on team 0, and 0 === -0.)
+          s: e.s.filter(x => x[3] == null || x[3] === id || (x[3] < 0 && -x[3] === p.soldier.team)).map(x => x.slice(0, 3)),
           fx: e.fx, k: e.k, sh: e.sh, cv,
           n: e.n.filter(x => x[1] === id).map(x => x[0]),
           // ([text, sub, kind, mine (1: to this player, 0: everyone), about])

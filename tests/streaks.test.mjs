@@ -468,3 +468,17 @@ test('the replay of the winning kill: recorded as it happens, played slowly on a
   assert.equal(new ReplayPlayer(game, new Tape(), game.finalKill).ok, false);
   assert.equal(new ReplayPlayer(game, game.tape, { ...game.finalKill, tick: 5 }).ok, false);
 });
+
+test('online: the host\'s own kill sounds and stings stay on the host\'s screen (free-for-all: soldier 0 isn\'t team 0)', async () => {
+  const { game, clients, step, me } = await online({ players: 1 });
+  await step(150);
+  const c = clients[0];
+  assert.equal(me.id, 0);
+  const victim = game.soldiers.find(s => s.id === c.me.id);
+  c.game.sounds.length = 0;
+  for (let i = 0; i < 3; i++) { if (!victim.alive) victim.spawnAt({ x: 500, y: -12 }, 0); game.kill(victim, me, 'M4'); }
+  assert.ok(game.sounds.some(x => x.name === 'killConfirm' && x.to === 0), 'the host hears it');
+  await step(20);
+  const heard = c.game.sounds.map(x => x.name);
+  assert.ok(!heard.includes('killConfirm') && !heard.includes('firstBlood') && !heard.includes('tripleKill'), `the player heard ${heard.join(', ')}`);
+});
