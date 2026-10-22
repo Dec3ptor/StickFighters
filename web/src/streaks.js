@@ -134,11 +134,15 @@ export function bank(game, s, id) {
   return true;
 }
 
-/** A soldier left play without dying (spectating): their streak and Juggernaut end. */
+/**
+ * A soldier left play without dying (spectating): their streak and Juggernaut end, and their
+ * sentry and stampede go with them (no kills for someone sitting out).
+ */
 export function streakOff(game, s) {
   s.streak = 0;
   s.multi = 0;
   if (s.jugger > 0) endJugger(game, s, false);
+  for (const p of game.projectiles) if (p.owner === s && (p.kind === 'sentry' || p.cfg?.seek)) p.owner = null;
 }
 
 // ---- Using rewards -----------------------------------------------------------------------------
@@ -154,6 +158,8 @@ export function useReward(game, s, id) {
 const USE = {
   supply(game, s) {
     const at = dropSpot(game, s);
+    // (Nowhere for it to land: over a pit, say. It stays banked.)
+    if (!at) { game.notify(s, 'No floor for a supply drop here'); return false; }
     const id = supplyWeapon(game, s);
     const def = WEAPONS[id];
     game.pickups.items.push({
@@ -234,12 +240,13 @@ const USE = {
 /**
  * Where a supply drop lands: beside the soldier (in front, else behind, else at their
  * feet), on a floor with room for the crate. It starts not far above (under a roof indoors).
+ * Null when there's no floor below (in the air over a pit).
  */
 function dropSpot(game, s) {
   const map = game.map;
   for (const off of [34, -34, 60, -60, 0]) {
     const x = s.x + off * s.facing;
-    const hit = map.raycast(x, s.y - 20, x, s.y + 160);
+    const hit = map.raycast(x, s.y - 20, x, s.y + 600);
     if (!hit || hit.ny >= 0 || hit.solid.bounce) continue;
     const floor = hit.y;
     if (map.overlap(x - 8, floor - 18, x + 8, floor - 1)) continue;
@@ -250,7 +257,9 @@ function dropSpot(game, s) {
     if (floor - top < 24) continue;
     return { x, y: Math.max(top, floor - 300) };
   }
-  return { x: s.x, y: s.y - 20 };
+  // (No room beside them: at their feet, if there's a floor under them.)
+  const under = map.raycast(s.x, s.y - 10, s.x, s.y + 600);
+  return under && under.ny < 0 ? { x: s.x, y: s.y - 20 } : null;
 }
 
 /** A strong weapon for a supply drop (one the soldier hasn't got, if it comes up). */

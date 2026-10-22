@@ -12,6 +12,10 @@ import { MOTION } from './config.js';
 // it's too much to record every update: no replay in huge battles).
 const KEEP = 7 * 60;
 const MAX_SOLDIERS = 120;
+// Sounds that aren't heard again in the replay: the end of the match, the announcer, rounds and menus.
+const UNREPLAYED = new Set(['gameover', 'awards', 'replay', 'doubleKill', 'tripleKill', 'multiKill', 'spree', 'rampage',
+  'unstoppable', 'firstBlood', 'shutdown', 'rewardReady', 'roundWin', 'roundLose', 'roundStart', 'roundStartFreeze',
+  'click', 'menuMove', 'menuSelect', 'chat', 'buy']);
 
 // The replay: from LEAD updates before the kill to TAIL after it (when there's that
 // much), then HOLD more for the pieces to land. Played at these speeds (shares of normal):
@@ -91,6 +95,14 @@ export class Tape {
 
   /** Online players: a snapshot from the host (as decoded by protocol.js). */
   addSnapshot(snap) {
+    if (snap.soldiers.length > MAX_SOLDIERS) {
+      // (As on the host: too many to keep, and no replay.)
+      this.off = true;
+      this.frames.length = 0;
+      this.events.length = 0;
+      return;
+    }
+    this.off = false;
     const last = this.frames[this.frames.length - 1];
     if (last && snap.tick <= last.tick) return;
     this.frames.push({ tick: snap.tick, soldiers: snap.soldiers, projectiles: snap.projectiles });
@@ -99,7 +111,7 @@ export class Tape {
 
   /** Online players: a batch of the host's events ({ tick, s: [[name, x, y]], fx }). */
   addEvents(ev) {
-    if (!Number.isFinite(ev?.tick)) return;
+    if (this.off || !Number.isFinite(ev?.tick)) return;
     this.events.push({ tick: ev.tick, s: (ev.s || []).map(([name, x, y]) => ({ name: String(name), x, y })), fx: Array.isArray(ev.fx) ? ev.fx : [] });
     this.remote = true;
   }
@@ -214,11 +226,14 @@ export class ReplayPlayer {
     return this.rt >= this.end;
   }
 
-  /** Skip to the end. */
-  finish() { this.rt = this.end; }
+  /** Skip to the end (what's left of its sounds and effects isn't played: they'd all come at once). */
+  finish() {
+    this.rt = this.end;
+    this.ei = this.events.length;
+  }
 
   play(e) {
-    for (const s of e.s) if (this.view.sounds.length < 64) this.view.sounds.push({ ...s });
+    for (const s of e.s) if (this.view.sounds.length < 64 && !UNREPLAYED.has(s.name)) this.view.sounds.push({ ...s });
     for (const [m, ...args] of e.fx) {
       if (!FX.has(m) || typeof this.fx[m] !== 'function') continue;
       try { this.fx[m](...args); } catch { /* a bad one */ }

@@ -8,7 +8,7 @@ import { Input, PlayerController } from './input.js';
 import { createRenderer, autoGraphics } from './glrender.js';
 import { Renderer } from './render.js';
 import { RemasteredRenderer, drawRemasteredPreview } from './rm/renderer.js';
-import { FramePacer } from './framerate.js';
+import { FramePacer, isEven } from './framerate.js';
 import { drawHud, drawReplay } from './hud.js';
 import { Tape, tapeFx, ReplayPlayer } from './replay.js';
 import { SoundSystem } from './audio.js';
@@ -55,6 +55,12 @@ const state = {
 let editor = null;
 let lobby = null;
 const pacer = new FramePacer();
+// When frames can't keep up, lighter drawing first (Remastered's auto quality), then a lower frame rate.
+pacer.shed = now => {
+  const q = renderer.quality, held = !!renderer.shed?.(now);
+  if (renderer.quality !== q && !$('settings').classList.contains('hidden')) settingsNotes();
+  return held;
+};
 const params = new URLSearchParams(location.search);
 // Which game: 'original' (the 2003 look) or 'remastered' (2.5D), from ?game= in the address,
 // or the one played last time (see boot()). The first time, the picker asks.
@@ -558,11 +564,12 @@ function enterMatch(game, me) {
   state.overShown = false;
   state.nextMatchAt = 0;
   state.replay = null;
+  renderer.cam.zoom = 1; // (a replay cut short by the next match: no zooming in on it)
   state.replayTried = false;
   state.hitStopUntil = 0;
   state.killAt = -1e9;
   state.acc = 0;
-  state.last = performance.now();
+  state.last = null; // (the first frame's time is from before the match was set up: start the clock there)
   input.clear();
   input.enabled = true;
   document.body.classList.add('playing');
@@ -580,6 +587,7 @@ function enterMatch(game, me) {
 
 function endMatch(to = state.returnTo) {
   state.replay = null;
+  renderer.cam.zoom = 1;
   closePicker();
   closeBuy();
   input.unlock();
@@ -636,7 +644,7 @@ function setPaused(p) {
   state.menuOpen = p;
   show('pause', p);
   fullscreenButton();
-  state.last = performance.now();
+  state.last = null;
   if (!p) grabControls();
 }
 
@@ -934,9 +942,13 @@ function settingsNotes() {
   setText($('graphicsNote'), g);
   const hz = pacer.refresh, target = Math.round(pacer.target);
   autoLabel('fpsCap', pacer.mode === 'auto' ? `Auto (${target} fps)` : 'Auto');
+  if (document.activeElement !== $('fpsCap')) setText($('fpsCap').querySelector('option[value="half"]'), `Half the screen rate (${Math.round(hz / 2)} fps)`);
   let f = `Your screen refreshes ${hz} times a second, so that's the most it can show.`;
   if (pacer.mode === 'auto') f += pacer.divisor > 1 ? ` Auto is drawing ${target} fps: your computer couldn't keep up with ${hz}, and it'll try again soon.` : ' Auto matches it.';
+  else if (pacer.mode === 'half') f += ` Every other refresh is drawn: a steady ${target} fps.`;
   else if (pacer.mode > hz) f += ` ${pacer.mode} fps needs a faster screen.`;
+  else if (!isEven(pacer.target, hz)) f += ` ${pacer.mode} fps doesn't divide evenly into ${hz}, so frames come at slightly uneven times: half the screen rate is steadier.`;
+  else if (pacer.target !== pacer.mode) f += ` Drawing ${target} fps, every ${['', '', 'other', 'third', 'fourth', 'fifth', 'sixth'][Math.round(hz / pacer.target)] ?? 'n-th'} refresh, which is steadier than exactly ${pacer.mode}.`;
   setText($('fpsNote'), f);
 }
 
@@ -1258,9 +1270,9 @@ function sendChat(text) {
 function simulate(now) {
   const g = state.game;
   if (!g) { state.last = now; return; }
-  let dt = now - state.last;
+  let dt = state.last == null ? 0 : now - state.last;
   state.last = now;
-  if (dt > 1000) dt = 1000;
+  dt = Math.min(1000, Math.max(0, dt));
   if (state.paused) return;
   // Hit-stop: offline, the game holds still for a moment when you get a kill.
   if (state.mode === 'offline' && now < state.hitStopUntil) return;
@@ -1307,6 +1319,7 @@ function frame(now) {
     // Nothing playing: keep the canvas blank behind the menus (Remastered: its scenery,
     // except under the map maker and the picker, which cover it).
     if ($('editor').classList.contains('hidden') && $('gamePicker').classList.contains('hidden')) renderer.clear();
+    pacer.worked(performance.now() - workStart);
     return;
   }
   // The replay of the winning kill, once the match is over.
@@ -1388,8 +1401,6 @@ function frame(now) {
   const end = performance.now();
   if (perf.on) countFrame(now, end - drawStart);
   pacer.drawn(now + (end - workStart), end - workStart);
-  // Remastered on Auto quality: lower it if the frame rate can't keep up.
-  if (!state.menuOpen && renderer.adapt?.(pacer, now) && !$('settings').classList.contains('hidden')) settingsNotes();
   if (g.over) matchOver(g);
 }
 
@@ -1434,6 +1445,7 @@ function matchOver(g) {
   const now = performance.now();
   if (!state.overShown) {
     state.overShown = true;
+    closeChat(); // (keys skip the replay, not type)
     closeBuy();
     input.enabled = false;
     input.unlock();

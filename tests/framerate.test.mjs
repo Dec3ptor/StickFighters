@@ -1,7 +1,7 @@
 // Frame pacing (web/src/framerate.js), with a pretend screen and computer.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FramePacer, snapHz } from '../web/src/framerate.js';
+import { FramePacer, snapHz, evenRate, isEven } from '../web/src/framerate.js';
 
 /**
  * Run the pacer against a screen refreshing `hz` times a second for `ms`.
@@ -82,7 +82,6 @@ test('auto lets one slow window go (a hiccup), and gives a fresh start a couple 
   assert.equal(p.target, 144, 'the start of a match isn\'t judged');
   run(p, { hz: 144, ms: 5000, start: 10000, work: () => 10 });
   assert.equal(p.target, 72, 'still slow after that: stepped down');
-  assert.equal(p.stepped, 1);
   // A fresh start (new graphics): the full rate is tried again.
   p.restart(15000, true);
   assert.equal(p.target, 144);
@@ -105,4 +104,88 @@ test('auto never goes below 30 fps', () => {
   const p = onScreen(60);
   run(p, { hz: 60, ms: 30000, start: 1000, work: () => 80 });
   assert.equal(p.target, 30);
+});
+
+test('a cap is drawn at an even fraction of the screen rate when one is close; "half" is every other refresh', () => {
+  assert.equal(evenRate(60, 165), 55, 'every third refresh');
+  assert.equal(evenRate(30, 144), 28.8);
+  assert.equal(evenRate(60, 144), 60, '72 and 48 are too far from 60');
+  assert.equal(evenRate(60, 120), 60);
+  assert.equal(evenRate(240, 144), 144, 'no more than the screen');
+  assert.ok(isEven(55, 165) && isEven(72, 144) && !isEven(60, 144));
+  const p = onScreen(165);
+  p.setMode(60);
+  assert.equal(p.target, 55);
+  const { drawn } = run(p, { hz: 165, ms: 2000, start: 1000 });
+  assert.ok(Math.abs(drawn - 110) <= 3, `${drawn} frames in 2 s`);
+  const h = onScreen(144);
+  h.setMode('half');
+  assert.equal(h.target, 72);
+  const half = run(h, { hz: 144, ms: 2000, start: 1000 });
+  assert.ok(Math.abs(half.drawn - 144) <= 3, `${half.drawn} frames in 2 s`);
+});
+
+test('before lowering the rate, the pacer asks for lighter drawing (Remastered\'s auto quality)', () => {
+  // Two levels of lighter drawing; frames only keep up at the lightest.
+  const p = onScreen(60);
+  let level = 2;
+  const asked = [];
+  p.shed = now => { asked.push(now); if (level > 0) { level--; return true; } return false; };
+  run(p, { hz: 60, ms: 12000, start: 1000, work: () => (level > 0 ? 25 : 8) });
+  assert.equal(level, 0, 'both levels used');
+  assert.equal(asked.length, 2);
+  assert.equal(p.target, 60, '...and the rate kept');
+  // When lighter drawing isn't enough (or there's none), the rate comes down.
+  const q = onScreen(60);
+  q.shed = () => false;
+  run(q, { hz: 60, ms: 5000, start: 1000, work: () => 25 });
+  assert.equal(q.target, 30);
+  // A capped rate asks too (it doesn't lower the rate itself).
+  const c = onScreen(144);
+  c.setMode(120);
+  let calls = 0;
+  c.shed = () => { calls++; return true; };
+  run(c, { hz: 144, ms: 5000, start: 1000, work: () => 12 });
+  assert.ok(calls >= 1, 'asked for lighter drawing');
+  assert.equal(c.target, 120);
+});
+
+test('auto keeps a steady rate when some frames are slow, and gives up trying a rate that keeps failing', () => {
+  // Every fourth frame takes 9 ms (too long at 144 fps): 72, and no tries at 144 that would judder.
+  const p = onScreen(144);
+  let i = 0, changes = 0, last = p.target;
+  run(p, { hz: 144, ms: 60000, start: 1000, work: () => {
+    if (p.target !== last) { changes++; last = p.target; }
+    return ++i % 4 === 0 ? 9 : 1;
+  } });
+  assert.equal(p.target, 72);
+  assert.equal(changes, 1, 'one step down, no flickering back and forth');
+  // Quick at 72 but too slow at 144 (as if drawing more often costs more): a few tries, then no more.
+  const q = onScreen(144);
+  let tries = 0, prev = q.target;
+  run(q, { hz: 144, ms: 180000, start: 1000, work: () => {
+    if (q.target > prev) tries++;
+    prev = q.target;
+    return q.target > 100 ? 9 : 2;
+  } });
+  assert.equal(q.target, 72);
+  assert.equal(tries, 3);
+});
+
+test('the screen getting slower or faster while playing (another monitor) is noticed after a few seconds', () => {
+  const p = onScreen(144);
+  run(p, { hz: 60, ms: 8000, start: 1000, work: () => 2 });
+  assert.equal(p.refresh, 60);
+  assert.equal(p.target, 60);
+  run(p, { hz: 144, ms: 8000, start: 9000, work: () => 2 });
+  assert.equal(p.refresh, 144);
+  // A slow computer makes frames late too: that's not the screen.
+  const q = onScreen(144);
+  run(q, { hz: 144, ms: 15000, start: 1000, work: () => 14 });
+  assert.equal(q.refresh, 144);
+  // Nor are the frames after a long one in the menus.
+  const m = new FramePacer();
+  let t = 0;
+  for (let k = 0; k < 200; k++) { m.frame(t, false); m.worked(25); t += 1000 / 30; }
+  assert.equal(m.refresh, 60, 'unmeasured: menus that slow the browser\'s frames down say nothing about the screen');
 });

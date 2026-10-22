@@ -37,7 +37,7 @@ export class RemasteredRenderer extends Renderer {
   /**
    * quality: 'high' (everything), 'medium' (plain-coloured block sides, less weather, simpler
    * darkness), 'low' (flat colours, fewer layers, no lights or weather), or 'auto': high,
-   * stepping down whenever the frame rate can't keep up (see adapt()).
+   * stepping down whenever the frame rate can't keep up (see shed()).
    */
   constructor(canvas, quality = 'auto') {
     super(canvas);
@@ -52,29 +52,22 @@ export class RemasteredRenderer extends Renderer {
     this.quality = this.auto ? 'high' : q;
     this.adaptedAt = performance.now();
     this.flat = this.quality === 'low';
-    this.seenSteps = null; // (adapt(): the pacer's step-downs seen so far; any from now on count)
   }
 
   /**
-   * Auto quality: when the frame pacer has had to step the frame rate down (it only does
-   * after a couple of seconds of falling short: a hiccup isn't a slow computer), step the
-   * quality down a level; the pacer keeps its steady rate and tries the full rate again
-   * soon, at the new quality. The first few seconds of a map or a quality (scenery being
-   * made) don't count. Called once a frame.
+   * Auto quality: the frame pacer asks for lighter drawing when frames can't keep up (for
+   * a couple of seconds: a hiccup isn't a slow computer), before it lowers the frame rate:
+   * the quality steps down a level. Just after a quality or map change (the scenery being
+   * made) it's too soon to tell: the pacer's asked to judge again later. Returns whether
+   * the pacer should hold off lowering the rate.
    */
-  adapt(pacer, now = performance.now()) {
-    if (!this.auto || this.quality === 'low' || pacer.mode !== 'auto') return false;
-    if (this.seenSteps == null) { this.seenSteps = pacer.stepped; return false; } // (from now on)
-    if (pacer.stepped === this.seenSteps) return false;
-    // (Just after a quality or map change the scenery's being made: wait, then decide.)
-    if (now - this.adaptedAt < SETTLE || now - (this.look?.at ?? -Infinity) < SETTLE) return false;
-    this.seenSteps = pacer.stepped;
+  shed(now = performance.now()) {
+    if (!this.auto || this.quality === 'low') return false;
+    if (now - this.adaptedAt < SETTLE || now - (this.look?.at ?? -Infinity) < SETTLE) return true;
     const next = this.quality === 'high' ? 'medium' : 'low';
     this.quality = next;
     this.flat = next === 'low';
     this.adaptedAt = now;
-    pacer.restart(now);
-    pacer.tryAgainSoon(now);
     return true;
   }
 

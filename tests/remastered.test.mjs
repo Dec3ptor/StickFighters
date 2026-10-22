@@ -120,29 +120,22 @@ test('the HUD in Remastered: light text for dark, dark glass for white panels', 
   assert.equal(ctx.shadowBlur, 0);
 });
 
-test('Auto quality: a level down each time the frame pacer has to step the rate down, once things have settled', () => {
+test('Auto quality: a level down each time the frame pacer finds frames can\'t keep up, before it lowers the rate', () => {
   const r = Object.create(RemasteredRenderer.prototype);
-  Object.assign(r, { auto: true, quality: 'high', adaptedAt: 0, look: { at: 0 }, seenSteps: null });
-  const pacer = { mode: 'auto', divisor: 1, stepped: 3, retries: 0, restarts: 0, tryAgainSoon() { this.retries++; }, restart() { this.restarts++; } };
-  assert.equal(r.adapt(pacer, 10000), false, 'steps from before it was watching don\'t count');
-  assert.equal(r.adapt(pacer, 10000), false, 'keeping up');
-  pacer.divisor = 2; pacer.stepped = 4;
-  assert.equal(r.adapt(pacer, 10000), true, 'the pacer stepped the rate down (it takes a couple of slow seconds to): a level down');
+  Object.assign(r, { auto: true, quality: 'high', adaptedAt: 0, look: { at: 0 } });
+  assert.equal(r.shed(10000), true, 'frames can\'t keep up: a level down (and the rate is left alone)');
   assert.equal(r.quality, 'medium');
-  assert.equal(pacer.divisor, 2, '...the rate stays steady');
-  assert.equal(pacer.retries, 1, '...and the full rate is tried again soon at the new quality');
-  assert.equal(pacer.restarts, 1, '...with the scenery-making moments not judged');
-  pacer.stepped = 5;
-  assert.equal(r.adapt(pacer, 11000), false, 'not straight after a step (the scenery is being made)');
+  assert.equal(r.shed(11000), true, 'straight after a step the scenery is being made: too soon to tell (the rate is still left alone)');
+  assert.equal(r.quality, 'medium');
   r.look = { at: 11000 };
-  assert.equal(r.adapt(pacer, 13000), false, 'nor straight after a new look (a map starting)');
+  assert.equal(r.shed(13000), true, 'nor straight after a new look (a map starting)');
+  assert.equal(r.quality, 'medium');
   r.look = { at: 0 };
-  assert.equal(r.adapt(pacer, 14000), true, 'once that has settled, the step counts');
+  assert.equal(r.shed(14000), true, 'once that has settled, another level down');
   assert.equal(r.quality, 'low');
-  pacer.stepped = 6;
-  assert.equal(r.adapt(pacer, 40000), false, 'low is as low as it goes');
-  const fixed = Object.assign(Object.create(RemasteredRenderer.prototype), { auto: false, quality: 'high', adaptedAt: 0, look: null, seenSteps: null });
-  pacer.stepped = 7;
-  assert.equal(fixed.adapt(pacer, 50000), false);
+  assert.equal(r.flat, true);
+  assert.equal(r.shed(40000), false, 'low is as low as it goes: now the rate can come down');
+  const fixed = Object.assign(Object.create(RemasteredRenderer.prototype), { auto: false, quality: 'high', adaptedAt: 0, look: null });
+  assert.equal(fixed.shed(50000), false);
   assert.equal(fixed.quality, 'high', 'a quality picked in Settings stays');
 });

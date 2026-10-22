@@ -825,6 +825,8 @@ const STEP = {
   walker(game, p) {
     const c = p.cfg, map = game.map;
     if (p.detonate) { detonate(game, p); return false; }
+    // (A stampede whose owner left: it goes with them, rather than hunting everyone, their side too.)
+    if (c.seek && !p.owner) { game.fx?.smoke(p.x, p.y - 6, 4, 24); return false; }
     const W = 5, H = 12;
     const blocked = (x, y) => map.overlap(x - W, y - H, x + W, y - 0.01);
     p.vy = Math.min(p.vy + MOTION.itemGravity * 1.5, MOTION.itemMaxFall);

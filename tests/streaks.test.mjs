@@ -482,3 +482,139 @@ test('online: the host\'s own kill sounds and stings stay on the host\'s screen 
   const heard = c.game.sounds.map(x => x.name);
   assert.ok(!heard.includes('killConfirm') && !heard.includes('firstBlood') && !heard.includes('tripleKill'), `the player heard ${heard.join(', ')}`);
 });
+
+test('a sentry and a stampede go with a player who sits out or leaves; sheep let go of a soldier who left', () => {
+  // Spectating: no kills (or a win) for someone sitting out.
+  const game = arena({ fragLimit: 1 });
+  const a = put(game, 'A', 0, -12, { bot: false }), b = put(game, 'B', 250);
+  a.bank = ['sentry', 'stampede'];
+  assert.ok(useReward(game, a, 'sentry') && useReward(game, a, 'stampede'));
+  run(game, 5);
+  game.spectate(a, true);
+  run(game, 900);
+  assert.equal(a.frags, 0);
+  assert.ok(b.alive && !game.over);
+  assert.equal(game.sentries.length, 0, 'the sentry folded up');
+  assert.ok(!game.projectiles.some(p => p.weapon === 'Stampede'), 'the sheep went');
+  // Leaving a team game: the flock doesn't hunt their own side.
+  const t = arena({ mode: 'team' });
+  const o = put(t, 'O', 0, -12, { team: 1 }), mate = put(t, 'M', 300, -12, { team: 1 }), foe = put(t, 'F', 1300, -12, { team: 2 });
+  o.bank = ['stampede'];
+  assert.ok(useReward(t, o, 'stampede'));
+  run(t, 30);
+  t.removeSoldier(o);
+  run(t, 900);
+  assert.ok(mate.alive && mate.health === 100 && t.teamScore[1] === 0, 'the teammate is left alone');
+  assert.ok(foe.alive);
+  // Sheep after someone who left go after someone else.
+  const f = arena();
+  const s = put(f, 'S', 0), gone = put(f, 'G', 900), c = put(f, 'C', -900);
+  s.bank = ['stampede'];
+  assert.ok(useReward(f, s, 'stampede'));
+  run(f, 60);
+  assert.ok(f.projectiles.some(p => p.target === gone));
+  f.removeSoldier(gone);
+  assert.ok(!f.projectiles.some(p => p.target === gone));
+  run(f, 600, () => !c.alive);
+  assert.equal(c.alive, false, 'the flock found the one left');
+});
+
+test('Supply Drop: none in the air over a pit (it stays banked); one beside you from a high jump', () => {
+  const pit = [{ left: -1400, top: 0, right: -100, bottom: 40 }, { left: 100, top: 0, right: 1400, bottom: 40 }];
+  const game = arena({ platforms: pit });
+  const a = put(game, 'A', 0, -120, { bot: false });
+  a.bank = ['supply'];
+  assert.equal(useReward(game, a, 'supply'), false);
+  assert.deepEqual(a.bank, ['supply']);
+  assert.ok(!game.pickups.items.some(it => it.streak));
+  assert.ok(game.notes.some(n => n.to === a.id && /No floor/.test(n.text)));
+  const high = arena();
+  const b = put(high, 'B', 0, -300);
+  b.bank = ['supply'];
+  assert.ok(useReward(high, b, 'supply'), 'a floor 300 px below is near enough');
+});
+
+test('the replay: skipping it plays nothing that was left; the end of the match isn\'t heard twice; huge online games aren\'t taped', () => {
+  const game = arena({ fragLimit: 1, effects: true });
+  game.tape = new Tape();
+  game.fx = tapeFx(game.fx, game.tape);
+  let shoot = false;
+  const a = put(game, 'A', -200, -12, {
+    ctl: (g, me) => { if (shoot) { shoot = false; damage(g, b, 500, me, 'Shotgun', { dirX: 1, dirY: 0, knock: 1 }); } return { move: 1, fire: g.tick % 20 === 0 }; },
+  });
+  const b = put(game, 'B', 300);
+  run(game, 240);
+  b.body.x = a.x + 200;
+  game.update();
+  shoot = true;
+  game.update();
+  assert.ok(game.over && game.finalKill);
+  // Played through: everything but the stings of the end of the match.
+  const full = new ReplayPlayer(game, game.tape, game.finalKill);
+  const heard = [];
+  while (!full.update(1000 / 60)) { heard.push(...full.view.sounds.map(s => s.name)); full.view.sounds.length = 0; }
+  heard.push(...full.view.sounds.map(s => s.name));
+  assert.ok(heard.length > 0);
+  assert.ok(!heard.includes('gameover') && !heard.includes('firstBlood'), heard.join());
+  // Skipped a few frames in: the rest isn't all played at once.
+  const rp = new ReplayPlayer(game, game.tape, game.finalKill);
+  for (let i = 0; i < 3; i++) rp.update(1000 / 60);
+  rp.view.sounds.length = 0;
+  const parts = rp.fx.parts.length;
+  rp.finish();
+  assert.equal(rp.update(1000 / 60), true);
+  assert.equal(rp.view.sounds.length, 0, 'no burst of sounds');
+  assert.ok(rp.fx.parts.length <= parts, 'nor of effects');
+  // Online, a game too big to tape (as on the host).
+  const tape = new Tape();
+  tape.addSnapshot({ tick: 10, soldiers: Array.from({ length: 200 }, (_, id) => ({ id })), projectiles: [] });
+  tape.addEvents({ tick: 10, s: [['pistol', 0, 0]], fx: [] });
+  assert.ok(tape.off && tape.frames.length === 0 && tape.events.length === 0);
+});
+
+test('Defuse: the winning kill is the one that won the last round, not one after it or before a round won on time', () => {
+  const ARENA = {
+    name: 'defuse arena', bounds: { left: -1300, top: -500, right: 1300, bottom: 200 },
+    platforms: [{ left: -1300, top: 0, right: 1300, bottom: 40 }],
+    spawns: [{ x: -1150, y: -12, team: 1 }, { x: -1100, y: -12, team: 1 }, { x: 1150, y: -12, team: 2 }, { x: 1100, y: -12, team: 2 }],
+    items: [],
+    objectives: [{ type: 'site', label: 'A', left: -400, top: -110, right: -200, bottom: 0 }, { type: 'site', label: 'B', left: 200, top: -110, right: 400, bottom: 0 }],
+  };
+  const until = (game, phase) => { for (let i = 0; i < 12000 && game.modeState.phase !== phase && !game.over; i++) game.update(); };
+  const setup = () => {
+    const game = new Game({ mapData: ARENA, mode: 'defuse', fragLimit: 7, effects: false, seed: 4, speed: DEFAULT_SPEED });
+    const sides = ['T1', 'T2', 'C1', 'C2'].map((name, i) => game.addSoldier({ name, isBot: false, team: i < 2 ? 1 : 2 }, { input: () => ({ move: 0, aim: 0, aimDist: 200 }) }));
+    until(game, 'freeze');
+    return { game, sides };
+  };
+  // Won by elimination; a kill in the moments after the round doesn't take its place.
+  {
+    const { game, sides: [t1, , c1, c2] } = setup();
+    game.teamScore[1] = game.rules.needed(game) - 1;
+    until(game, 'live');
+    game.kill(c1, t1, 'AK47');
+    game.kill(c2, t1, 'AK47');
+    const k = game.tick;
+    game.update();
+    for (let i = 0; i < 60; i++) game.update();
+    c1.spawnAt({ x: 0, y: -12 }, 0);
+    t1.spawnAt({ x: 100, y: -12 }, 0);
+    game.kill(t1, c1, 'Beretta');
+    for (let i = 0; i < 400 && !game.over; i++) game.update();
+    assert.ok(game.over);
+    assert.equal(game.finalKill?.tick, k);
+    assert.equal(game.finalKill.killer, t1.id);
+    assert.equal(game.finalKill.victim, c2.id);
+  }
+  // Won on time: no winning kill (so no replay).
+  {
+    const { game, sides: [t1, , c1] } = setup();
+    game.teamScore[2] = game.rules.needed(game) - 1;
+    until(game, 'live');
+    while (game.modeState.timer > 120) game.update();
+    game.kill(c1, t1, 'AK47');
+    for (let i = 0; i < 1000 && !game.over; i++) game.update();
+    assert.ok(game.over && game.winner?.team === 2);
+    assert.equal(game.finalKill, null);
+  }
+});

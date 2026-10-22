@@ -165,7 +165,7 @@ export class Game {
     this.soldiers = this.soldiers.filter(o => o !== s);
     if (this.ids) { this.ids.delete(s.id); this.freeId = Math.min(this.freeId, s.id); }
     this.controllers.delete(s);
-    for (const p of this.projectiles) if (p.owner === s) p.owner = null;
+    for (const p of this.projectiles) { if (p.owner === s) p.owner = null; if (p.target === s) p.target = null; }
     for (const o of this.soldiers) { if (o.lastHurtBy === s) o.lastHurtBy = null; if (o.burnBy === s) o.burnBy = null; }
     if (this.quake?.owner === s) this.quake.owner = null;
   }
@@ -727,10 +727,10 @@ export class Game {
       this.over = true;
       this.winner = w;
       this.sound('gameover', null, null);
-      // The kill that won it, if one did (in Defuse, the last round was won a few seconds
-      // before the match ends), for its replay; and the awards.
-      const k = this.lastKill, late = this.mode === 'defuse' ? 300 : 0;
-      this.finalKill = k && this.tick - k.tick <= late ? { ...k } : null;
+      // The kill that won it, if one did (the mode can say: Defuse's last round was won a few
+      // seconds before the match ends), for its replay; and the awards.
+      const k = this.lastKill;
+      this.finalKill = this.rules.finalKill ? this.rules.finalKill(this) : k && k.tick === this.tick ? { ...k } : null;
       this.awards = matchAwards(this);
     }
   }

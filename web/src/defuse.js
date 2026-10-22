@@ -581,6 +581,8 @@ export function defuseMode(base) {
       const T = st.t, loser = other(team);
       st.phase = 'over';
       game.teamScore[team]++;
+      // (The kill that won the round, if one did: the match's winning kill, if this was the last round.)
+      st.winKill = why === 'elimination' && game.lastKill ? { ...game.lastKill } : null;
       const side = sideOf(game, team);
       const text = why === 'bomb' ? 'The bomb went off: Terrorists win'
         : why === 'defused' ? 'The bomb has been defused: Counter-Terrorists win'
@@ -711,6 +713,11 @@ export function defuseMode(base) {
     winner(game) {
       const st = game.modeState;
       return st?.winner ? { team: st.winner } : null;
+    },
+
+    /** The match's winning kill: the one that won the last round, if one did. */
+    finalKill(game) {
+      return game.modeState?.winKill ?? null;
     },
 
     botGoal,
