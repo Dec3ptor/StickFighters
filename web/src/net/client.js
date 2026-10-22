@@ -12,6 +12,7 @@ import { MOTION, TICK_RATE } from '../config.js';
 import { encodeInputs, decodeSnapshot, messageType, PROTOCOL } from './protocol.js';
 import { FX_METHODS } from './host.js';
 import { beaconKey } from '../gadgets.js';
+import { Tape } from '../replay.js';
 
 const INPUT_REPEAT = 4;     // each input packet carries the last few inputs, in case some are lost
 const VIEW_DELAY = 7;       // ticks behind the newest snapshot that others are shown (smooths out late packets)
@@ -90,6 +91,7 @@ export class NetClient {
         // Holes in the map change how everything moves: blown straight away, not when the effects show.
         if (data.cv) this.applyCarves(data.cv.from, data.cv.list);
         this.events.push(data);
+        this.tape?.addEvents(data);
         // (In a background tab nothing is drawn, so don't let events pile up.)
         if (this.events.length > 300) this.events.splice(0, this.events.length - 300);
         break;
@@ -122,6 +124,7 @@ export class NetClient {
     this.fixed = null;       // the new match's pickups
     this.switchSeq = 0;
     this.myBeacon = null;    // our newest spawn beacon (classes on)
+    this.tape = new Tape();  // the last few seconds, for the replay of the winning kill (replay.js)
     this.applyRoster(w.roster);
     this.applyCarves(0, w.carves);
     this.me = game.soldiers.find(s => s.id === w.you) || null;
@@ -165,7 +168,8 @@ export class NetClient {
     if (me.alive && !me.kamikaze) {
       if (inp.aimDist != null) me.aimDist = inp.aimDist;
       me.buildPlank = !!inp.plank; // (the Builder: for our own screen)
-      if (inp.switchTo && me.has(inp.switchTo)) { me.current = inp.switchTo; this.switchSeq = inp.seq; }
+      // (A Juggernaut keeps its minigun in hand, as on the host.)
+      if (inp.switchTo && me.has(inp.switchTo) && !(me.jugger > 0)) { me.current = inp.switchTo; this.switchSeq = inp.seq; }
       me.move(this.heavy(this.allowed(inp)), g.map);
       if (me.body.jetting && g.tick % 2 === 0) g.fx?.fire(me.x + me.facing * 3, me.y - 4);
     }
@@ -212,6 +216,7 @@ export class NetClient {
     snap.arrival = this.clock();
     this.snaps.push(snap);
     if (this.snaps.length > 40) this.snaps.shift();
+    this.tape?.addSnapshot(snap);
     // Destructible maps: missing holes the host has blown? (They usually arrive just
     // after this; ask only if they still haven't half a second later.)
     if (snap.carves > this.game.carves.length) {
@@ -234,6 +239,9 @@ export class NetClient {
     g.over = snap.over;
     if (snap.winner) g.winner = snap.winner >= 100 ? { team: snap.winner - 100 } : { soldier: g.soldiers.find(s => s.id === snap.winner - 1) || this.me };
     else g.winner = null;
+    // The match is over: the awards, and the kill that won it (for its replay).
+    if (snap.end) { g.awards = snap.end.awards; g.finalKill = snap.end.finalKill; }
+    else if (!snap.over) { g.awards = null; g.finalKill = null; }
     this.reconcile(snap);
   }
 
@@ -256,6 +264,7 @@ export class NetClient {
     me.reloadTimer = a.reloadTimer; me.cooldown = a.cooldown; me.spin = a.spin;
     me.cls = s.cls; me.gadgetCharge = a.gadgetCharge; me.mods = a.mods; me.holdSpawn = a.holdSpawn;
     me.flashTicks = a.flashTicks; me.flashFull = a.flashFull;
+    me.streak = s.streak; me.jugger = a.jugger; me.bank = a.bank;
 
     const b = me.body;
     if (!s.alive || s.kamikaze) {
@@ -330,6 +339,7 @@ export class NetClient {
       s.current = sb.current;
       s.frags = sb.frags; s.deaths = sb.deaths; s.points = sb.points; s.level = sb.level; s.lives = sb.lives;
       s.cls = sb.cls;
+      s.streak = sb.streak; s.jugger = sb.jugger;
       s.respawnTimer = sb.respawnTimer;
       s.spawnProtect = sb.protected ? 1 : 0;
       s.burnTicks = sb.burning ? 1 : 0;
@@ -373,6 +383,13 @@ export class NetClient {
     for (const [text, weapon] of e.k || []) g.feed.push({ text: String(text), weapon: weapon && String(weapon), tick: g.tick });
     if (g.feed.length > 6) g.feed.splice(0, g.feed.length - 6);
     for (const text of e.n || []) g.notes.push({ text: String(text), tick: g.tick, to: me?.id });
+    // Kill streak callouts: [text, sub, kind, mine (to us: 1; to everyone: 0), about (a soldier id)].
+    for (const c of Array.isArray(e.c) ? e.c : []) {
+      if (!Array.isArray(c)) continue;
+      const [text, sub, kind, mine, about] = c;
+      g.callouts.push({ text: String(text ?? '').slice(0, 80), sub: String(sub ?? '').slice(0, 140), kind: String(kind ?? ''), tick: g.tick, to: mine ? me?.id ?? null : null, about: Number.isFinite(about) ? about : null });
+    }
+    if (g.callouts.length > 16) g.callouts.splice(0, g.callouts.length - 16);
     for (const [x, y, amount] of e.sh || []) g.shakes.push({ x, y, amount });
   }
 

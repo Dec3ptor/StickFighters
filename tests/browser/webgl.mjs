@@ -184,6 +184,32 @@ async function stageEverything() {
   fx.sparkle(X + 300, Y - 110);
   fx.blood(X + 330, Y - 110, 1, 0, 20);
   fx.stains.push({ x: X + 360, y: Y - 110, size: 3, life: 900 });
+  // Kill streaks: Sentry Sheep (aiming and hurt, unfolding, in its last seconds), stampede
+  // sheep, Supply Drops (falling and landed), a Juggernaut on a streak, a shorter streak, kill
+  // flashes. (At the sides: the scores cover the middle.)
+  P({ kind: 'sentry', sprite: 'sentry', x: X - 380, y: Y - 40, dir: 1, angle: -0.4, armed: 0, r: 40, team: 1, life: 900, vx: 0, vy: 0 });
+  P({ kind: 'sentry', sprite: 'sentry', x: X - 335, y: Y - 40, dir: -1, angle: Math.PI, armed: 1, r: 100, team: 0, life: 1200, age: 5, vx: 0, vy: 0 });
+  P({ kind: 'sentry', sprite: 'sentry', x: X - 290, y: Y - 40, dir: -1, angle: Math.PI + 0.5, armed: 0, r: 100, team: 2, life: 130, vx: 0, vy: 0 });
+  P({ kind: 'walker', sprite: 'stampede', x: X - 240, y: Y - 40, dir: 1 });
+  P({ kind: 'walker', sprite: 'stampede', x: X - 210, y: Y - 40, dir: -1, age: 33 });
+  g.pickups.items.push({ type: 'crate', streak: true, team: 1, weapon: 'Minigun', x: X - 250, y: Y + 45, landed: false, active: true, dropped: true, life: 999, bob: 0 });
+  g.pickups.items.push({ type: 'crate', streak: true, team: 0, weapon: 'Bazooka', x: X - 210, y: Y + 33, landed: true, active: true, dropped: true, life: 999, bob: 0 });
+  const others = g.soldiers.filter(s => s.alive && s !== state.me);
+  for (const [s, dx, streak] of [[others.at(-1), 260, 6], [others.at(-2), 330, 3]]) {
+    if (!s) continue;
+    s.body.x = s.prevX = X + dx;
+    s.body.y = s.prevY = Y + 30;
+    s.streak = streak;
+  }
+  const jugger = others.at(-1);
+  if (jugger) {
+    jugger.jugger = 100;
+    jugger.weapons.JuggerGun = { ammo: Infinity };
+    jugger.current = 'JuggerGun';
+  }
+  fx.killFlash(X + 400, Y - 40);
+  fx.killFlash(X + 440, Y - 40);
+  fx.parts[fx.parts.length - 1].life = 6;
 }
 
 /** In the page: draw the paused game with WebGL and with a canvas renderer, and compare. */

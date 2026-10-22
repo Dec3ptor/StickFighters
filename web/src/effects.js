@@ -120,6 +120,11 @@ export class Effects {
     this.add({ kind: 'ring', x, y, color, life: 30, max: 30 });
   }
 
+  /** A kill confirmed: a sharp bright flash where the victim fell (angle: which way its spikes point). */
+  killFlash(x, y) {
+    this.add({ kind: 'killflash', x, y, life: 12, max: 12, angle: Math.random() * Math.PI });
+  }
+
   /** A cartoon "whack" star where a melee hit lands. */
   whack(x, y) {
     this.add({ kind: 'whack', x, y, life: 12, max: 12, angle: Math.random() });

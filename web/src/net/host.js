@@ -9,7 +9,7 @@ import { holdSpawn } from '../gadgets.js';
 // Effects every player draws for themselves from what they can see (rocket
 // smoke, jetpack flames, burning soldiers), so they aren't sent.
 const FX_SKIP = new Set(['smoke', 'fire', 'sparkle', 'spark']);
-export const FX_METHODS = new Set(['blood', 'sparks', 'muzzle', 'shell', 'explosion', 'trail', 'ring', 'gibs', 'whack', 'plane', 'rubble', 'built', 'bang']);
+export const FX_METHODS = new Set(['blood', 'sparks', 'muzzle', 'shell', 'explosion', 'trail', 'ring', 'gibs', 'whack', 'plane', 'rubble', 'built', 'bang', 'killFlash']);
 const MAX_CHAT = 140;
 
 /** Drives a remote player's soldier from the inputs they send. */
@@ -33,6 +33,7 @@ export class RemoteController {
       next.gadget ||= old.gadget;
       next.drop ||= old.drop;
       next.reload ||= old.reload;
+      next.streak ||= old.streak;
     }
   }
 
@@ -40,7 +41,7 @@ export class RemoteController {
     const next = this.queue.shift();
     if (next) { this.last = next; this.ackSeq = next.seq; return next; }
     // Nothing new arrived in time: keep doing the same thing (but don't repeat clicks).
-    return { ...this.last, jumpPressed: false, firePressed: false, switchTo: null, cycle: 0, gadget: false, drop: false, reload: false };
+    return { ...this.last, jumpPressed: false, firePressed: false, switchTo: null, cycle: 0, gadget: false, drop: false, reload: false, streak: null };
   }
 }
 
@@ -63,7 +64,7 @@ export class NetHost {
     this.resetEvents();
   }
 
-  resetEvents() { this.events = { s: [], fx: [], k: [], n: [], sh: [] }; }
+  resetEvents() { this.events = { s: [], fx: [], k: [], n: [], sh: [], c: [] }; }
 
   get humans() { return 1 + this.players.size; }
 
@@ -73,6 +74,7 @@ export class NetHost {
     game.recorder = this;
     if (game.fx && !game.fx.recording) game.fx = recordFx(game.fx, this);
     this.resetEvents();
+    this.idle = 0;
     this.carvesSent = 0; // (destructible maps: holes sent to everyone so far)
     for (const p of this.players) {
       p.soldier = this.soldierFor(p);
@@ -266,6 +268,8 @@ export class NetHost {
   note(text, to) { this.events.n.push([text, to]); }
   shake(x, y, amount) { this.events.sh.push([round(x), round(y), amount]); }
   feed(e) { this.events.k.push([e.text, e.weapon || null, e.killer?.id ?? null, e.victim?.id ?? null]); }
+  // Kill streak callouts ('Double kill'): to one player (a soldier id), or everyone (null).
+  callout(c) { if (this.events.c.length < 60) this.events.c.push([c.text, c.sub || '', c.kind || '', c.to, c.about]); }
   fxCall(method, args) { if (!FX_SKIP.has(method) && this.events.fx.length < 300) this.events.fx.push([method, ...round(args)]); }
 
   /** Call after every game update: sends snapshots and events every few ticks. */
@@ -285,7 +289,7 @@ export class NetHost {
       // New holes in the map (destructible maps), numbered so players can tell if they missed any.
       const cv = g.carves.length > this.carvesSent ? { from: this.carvesSent, list: g.carves.slice(this.carvesSent) } : null;
       this.carvesSent = g.carves.length;
-      const any = e.s.length || e.fx.length || e.k.length || e.n.length || e.sh.length || cv;
+      const any = e.s.length || e.fx.length || e.k.length || e.n.length || e.sh.length || e.c.length || cv;
       for (const p of ready) {
         p.link.send(encodeSnapshot(g, p.soldier, p.ctl.ackSeq, world), false);
         if (!any) continue;
@@ -295,6 +299,8 @@ export class NetHost {
           s: e.s.filter(x => x[3] == null || x[3] === id || x[3] === -p.soldier.team).map(x => x.slice(0, 3)),
           fx: e.fx, k: e.k, sh: e.sh, cv,
           n: e.n.filter(x => x[1] === id).map(x => x[0]),
+          // ([text, sub, kind, mine (1: to this player, 0: everyone), about])
+          c: e.c.filter(x => x[3] == null || x[3] === id).map(x => [x[0], x[1], x[2], x[3] == null ? 0 : 1, x[4]]),
         }, true);
       }
     }

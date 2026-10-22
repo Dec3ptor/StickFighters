@@ -1,10 +1,11 @@
 // Keyboard and mouse, and turning them into a soldier's input each tick.
 
 import { WEAPONS } from './weapons.js';
+import { REWARDS, nextReward } from './streaks.js';
 
 const GAME_KEYS = new Set([
   'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab',
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyF', 'KeyK', 'KeyG', 'KeyR', 'ShiftLeft', 'ShiftRight',
+  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyF', 'KeyK', 'KeyG', 'KeyR', 'KeyX', 'KeyZ', 'ShiftLeft', 'ShiftRight',
 ]);
 // Ctrl / Cmd are crouch keys too (as in most shooters). Held with a game key, they'd
 // otherwise open browser shortcuts (Ctrl+D bookmarks, Ctrl+S saves...), and the game
@@ -13,8 +14,12 @@ const MODIFIERS = new Set(['ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight
 
 // Number keys 1-9 and 0 pick weapon slots 0-9; F picks melee (slot 10).
 const SLOT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'KeyF'];
-// (G uses your class's gadget, or in Defuse drops your gun: one press, one use. R reloads.)
-const QUEUED = new Set([...SLOT_KEYS, 'KeyQ', 'KeyE', 'KeyG', 'KeyR']);
+// (G uses your class's gadget, or in Defuse drops your gun: one press, one use. R reloads.
+// X uses a banked kill streak reward, Z picks which.)
+const QUEUED = new Set([...SLOT_KEYS, 'KeyQ', 'KeyE', 'KeyG', 'KeyR', 'KeyX', 'KeyZ']);
+
+/** Kill streak rewards: the keys that use one, and pick which (shown on the HUD). */
+export const REWARD_KEYS = { use: 'X', pick: 'Z' };
 
 export class Input {
   constructor(canvas) {
@@ -181,6 +186,13 @@ export class PlayerController {
     this.prevShift = false;
     this.sprintOn = false;
     this.jetting = false;
+    this.rewardPick = null; // the banked kill streak reward X uses (Z picks another)
+  }
+
+  /** The banked reward X would use now: the one picked with Z, or the newest. */
+  pickedReward(s) {
+    const bank = s.bank || [];
+    return bank.includes(this.rewardPick) ? this.rewardPick : bank[bank.length - 1] || null;
   }
 
   input(game, s) {
@@ -236,6 +248,21 @@ export class PlayerController {
     // G: your class's gadget, or (Defuse) drop the gun in your hands or the bomb.
     if (k.took('KeyG')) { if (game.rules.drop) inp.drop = true; else inp.gadget = true; }
     if (k.took('KeyR')) inp.reload = true;
+    // Kill streak rewards: Z picks one (of those banked), X uses it.
+    if (k.took('KeyZ')) {
+      const bank = s.bank || [];
+      if (bank.length > 1) this.rewardPick = bank[(bank.indexOf(this.pickedReward(s)) + 1) % bank.length];
+    }
+    if (k.took('KeyX') && s.alive) {
+      inp.streak = this.pickedReward(s);
+      // (Nothing banked: say how to get something, on our own screen.)
+      if (!inp.streak) {
+        const next = nextReward(s);
+        const text = !game.streaksOn ? 'No kill streak rewards in this mode'
+          : next ? `No reward yet: ${REWARDS[next].kills} kills in a row for a ${REWARDS[next].name}` : 'No reward banked';
+        game.notes.push({ text, tick: game.tick, to: s.id });
+      }
+    }
     for (let i = 0; i < SLOT_KEYS.length; i++) {
       if (k.took(SLOT_KEYS[i])) { const id = s.slotChoice(i); if (id) inp.switchTo = id; }
     }

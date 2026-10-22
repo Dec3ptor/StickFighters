@@ -18,12 +18,13 @@ const TOOLS = ['Hammer', 'Builder'];
 
 /** The building tool a soldier has blocks left for (the Hammer, or the Engineer's Builder), or null. */
 export function buildTool(s) {
+  if (s.jugger > 0) return null; // (a Juggernaut keeps its minigun in hand)
   for (const id of TOOLS) if (s.weapons[id]?.ammo > 0) return id;
   return null;
 }
 
 /** Blocks left to build with (all tools). */
-export const blocksLeft = s => TOOLS.reduce((n, id) => n + (s.weapons[id]?.ammo || 0), 0);
+export const blocksLeft = s => (s.jugger > 0 ? 0 : TOOLS.reduce((n, id) => n + (s.weapons[id]?.ammo || 0), 0));
 
 /** The jetpack fuel it takes to fly up from soldier s to `to`, with some to spare (more than 100: it can't). */
 export function flyFuel(s, to) {

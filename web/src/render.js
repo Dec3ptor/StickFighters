@@ -5,7 +5,7 @@ import { buildPose } from './stickman.js';
 import { laserEnd } from './combat.js';
 import { WEAPONS } from './weapons.js';
 import { clamp, lerp } from './util.js';
-import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate, drawSupply, drawBeacon } from './sprites.js';
+import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate, drawSupply, drawBeacon, drawStreakFlame } from './sprites.js';
 import { BEACON_HP } from './gadgets.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
 import { MapTiles, paintMap, HATCH, HATCH_GAP, BUILT, BUILT_LINE, BUILT_ROW } from './maptiles.js';
@@ -399,6 +399,7 @@ export class Renderer {
           drawSprite(ctx, 'donkey', { t });
           ctx.restore();
           break;
+        case 'sentry': drawSentry(ctx, p, t); break;
       }
     }
   }
@@ -418,6 +419,8 @@ export class Renderer {
     ctx.save();
     ctx.translate(x, y);
     if (s.spawnProtect > 0) ctx.globalAlpha = 0.35 + 0.35 * Math.abs(Math.sin(game.tick * 0.25));
+    // A Juggernaut glows, so everyone knows to run.
+    if (s.jugger > 0) drawJuggerGlow(ctx, pose, game.tick);
 
     // Jetpack on the back.
     if (s.body.hasJetpack) {
@@ -490,6 +493,21 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.fillStyle = game.rules.teams ? TEAM_COLORS[s.team] : s === viewer ? '#333' : '#999';
     ctx.fillText(s.name, x, y - 30);
+    // Kill streaks: a flame and the count after the name (3 or more in a row), and a Juggernaut's tag over it.
+    if (s.streak >= 3) {
+      const big = s.streak >= 5, bx = x + ctx.measureText(s.name).width / 2 + (big ? 4 : 3.4);
+      drawStreakFlame(ctx, bx, y - 33, big);
+      ctx.font = `bold ${big ? 7 : 6}px Arial, sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = big ? '#d8340c' : '#d0700c';
+      ctx.fillText(String(s.streak), bx + (big ? 2.8 : 2.4), y - 30);
+      ctx.textAlign = 'center';
+    }
+    if (s.jugger > 0) {
+      ctx.font = 'bold 6px Arial, sans-serif';
+      ctx.fillStyle = '#e8740c';
+      ctx.fillText('JUGGERNAUT', x, y - 38);
+    }
     if (s !== viewer && s.health < 100) {
       ctx.fillStyle = '#ddd';
       ctx.fillRect(x - 8, y - 28, 16, 1.6);
@@ -686,6 +704,23 @@ export class Renderer {
         ctx.beginPath(); ctx.arc(x, y, p.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         ctx.globalAlpha = 1;
         break;
+      case 'killflash': {
+        // A kill confirmed: a white flash bursting out fast, ringed in red, with sharp spikes.
+        const k = p.life / p.max, r = 2.5 + (1 - k * k) * 8;
+        ctx.globalAlpha = Math.min(1, k * 1.5);
+        this.turn(ctx, x, y, p.angle || 0);
+        ctx.fillStyle = '#ff4a3a';
+        fillSpikes(ctx, 6, r * 0.6, r * 2 + 2, r * 1.5 + 2, 1.3);
+        ctx.fillStyle = '#fff';
+        fillSpikes(ctx, 6, r * 0.6, r * 1.7 + 1, r * 1.3 + 1, 0.6);
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#e8402f';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+        this.endTurn(ctx);
+        ctx.globalAlpha = 1;
+        break;
+      }
     }
   }
 
@@ -731,6 +766,95 @@ export function between(p, alpha = 1) {
   v.x = p.px + (p.x - p.px) * alpha;
   v.y = p.py + (p.y - p.py) * alpha;
   return v;
+}
+
+/**
+ * A burst of n sharp spikes round the origin, filled in the current colour: thin diamonds
+ * from r0 out to r1 (every other one out to r2), w wide. (The kill flash.)
+ */
+export function fillSpikes(ctx, n, r0, r1, r2, w) {
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const a = i * Math.PI * 2 / n, c = Math.cos(a), s = Math.sin(a), r = i % 2 ? r2 : r1, m = r0 + (r - r0) * 0.3;
+    ctx.moveTo(c * r0, s * r0);
+    ctx.lineTo(c * m - s * w, s * m + c * w);
+    ctx.lineTo(c * r, s * r);
+    ctx.lineTo(c * m + s * w, s * m - c * w);
+    ctx.closePath();
+  }
+  ctx.fill();
+}
+
+// A Sentry Sheep's collar: its team's colour, gold in free-for-all.
+const SENTRY_COLLAR = { 0: '#e0a020', ...TEAM_COLORS };
+// How high a Sentry Sheep's gun turns (above its feet), as in combat.js.
+const SENTRY_GUN = 13;
+
+/**
+ * A Sentry Sheep (kill streak reward): its body facing its way, the gun on its back aimed
+ * at the true angle (folded up while it unfolds), its armour left once it's been hit, and
+ * blinking in its last 3 seconds.
+ */
+function drawSentry(ctx, p, t) {
+  const dim = p.life < 180 && Math.floor(p.life / 6) % 2 === 1;
+  ctx.save();
+  if (dim) ctx.globalAlpha *= 0.35;
+  ctx.translate(p.x, p.y - 7.5);
+  ctx.save();
+  ctx.scale(p.dir || 1, 1);
+  drawSprite(ctx, 'sentry', { t, collar: SENTRY_COLLAR[p.team] || SENTRY_COLLAR[0] });
+  ctx.restore();
+  // The turret: a mount on the plate, and the gun turning on it.
+  ctx.translate(0, 7.5 - SENTRY_GUN);
+  ctx.fillStyle = '#3a3e44';
+  ctx.fillRect(-2.8, -0.2, 5.6, 1.8);
+  const deploying = p.armed > 0, angle = deploying ? -Math.PI / 2 : p.angle || 0;
+  ctx.rotate(angle);
+  if (Math.cos(angle) < 0) ctx.scale(1, -1);
+  ctx.fillStyle = '#2a2c30';
+  ctx.fillRect(2.5, -0.8, 8, 1.6);
+  ctx.fillRect(9.8, -1.3, 1.8, 2.6);
+  ctx.fillStyle = '#5d636b';
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.rect(-2.8, -2.1, 5.8, 4.2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#2a2c30';
+  ctx.fillRect(-1.2, -3.2, 2.6, 1.1);
+  // Its light: blinking amber while it unfolds, red once it's watching.
+  ctx.fillStyle = deploying ? (Math.floor(t / 8) % 2 ? '#ffb31f' : '#7a5a1a') : '#ff3b2f';
+  ctx.fillRect(1.2, -0.7, 1.4, 1.4);
+  ctx.restore();
+  if (p.r < 100) {
+    ctx.save();
+    if (dim) ctx.globalAlpha *= 0.35;
+    ctx.fillStyle = '#ddd';
+    ctx.fillRect(p.x - 7, p.y - 23, 14, 1.6);
+    ctx.fillStyle = p.r > 40 ? '#555' : '#c22';
+    ctx.fillRect(p.x - 7, p.y - 23, 14 * Math.max(0, p.r) / 100, 1.6);
+    ctx.restore();
+  }
+}
+
+/** A Juggernaut's glow: fat soft orange strokes round its body and head, pulsing (soldier's transform set). */
+function drawJuggerGlow(ctx, pose, tick) {
+  const pulse = 0.5 + 0.5 * Math.sin(tick * 0.2), base = ctx.globalAlpha, h = pose.head;
+  const cap = ctx.lineCap, join = ctx.lineJoin;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const [w, a, color] of [[6.5 + pulse * 2, 0.2 + 0.15 * pulse, '#ff8a1f'], [3.8 + pulse, 0.45 + 0.2 * pulse, '#ffb02e']]) {
+    ctx.globalAlpha = base * a;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = w;
+    ctx.beginPath();
+    for (const [x0, y0, x1, y1] of pose.lines) { ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); }
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(h.x, h.y, h.r + w / 2, 0, Math.PI * 2); ctx.fill();
+  }
+  // (Back as they were, so the gun drawn next looks the same as anyone else's.)
+  ctx.globalAlpha = base;
+  ctx.lineCap = cap;
+  ctx.lineJoin = join;
 }
 
 function drawFirePatch(ctx, p, t) {

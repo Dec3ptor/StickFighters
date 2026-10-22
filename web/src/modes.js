@@ -32,6 +32,7 @@ const deathmatch = {
   infiniteAmmo: false,
   mapLoadout: true,    // the map's "everyone spawns with" items apply
   limit: 'frags',      // what the match limit counts (frags or lives)
+  streaks: true,       // kills in a row earn rewards (streaks.js)
   // classes: false     the Classes option isn't offered (this mode hands out its own weapons)
   // classesDefault     the setup's Classes option starts on (Battlefield's own modes)
 
@@ -88,6 +89,7 @@ const gungame = {
   mapLoadout: false,
   limit: 'none',
   classes: false,
+  streaks: false,      // (rewards would skip the ladder)
 
   setup(game, s) { s.level = 0; s.levelKills = 0; },
 
@@ -149,6 +151,7 @@ const oitc = {
   mapLoadout: false,
   limit: 'lives',
   classes: false,
+  streaks: false,      // (one bullet is the point)
 
   setup(game, s) { s.lives = game.options.lives || 3; },
 

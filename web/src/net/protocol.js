@@ -8,16 +8,17 @@
 
 import { WEAPONS } from '../weapons.js';
 import { CLASS_IDS, UPGRADE_IDS } from '../classes.js';
+import { REWARD_IDS } from '../streaks.js';
 
-export const PROTOCOL = 12;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 13;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
 const WEAPON_INDEX = new Map(WEAPON_IDS.map((id, i) => [id, i]));
-const KINDS = ['bullet', 'rail', 'arrow', 'seeker', 'thrown', 'rocket', 'flame', 'fire', 'gas', 'walker', 'flyer', 'placed', 'donkey', 'cloud'];
+const KINDS = ['bullet', 'rail', 'arrow', 'seeker', 'thrown', 'rocket', 'flame', 'fire', 'gas', 'walker', 'flyer', 'placed', 'donkey', 'cloud', 'sentry'];
 const SPRITES = ['', 'bullet', 'slug', 'arrow', 'magic', 'grenade', 'bomblet', 'cluster', 'banana', 'holy', 'petrol', 'napalm', 'skunk',
   'rocket', 'homing', 'mortar', 'bomb', 'flame', 'fire', 'gas', 'sheep', 'supersheep', 'oldwoman', 'cow', 'dynamite', 'mine', 'donkey',
-  'hegrenade', 'flashbang', 'smokegrenade', 'cloud'];
+  'hegrenade', 'flashbang', 'smokegrenade', 'cloud', 'sentry', 'stampede'];
 const ITEM_TYPES = ['health', 'armour', 'jetpack', 'weapon', 'crate', 'medkit', 'ammo'];
 
 export const weaponIndex = id => WEAPON_INDEX.get(id) ?? 255;
@@ -77,9 +78,12 @@ export const messageType = data => (data instanceof Uint8Array ? data : new Uint
 
 // ---- Inputs ----------------------------------------------------------------------------
 
-/** A player's inputs: the newest last. Each is { seq, move, jump, jumpPressed, crouch, jet, fire, firePressed, alt, selfDestruct, sprint, gadget, plank, use, drop, reload, aim, aimDist, switchTo, cycle }. */
+/**
+ * A player's inputs: the newest last. Each is { seq, move, jump, jumpPressed, crouch, jet, fire, firePressed, alt,
+ * selfDestruct, sprint, gadget, plank, use, drop, reload, aim, aimDist, switchTo, cycle, streak (a kill streak reward to use) }.
+ */
 export function encodeInputs(inputs) {
-  const w = new Writer(16 + inputs.length * 13);
+  const w = new Writer(16 + inputs.length * 14);
   w.u8(MSG.input);
   w.u32(inputs.length ? inputs[inputs.length - 1].seq : 0);
   w.u8(inputs.length);
@@ -91,6 +95,7 @@ export function encodeInputs(inputs) {
     w.u16(clampU16(i.aimDist ?? 200));
     w.u8(i.switchTo ? weaponIndex(i.switchTo) + 1 : 0);
     w.i8(i.cycle || 0);
+    w.u8(REWARD_IDS.indexOf(i.streak) + 1);
   }
   return w.done();
 }
@@ -101,18 +106,19 @@ export function decodeInputs(data) {
   if (r.u8() !== MSG.input) return [];
   const last = r.u32(), n = Math.min(r.u8(), 8);
   const out = [];
-  for (let k = 0; k < n && r.left >= 9; k++) {
+  for (let k = 0; k < n && r.left >= 10; k++) {
     const move = Math.max(-1, Math.min(1, r.i8() / 100));
     const f = r.u8(), f2 = r.u8();
     const aim = u16ToAngle(r.u16());
     const aimDist = r.u16();
     const sw = r.u8();
     const cycle = Math.sign(r.i8());
+    const streak = REWARD_IDS[r.u8() - 1] || null;
     out.push({
       seq: last - (n - 1 - k), move, jump: !!(f & 1), jumpPressed: !!(f & 2), crouch: !!(f & 4), jet: !!(f & 8),
       fire: !!(f & 16), firePressed: !!(f & 32), alt: !!(f & 64), selfDestruct: !!(f & 128), sprint: !!(f2 & 1), gadget: !!(f2 & 2), plank: !!(f2 & 4),
       use: !!(f2 & 8), drop: !!(f2 & 16), reload: !!(f2 & 32), aim, aimDist,
-      switchTo: sw ? weaponAt(sw - 1) : null, cycle: cycle || 0,
+      switchTo: sw ? weaponAt(sw - 1) : null, cycle: cycle || 0, streak,
     });
   }
   return out;
@@ -141,7 +147,7 @@ export function encodeWorld(game) {
     w.u8(s.id);
     w.u8((s.alive ? 1 : 0) | (b.crouching ? 2 : 0) | (b.onGround ? 4 : 0) | (b.jetting ? 8 : 0) | (b.hasJetpack ? 16 : 0) |
       (s.burnTicks > 0 ? 32 : 0) | (s.spawnProtect > 0 ? 64 : 0) | (s.kamikaze ? 128 : 0));
-    w.u8((s.facing > 0 ? 1 : 0) | (b.rope ? 2 : 0) | (b.padLaunch ? 4 : 0));
+    w.u8((s.facing > 0 ? 1 : 0) | (b.rope ? 2 : 0) | (b.padLaunch ? 4 : 0) | (s.jugger > 0 ? 8 : 0));
     w.f32(b.x); w.f32(b.y);
     w.i16(b.vx * 100); w.i16(b.vy * 100);
     w.u16(angleToU16(s.aim));
@@ -154,6 +160,7 @@ export function encodeWorld(game) {
     w.u8(classIndex(s.cls));
     w.u16(clampU16(s.respawnTimer));
     w.u8(clampU8(b.fuel));
+    w.u8(clampU8(s.streak || 0)); // (kills in a row: everyone sees who's on a streak)
     if (b.rope) { w.f32(b.rope.x); w.f32(b.rope.y); w.u16(clampU16(b.rope.len)); }
   }
 
@@ -166,7 +173,9 @@ export function encodeWorld(game) {
     w.f32(p.x); w.f32(p.y);
     w.i16((p.vx || 0) * 50); w.i16((p.vy || 0) * 50);
     w.u16(angleToU16(p.angle || 0));
-    w.u8(((p.dir ?? 1) < 0 ? 1 : 0) | (p.armed > 0 ? 0 : 2) | (p.stuck ? 4 : 0) | (p.delay > 0 ? 8 : 0) | (p.onGround ? 16 : 0) | (p.praying ? 32 : 0));
+    // (A Sentry Sheep's team, in the last two bits: its colour.)
+    w.u8(((p.dir ?? 1) < 0 ? 1 : 0) | (p.armed > 0 ? 0 : 2) | (p.stuck ? 4 : 0) | (p.delay > 0 ? 8 : 0) | (p.onGround ? 16 : 0) | (p.praying ? 32 : 0) |
+      (p.team === 1 ? 64 : p.team === 2 ? 128 : 0));
     w.u16(clampU16(p.age || 0)); w.u16(clampU16(p.life || 0));
     w.u8(clampU8(p.r || 0));
   }
@@ -185,7 +194,7 @@ export function encodeWorld(game) {
     w.u8(ITEM_TYPES.indexOf(it.type));
     w.u8(it.weapon ? weaponIndex(it.weapon) : 255);
     w.f32(it.x); w.f32(it.y);
-    w.u8((it.landed ? 1 : 0) | (it.health ? 2 : 0) | ((it.team & 3) << 2));
+    w.u8((it.landed ? 1 : 0) | (it.health ? 2 : 0) | ((it.team & 3) << 2) | (it.streak ? 16 : 0));
     w.u16(clampU16(Math.min(it.life, 65000)));
   }
   // Spawn beacons (classes on).
@@ -195,6 +204,10 @@ export function encodeWorld(game) {
     w.u32(b.id); w.u8(b.owner & 255); w.u8(b.team & 3); // (the whole id: players pick beacons by it)
     w.f32(b.x); w.f32(b.y); w.u8(clampU8(Math.ceil(b.hp)));
   }
+  // The match is over: the awards, and the kill that won it (for its replay), as JSON.
+  const end = game.over && (game.awards || game.finalKill) ? TEXT.encode(JSON.stringify({ awards: game.awards || [], finalKill: game.finalKill || null })) : NONE;
+  w.u16(end.length);
+  w.bytes(end);
   return w.done();
 }
 
@@ -229,6 +242,11 @@ export function encodeSnapshot(game, me, ackSeq, world) {
     w.u8(me.holdSpawn > 0 ? 1 : 0);
     // Blinded by a flashbang: for how long (in pairs of updates), and how long it was at first.
     w.u8(clampU8((me.flashTicks || 0) / 2)); w.u8(clampU8((me.flashFull || 0) / 2));
+    // Kill streak rewards: Juggernaut time left, and the rewards banked (oldest first).
+    w.u16(clampU16(me.jugger || 0));
+    const bank = (me.bank || []).filter(id => REWARD_IDS.includes(id)).slice(0, 8);
+    w.u8(bank.length);
+    for (const id of bank) w.u8(REWARD_IDS.indexOf(id));
   }
   w.bytes(world);
   return w.done();
@@ -263,6 +281,10 @@ export function decodeSnapshot(data) {
     }
     me.holdSpawn = r.u8() ? 1 : 0;
     me.flashTicks = r.u8() * 2; me.flashFull = r.u8() * 2;
+    me.jugger = r.u16();
+    me.bank = [];
+    const nb = r.u8();
+    for (let i = 0; i < nb; i++) { const id = REWARD_IDS[r.u8()]; if (id && !me.bank.includes(id)) me.bank.push(id); }
     snap.me = me;
   }
   snap.over = !!r.u8();
@@ -283,7 +305,7 @@ export function decodeSnapshot(data) {
     const f = r.u8(), g = r.u8();
     s.alive = !!(f & 1); s.crouching = !!(f & 2); s.onGround = !!(f & 4); s.jetting = !!(f & 8); s.hasJetpack = !!(f & 16);
     s.burning = !!(f & 32); s.protected = !!(f & 64); s.kamikaze = !!(f & 128);
-    s.facing = g & 1 ? 1 : -1; const roped = !!(g & 2); s.padLaunch = !!(g & 4);
+    s.facing = g & 1 ? 1 : -1; const roped = !!(g & 2); s.padLaunch = !!(g & 4); s.jugger = g & 8 ? 1 : 0;
     s.x = r.f32(); s.y = r.f32(); s.vx = r.i16() / 100; s.vy = r.i16() / 100;
     s.aim = u16ToAngle(r.u16());
     s.health = r.u8(); s.armour = r.u8();
@@ -294,6 +316,7 @@ export function decodeSnapshot(data) {
     s.cls = classAt(r.u8());
     s.respawnTimer = r.u16();
     s.fuel = r.u8();
+    s.streak = r.u8();
     s.rope = roped ? { x: r.f32(), y: r.f32(), len: r.u16() } : null;
     snap.soldiers.push(s);
   }
@@ -303,6 +326,7 @@ export function decodeSnapshot(data) {
     const p = { id: r.u16(), kind: KINDS[r.u8()], sprite: SPRITES[r.u8()] || undefined, x: r.f32(), y: r.f32(), vx: r.i16() / 50, vy: r.i16() / 50, angle: u16ToAngle(r.u16()) };
     const f = r.u8();
     p.dir = f & 1 ? -1 : 1; p.armed = f & 2 ? 0 : 1; p.stuck = !!(f & 4); p.delay = f & 8 ? 1 : 0; p.onGround = !!(f & 16); p.praying = !!(f & 32);
+    p.team = f & 64 ? 1 : f & 128 ? 2 : 0;
     p.age = r.u16(); p.life = r.u16(); p.r = r.u8();
     snap.projectiles.push(p);
   }
@@ -320,7 +344,7 @@ export function decodeSnapshot(data) {
     it.weapon = wi === 255 ? null : weaponAt(wi);
     it.x = r.f32(); it.y = r.f32();
     const f = r.u8();
-    it.landed = !!(f & 1); it.health = !!(f & 2); it.team = (f >> 2) & 3;
+    it.landed = !!(f & 1); it.health = !!(f & 2); it.team = (f >> 2) & 3; it.streak = !!(f & 16);
     it.life = r.u16();
     snap.looseItems.push(it);
   }
@@ -328,6 +352,15 @@ export function decodeSnapshot(data) {
   snap.beacons = [];
   for (let i = 0; i < nb; i++) {
     snap.beacons.push({ id: r.u32(), owner: r.u8(), team: r.u8(), x: r.f32(), y: r.f32(), hp: r.u8() });
+  }
+  snap.end = null;
+  const el = r.u16();
+  if (el) {
+    try {
+      const e = JSON.parse(UNTEXT.decode(new Uint8Array(r.view.buffer, r.view.byteOffset + r.o, el)));
+      snap.end = { awards: Array.isArray(e.awards) ? e.awards.slice(0, 8) : [], finalKill: e.finalKill && typeof e.finalKill === 'object' ? e.finalKill : null };
+    } catch { /* ignore a bad one */ }
+    r.o += el;
   }
   return snap;
 }

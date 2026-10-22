@@ -6,7 +6,7 @@
 // It draws with the browser's 2D canvas, reusing the original renderer's camera,
 // objectives, pickups and the less common projectiles and effects.
 
-import { Renderer, between } from '../render.js';
+import { Renderer, between, fillSpikes } from '../render.js';
 import { drawObjectives, drawCarried } from '../objdraw.js';
 import { Fog } from '../fog.js';
 import { lerp } from '../util.js';
@@ -188,10 +188,10 @@ export class RemasteredRenderer extends Renderer {
 
   drawSoldier(game, s, alpha) {
     drawSoldier(this, game, s, alpha, this.look.theme);
-    if (s.body.jetting) {
-      const x = lerp(s.prevX, s.x, alpha), y = lerp(s.prevY, s.y, alpha);
-      this.lights.add(x - s.facing * 3, y - 2, 34, LIGHT.jet, 0.55);
-    }
+    const x = lerp(s.prevX, s.x, alpha), y = lerp(s.prevY, s.y, alpha);
+    if (s.body.jetting) this.lights.add(x - s.facing * 3, y - 2, 34, LIGHT.jet, 0.55);
+    // A Juggernaut lights up everything round it, pulsing with its glow.
+    if (s.jugger > 0) this.lights.add(x, y - 12, 64, LIGHT.jugger, 0.45 + 0.2 * Math.sin(game.tick * 0.2));
   }
 
   drawName(game, s, alpha, viewer) { drawName(this, game, s, alpha, viewer); }
@@ -238,6 +238,12 @@ export class RemasteredRenderer extends Renderer {
       if (!it.active) continue;
       const x = lerp(it.px ?? it.x, it.x, a), y = lerp(it.py ?? it.y, it.y, a);
       if (x < this.view.l || x > this.view.r || y < this.view.t || y > this.view.b) continue;
+      // (A Supply Drop, from a kill streak: a bigger, brighter gold glow.)
+      if (it.streak) {
+        ctx.globalAlpha = 0.5 + 0.15 * Math.sin(t * 2);
+        ctx.drawImage(glowSprite('#ffc23a'), x - 26, y - 26, 52, 52);
+        continue;
+      }
       const color = it.type === 'health' ? '#ff6a6a' : it.type === 'armour' ? '#8ab8ff' : it.type === 'crate' ? '#ffd27a' : '#fff0b0';
       ctx.globalAlpha = 0.28 + 0.1 * Math.sin(t + (it.bob || 0));
       ctx.drawImage(glowSprite(color), x - 16, y - 16, 32, 32);
@@ -287,6 +293,9 @@ export class RemasteredRenderer extends Renderer {
       else if (p.kind === 'flame') this.lights.add(p.x, p.y, 34, LIGHT.fire, 0.18);
       else if (p.kind === 'fire') this.lights.add(p.x, p.y - 4, 44, LIGHT.fire, 0.35);
       else if (p.kind === 'seeker') this.lights.add(p.x, p.y, 40, LIGHT.magic, 0.5);
+      // A Sentry Sheep's gun: a soft red light (amber while it unfolds). A stampede sheep's fuse.
+      else if (p.kind === 'sentry') this.lights.add(p.x, p.y - 14, 24, p.armed > 0 ? LIGHT.jet : LIGHT.laser, 0.2);
+      else if (p.sprite === 'stampede') this.lights.add(p.x - 6.8 * (p.dir || 1), p.y - 13.6, 18, LIGHT.spark, 0.45);
       rest.push(p0);
     }
     if (rest.length) {
@@ -410,6 +419,24 @@ export class RemasteredRenderer extends Renderer {
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = k;
         ctx.drawImage(glowSprite('#ffffff'), x - r, y - r, r * 2, r * 2);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        return;
+      }
+      case 'killflash': {
+        // A kill confirmed: a white-hot flash with red-tinged spikes, lighting up round it.
+        const k = p.life / p.max, r = 2.5 + (1 - k * k) * 8, R = r * 2.2;
+        this.lights.add(x, y, 46, LIGHT.kill, 0.5 * k);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = k;
+        ctx.drawImage(glowSprite('#ff5a40'), x - R, y - R, R * 2, R * 2);
+        ctx.drawImage(glowSprite('#ffffff'), x - r * 1.3, y - r * 1.3, r * 2.6, r * 2.6);
+        this.turn(ctx, x, y, p.angle || 0);
+        ctx.fillStyle = '#ff7a60';
+        fillSpikes(ctx, 6, r * 0.6, r * 2 + 2, r * 1.5 + 2, 1.3);
+        ctx.fillStyle = '#ffffff';
+        fillSpikes(ctx, 6, r * 0.6, r * 1.7 + 1, r * 1.3 + 1, 0.6);
+        this.endTurn(ctx);
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = 'source-over';
         return;

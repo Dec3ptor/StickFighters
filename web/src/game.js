@@ -17,6 +17,7 @@ import { SoldierGrid, GRID_MIN } from './grid.js';
 import { objectivesOf } from './objectives.js';
 import { setupClass, applyKit, weaponFor } from './classes.js';
 import { useGadget, updateGadgets, removeGadgets, blastGadgets, beaconSpawn, beaconSpawned, beaconOptions, classChanged, botDeploy } from './gadgets.js';
+import { onStreakKill, streakOff, useReward, updateStreaks, matchAwards } from './streaks.js';
 
 const IDLE = { move: 0 };
 // Holding self-destruct this many updates (a second) blows you up: the way out of a pit you can't climb out of.
@@ -35,7 +36,8 @@ export class Game {
    *   destruction: true (explosions blow holes in the map),
    *   classes: true (everyone spawns with a class's kit and uses gadgets: classes.js),
    *   bulletSpeed: bullets fly this many times as fast (guns' bullets, not rockets, grenades or arrows),
-   *   fireDelay: the time between shots, times this (every weapon) }
+   *   fireDelay: the time between shots, times this (every weapon),
+   *   streaks: false turns kill streak rewards off (where the mode has them: streaks.js) }
    */
   constructor({ mapData, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1, options = {} }) {
     // Speed rescales shared constants, so set it before anything reads them.
@@ -65,11 +67,22 @@ export class Game {
     this.feed = [];
     this.notes = [];
     this.shakes = [];
+    // Big messages ('Double kill', 'Rampage'...): { text, sub, kind, tick, to (a soldier id; null: everyone), about }.
+    this.callouts = [];
     this.teamScore = { 1: 0, 2: 0 };
     this.quake = null;
     this.over = false;
     this.winner = null;
     this.stats = { kills: 0, suicides: 0, falls: 0 };
+    // Kill streaks (streaks.js): who drew first blood (a soldier id), the last kill
+    // ({ tick, killer, victim, weapon, headshot, x, y }: ids), the one that won the match
+    // (for its replay, if a kill won it), and the end-of-match awards.
+    this.firstBlood = null;
+    this.lastKill = null;
+    this.finalKill = null;
+    this.awards = null;
+    // Sentry Sheep out there (kill streak rewards; also in projectiles).
+    this.sentries = [];
     this.grid = new SoldierGrid(this.map.bounds);
     // The objective modes' state (flags, capture points...): plain data, sent to online players.
     this.modeState = null;
@@ -80,6 +93,9 @@ export class Game {
 
   /** True if this match has classes, kits and gadgets (a match option; not in gun game or one in the chamber). */
   get classesOn() { return !!this.options.classes && this.rules.classes !== false; }
+
+  /** True if kill streaks earn rewards in this match (a match option; not in gun game, one in the chamber or Defuse). */
+  get streaksOn() { return this.options.streaks !== false && this.rules.streaks !== false; }
 
   /** True when there are enough soldiers that looking them up by area is worth it. */
   get crowded() { return this.soldiers.length > GRID_MIN; }
@@ -164,6 +180,7 @@ export class Game {
   sound(name, x, y, to = null) {
     if (this.sounds.length < 96) this.sounds.push({ name, x, y, to });
     this.recorder?.sound(name, x, y, to);
+    this.tape?.sound(name, x, y, to);
   }
 
   /**
@@ -326,6 +343,18 @@ export class Game {
     return !!n && this.nav.trapped()[n.id] === 1;
   }
 
+  /**
+   * A big message on screen ('Double kill', 'Rampage'): to one player (a soldier, not a
+   * bot), or to = null for everyone (smaller: news about soldier `about`, who isn't shown it).
+   */
+  callout(to, text, sub = '', kind = '', about = null) {
+    if (to?.isBot) return;
+    const c = { text, sub, kind, tick: this.tick, to: to ? to.id : null, about: about ? about.id : null };
+    this.callouts.push(c);
+    if (this.callouts.length > 16) this.callouts.splice(0, this.callouts.length - 16);
+    this.recorder?.callout?.(c);
+  }
+
   notify(s, text) {
     if (!s || s.isBot) return;
     this.notes.push({ text, tick: this.tick, to: s.id });
@@ -342,8 +371,8 @@ export class Game {
     this.recorder?.feed(entry);
   }
 
-  onDamage(target, attacker, amount) {
-    this.controllers.get(target)?.onHurt?.(this, target, attacker, amount);
+  onDamage(target, attacker, amount, weapon) {
+    this.controllers.get(target)?.onHurt?.(this, target, attacker, amount, weapon);
   }
 
   update() {
@@ -358,6 +387,7 @@ export class Game {
     else if (this.navJob) this.navStep();
     this.pickups.update(this);
     if (this.classesOn) updateGadgets(this);
+    if (this.streaksOn) updateStreaks(this);
     if (!this.over) this.rules.tick?.(this);
     if (this.quake) this.updateQuake();
     this.fx?.update(this.map, MOTION.timeScale);
@@ -365,6 +395,8 @@ export class Game {
     // (Bots listen every few updates: keep the last few updates' noises.)
     if (this.noises.length) this.noises = this.noises.filter(n => this.tick - n.tick < 8);
     if (this.notes.length > 20) this.notes.splice(0, this.notes.length - 20);
+    // (Recording the last few seconds, for the replay of the winning kill: replay.js.)
+    this.tape?.capture(this);
   }
 
   updateSoldier(s, input) {
@@ -386,7 +418,8 @@ export class Game {
 
     if (s.kamikaze) { this.updateKamikaze(s, input); return; }
 
-    const switched = input.switchTo ? s.select(input.switchTo) : input.cycle ? s.cycle(input.cycle) : false;
+    // (A Juggernaut keeps its minigun in hand.)
+    const switched = s.jugger > 0 ? false : input.switchTo ? s.select(input.switchTo) : input.cycle ? s.cycle(input.cycle) : false;
     if (switched && !s.isBot) this.sound('click', s.x, s.y, s.id);
 
     // The minigun is heavy: you walk slowly while it's spinning.
@@ -428,6 +461,8 @@ export class Game {
     // Dropping the weapon in hand (Defuse: G, to give it to a teammate).
     if (input.drop) this.rules.drop?.(this, s);
     if (input.gadget && this.classesOn) useGadget(this, s);
+    // X: a banked kill streak reward (streaks.js).
+    if (input.streak && this.streaksOn) useReward(this, s, input.streak);
     if (input.plank != null) s.buildPlank = !!input.plank; // (the Builder: a plank rather than a wall)
     if (input.fire) fire(this, s, input);
 
@@ -505,7 +540,7 @@ export class Game {
     if (this.tick % 10 === 0) this.shake(null, null, 7);
     if (this.tick % 45 === 0) this.sound('rumble', null, null);
     for (const s of this.soldiers) {
-      if (!s.alive || s === q.owner || !s.body.onGround) continue;
+      if (!s.alive || s === q.owner || !s.body.onGround || s.jugger > 0) continue;
       s.body.vx += (this.rng() - 0.5) * 2 * c.kick;
       if (this.rng() < c.hopChance) { s.body.vy = -c.hop; s.body.onGround = false; }
       if (q.owner && canHurt(this, q.owner, s)) { s.lastHurtBy = q.owner; s.lastHurtWeapon = 'Earthquake'; s.lastHurtTick = this.tick; }
@@ -610,6 +645,10 @@ export class Game {
       text = opts.fall ? `${killer.name} knocked ${victim.name} off the map` : `${killer.name} fragged ${victim.name}`;
       if (!killer.isBot) this.notify(killer, `You ${how} ${victim.name}${opts.headshot ? ' (headshot!)' : ''}`);
       if (!victim.isBot) this.notify(victim, `You were fragged by ${killer.name}`);
+      this.lastKill = { tick: this.tick, killer: killer.id, victim: victim.id, weapon: weapon || null, headshot: !!opts.headshot, x: victim.x, y: victim.y };
+      // The kill confirmed: a sharp flash where they fell, and (for a player) a sound only they hear.
+      if (!opts.fall) this.fx?.killFlash?.(victim.x, victim.y - 12);
+      if (!killer.isBot) this.sound('killConfirm', victim.x, victim.y, killer.id);
     } else {
       // Kamikaze is meant to kill you, so it doesn't cost a frag (nor does being caught by Defuse's bomb).
       if (weapon !== 'Kamikaze' && !opts.world) {
@@ -623,6 +662,8 @@ export class Game {
       else { this.stats.suicides++; text = `${victim.name} blew themselves up`; }
     }
     this.addFeed({ text, tick: this.tick, killer, victim, weapon: name });
+    // Kill streaks: the victim's ends, the killer's goes on (callouts, rewards: streaks.js).
+    onStreakKill(this, victim, killer, weapon, opts);
     this.rules.onKill(this, victim, killer, weapon, opts);
     // Classes on: bots choose where to respawn (their beacon, now and then a teammate's).
     if (this.classesOn && victim.isBot) victim.deployAt = botDeploy(this, victim, this.rng);
@@ -662,6 +703,7 @@ export class Game {
       if (s.lastHurtBy && s.lastHurtBy !== s && this.tick - s.lastHurtTick < RULES.creditFallTicks) this.kill(s, null, null);
       else {
         this.rules.onRemove?.(this, s);
+        streakOff(this, s);
         s.alive = false;
         s.kamikaze = null;
         s.burnTicks = 0;
@@ -685,6 +727,11 @@ export class Game {
       this.over = true;
       this.winner = w;
       this.sound('gameover', null, null);
+      // The kill that won it, if one did (in Defuse, the last round was won a few seconds
+      // before the match ends), for its replay; and the awards.
+      const k = this.lastKill, late = this.mode === 'defuse' ? 300 : 0;
+      this.finalKill = k && this.tick - k.tick <= late ? { ...k } : null;
+      this.awards = matchAwards(this);
     }
   }
 

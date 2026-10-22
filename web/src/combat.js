@@ -50,7 +50,7 @@ export function hitSoldier(game, x0, y0, dx, dy, skip, owner) {
 }
 
 /** Nearest enemy of `owner` near (x, y) that's in plain sight, or null. */
-function nearestEnemy(game, owner, x, y, range, needSight = true) {
+export function nearestEnemy(game, owner, x, y, range, needSight = true) {
   let best = null, bd = range;
   for (const s of game.near(x - range, y - range, x + range, y + range)) {
     if (s === owner || !s.alive || !canHurt(game, owner, s) || s.spawnProtect > 0) continue;
@@ -405,7 +405,7 @@ function meleeHit(game, s, def, id) {
     if (d < bd) { bd = d; best = o; }
   }
   if (!best) {
-    if (!meleeBeacon(game, s, def)) game.sound('swing', sx, sy);
+    if (!meleeBeacon(game, s, def) && !meleeSentry(game, s, def)) game.sound('swing', sx, sy);
     return;
   }
   const o = best;
@@ -418,10 +418,13 @@ function meleeHit(game, s, def, id) {
     s.body.onGround = false;
     s.body.momentum = 20;
   }
-  o.body.vx += kx;
-  o.body.vy += ky;
-  if (ky < -0.5) o.body.onGround = false;
-  if (Math.abs(kx) > 3 || ky < -2) o.body.momentum = 30;
+  // (A Juggernaut can't be knocked about.)
+  if (!(o.jugger > 0)) {
+    o.body.vx += kx;
+    o.body.vy += ky;
+    if (ky < -0.5) o.body.onGround = false;
+    if (Math.abs(kx) > 3 || ky < -2) o.body.momentum = 30;
+  }
   o.lastHurtBy = s; o.lastHurtWeapon = id; o.lastHurtTick = game.tick;
   game.sound(def.sound, o.x, o.y);
   game.fx?.whack(o.x, o.y - 10);
@@ -438,7 +441,8 @@ function railShot(game, s, x0, y0, dx, dy, def, id) {
   const wt = wall ? wall.t : 1;
   const hit = hitSoldier(game, x0, y0, x1 - x0, y1 - y0, s, s);
   // (A spawn beacon in the way takes the shot.)
-  const gad = shotBeacon(game, s, x0, y0, x1 - x0, y1 - y0, Math.min(wt, hit ? hit.t : 1), def.damage);
+  const gad = shotBeacon(game, s, x0, y0, x1 - x0, y1 - y0, Math.min(wt, hit ? hit.t : 1), def.damage) ||
+    shotSentry(game, s, x0, y0, x1 - x0, y1 - y0, Math.min(wt, hit ? hit.t : 1), def.damage);
   if (gad) { game.fx?.trail(x0, y0, gad.x, gad.y); return; }
   if (hit && hit.t < wt) {
     const hx = x0 + (x1 - x0) * hit.t, hy = y0 + (y1 - y0) * hit.t;
@@ -468,6 +472,9 @@ export function laserEnd(game, s) {
 
 export function updateProjectiles(game) {
   const list = game.projectiles;
+  // (The Sentry Sheep out there, for shots and blasts to hit: kept apart, as game.projectiles
+  // only holds what's new while they move.)
+  if (game.sentries?.length) game.sentries = game.sentries.filter(p => !p.dead);
   game.projectiles = []; // anything spawned during this update lands here
   const keep = [];
   for (const p of list) {
@@ -590,7 +597,7 @@ const STEP = {
   bullet(game, p) {
     const wall = game.map.raycast(p.x, p.y, p.x + p.vx, p.y + p.vy);
     const hit = sweepHit(game, p, wall);
-    if (projectileBeacon(game, p, hit, wall, p.damage)) return false;
+    if (projectileBeacon(game, p, hit, wall, p.damage) || projectileSentry(game, p, hit, wall, p.damage)) return false;
     if (hit) {
       const hy = p.y + p.vy * hit.t;
       const head = hy < hit.box.t + HEAD_ZONE;
@@ -614,7 +621,7 @@ const STEP = {
     p.vy += p.cfg.gravity;
     const wall = game.map.raycast(p.x, p.y, p.x + p.vx, p.y + p.vy);
     const hit = sweepHit(game, p, wall);
-    if (projectileBeacon(game, p, hit, wall, p.cfg.damage)) return false;
+    if (projectileBeacon(game, p, hit, wall, p.cfg.damage) || projectileSentry(game, p, hit, wall, p.cfg.damage)) return false;
     if (hit) {
       const hy = p.y + p.vy * hit.t;
       const head = hy < hit.box.t + HEAD_ZONE;
@@ -650,7 +657,7 @@ const STEP = {
     p.vx = Math.cos(p.angle) * c.speed; p.vy = Math.sin(p.angle) * c.speed;
     const wall = game.map.raycast(p.x, p.y, p.x + p.vx, p.y + p.vy);
     const hit = sweepHit(game, p, wall);
-    if (projectileBeacon(game, p, hit, wall, c.damage)) { game.fx?.ring(p.x, p.y, '#8a5fe0'); return false; }
+    if (projectileBeacon(game, p, hit, wall, c.damage) || projectileSentry(game, p, hit, wall, c.damage)) { game.fx?.ring(p.x, p.y, '#8a5fe0'); return false; }
     if (hit) {
       damage(game, hit.soldier, c.damage, p.owner, p.weapon, { dirX: Math.cos(p.angle), dirY: Math.sin(p.angle), knock: c.knock });
       game.fx?.ring(p.x, p.y, '#8a5fe0');
@@ -731,11 +738,13 @@ const STEP = {
     if (c.gravity) p.vy += c.gravity;
     const wall = game.map.raycast(p.x, p.y, p.x + p.vx, p.y + p.vy);
     const hit = sweepHit(game, p, wall);
-    if (hit || wall) {
-      const t = hit ? hit.t : wall.t;
+    // (A Sentry Sheep in the way takes the hit.)
+    const sentry = findSentry(game, p.owner, p.x, p.y, p.vx, p.vy, Math.min(hit ? hit.t : 1, wall ? wall.t : 1));
+    if (hit || wall || sentry) {
+      const t = sentry ? sentry.t : hit ? hit.t : wall.t;
       const back = 2 / (Math.hypot(p.vx, p.vy) || 1);
       p.x += p.vx * Math.max(0, t - back); p.y += p.vy * Math.max(0, t - back);
-      detonate(game, p, hit ? hit.soldier : null);
+      detonate(game, p, hit && !sentry ? hit.soldier : null);
       return false;
     }
     p.x += p.vx; p.y += p.vy;
@@ -819,7 +828,7 @@ const STEP = {
     const W = 5, H = 12;
     const blocked = (x, y) => map.overlap(x - W, y - H, x + W, y - 0.01);
     p.vy = Math.min(p.vy + MOTION.itemGravity * 1.5, MOTION.itemMaxFall);
-    p.vx = p.dir * c.walkSpeed;
+    p.vx = p.dir * (p.speed ?? c.walkSpeed);
     // Horizontal
     const nx = p.x + p.vx;
     if (!blocked(nx, p.y)) p.x = nx;
@@ -828,7 +837,7 @@ const STEP = {
       for (let up = 1; up <= 8 && !stepped; up++) if (!blocked(nx, p.y - up)) { p.x = nx; p.y -= up; stepped = true; }
       if (!stepped) {
         if (c.hop && !p.hopped) { p.vy = -c.hop; p.onGround = false; p.hopped = true; p.hopX = p.x; }
-        else { p.dir = -p.dir; p.hopped = false; }
+        else { p.dir = -p.dir; p.hopped = false; p.turnedAt = p.age; }
       }
     }
     // Vertical
@@ -847,6 +856,12 @@ const STEP = {
         if (p.hopped && Math.abs(p.x - p.hopX) > 4) p.hopped = false;
       }
     } else { p.vy = 0; }
+    // A stampede's sheep (kill streak reward) head for the enemy they were sent after, or the
+    // nearest one once that one's dead (not straight back into a wall they've just turned at).
+    if (c.seek && p.onGround && !p.hopped && game.tick % 10 === p.id % 10 && p.age - (p.turnedAt ?? -1e9) > 45 / MOTION.timeScale) {
+      if (!p.target || !p.target.alive || !canHurt(game, p.owner, p.target)) p.target = nearestEnemy(game, p.owner, p.x, p.y - 10, 1600, false);
+      if (p.target && Math.abs(p.target.x - p.x) > 16) p.dir = Math.sign(p.target.x - p.x);
+    }
     if (game.tick % 90 === p.id % 90) game.sound(p.weapon === 'MadCow' ? 'moo' : p.weapon === 'OldWoman' ? 'mumble' : 'baa', p.x, p.y);
     if (c.contact) {
       for (const s of game.near(p.x - 11, p.y - 14, p.x + 11, p.y + 22)) {
@@ -915,6 +930,59 @@ const STEP = {
     return true;
   },
 
+  /**
+   * A Sentry Sheep (a kill streak reward, streaks.js): drops to the floor, unfolds its gun
+   * (p.armed: updates until it's ready), then turns to the nearest enemy in sight and in
+   * range and shoots. It's gone when its time's up (p.life) or it's wrecked (p.hp).
+   */
+  sentry(game, p) {
+    const c = p.cfg;
+    // (Its owner left the game: it goes with them, rather than shooting at everyone.)
+    if (p.dead || !p.owner) { p.dead = true; return false; }
+    if (!p.onGround) {
+      p.vy = Math.min(p.vy + MOTION.itemGravity, MOTION.itemMaxFall);
+      const wall = game.map.raycast(p.x, p.y - 1, p.x + p.vx, p.y - 1 + p.vy + 1);
+      if (wall && wall.ny < 0) { p.x = wall.x; p.y = wall.y - 0.01; p.onGround = true; p.vx = 0; p.vy = 0; }
+      else if (wall) { p.x = wall.x + wall.nx; p.y = wall.y + 1 + Math.max(0, wall.ny); p.vx = -p.vx * 0.3; p.vy = Math.max(0, p.vy); }
+      else { p.x += p.vx; p.y += p.vy; }
+      if (p.y > game.map.bounds.bottom + RULES.fallDeathMargin) { p.dead = true; return false; }
+    } else if (game.tick % 10 === p.id % 10 && !game.map.overlap(p.x - 4, p.y + 0.5, p.x + 4, p.y + 3)) {
+      p.onGround = false; // (the floor under it was blown away)
+    }
+    if (p.life <= 0) {
+      p.dead = true;
+      game.fx?.explosion(p.x, p.y - 8, 10);
+      game.sound('explosionSmall', p.x, p.y);
+      if (p.owner) game.notify(p.owner, 'Your Sentry Sheep is out of time');
+      return false;
+    }
+    if (p.armed > 0) { p.armed--; return true; }
+    const gx = p.x, gy = p.y - SENTRY_GUN;
+    if (game.tick % 6 === p.id % 6 || (p.target && !p.target.alive)) p.target = nearestEnemy(game, p.owner, gx, gy, c.range);
+    if (p.cool > 0) p.cool--;
+    const t = p.target;
+    if (!t) return true;
+    let d = Math.atan2(t.y - 12 - gy, t.x - gx) - p.angle;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    p.angle += Math.max(-c.turn, Math.min(c.turn, d));
+    p.dir = Math.cos(p.angle) < 0 ? -1 : 1;
+    if (p.cool > 0 || Math.abs(d) > 0.25) return true;
+    const dx = Math.cos(p.angle), dy = Math.sin(p.angle);
+    let mx = gx + dx * 11, my = gy + dy * 11;
+    const block = game.map.raycast(gx, gy, mx, my);
+    if (block) { mx = block.x - dx * 1.5; my = block.y - dy * 1.5; }
+    const a = p.angle + (game.rng() - 0.5) * c.spread;
+    const sp = c.speed * (game.options?.bulletSpeed || 1);
+    spawn(game, { kind: 'bullet', sprite: 'bullet', x: mx, y: my, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, owner: p.owner, weapon: p.weapon, life: c.range / sp, damage: c.damage, knock: c.knock });
+    p.cool = shotDelay(game, c);
+    p.shots = (p.shots || 0) + 1;
+    game.sound(c.sound, mx, my);
+    game.noise(p.x, p.y, 700, p.owner);
+    game.fx?.muzzle(mx, my, p.angle, false);
+    return true;
+  },
+
   /** The Concrete Donkey: falls straight through everything, smashing whatever it lands on. */
   donkey(game, p) {
     const c = p.cfg;
@@ -937,6 +1005,93 @@ const STEP = {
     return p.smashes < c.smashes && p.y < game.map.bounds.bottom + RULES.fallDeathMargin + 100;
   },
 };
+
+// ---- Sentry Sheep (a kill streak reward, streaks.js) --------------------------------------
+
+// Its hit box (from where it stands), and how high its gun is.
+const SENTRY_W = 8, SENTRY_H = 17, SENTRY_GUN = 13;
+
+/** True if `by` (a soldier, or null for the world) can damage Sentry Sheep p: anyone but its owner's side. */
+function canHitSentry(game, by, p) {
+  if (p.dead || !(p.hp > 0)) return false;
+  if (!by) return true;
+  if (by === p.owner) return false;
+  return !(game.rules.teams && by.team === p.team);
+}
+
+/** Hurt a Sentry Sheep; with no armour left it's wrecked (its owner, and whoever did it, are told). */
+export function damageSentry(game, p, amount, by) {
+  if (!(amount > 0) || !canHitSentry(game, by, p)) return;
+  p.hp -= amount;
+  // (Its health, as a percentage, goes to online players in `r`.)
+  p.r = Math.max(0, Math.ceil((p.hp / p.cfg.hp) * 100));
+  game.fx?.sparks(p.x, p.y - 10, 0, -1);
+  if (p.hp > 0) { game.sound('tink', p.x, p.y); return; }
+  p.dead = true;
+  if (p.mark) p.mark.alive = false; // (bots shooting at it look for someone else)
+  game.fx?.explosion(p.x, p.y - 8, 16);
+  game.sound('explosionSmall', p.x, p.y);
+  if (p.owner) game.notify(p.owner, 'Your Sentry Sheep was destroyed');
+  if (by && by !== p.owner) game.notify(by, 'You destroyed a Sentry Sheep');
+}
+
+/** The first Sentry Sheep `owner` can hit along a path from (x, y) by (dx, dy), before maxT: { t, p }, or null. */
+function findSentry(game, owner, x, y, dx, dy, maxT = 1) {
+  if (!game.sentries?.length) return null;
+  let best = null;
+  const l = Math.min(x, x + dx), r = Math.max(x, x + dx), t = Math.min(y, y + dy), b = Math.max(y, y + dy);
+  for (const p of game.sentries) {
+    if (p.x + SENTRY_W < l || p.x - SENTRY_W > r || p.y < t || p.y - SENTRY_H > b || !canHitSentry(game, owner, p)) continue;
+    const h = segmentBox(x, y, dx, dy, p.x - SENTRY_W, p.y - SENTRY_H, p.x + SENTRY_W, p.y);
+    if (h && h.t < maxT && (!best || h.t < best.t)) best = { t: h.t, p };
+  }
+  return best;
+}
+
+/** A shot along that path: if it hits a Sentry Sheep first, that takes `amount`, and this says where (so the shot stops there). */
+export function shotSentry(game, owner, x, y, dx, dy, maxT, amount) {
+  const hit = findSentry(game, owner, x, y, dx, dy, maxT);
+  if (!hit) return null;
+  damageSentry(game, hit.p, amount, owner);
+  return { x: x + dx * hit.t, y: y + dy * hit.t };
+}
+
+/** A projectile's move this update hit a Sentry Sheep before the soldier or wall it would hit: true if so. */
+function projectileSentry(game, p, hit, wall, amount) {
+  if (!game.sentries?.length) return false;
+  const at = shotSentry(game, p.owner, p.x, p.y, p.vx, p.vy, Math.min(hit ? hit.t : 1, wall ? wall.t : 1), amount);
+  if (!at) return false;
+  p.x = at.x; p.y = at.y;
+  return true;
+}
+
+/** An explosion: Sentry Sheep in reach take its damage (half as much again: they're tough, but blasts are what breaks them). */
+function blastSentries(game, x, y, blast, owner) {
+  if (!game.sentries?.length || !blast) return;
+  const reach = blast.radius + 10;
+  for (const p of game.sentries) {
+    if (Math.abs(p.x - x) > reach || Math.abs(p.y - 8 - y) > reach || !canHitSentry(game, owner, p)) continue;
+    const d = Math.hypot(p.x - x, p.y - 8 - y);
+    if (d > reach) continue;
+    if (!game.map.clearLine(x, y, p.x, p.y - 8) && !game.map.clearLine(x, y, p.x, p.y - 15)) continue;
+    damageSentry(game, p, blast.damage * 1.5 * Math.max(0.15, 1 - d / reach), owner);
+  }
+}
+
+/** A melee swing that hit nobody: an enemy Sentry Sheep right in front gets it. True if one did. */
+function meleeSentry(game, s, def) {
+  if (!game.sentries?.length || !(def.damage > 0)) return false;
+  const dx = Math.cos(s.aim), dy = Math.sin(s.aim);
+  for (const p of game.sentries) {
+    const rx = p.x - s.shoulderX, ry = p.y - 8 - s.shoulderY, d = Math.hypot(rx, ry);
+    if (d > def.reach + 12 || (d > 8 && (rx * dx + ry * dy) / d < 0.3) || !canHitSentry(game, s, p)) continue;
+    game.sound(def.sound, p.x, p.y);
+    game.fx?.whack(p.x, p.y - 8);
+    damageSentry(game, p, def.damage, s);
+    return true;
+  }
+  return false;
+}
 
 function ignite(s, by) {
   if (s.alive && s.spawnProtect <= 0) { s.burnTicks = RULES.burnTicks; s.burnBy = by; }
@@ -962,16 +1117,19 @@ export function explode(game, x, y, blast, owner, weapon, direct = null) {
     let dirX = (cx - x) / (d || 1), dirY = (cy - y) / (d || 1) - 0.6;
     const dl = Math.hypot(dirX, dirY) || 1;
     dirX /= dl; dirY /= dl;
-    // Knockback applies even to teammates and yourself (rocket jumps!).
+    // Knockback applies even to teammates and yourself (rocket jumps!), not to a Juggernaut.
     const k = blast.knock * f * (self ? 0.85 : 1);
-    s.body.vx += dirX * k;
-    s.body.vy += dirY * k;
-    if (s.body.vy < -1) s.body.onGround = false;
-    if (k > 8) s.body.momentum = 20;
+    if (!(s.jugger > 0)) {
+      s.body.vx += dirX * k;
+      s.body.vy += dirY * k;
+      if (s.body.vy < -1) s.body.onGround = false;
+      if (k > 8) s.body.momentum = 20;
+    }
     if (canHurt(game, owner, s)) {
       damage(game, s, blast.damage * f * (self ? 0.5 : 1), owner, weapon, { dirX, dirY, knock: 0, explosive: true });
     }
   }
+  blastSentries(game, x, y, blast, owner);
   // Explosions set off mines and dynamite nearby.
   for (const p of game.projectiles) {
     if (p.kind !== 'placed' || p.dead) continue;
@@ -991,6 +1149,8 @@ export function damage(game, target, amount, attacker, weapon, opts = {}) {
   if (!target.alive || target.spawnProtect > 0 || game.over) return;
   if (!canHurt(game, attacker, target)) return;
   let dmg = game.rules.damage(game, amount, attacker, target, weapon);
+  // (A Juggernaut takes a fraction of it.)
+  if (target.jugger > 0) dmg *= RULES.juggerDamage;
   // (Where the mode has helmets, armour only covers a headshot if you have one.)
   const covered = !(opts.headshot && game.rules.helmets && !target.helmet);
   if (target.armour > 0 && !opts.burn && covered) {
@@ -999,7 +1159,7 @@ export function damage(game, target, amount, attacker, weapon, opts = {}) {
     dmg -= soak;
   }
   target.health -= dmg;
-  if (opts.knock) {
+  if (opts.knock && !(target.jugger > 0)) {
     target.body.vx += (opts.dirX || 0) * opts.knock;
     target.body.vy += (opts.dirY || 0) * opts.knock * 0.5;
   }
@@ -1016,6 +1176,6 @@ export function damage(game, target, amount, attacker, weapon, opts = {}) {
   }
   // The player hears a hitmarker tick when they land a headshot.
   if (opts.headshot && attacker && attacker !== target && !attacker.isBot) game.sound('hitmarker', attacker.x, attacker.y, attacker.id);
-  game.onDamage?.(target, attacker, amount);
+  game.onDamage?.(target, attacker, amount, weapon);
   if (target.health <= 0) game.kill(target, attacker, weapon, opts);
 }

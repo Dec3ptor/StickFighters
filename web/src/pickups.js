@@ -7,6 +7,7 @@ import { BODY, ITEM_RESPAWN, ITEM_SIZE, RULES, MOTION, CRATES } from './config.j
 import { WEAPONS, CRATE_WEIGHTS } from './weapons.js';
 import { weaponFor } from './classes.js';
 import { takeSupply } from './gadgets.js';
+import { canOpen } from './streaks.js';
 
 const CRATE_LIFE = 2400; // ticks a landed crate waits to be picked up
 const MAX_DROPPED = 150;  // dropped weapons lying around at once
@@ -40,10 +41,11 @@ export class Pickups {
     for (const it of this.items) {
       if (it.dropped) {
         it.life--;
+        if (it.lock > 0) it.lock--; // (a supply drop: only its caller's side can open it till then)
         it.px = it.x; it.py = it.y; // (drawn in between this and the new position)
         if (it.vy !== null) {
           const fall = it.type === 'crate' ? MOTION.crateFall : null;
-          if (fall) it.vy = fall;
+          if (fall) it.vy = fall * (it.fast || 1);
           else it.vy = Math.min(it.vy + MOTION.itemGravity, MOTION.itemMaxFall);
           const hit = game.map.raycast(it.x, it.y, it.x + it.vx, it.y + it.vy + (it.type === 'crate' ? 8 : 4));
           if (hit && hit.ny < 0) {
@@ -154,6 +156,7 @@ function give(game, s, it) {
       return true;
     case 'crate':
       if (!it.landed && it.y < s.y - 40) return false;
+      if (!canOpen(game, s, it)) return false;
       if (it.health) {
         s.health = RULES.maxHealth;
         s.burnTicks = 0;
@@ -161,7 +164,7 @@ function give(game, s, it) {
         game.notify(s, 'Health crate!');
         return true;
       }
-      return giveWeapon(game, s, it.weapon, null, it, true);
+      return giveWeapon(game, s, it.weapon, it.ammo ?? null, it, true);
     case 'weapon':
       // (Defuse: one gun of each sort, so you only pick one up if you've none of that sort.)
       if (game.rules.canPickUp && !game.rules.canPickUp(game, s, it)) return false;
@@ -183,7 +186,8 @@ function giveWeapon(game, s, id, ammo, it, crate) {
     s.weapons[id] = def.mag ? { ammo: it.mag != null ? amount ?? Infinity : def.ammo ?? Infinity, mag: it.mag ?? def.mag } : { ammo: amount };
     // Only take it out if it's an upgrade on the starting pistol (or a melee fallback, or
     // something out of ammo): don't swap out a weapon the player chose to hold.
-    const basic = s.current === 'Platinum' || !s.has(s.current) || WEAPONS[s.current]?.kind === 'melee';
+    // (A supply drop's big gun comes out straight away, unless you're a Juggernaut.)
+    const basic = s.current === 'Platinum' || !s.has(s.current) || WEAPONS[s.current]?.kind === 'melee' || (!!it.streak && !(s.jugger > 0));
     const switched = basic && !NO_SWITCH_KINDS.has(def.kind) && s.select(id);
     game.notify(s, `${crate ? 'Crate: ' : 'You got the '}${def.name}${switched ? '' : ` (key ${KEY[def.slot]})`}`);
   } else {

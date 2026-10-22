@@ -6,7 +6,7 @@
 
 import { buildPose } from '../stickman.js';
 import { lerp } from '../util.js';
-import { drawWeapon } from '../sprites.js';
+import { drawWeapon, drawStreakFlame } from '../sprites.js';
 import { css, mix, shade, rgb } from './color.js';
 
 export const TEAM_COLORS = { 1: '#3d7ff0', 2: '#e8483a' };
@@ -81,13 +81,18 @@ export function drawSoldier(r, game, s, alpha, theme) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  // A soft outline round the whole figure, so it reads against any background.
-  ctx.strokeStyle = c.halo;
+  // A Juggernaut: a pulsing orange glow round the whole figure, so everyone knows to run.
+  const jugger = s.jugger > 0;
+  if (jugger) drawJuggerGlow(ctx, L, pose.head, game.tick);
+
+  // A soft outline round the whole figure, so it reads against any background (gold on a Juggernaut).
+  const halo = jugger ? JUGGER_HALO : c.halo;
+  ctx.strokeStyle = halo;
   ctx.lineWidth = W.torso + 2.2;
   ctx.beginPath();
   for (const l of L) line(ctx, l);
   ctx.stroke();
-  ctx.fillStyle = c.halo;
+  ctx.fillStyle = halo;
   ctx.beginPath(); ctx.arc(pose.head.x, pose.head.y, pose.head.r + 1.6, 0, Math.PI * 2); ctx.fill();
 
   // The far arm and leg, a little darker.
@@ -177,6 +182,25 @@ export function drawSoldier(r, game, s, alpha, theme) {
   ctx.restore();
 }
 
+const JUGGER_HALO = 'rgba(255,200,110,0.9)';
+
+/** A Juggernaut's glow: wide soft orange strokes round its limbs and head, added onto the picture, pulsing. */
+function drawJuggerGlow(ctx, L, head, tick) {
+  const pulse = 0.5 + 0.5 * Math.sin(tick * 0.2), base = ctx.globalAlpha;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.strokeStyle = ctx.fillStyle = '#ff7a1a';
+  for (const [w, a] of [[12 + pulse * 4, 0.16 + 0.1 * pulse], [7 + pulse * 2, 0.32 + 0.18 * pulse]]) {
+    ctx.globalAlpha = base * a;
+    ctx.lineWidth = w;
+    ctx.beginPath();
+    for (const l of L) line(ctx, l);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(head.x, head.y, head.r + w / 2, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = base;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -204,6 +228,29 @@ export function drawName(r, game, s, alpha, viewer) {
   ctx.fillRect(x - w / 2 + 2, y - 29.6, w - 4, 0.9);
   ctx.fillStyle = '#ffffff';
   ctx.fillText(s.name, x, y - 32.4);
+  // Kill streaks: a flame and the count beside the tag (3 or more in a row), and a Juggernaut's tag over it.
+  if (s.streak >= 3) {
+    const big = s.streak >= 5, n = String(s.streak);
+    ctx.font = `700 ${big ? 7.5 : 6.5}px ${FONT}`;
+    const bw = ctx.measureText(n).width + (big ? 10 : 8.6), bx = x + w / 2 + 1.2;
+    ctx.fillStyle = big ? 'rgba(130,28,6,0.8)' : 'rgba(10,14,20,0.55)';
+    roundRect(ctx, bx, y - 37, bw, 9, 3);
+    ctx.fill();
+    drawStreakFlame(ctx, bx + (big ? 3.6 : 3.2), y - 32.4, big);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = big ? '#ffd23a' : '#ffb347';
+    ctx.fillText(n, bx + (big ? 6.6 : 5.6), y - 32.3);
+    ctx.textAlign = 'center';
+  }
+  if (s.jugger > 0) {
+    ctx.font = `800 5.5px ${FONT}`;
+    const tw = ctx.measureText('JUGGERNAUT').width + 6;
+    ctx.fillStyle = 'rgba(110,36,0,0.8)';
+    roundRect(ctx, x - tw / 2, y - 44.5, tw, 6.8, 2.4);
+    ctx.fill();
+    ctx.fillStyle = '#ffae4a';
+    ctx.fillText('JUGGERNAUT', x, y - 41);
+  }
   if (!me && s.health < 100) {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(x - 9, y - 27.6, 18, 1.8);

@@ -86,6 +86,7 @@ export function cloudSprite() {
 export const LIGHT = {
   muzzle: '#ffd795', fire: '#ff8a30', boom: '#ffa850', rocket: '#ffb466', jet: '#ffb648',
   pad: '#8dff7a', magic: '#b48cff', laser: '#ff4040', spark: '#ffe2a0', teleport: '#9fd6ff',
+  jugger: '#ff9a2a', kill: '#ffd8c8',
 };
 const MAX_LIGHTS = 72;
 

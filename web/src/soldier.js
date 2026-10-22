@@ -53,6 +53,17 @@ export class Soldier {
     this.lastInSlot = {};
     this.flashTicks = 0;    // blinded by a flashbang for this long (flashFull: how long it was at first)
     this.flashFull = 0;
+    // Kill streaks (streaks.js): kills in a row this life, the best this match, kills close
+    // together (multi: how many, multiAt: when the last was), rewards banked (ids, oldest
+    // first), Juggernaut time left, and counts for the end-of-match awards.
+    this.streak = 0;
+    this.bestStreak = 0;
+    this.multi = 0;
+    this.multiAt = -1e9;
+    this.bank = [];
+    this.jugger = 0;
+    this.headshots = 0;
+    this.blasts = 0;
   }
 
   get x() { return this.body.x; }
@@ -84,6 +95,7 @@ export class Soldier {
     this.lastHurtTick = -9999;
     this.anim = { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, swing: 0 };
     this.animPrev = null;
+    this.jugger = 0; // (a new life isn't a Juggernaut: Defuse puts round survivors back with this too)
   }
 
   has(id) {

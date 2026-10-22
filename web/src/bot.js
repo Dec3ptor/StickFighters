@@ -7,6 +7,7 @@ import { angleDiff, clamp } from './util.js';
 import { CELL } from './grid.js';
 import { inZone } from './objectives.js';
 import { botWantsGadget } from './gadgets.js';
+import { botReward, canOpen, REWARD_WEAPONS } from './streaks.js';
 import { shotSpeed, smokeBetween } from './combat.js';
 import { buildTool, blocksLeft, flyFuel, canGetPast, toolFor, exitSpot, launchSpot, fly, climb, coverSpot } from './botescape.js';
 
@@ -116,6 +117,8 @@ function wants(s, it) {
 /** The same, as the mode allows (Defuse: one gun of each sort). */
 function wantsItem(game, s, it) {
   if (game.rules.canPickUp && it.type === 'weapon' && !game.rules.canPickUp(game, s, it)) return false;
+  // (Someone else's supply drop, while it's still theirs.)
+  if (it.type === 'crate' && !canOpen(game, s, it)) return false;
   return wants(s, it);
 }
 
@@ -245,10 +248,11 @@ export class BotController {
     this.thinkIn = 5 + Math.floor(this.rng() * 10);
   }
 
-  onHurt(game, s, attacker) {
+  onHurt(game, s, attacker, amount, weapon) {
     // Getting hit throws the aim off a little.
     this.aimOff += this.gauss() * 0.06;
-    if (attacker && attacker !== s && attacker.alive) {
+    // (Shot by a Sentry Sheep or caught by a stampede: its owner isn't where the hurt came from.)
+    if (attacker && attacker !== s && attacker.alive && !REWARD_WEAPONS.has(weapon)) {
       this.threat = attacker;
       this.lastSeen = { x: attacker.x, y: attacker.y, tick: game.tick };
       if (!this.target) this.thinkIn = Math.min(this.thinkIn, 4);
@@ -267,6 +271,9 @@ export class BotController {
     if (game.tick % 15 === s.id % 15) this.pickWeapon(game, s, inp);
     // Classes on: medkits when someone's hurt, ammo when it's low, beacons near the objectives (gadgets.js).
     if (game.classesOn && game.tick % 20 === s.id % 20 && botWantsGadget(game, s, this)) inp.gadget = true;
+    // Kill streak rewards: the Juggernaut and supply drops straight away, the sentry and
+    // the stampede where there are enemies (streaks.js).
+    if (s.bank.length && game.tick % 15 === s.id % 15) inp.streak = botReward(game, s, this);
     this.watchdog(game, s);
     const it = this.goalItem;
     if (it && (!it.active || (it.dropped && it.life <= 0) || !wantsItem(game, s, it))) {
@@ -373,7 +380,9 @@ export class BotController {
   perceive(game, s) {
     if (game.options.botVision === 'sight') this.listen(game, s);
     // Blinded by a flashbang: nothing to see until it wears off.
-    const best = s.flashTicks > 40 ? null : game.crowded ? this.lookAround(game, s) : this.lookAtAll(game, s);
+    let best = s.flashTicks > 40 ? null : game.crowded ? this.lookAround(game, s) : this.lookAtAll(game, s);
+    // Nobody to fight, but an enemy Sentry Sheep (a kill streak reward) in sight: shoot that.
+    if (!best && s.flashTicks <= 40 && game.sentries?.length) best = this.sentryTarget(game, s);
     if (best !== this.target) {
       // Already in a fight (or just were): quicker onto the next one than spotting someone out of the blue.
       this.quick = !!this.target || (!!this.lastSeen && game.tick - this.lastSeen.tick < 60);
@@ -393,6 +402,24 @@ export class BotController {
       if (d > SIGHT || !this.inView(game, s, o) || !this.canSee(game, s, o)) continue;
       const score = d * (o === this.target ? 0.6 : 1) * (o === this.threat ? 0.7 : 1);
       if (score < bestD) { bestD = score; best = o; }
+    }
+    return best;
+  }
+
+  /**
+   * The nearest enemy Sentry Sheep in sight, as something to fight: a stand-in with what
+   * aiming needs (where it is, standing still), kept on the sentry so it's the same one each look.
+   */
+  sentryTarget(game, s) {
+    let best = null, bestD = Infinity;
+    for (const p of game.sentries) {
+      if (p.dead || p.owner === s || (game.rules.teams && p.team === s.team)) continue;
+      const d = Math.hypot(p.x - s.x, p.y - s.y);
+      if (d > SIGHT * 0.8 || d >= bestD) continue;
+      const t = (p.mark ||= { sentry: p, body: { vx: 0, vy: 0, onGround: true }, spawnProtect: 0, team: p.team, alive: true });
+      t.x = p.x; t.y = p.y - 4;
+      if (!this.inView(game, s, t) || !this.canSee(game, s, t)) continue;
+      bestD = d; best = t;
     }
     return best;
   }
@@ -588,7 +615,8 @@ export class BotController {
         it => isWeapon(it) && wantsItem(game, s, it),
         // (In a fight, a new gun is worth less, unless it's the one we're already going for.)
         it => tool(it) ? 1.2 - (this.target ? 3 : 0)
-          : (s.weapons[it.weapon] ? 1.5 : weaponValue(it.weapon) + 2) + (topValue < 3 ? 6 : 0) - (this.target && it !== this.goalItem ? 3 : 0) + (it.type === 'crate' ? 1.5 : 0),
+          : (s.weapons[it.weapon] ? 1.5 : weaponValue(it.weapon) + 2) + (topValue < 3 ? 6 : 0) - (this.target && it !== this.goalItem ? 3 : 0) + (it.type === 'crate' ? 1.5 : 0) +
+            (it.streak && it.owner === s.id ? 6 : 0), // (our own supply drop)
       );
       kind = 'weapon';
     }

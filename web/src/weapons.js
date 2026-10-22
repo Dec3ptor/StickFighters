@@ -443,6 +443,34 @@ export const WEAPONS = {
     look: { type: 'held', sprite: 'hammer' },
     bot: { score: 0, value: 0 },
   },
+
+  // ---- Kill streak rewards (streaks.js): never on maps, in crates or in the shop ------
+  // Sentry Sheep (5 kills in a row): an armoured sheep with a gun on its back that
+  // shoots enemies who come near. hp: how much damage it takes to destroy it.
+  SentrySheep: {
+    name: 'Sentry Sheep', short: 'Sentry', slot: 8, kind: 'sentry', hidden: true,
+    rof: 7, damage: 8, knock: 0.5, spread: deg(4), speed: 30, range: 470, turn: 0.16, arm: 40,
+    hp: 260, sound: 'sentry', sprite: 'sentry',
+    look: { type: 'held', sprite: 'sheep' },
+    bot: { score: 0, value: 0 },
+  },
+  // Sheep Stampede (7 in a row): a flock of sheep that run at the nearest enemies and blow up on them.
+  Stampede: {
+    name: 'Sheep Stampede', short: 'Stampede', slot: 8, kind: 'walker', hidden: true,
+    count: 8, interval: 9, walkSpeed: 3, hop: 7.5, fuse: 600, remote: false, contact: true, seek: true,
+    blast: { radius: 85, damage: 95, knock: 11 },
+    sound: 'baa', sprite: 'stampede',
+    look: { type: 'held', sprite: 'sheep' },
+    bot: { score: 0, value: 0 },
+  },
+  // Juggernaut (10 in a row): a minigun that never runs out, while the Juggernaut lasts.
+  JuggerGun: {
+    name: 'Juggernaut Minigun', short: 'Juggernaut', slot: 1, kind: 'bullet', hidden: true,
+    rof: 2.2, spinup: 14, damage: 7.5, knock: 0.6, spread: deg(6), speed: 30, range: 650,
+    ammo: Infinity, heavy: 0.8, sound: 'minigun',
+    look: { type: 'minigun', length: 24, color: '#b8962e' },
+    bot: { near: 0, far: 600, score: 20, value: 0 },
+  },
 };
 
 for (const id in WEAPONS) WEAPONS[id].id = id;

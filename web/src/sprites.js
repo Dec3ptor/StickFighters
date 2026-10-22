@@ -281,6 +281,89 @@ export function drawSprite(ctx, name, opts = {}) {
       ctx.fillRect(6, -2.4, 0.9, 0.9);
       break;
     }
+    case 'stampede': {
+      // A sheep on a rampage (kill streak reward): running flat out, a red headband,
+      // an angry glare, and a stick of dynamite on its back with its fuse fizzing.
+      const step = opts.held ? 0 : Math.sin(t * 0.9) * 2;
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-3, 2); ctx.lineTo(-3 + step, 6);
+      ctx.moveTo(3, 2); ctx.lineTo(3 - step, 6);
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      for (const [x, y, r] of [[-4, 0, 3], [-1, -2, 3.2], [2, 0, 3], [-1, 1.5, 3]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+      // The dynamite, strapped across its back.
+      ctx.fillStyle = '#c82020';
+      ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.rect(-4.6, -6.4, 5.4, 2.2); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#555';
+      ctx.beginPath(); ctx.moveTo(-4.6, -5.3); ctx.quadraticCurveTo(-6.4, -5.6, -6.8, -7.6); ctx.stroke();
+      // The spark at the end of the fuse, flickering.
+      const r = 1.1 + Math.abs(Math.sin(t * 1.7)) * 0.9;
+      ctx.fillStyle = Math.floor(t / 2) % 2 ? '#ffd23a' : '#ff6a1f';
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 + t * 0.3, rr = i % 2 ? r * 0.4 : r; ctx.lineTo(-6.8 + Math.cos(a) * rr, -7.6 + Math.sin(a) * rr); }
+      ctx.closePath(); ctx.fill();
+      // Head, the red headband (its ends streaming out behind), and a red eye under a frown.
+      ctx.fillStyle = '#222';
+      ctx.beginPath(); ctx.ellipse(5.5, -1.5, 2.3, 1.8, 0.3, 0, Math.PI * 2); ctx.fill();
+      const flap = Math.sin(t * 0.8) * 0.7;
+      ctx.strokeStyle = '#e02a20';
+      ctx.lineWidth = 1.1;
+      ctx.beginPath(); ctx.moveTo(3.5, -2.3); ctx.quadraticCurveTo(5.4, -3.6, 7.3, -2.6); ctx.stroke();
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(3.6, -2.4); ctx.lineTo(1.2, -3.6 + flap);
+      ctx.moveTo(3.6, -2.3); ctx.lineTo(1.6, -2.4 + flap * 0.6);
+      ctx.stroke();
+      ctx.fillStyle = '#ff3b2f';
+      ctx.fillRect(6.3, -1.5, 1, 0.9);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 0.45;
+      ctx.beginPath(); ctx.moveTo(5.7, -2); ctx.lineTo(7.4, -1.5); ctx.stroke();
+      break;
+    }
+    case 'sentry': {
+      // A Sentry Sheep's body (kill streak reward): a big sheep standing its ground, with
+      // a steel helmet, a steel plate over its back, and a collar (opts.collar: its side's
+      // colour). The gun turret on its back is drawn on top by the renderer (it aims anywhere).
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      for (const x of [-5.2, -2.6, 1.2, 3.6]) { ctx.moveTo(x, 2.5); ctx.lineTo(x + (x < 0 ? -0.4 : 0.4), 7.5); }
+      ctx.stroke();
+      ctx.lineWidth = 0.9;
+      ctx.fillStyle = '#fff';
+      for (const [x, y, r] of [[-5, 0, 3.7], [-1.2, -2.4, 3.9], [2.6, 0, 3.7], [-1.2, 1.9, 3.7]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+      // The steel plate over its back, riveted, with a band in its side's colour along the bottom.
+      const side = opts.collar || '#e0a020';
+      ctx.fillStyle = '#8d949c';
+      ctx.beginPath(); ctx.moveTo(-9, 0.6); ctx.quadraticCurveTo(-1, -12.6, 7, 0.6); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = side;
+      ctx.fillRect(-8, -0.8, 14, 1.4);
+      ctx.stroke();
+      ctx.strokeStyle = '#c9ced4';
+      ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.moveTo(-6.4, -2); ctx.quadraticCurveTo(-1, -9.6, 4.4, -2); ctx.stroke();
+      ctx.fillStyle = '#3a3e44';
+      for (const x of [-5.6, -2.6, 0.6, 3.6]) ctx.fillRect(x - 0.4, -2.2, 0.8, 0.8);
+      // The head under its helmet, and the collar round its neck.
+      ctx.fillStyle = '#222';
+      ctx.beginPath(); ctx.ellipse(7.2, -1.4, 2.9, 2.2, 0.3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(7.9, -1.5, 1, 1);
+      ctx.fillStyle = '#8d949c';
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.arc(7, -2.1, 3.1, Math.PI * 1.02, Math.PI * 1.98); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#5d636b';
+      ctx.fillRect(3.8, -2.4, 6.6, 0.9);
+      ctx.strokeStyle = side;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(4.9, -1.4); ctx.lineTo(5.4, 1.2); ctx.stroke();
+      break;
+    }
     case 'oldwoman': {
       const step = opts.held ? 0 : Math.sin(t * 0.3) * 1.5;
       ctx.strokeStyle = INK;
@@ -414,6 +497,7 @@ export function drawJetpack(ctx) {
 
 /** A supply crate (with a parachute while it's coming down). */
 export function drawCrate(ctx, crate, t) {
+  if (crate.streak) { drawSupplyDrop(ctx, crate, t); return; }
   if (!crate.landed) {
     ctx.strokeStyle = '#999';
     ctx.lineWidth = 0.6;
@@ -441,7 +525,77 @@ export function drawCrate(ctx, crate, t) {
   }
 }
 
+/**
+ * The kill streak badge's flame, centred at (x, y): orange from 3 kills in a row, bigger
+ * and redder from 5.
+ */
+export function drawStreakFlame(ctx, x, y, big) {
+  const k = big ? 1.3 : 1;
+  ctx.fillStyle = big ? '#ff4a1a' : '#f08a1c';
+  ctx.beginPath();
+  ctx.moveTo(x + 0.3 * k, y - 3.6 * k);
+  ctx.quadraticCurveTo(x + 2.6 * k, y - 0.6 * k, x + 1.8 * k, y + 1.8 * k);
+  ctx.quadraticCurveTo(x, y + 3.2 * k, x - 1.8 * k, y + 1.8 * k);
+  ctx.quadraticCurveTo(x - 2.4 * k, y - 0.6 * k, x - 0.9 * k, y - 2 * k);
+  ctx.quadraticCurveTo(x - 0.6 * k, y - 0.6 * k, x + 0.3 * k, y - 3.6 * k);
+  ctx.fill();
+  ctx.fillStyle = '#ffd23a';
+  ctx.beginPath();
+  ctx.moveTo(x, y - 0.4 * k);
+  ctx.quadraticCurveTo(x + 1.2 * k, y + 1 * k, x, y + 2.3 * k);
+  ctx.quadraticCurveTo(x - 1.2 * k, y + 1 * k, x, y - 0.4 * k);
+  ctx.fill();
+}
+
 const SUPPLY_TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
+const DROP_GOLD = '#f2c230', DROP_RED = '#d8402c';
+
+/**
+ * A Supply Drop (kill streak reward): a gold crate with a star on it, under a striped
+ * gold and red parachute while it comes down, and a stripe in its team's colour.
+ */
+function drawSupplyDrop(ctx, crate, t) {
+  if (!crate.landed) {
+    ctx.strokeStyle = '#8a7a5a';
+    ctx.lineWidth = 0.6;
+    ctx.beginPath(); ctx.moveTo(-7, -7); ctx.lineTo(-11, -22); ctx.moveTo(7, -7); ctx.lineTo(11, -22); ctx.moveTo(0, -7); ctx.lineTo(0, -22); ctx.stroke();
+    // The canopy in six panels, gold and red (the curve's top edge: y = -21 - 30u(1 - u)).
+    const sway = Math.sin(t * 0.05) * 1.5, n = 6;
+    const edge = u => [sway - 15 + 30 * u, -21 - 30 * u * (1 - u)];
+    for (let i = 0; i < n; i++) {
+      ctx.fillStyle = i % 2 ? DROP_RED : DROP_GOLD;
+      ctx.beginPath();
+      ctx.moveTo(sway - 15 + 30 * i / n, -21);
+      for (let j = 0; j <= 4; j++) ctx.lineTo(...edge((i + j / 4) / n));
+      ctx.lineTo(sway - 15 + 30 * (i + 1) / n, -21);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-15 + sway, -21); ctx.quadraticCurveTo(sway, -36, 15 + sway, -21); ctx.closePath(); ctx.stroke();
+  }
+  ctx.fillStyle = DROP_GOLD;
+  ctx.strokeStyle = '#7a4e10';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.rect(-7, -7, 14, 14); ctx.fill(); ctx.stroke();
+  // The lid in its team's colour (team games).
+  const team = SUPPLY_TEAM[crate.team];
+  if (team) {
+    ctx.fillStyle = team;
+    ctx.fillRect(-6.4, -6.4, 12.8, 2.6);
+  }
+  // A star.
+  ctx.fillStyle = DROP_RED;
+  ctx.strokeStyle = '#7a1a10';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 1.9 : 4.4;
+    ctx.lineTo(Math.cos(a) * r, (team ? 1.2 : 0.4) + Math.sin(a) * r);
+  }
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+}
 
 /** Gadget drops (classes on): a medkit or an ammo box, edged in its team's colour. */
 export function drawSupply(ctx, type, team) {

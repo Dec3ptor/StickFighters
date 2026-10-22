@@ -9,7 +9,8 @@ import { createRenderer, autoGraphics } from './glrender.js';
 import { Renderer } from './render.js';
 import { RemasteredRenderer, drawRemasteredPreview } from './rm/renderer.js';
 import { FramePacer } from './framerate.js';
-import { drawHud } from './hud.js';
+import { drawHud, drawReplay } from './hud.js';
+import { Tape, tapeFx, ReplayPlayer } from './replay.js';
 import { SoundSystem } from './audio.js';
 import { setLegAnimations } from './stickman.js';
 import { makeRng, lerp } from './util.js';
@@ -85,6 +86,8 @@ const DEFAULTS = {
   // Experimental: what bots notice ('classic' | 'sight') and fog of war ('off' | 'on'); how many
   // times as fast bullets fly, and the time between shots (percent of the original).
   botVision: 'classic', fog: 'off', bulletSpeed: 3, fireDelay: 75,
+  // Kill streak rewards, in the modes that have them ('on' | 'off').
+  streaks: 'on',
   // Classes ('on' | 'off'), as last chosen for each mode (conquest and rush start on).
   classesByMode: {},
   // Settings screen
@@ -158,6 +161,7 @@ function buildMenu(settings) {
   $('gunKills').value = String(settings.gunKills);
   $('crates').value = settings.crates;
   $('destruction').value = settings.destruction === 'off' ? 'off' : 'on';
+  $('streaks').value = settings.streaks === 'off' ? 'off' : 'on';
   $('maxPlayers').value = String(settings.maxPlayers);
   $('visibility').value = settings.visibility;
   $('gameName').value = settings.gameName;
@@ -193,7 +197,7 @@ function buildMenu(settings) {
     r.checked = r.value === settings.mapSource;
     r.addEventListener('change', () => { buildMapCards(selectedMap()); rememberMenu(); });
   }
-  for (const id of ['difficulty', 'fragLimit', 'goal', 'side', 'botVision', 'fog', 'lives', 'gunKills', 'crates', 'destruction', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
+  for (const id of ['difficulty', 'fragLimit', 'goal', 'side', 'botVision', 'fog', 'lives', 'gunKills', 'crates', 'destruction', 'streaks', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
   $('bots').addEventListener('change', rememberMenu);
   modeFields();
   buildMapCards(settings.map, { follow: true });
@@ -219,6 +223,7 @@ function modeFields() {
   show('livesField', mode === 'oitc');
   show('gunField', mode === 'gungame');
   show('crateField', m.crates);
+  show('streakField', m.streaks !== false);
   // Classes: offered unless the mode hands out its own weapons; the choice last made for this
   // mode (or the mode's default). The "Your class" choice only matters with them on.
   const classes = CLASSES_ON && m.classes !== false;
@@ -450,6 +455,7 @@ function readMenu() {
     gunKills: +$('gunKills').value,
     crates: $('crates').value,
     destruction: $('destruction').value,
+    streaks: $('streaks').value === 'off' ? 'off' : 'on',
     speed: SHOW_SPEED_MENU && SPEEDS.includes(+$('speed').value) ? +$('speed').value : DEFAULT_SPEED,
     muted: $('mute').checked,
     maxPlayers: +$('maxPlayers').value,
@@ -511,10 +517,14 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
     botVision: settings.botVision === 'sight' ? 'sight' : 'classic', fog: settings.fog === 'on',
     bulletSpeed: bulletSpeedOf(settings), fireDelay: fireDelayOf(settings) / 100,
     destruction: settings.destruction !== 'off',
+    streaks: settings.streaks !== 'off',
     classes: CLASSES_ON && settings.classes === 'on' && MODES[settings.mode]?.classes !== false,
   };
   const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
+  // The last few seconds are kept, for the replay of the winning kill (replay.js).
+  game.tape = new Tape();
+  game.fx = tapeFx(game.fx, game.tape);
   // Route maps depend on the map version and the speed's move timings. (Built on a
   // fresh copy of the map: when the map can change (holes, building), the match works
   // on a copy of the route map, and its own map changes.)
@@ -546,6 +556,10 @@ function enterMatch(game, me) {
   state.menuOpen = false;
   state.overShown = false;
   state.nextMatchAt = 0;
+  state.replay = null;
+  state.replayTried = false;
+  state.hitStopUntil = 0;
+  state.killAt = -1e9;
   state.acc = 0;
   state.last = performance.now();
   input.clear();
@@ -564,6 +578,7 @@ function enterMatch(game, me) {
 }
 
 function endMatch(to = state.returnTo) {
+  state.replay = null;
   closePicker();
   closeBuy();
   input.unlock();
@@ -1245,6 +1260,8 @@ function simulate(now) {
   state.last = now;
   if (dt > 1000) dt = 1000;
   if (state.paused) return;
+  // Hit-stop: offline, the game holds still for a moment when you get a kill.
+  if (state.mode === 'offline' && now < state.hitStopUntil) return;
   state.acc += dt;
   let n = 0;
   const started = performance.now();
@@ -1282,6 +1299,8 @@ function frame(now) {
     if ($('editor').classList.contains('hidden') && $('gamePicker').classList.contains('hidden')) renderer.clear();
     return;
   }
+  // The replay of the winning kill, once the match is over.
+  if (state.replay) { replayFrame(now, dt, workStart); return; }
   const client = state.mode === 'client' ? state.net?.client : null;
   if (client) client.updateView(now);
   const alpha = state.paused ? 1 : Math.min(1, state.acc / state.step);
@@ -1299,8 +1318,14 @@ function frame(now) {
   // Fog of war: sounds from places you can't see show where they came from.
   if (g.options.fog && !free) renderer.fog?.hear(g.sounds, view);
   const ear = free || view;
+  // A kill of ours: the kill-confirm mark at the crosshair, and a moment's hit-stop (offline the
+  // game holds still; online, the picture does). (Sounds to another player aren't ours: offline
+  // they carry who they're for; online the host only sends us ours.)
+  if (g.sounds.some(x => x.name === 'killConfirm' && (x.to == null || x.to === me.id))) confirmKill(now);
   audio.playQueue(g.sounds, ear.x, ear.y, me.id, me.team);
   g.sounds.length = 0;
+  // (Online, the hit-stop holds the picture: the game itself can't stop.)
+  if (state.mode !== 'offline' && now < state.hitStopUntil && state.drawnOnce) { pacer.drawn(now, 0); return; }
 
   const sniping = me.alive && me.current === 'SR' && input.mouse.right && !state.menuOpen && !state.chatOpen;
   const ax = free ? free.x : lerp(view.prevX ?? view.x, view.x, alpha) + (view.drawDX || 0);
@@ -1315,8 +1340,13 @@ function frame(now) {
   const holdingK = me.alive && input.down('KeyK') && !state.menuOpen && !state.chatOpen;
   state.destructSince = holdingK ? state.destructSince ?? now : null;
   const hudR = renderer.hud || renderer;
+  const killK = (now - state.killAt) / KILL_MARK_MS;
   drawHud(hudR, g, me, {
     selfDestruct: holdingK ? (now - state.destructSince) / 1000 : 0,
+    rewardPick: myController()?.pickedReward?.(me) ?? null,
+    // (A moment on the final picture, without the HUD, before the replay of the winning kill.)
+    replay: g.over && !!g.finalKill && !state.replayTried,
+    killMark: killK >= 0 && killK < 1 && !state.menuOpen && !watchMode ? { x: input.mouse.x, y: input.mouse.y, k: killK } : null,
     showScores: input.down('Tab') && !state.chatOpen, watching, chat: state.chat,
     spectating: me.spectating ? { free: !!free, target: watching } : null,
     online: state.mode !== 'offline',
@@ -1343,6 +1373,7 @@ function frame(now) {
     renderer.drawCrosshair(input.mouse.x, input.mouse.y, sniping, reload);
   }
   renderer.present();
+  state.drawnOnce = true;
   if (aimed) { me.aim = aimed.aim; me.facing = aimed.facing; }
   const end = performance.now();
   if (perf.on) countFrame(now, end - drawStart);
@@ -1396,7 +1427,9 @@ function matchOver(g) {
     input.unlock();
     document.body.classList.remove('playing');
     state.overAt = now;
-    if (state.mode === 'host') state.nextMatchAt = now + 12000;
+    state.resultsAt = now + RESULTS_DELAY;
+    // (Hosting: the next match in 12 seconds; more when there's a replay to watch first.)
+    if (state.mode === 'host') state.nextMatchAt = now + (g.finalKill ? 18000 : 12000);
     show('pause', false);
     state.menuOpen = false;
     show('again', state.mode !== 'client');
@@ -1404,9 +1437,10 @@ function matchOver(g) {
     $('again').textContent = state.mode === 'host' ? 'Next match now' : 'Play again';
     $('toMenu').textContent = state.mode === 'host' ? 'End game' : state.mode === 'client' ? 'Leave' : state.returnTo === 'editor' ? 'Back to map maker' : 'Menu';
   }
-  if (now - state.overAt > 1500) {
-    show('over', true);
-  }
+  // The replay of the winning kill (if a kill won it), after a moment on the final picture;
+  // the results (the scores and awards on the canvas, and the buttons) after that.
+  if (!state.replayTried && now - state.overAt > REPLAY_DELAY) startReplay(g, now);
+  if (!state.replay && now > state.resultsAt) show('over', true);
   const noteEl = $('overNote');
   if (state.mode === 'host') {
     const left = Math.max(0, Math.ceil((state.nextMatchAt - now) / 1000));
@@ -1418,6 +1452,79 @@ function matchOver(g) {
     show('overNote', true);
   } else show('overNote', false);
 }
+
+// The kill-confirm mark at the crosshair lasts this long; hit-stop holds the game (offline)
+// or the picture (online) this long, at most once in HIT_STOP_GAP (a minigun can kill fast).
+const KILL_MARK_MS = 320, HIT_STOP_MS = 70, HIT_STOP_GAP = 400;
+// After the match: the final picture holds this long before the replay; the results show
+// this long after the end (or after the replay).
+const REPLAY_DELAY = 900, RESULTS_DELAY = 1500;
+
+/** A kill of ours (its kill-confirm sound came through): the mark at the crosshair, and hit-stop. */
+function confirmKill(now) {
+  state.killAt = now;
+  if (now - (state.hitStopAt ?? -1e9) > HIT_STOP_GAP) {
+    state.hitStopAt = now;
+    state.hitStopUntil = now + HIT_STOP_MS;
+  }
+}
+
+/** The controller reading our keyboard and mouse (online, the client's). */
+function myController() {
+  if (state.mode === 'client') return state.net?.client?.opts.controller || null;
+  return state.game?.controllers.get(state.me) || null;
+}
+
+/** Start the slow-motion replay of the kill that won the match, if there's one and it was recorded. */
+function startReplay(g, now) {
+  state.replayTried = true;
+  const tape = state.mode === 'client' ? state.net?.client?.tape : g.tape;
+  if (!g.finalKill || !tape) return;
+  const rp = new ReplayPlayer(g, tape, g.finalKill);
+  if (!rp.ok) return;
+  state.replay = rp;
+  const f = rp.focus();
+  renderer.snapCamera(f.x, f.y - 20);
+  audio.play('replay');
+}
+
+/** The replay's over (or skipped): on to the results. */
+function endReplay() {
+  state.replay = null;
+  renderer.cam.zoom = 1;
+  state.resultsAt = performance.now() + 500;
+  if (state.game?.awards?.length) audio.play('awards');
+}
+
+/** One frame of the replay: drawn from its own copy of the game, with its own camera and overlay. */
+function replayFrame(now, dt, workStart) {
+  const rp = state.replay, v = rp.view, me = state.me;
+  const done = rp.update(dt);
+  const f = rp.focus();
+  renderer.noFog = true;
+  renderer.fogFrom = null;
+  audio.playQueue(v.sounds, f.x, f.y, me?.id, me?.team);
+  v.sounds.length = 0;
+  renderer.updateCamera(v, f.x, f.y, null, false, dt);
+  renderer.cam.zoom = rp.zoom();
+  renderer.render(v, 1, null);
+  const k = rp.killer, victim = rp.victim, kill = rp.kill;
+  drawReplay(renderer.hud || renderer, {
+    killer: k?.name ?? '?', victim: victim?.name ?? '?', killerTeam: g2team(k), victimTeam: g2team(victim),
+    weapon: kill.weapon ? WEAPONS[kill.weapon]?.name ?? String(kill.weapon) : null, headshot: !!kill.headshot,
+    k: rp.progress, slow: rp.slow,
+  });
+  renderer.present();
+  const end = performance.now();
+  pacer.drawn(now + (end - workStart), end - workStart);
+  if (done) endReplay();
+}
+
+/** A soldier's team for drawing their name (none in free-for-all). */
+const g2team = s => (s && state.game?.rules.teams ? s.team : 0);
+
+/** Skip the replay (any key or click). */
+function skipReplay() { state.replay?.finish(); }
 
 function nextMatch() {
   const s = state.settings;
@@ -1542,6 +1649,11 @@ function wire() {
       }
       return;
     }
+    // The replay of the winning kill: any key skips it.
+    if (state.replay) {
+      if (!e.repeat && !/^(Tab|Shift|Control|Alt|Meta)/.test(e.code)) { e.preventDefault(); skipReplay(); }
+      return;
+    }
     // Defuse: the buy menu takes the keys while it's open (number keys, B or Esc to close).
     if (buyMenu?.open) {
       if (!e.repeat && buyMenu.key(e.code, state.game, state.me)) e.preventDefault();
@@ -1574,6 +1686,7 @@ function wire() {
   });
   window.addEventListener('mousedown', e => {
     audio.unlock();
+    if (state.replay && e.target === canvas) { skipReplay(); return; }
     // Watching: a click follows the next player (right click: the one before).
     const g = state.game, me = state.me;
     if (g && me && e.target === canvas && !state.menuOpen && !state.pickerOpen && !g.over &&

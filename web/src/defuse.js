@@ -322,6 +322,7 @@ export function defuseMode(base) {
     crates: false,
     dropWeapons: true,
     classes: false,
+    streaks: false,      // (rounds and money instead: no kill streak rewards)
     mapLoadout: false,
     limit: 'goal',
     helmets: true,        // armour covers the head only with a helmet

@@ -7,19 +7,32 @@ import { drawObjectiveHud, drawMinimap, bigMap, drawDeploy, drawMoney } from './
 import { moneyOf } from './defuse.js';
 import { CLASSES, weaponFor } from './classes.js';
 import { GADGETS, rechargeTicks } from './gadgets.js';
+import { REWARDS, JUGGER_TICKS, nextReward } from './streaks.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
+
+// Callouts ('Double kill', 'Rampage'...): the colour of each kind. (First blood's red is
+// '#c22', which Remastered swaps for a brighter red that reads on its dark glass.)
+const CALLOUT = { multi: '#e0a020', spree: '#e5641a', first: '#c22', shutdown: '#8a4fe0', reward: '#2f9a4a', jugger: '#e07a1a', use: '#555' };
+// Several at the same moment: which one is the big one.
+const CALLOUT_RANK = { first: 6, shutdown: 5, spree: 4, multi: 3, jugger: 2, reward: 1, use: 0 };
+// How long they show, in updates: your own (big, in the middle), and news about others (small, at the top).
+const CALLOUT_LIFE = 150, NEWS_LIFE = 240;
 
 /**
  * opts: { showScores, watching (soldier the camera follows when you're out), chat: [{ text, tick }],
  *   online (show everyone's ping on the scoreboard), hostId (the host's soldier),
  *   ping (your ping in ms, or a label like 'Host'), perf (frame rate text),
- *   picking (the class picker is open), spectating ({ free (the free camera), target (who it follows) }) }
+ *   picking (the class picker is open), spectating ({ free (the free camera), target (who it follows) }),
+ *   rewardPick (the banked kill streak reward X uses: a REWARDS id; else the newest),
+ *   killMark ({ x, y, k }: you just got a kill; the crosshair in screen px, k from 0 to 1 as it fades),
+ *   replay (the winning kill's replay is on: nothing is drawn, drawReplay draws its overlay) }
  * With classes on, while you wait to respawn this sets r.classButton (screen px) to the
  * "change class" box, so a click on it can open the class picker.
  */
 export function drawHud(r, game, me, opts = {}) {
+  if (opts.replay) return;
   const ctx = r.ctx, d = r.dpr, W = r.w, H = r.h;
   ctx.setTransform(d, 0, 0, d, 0, 0);
   ctx.textBaseline = 'middle';
@@ -33,7 +46,7 @@ export function drawHud(r, game, me, opts = {}) {
   }
 
   if (me.alive) {
-    drawStatus(ctx, game, me, W, H);
+    drawStatus(ctx, game, me, W, H, opts);
     drawWeaponBar(ctx, me, W, H);
   }
 
@@ -47,6 +60,10 @@ export function drawHud(r, game, me, opts = {}) {
   // Fog of war: sounds from out of sight, off screen.
   r.fogNow?.drawEdgeAlerts(ctx, r, W, H);
 
+  // Callouts: news about others under the scores, your own big above the messages
+  // (which move down out of their way).
+  const notesY = !game.over && game.callouts?.length ? drawCallouts(ctx, game, me, W, H) : H * 0.3;
+
   // Messages for the player ("You got the Sniper Rifle").
   const notes = game.over ? [] : game.notes.filter(n => (n.to == null || n.to === me.id) && game.tick - n.tick < 150).slice(-3);
   ctx.textAlign = 'center';
@@ -55,7 +72,7 @@ export function drawHud(r, game, me, opts = {}) {
     ctx.globalAlpha = Math.min(1, (150 - age) / 30);
     ctx.font = `14px ${FONT}`;
     ctx.fillStyle = '#222';
-    ctx.fillText(n.text, W / 2, H * 0.3 + i * 20);
+    ctx.fillText(n.text, W / 2, notesY + i * 20);
   });
   ctx.globalAlpha = 1;
 
@@ -81,9 +98,17 @@ export function drawHud(r, game, me, opts = {}) {
     if (game.rules.canRespawn(game, me)) {
       const waiting = me.holdSpawn > 0 || opts.picking;
       ctx.fillText(waiting ? 'Choosing a class…' : `Respawning in ${Math.max(1, Math.ceil(me.respawnTimer / game.tickRate))}...`, W / 2, H / 2 - 60);
+      // Kill streak rewards waiting for you (they keep while you're dead).
+      let below = 0;
+      if (game.streaksOn && me.bank?.length) {
+        ctx.font = `12px ${FONT}`;
+        ctx.fillStyle = '#555';
+        ctx.fillText(`Banked: ${me.bank.map(id => REWARDS[id]?.name || id).join(', ')}`, W / 2, H / 2 - 38);
+        below = 14;
+      }
       const deploy = game.deployOptions(me);
-      if (deploy) drawDeploy(ctx, game, me, W, H / 2 - 30);
-      if (game.classesOn) r.classButton = drawClassChoice(ctx, me, W, deploy ? H / 2 + 34 : H / 2 - 30);
+      if (deploy) drawDeploy(ctx, game, me, W, H / 2 - 30 + below);
+      if (game.classesOn) r.classButton = drawClassChoice(ctx, me, W, (deploy ? H / 2 + 34 : H / 2 - 30) + below);
     } else {
       ctx.fillText(game.rules.outText?.(game, me) ?? "You're out", W / 2, H / 2 - 70);
       if (opts.watching) {
@@ -111,6 +136,8 @@ export function drawHud(r, game, me, opts = {}) {
   }
 
   if (opts.showScores || game.over) drawScoreboard(ctx, game, me, W, H, opts, standings);
+  // You just got a kill: an X round the crosshair (on top of everything).
+  if (opts.killMark) drawKillMark(ctx, opts.killMark, W, H);
 }
 
 const BAR_COLORS = {
@@ -122,6 +149,10 @@ const BAR_COLORS = {
   winded: ['#d8862a', 'rgba(0,0,0,0.18)'],
   gadget: ['#6d4fc2', '#2e2352'],
   gadgetReady: ['#8c62e8', '#2e2352'],
+  // Kill streaks: kills in a row toward the next reward, a reward ready to use, the Juggernaut's time left.
+  reward: ['#b8862a', '#4a3512'],
+  rewardReady: ['#d49a12', '#4a3512'],
+  juggernaut: ['#e0661a', '#4f2008'],
 };
 
 // The weapon bar's boxes (drawWeaponBar), and where it sits: centred at the bottom,
@@ -136,7 +167,7 @@ function weaponBarScale(W) {
  * Health, armour, ammo, jet fuel and stamina: just above the weapon bar, in the
  * middle at the bottom of the screen, where your eyes are anyway.
  */
-function drawStatus(ctx, game, me, W, H) {
+function drawStatus(ctx, game, me, W, H, opts) {
   const k = weaponBarScale(W);
   const half = 172, gap = 8, h = 20;
   ctx.save();
@@ -169,17 +200,28 @@ function drawStatus(ctx, game, me, W, H) {
     }
     bar(ctx, gap / 2, y, half, h, frac, 'ammo', label, true);
   }
-  // Anything else, in pairs above it: your class and gadget (classes on), armour, jet fuel, the minigun spinning up.
+  // Anything else, in pairs above it: your class and gadget (classes on), kill streak
+  // rewards (streaks on), armour, jet fuel, the minigun spinning up.
   const extra = [];
   const gadget = game.classesOn && gadgetBar(game, me);
   if (gadget) extra.push(gadget);
+  if (game.streaksOn) extra.push(...streakBars(me, opts.rewardPick));
   if (me.armour > 0) extra.push([me.armour / RULES.maxArmour, 'armour', `Armour ${Math.ceil(me.armour)}%`]);
   if (b.hasJetpack) extra.push([b.fuel / 100, 'fuel', `Jet fuel ${Math.round(b.fuel)}%`]);
   if (def?.spinup && me.spin > 0 && me.spin < def.spinup) extra.push([me.spin / def.spinup, 'fuel', 'Spinning up…']);
   for (let i = 0; i < extra.length; i++) {
     if (i % 2 === 0) y -= 18;
     const [frac, kind, label] = extra[i];
-    bar(ctx, i % 2 === 0 ? -half - gap / 2 : gap / 2, y, half, 15, frac, kind, label);
+    const x = i % 2 === 0 ? -half - gap / 2 : gap / 2;
+    bar(ctx, x, y, half, 15, frac, kind, label);
+    if (kind === 'rewardReady') {
+      // A reward to use: a glowing edge that pulses, so it catches your eye.
+      ctx.globalAlpha = 0.55 + 0.45 * Math.sin(game.tick * 0.15);
+      ctx.strokeStyle = '#ffd25a';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x - 0.75, y - 0.75, half + 1.5, 16.5);
+      ctx.globalAlpha = 1;
+    }
   }
   if (me.burnTicks > 0) {
     ctx.font = `bold 13px ${FONT}`;
@@ -205,6 +247,26 @@ function gadgetBar(game, me) {
   if (left > 0) return [1 - left / total, 'gadget', `${c.name} · ${g.name} ${Math.floor(100 * (1 - left / total))}%`];
   const up = c.gadget === 'beacon' && game.beacons?.some(b => b.owner === me.id);
   return [1, 'gadgetReady', `${c.name} · ${up ? 'Move beacon' : g.name} (G)`];
+}
+
+/**
+ * Kill streak bars: a banked reward ready to use ("Sentry Sheep (X) · Z: next"), else
+ * your streak toward the next one; and the Juggernaut's time left while you are one.
+ */
+function streakBars(me, pick) {
+  const out = [];
+  const bank = me.bank || [];
+  if (bank.length) {
+    const id = bank.includes(pick) ? pick : bank[bank.length - 1];
+    out.push([1, 'rewardReady', `${REWARDS[id]?.name || id} (X)${bank.length > 1 ? ' · Z: next' : ''}`]);
+  } else {
+    const next = nextReward(me);
+    const streak = me.streak || 0;
+    // (Once a streak's going: kills in a row so far, and what the next reward is.)
+    if (next && streak > 0) out.push([streak / REWARDS[next].kills, 'reward', `Streak ${streak} · ${REWARDS[next].name} at ${REWARDS[next].kills}`]);
+  }
+  if (me.jugger > 0) out.push([me.jugger / JUGGER_TICKS, 'juggernaut', `Juggernaut ${Math.ceil(me.jugger / 60)} s`]);
+  return out;
 }
 
 /** Waiting to respawn with classes on: your class, and how to change it (a box you can click). */
@@ -248,6 +310,148 @@ function drawSpectating(ctx, game, sp, W, H) {
   ctx.fillText(sp.free
     ? 'WASD or arrows: move (Shift: faster)  ·  Space or click: follow a player  ·  Esc: join game'
     : 'A / D or click: switch player  ·  Space: free camera  ·  Esc: join game', W / 2, H - 28);
+}
+
+/**
+ * Callouts (game.callouts). News for everyone (not about you): one or two small lines
+ * under the scores. Your own: a big banner in the upper middle that pops in, holds and
+ * fades, with up to two older ones smaller under it. Returns where the messages
+ * (game.notes) go: under all this.
+ */
+function drawCallouts(ctx, game, me, W, H) {
+  const t = game.tick, list = game.callouts;
+  const ageOf = c => Math.max(0, t - c.tick);
+  // News: under the top line (and under the objective modes' second line).
+  const newsY = game.rules.objective ? 78 : game.mode === 'gungame' ? 54 : 44;
+  const news = list.filter(c => c.to == null && c.about !== me.id && ageOf(c) < NEWS_LIFE).slice(-2).reverse();
+  ctx.font = `13px ${FONT}`;
+  ctx.textAlign = 'left';
+  news.forEach((c, i) => {
+    const age = ageOf(c), y = newsY + i * 21;
+    ctx.globalAlpha = Math.min(1, (age + 1) / 8, (NEWS_LIFE - age) / 40);
+    const w = ctx.measureText(c.text).width + 34, x = Math.round(W / 2 - w / 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillRect(x, y - 9, w, 18);
+    ctx.fillStyle = CALLOUT[c.kind] || '#555';
+    ctx.fillRect(x, y - 9, 3, 18);
+    ctx.beginPath();
+    ctx.arc(x + 14, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#222';
+    ctx.fillText(c.text, x + 24, y + 1);
+  });
+  ctx.globalAlpha = 1;
+
+  // Yours: the newest (of several at once, the loudest) big, the others small under it.
+  const mine = list.filter(c => c.to === me.id && ageOf(c) < CALLOUT_LIFE)
+    .sort((a, b) => b.tick - a.tick || (CALLOUT_RANK[b.kind] ?? 0) - (CALLOUT_RANK[a.kind] ?? 0)).slice(0, 3);
+  if (!mine.length) return H * 0.3;
+  // (Under the news; in Defuse, under the round's result while it shows.)
+  const st = game.modeState;
+  const cy = game.mode === 'defuse' && st?.phase === 'over' && st.result ? H * 0.24 + 72 : Math.max(H * 0.2, newsY + 72);
+  const c = mine[0], age = ageOf(c), color = CALLOUT[c.kind] || '#555';
+  const fade = Math.min(1, (CALLOUT_LIFE - age) / 40);
+  // Pop in: big for a moment, then settling. (In steps: the WebGL renderer keeps each text size as a picture.)
+  const size = age < 3 ? 40 : age < 6 ? 34 : 30;
+  const head = c.text.toUpperCase();
+  ctx.font = `bold ${size}px ${FONT}`;
+  const hw = ctx.measureText(head).width;
+  ctx.font = `13px ${FONT}`;
+  const sw = c.sub ? ctx.measureText(c.sub).width : 0;
+  const half = (c.sub ? 32 : 24) * (age < 3 ? 1.15 : age < 6 ? 1.06 : 1);
+  const bw = Math.min(W, Math.max(hw, sw) + 120);
+  band(ctx, W / 2 - bw / 2, cy - half, bw, half * 2, color, fade * Math.min(1, (age + 1) / 3));
+  const hy = c.sub ? cy - 7 : cy + 1;
+  ctx.textAlign = 'center';
+  ctx.font = `bold ${size}px ${FONT}`;
+  // (A soft dark copy just below: the headline stands off the strip.)
+  ctx.fillStyle = '#000';
+  ctx.globalAlpha = fade * 0.16;
+  ctx.fillText(head, W / 2 + 1, hy + 2);
+  ctx.globalAlpha = fade;
+  ctx.fillStyle = color;
+  ctx.fillText(head, W / 2, hy);
+  if (c.sub) {
+    ctx.font = `13px ${FONT}`;
+    ctx.fillStyle = '#444';
+    ctx.fillText(c.sub, W / 2, cy + 18);
+  }
+  let bottom = cy + half;
+  for (const o of mine.slice(1)) {
+    const y = bottom + 17, head = o.text.toUpperCase();
+    // (Only short subs: "3 kills in a row", not a reward's instructions.)
+    const sub = o.sub && o.sub.length <= 28 ? o.sub : '';
+    ctx.globalAlpha = Math.min(1, (CALLOUT_LIFE - ageOf(o)) / 40);
+    ctx.font = `bold 14px ${FONT}`;
+    const w1 = ctx.measureText(head).width;
+    ctx.font = `12px ${FONT}`;
+    const w2 = sub ? ctx.measureText(sub).width + 12 : 0;
+    const w = w1 + w2 + 28, x = Math.round(W / 2 - w / 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillRect(x, y - 11, w, 22);
+    ctx.fillStyle = CALLOUT[o.kind] || '#555';
+    ctx.fillRect(x, y - 11, 3, 22);
+    ctx.textAlign = 'left';
+    ctx.font = `bold 14px ${FONT}`;
+    ctx.fillText(head, x + 14, y + 1);
+    if (sub) {
+      ctx.font = `12px ${FONT}`;
+      ctx.fillStyle = '#555';
+      ctx.fillText(sub, x + 14 + w1 + 12, y + 1);
+    }
+    bottom = y + 11;
+  }
+  ctx.globalAlpha = 1;
+  return Math.max(H * 0.3, bottom + 20);
+}
+
+/** A strip across the middle like Defuse's round result: soft ends, a coloured line above and below. */
+function band(ctx, x, y, w, h, color, alpha) {
+  const parts = [[x, w, 1]];
+  [0.72, 0.52, 0.36, 0.23, 0.13, 0.05].forEach((a, i) => parts.push([x - 7 * (i + 1), 7, a], [x + w + 7 * i, 7, a]));
+  for (const [px, pw, a] of parts) {
+    ctx.globalAlpha = alpha * a;
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillRect(px, y, pw, h);
+    ctx.fillStyle = color;
+    ctx.fillRect(px, y, pw, 3);
+    ctx.fillRect(px, y + h - 3, pw, 3);
+  }
+  ctx.globalAlpha = alpha;
+}
+
+/**
+ * A kill: a sharp red X round the crosshair (m: its screen px, k from 0 to 1 as it goes),
+ * big for a moment then snapping smaller, fading out; and a quick white flash.
+ */
+function drawKillMark(ctx, m, W, H) {
+  const k = Math.max(0, Math.min(1, m.k || 0));
+  if (k < 0.15) {
+    ctx.fillStyle = '#fff';
+    ctx.globalAlpha = 0.1 * (1 - k / 0.15);
+    ctx.fillRect(0, 0, W, H);
+  }
+  const grow = 1 + 0.55 * Math.max(0, 1 - k / 0.1) ** 2;
+  const r0 = 6 * grow, r1 = 15 * grow;
+  const arms = (a, b) => {
+    ctx.beginPath();
+    for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      ctx.moveTo(m.x + dx * a * Math.SQRT1_2, m.y + dy * a * Math.SQRT1_2);
+      ctx.lineTo(m.x + dx * b * Math.SQRT1_2, m.y + dy * b * Math.SQRT1_2);
+    }
+  };
+  ctx.globalAlpha = k < 0.45 ? 1 : Math.max(0, 1 - (k - 0.45) / 0.55);
+  ctx.lineCap = 'butt';
+  // A thin white edge (a wider stroke underneath), then the red.
+  arms(r0 - 1.5, r1 + 1.5);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2.5 * Math.sqrt(grow) + 2.5;
+  ctx.stroke();
+  arms(r0, r1);
+  ctx.strokeStyle = '#e8202a';
+  ctx.lineWidth = 2.5 * Math.sqrt(grow);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
 }
 
 /** A bar like the original's: bright fill on a dark track, white label on top (bold: bigger). */
@@ -400,7 +604,16 @@ function drawScoreboard(ctx, game, me, W, H, opts, standings) {
   }
   const w = 300 + cols.length * 65, rowH = 22, h = 70 + list.length * rowH + (more ? rowH : 0);
   const colX = i => x + w - 20 - i * 65;
-  const x = W / 2 - w / 2, y = Math.max(40, H / 2 - h / 2 - 40);
+  const x = W / 2 - w / 2;
+  let y = Math.max(40, H / 2 - h / 2 - 40);
+  // The match is over: the awards go round the board (which may move down for them).
+  const awards = game.over && game.awards?.length ? game.awards.slice(0, 4) : null;
+  let cards = null;
+  if (awards) {
+    const rounds = game.mode === 'defuse' && game.modeState?.history?.length ? 54 : 0;
+    cards = placeAwards(awards.length, W, H, x, y, w, h + rounds);
+    y = cards.boardY;
+  }
   ctx.fillStyle = 'rgba(255,255,255,0.94)';
   ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = '#222';
@@ -447,6 +660,129 @@ function drawScoreboard(ctx, game, me, W, H, opts, standings) {
     ctx.fillText(`…and ${more} more`, x + 20, y + 70 + list.length * rowH);
   }
   if (game.mode === 'defuse') drawRounds(ctx, game, W / 2, y + h + 8);
+  if (cards) awards.forEach((a, i) => drawAward(ctx, me, a, cards.at[i].x, cards.at[i].y, cards.w, cards.h, cards.compact));
+}
+
+// The end-of-match awards: each one's colour.
+const AWARD_COLOR = { mvp: '#e0a020', streak: '#e5641a', headshots: '#c22', demolition: '#555' };
+
+/**
+ * Where n award cards go round the scoreboard (bx, by, bw, bh: its box, with Defuse's
+ * rounds under it), clear of the buttons at the bottom of the screen: in a row above the
+ * board (the two centred together, so the board moves down a little); beside it when a
+ * long board leaves no room above; a compact row on small screens.
+ * Returns { boardY, at: [{ x, y }], w, h, compact }.
+ */
+function placeAwards(n, W, H, bx, by, bw, bh) {
+  const bottom = H * 0.88 - 52; // (the page keeps 12% under its buttons)
+  const compact = W < 700, gap = compact ? 6 : 10;
+  const w = compact ? (Math.min(W, 640) - 24 - (n - 1) * gap) / n : Math.min(178, (W - 32 - (n - 1) * gap) / n);
+  const h = compact ? 46 : 70;
+  const rowW = n * w + (n - 1) * gap;
+  const row = y => Array.from({ length: n }, (_, i) => ({ x: Math.round(W / 2 - rowW / 2 + i * (w + gap)), y }));
+  const top = Math.max(36, H / 2 - (h + 14 + bh) / 2 - 40);
+  if (top + h + 14 + bh <= bottom) return { boardY: top + h + 14, at: row(top), w, h, compact };
+  // Beside the board (wide screens), from its top down.
+  if (!compact && bx + bw + 14 + w <= W - 12) {
+    return { boardY: by, at: Array.from({ length: n }, (_, i) => ({ x: Math.round(bx + bw + 14), y: by + i * (h + 8) })), w, h, compact };
+  }
+  // No room anywhere: a compact row at the top, the board under it.
+  const cw = (Math.min(W, 640) - 24 - (n - 1) * 6) / n, cRow = n * cw + (n - 1) * 6;
+  return { boardY: Math.max(by, 36 + 46 + 8), at: Array.from({ length: n }, (_, i) => ({ x: Math.round(W / 2 - cRow / 2 + i * (cw + 6)), y: 36 })), w: cw, h: 46, compact: true };
+}
+
+/** One award card: what it's for, who won it (in their team's colour), and the numbers. Yours have a gold edge. */
+function drawAward(ctx, me, a, x, y, w, h, compact) {
+  const own = a.soldier === me.id, color = AWARD_COLOR[a.id] || '#555';
+  ctx.fillStyle = 'rgba(255,255,255,0.94)';
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, compact ? 2 : 3);
+  ctx.strokeStyle = own ? '#d4a017' : '#222';
+  ctx.lineWidth = own ? 2.5 : 1.5;
+  ctx.strokeRect(x, y, w, h);
+  const pad = compact ? 8 : 12;
+  let tx = x + pad;
+  const ty = y + (compact ? 11 : 19);
+  if (!compact) {
+    awardIcon(ctx, a.id, x + 19, ty, color);
+    tx = x + 33;
+  }
+  ctx.textAlign = 'left';
+  ctx.font = `bold ${compact ? 9 : 10}px ${FONT}`;
+  ctx.fillStyle = '#777';
+  const youW = own ? (compact ? 22 : 28) : 0;
+  // (Online the awards come from the host as they are: a missing field shows blank.)
+  ctx.fillText(fit(ctx, String(a.title ?? '').toUpperCase(), x + w - pad - youW - tx), tx, ty);
+  if (own) {
+    ctx.textAlign = 'right';
+    ctx.font = `bold ${compact ? 8 : 9}px ${FONT}`;
+    ctx.fillStyle = '#d4a017';
+    ctx.fillText('YOU', x + w - pad + 2, ty);
+    ctx.textAlign = 'left';
+  }
+  ctx.font = `bold ${compact ? 12 : 15}px ${FONT}`;
+  ctx.fillStyle = TEAM[a.team] || '#222';
+  ctx.fillText(fit(ctx, a.name, w - pad * 2), x + pad, y + (compact ? 26 : 40));
+  ctx.font = `${compact ? 10 : 11}px ${FONT}`;
+  ctx.fillStyle = '#666';
+  ctx.fillText(fit(ctx, a.text || '', w - pad * 2), x + pad, y + (compact ? 38 : 58));
+}
+
+/** A small picture for each award (about 14 px across, centred on x, y). */
+function awardIcon(ctx, id, x, y, color) {
+  ctx.fillStyle = ctx.strokeStyle = color;
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  if (id === 'mvp') {
+    // A star.
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 ? 3 : 7.2, a = -Math.PI / 2 + i * Math.PI / 5;
+      if (i) ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+      else ctx.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+  } else if (id === 'streak') {
+    // A lightning bolt.
+    const p = [[2, -7.5], [-4.5, 1], [-0.5, 1], [-2.5, 7.5], [4.5, -1.5], [0.5, -1.5]];
+    p.forEach(([px, py], i) => (i ? ctx.lineTo(x + px, y + py) : ctx.moveTo(x + px, y + py)));
+    ctx.closePath();
+    ctx.fill();
+  } else if (id === 'headshots') {
+    // Cross hairs.
+    ctx.arc(x, y, 4.8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      ctx.moveTo(x + dx * 2.5, y + dy * 2.5);
+      ctx.lineTo(x + dx * 7.5, y + dy * 7.5);
+    }
+    ctx.stroke();
+  } else {
+    // A bomb with a lit fuse.
+    ctx.arc(x - 1, y + 1.5, 5.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + 2.5, y - 2.5);
+    ctx.lineTo(x + 5, y - 5.5);
+    ctx.stroke();
+    ctx.fillStyle = '#ff9a1f';
+    ctx.beginPath();
+    ctx.arc(x + 5.6, y - 6.2, 1.9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.lineCap = 'butt';
+}
+
+/** Text cut short with "…" to fit max px (in the current font). */
+function fit(ctx, text, max) {
+  text = String(text ?? '');
+  if (ctx.measureText(text).width <= max) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(`${s}…`).width > max) s = s.slice(0, -1);
+  return `${s.trimEnd()}…`;
 }
 
 /**
@@ -481,6 +817,109 @@ function drawRounds(ctx, game, cx, y) {
       ctx.fillText(how === 'e' ? '×' : how === 'b' ? 'B' : 'D', mx, my + 1);
     }
   });
+}
+
+// Team colours that read on the replay's black bars.
+const TEAM_ON_BLACK = { 1: '#6b9dff', 2: '#ff6a5c' };
+
+/**
+ * The slow-motion replay of the winning kill (drawn instead of the HUD): black bars top
+ * and bottom that slide in, "REPLAY" with a blinking red dot, "Winning kill", who killed
+ * whom with what, how to skip, and a marker while it's in slow motion.
+ * r: the renderer (r.ctx, r.dpr, r.w, r.h). info: { killer, victim (names), killerTeam,
+ * victimTeam, weapon (its name, or null), headshot, k (0 to 1 through the replay), slow }.
+ */
+export function drawReplay(r, info) {
+  const ctx = r.ctx, d = r.dpr, W = r.w, H = r.h;
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  ctx.textBaseline = 'middle';
+  ctx.globalAlpha = 1;
+  const k = Math.max(0, Math.min(1, info.k || 0));
+  const s = 1 - (1 - Math.min(1, k / 0.06)) ** 3;
+  const full = Math.round(Math.max(44, H * 0.09)), bh = Math.round(full * s);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, bh);
+  ctx.fillRect(0, H - bh, W, bh);
+  // How far through it is: a thin red line under the top bar.
+  ctx.fillStyle = '#e8262a';
+  ctx.fillRect(0, bh - 2, W * k, 2);
+  const top = bh - full / 2, low = H - bh + full / 2;
+  ctx.globalAlpha = s;
+
+  // Top left: REPLAY, its dot blinking like a recording light. (Timed by the replay
+  // itself, not the clock, like the rest of the drawing: slower in slow motion.)
+  const blink = Math.floor(k * 16) % 2 === 0;
+  ctx.fillStyle = '#e8262a';
+  ctx.globalAlpha = s * (blink ? 1 : 0.35);
+  ctx.beginPath();
+  ctx.arc(22, top, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = s;
+  ctx.textAlign = 'left';
+  ctx.font = `bold 14px ${FONT}`;
+  ctx.fillStyle = '#fff';
+  ctx.fillText('REPLAY', 34, top + 1);
+  // Top middle: what it is. Top right: slow motion.
+  ctx.textAlign = 'center';
+  ctx.font = `bold 16px ${FONT}`;
+  ctx.fillText('WINNING KILL', W / 2, top + 1);
+  if (info.slow) {
+    ctx.textAlign = 'right';
+    ctx.font = `bold 12px ${FONT}`;
+    ctx.fillStyle = '#ffd25a';
+    const label = 'SLOW MOTION', lw = ctx.measureText(label).width;
+    ctx.fillText(label, W - 18, top + 1);
+    // An hourglass: time slowed down.
+    const ix = W - 18 - lw - 12;
+    ctx.beginPath();
+    ctx.moveTo(ix - 4, top - 5.5);
+    ctx.lineTo(ix + 4, top - 5.5);
+    ctx.lineTo(ix, top);
+    ctx.closePath();
+    ctx.moveTo(ix, top);
+    ctx.lineTo(ix + 4, top + 5.5);
+    ctx.lineTo(ix - 4, top + 5.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillRect(ix - 5.5, top - 7, 11, 1.5);
+    ctx.fillRect(ix - 5.5, top + 5.5, 11, 1.5);
+  }
+
+  // Bottom: killer ▸ victim (weapon, headshot), and how to skip.
+  const parts = [
+    [info.killer || '?', TEAM_ON_BLACK[info.killerTeam] || '#fff', true],
+    ['   ▸   ', '#8c8c8c', false],
+    [info.victim || '?', TEAM_ON_BLACK[info.victimTeam] || '#fff', true],
+  ];
+  if (info.weapon) parts.push([`   (${info.weapon})`, '#c8c8c8', false]);
+  if (info.headshot) parts.push(['  ·  headshot', '#ffd25a', true]);
+  const fontOf = bold => (bold ? `bold 17px ${FONT}` : `14px ${FONT}`);
+  const widths = parts.map(([text, , bold]) => { ctx.font = fontOf(bold); return ctx.measureText(text).width; });
+  const total = widths.reduce((a, b) => a + b, 0);
+  const hint = 'Click or press any key to skip';
+  ctx.font = `11px ${FONT}`;
+  const hw = ctx.measureText(hint).width;
+  // (Not enough room beside it: the hint goes under the names.)
+  const under = W / 2 + total / 2 + 24 > W - 18 - hw;
+  const ly = under ? low - 8 : low + 1;
+  let x = W / 2 - total / 2;
+  ctx.textAlign = 'left';
+  parts.forEach(([text, color, bold], i) => {
+    ctx.font = fontOf(bold);
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, ly);
+    x += widths[i];
+  });
+  ctx.font = `11px ${FONT}`;
+  ctx.fillStyle = '#a3a3a3';
+  if (under) {
+    ctx.textAlign = 'center';
+    ctx.fillText(hint, W / 2, low + 13);
+  } else {
+    ctx.textAlign = 'right';
+    ctx.fillText(hint, W - 18, low + 1);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function ordinal(n) {
