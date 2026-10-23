@@ -10,7 +10,7 @@ import { WEAPONS } from '../weapons.js';
 import { CLASS_IDS, UPGRADE_IDS } from '../classes.js';
 import { REWARD_IDS } from '../streaks.js';
 
-export const PROTOCOL = 13;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 14;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -232,6 +232,8 @@ export function encodeWorld(game) {
 export function encodeSnapshot(game, me, ackSeq, world) {
   const w = new Writer(256 + world.length);
   w.u8(MSG.snapshot);
+  // (Which of the host's matches it's from: one from the last match can turn up after the welcome to the next.)
+  w.u8((game.matchNo ?? 0) & 255);
   w.u32(game.tick);
   w.u32(ackSeq >>> 0);
   w.u8(me ? me.id : 255);
@@ -272,7 +274,7 @@ export function encodeSnapshot(game, me, ackSeq, world) {
 export function decodeSnapshot(data) {
   const r = new Reader(data);
   if (r.u8() !== MSG.snapshot) return null;
-  const snap = { tick: r.u32(), ack: r.u32(), myId: r.u8(), me: null };
+  const snap = { match: r.u8(), tick: r.u32(), ack: r.u32(), myId: r.u8(), me: null };
   if (snap.myId !== 255) {
     const me = { x: r.f32(), y: r.f32(), vx: r.f32(), vy: r.f32() };
     const f = r.u8();

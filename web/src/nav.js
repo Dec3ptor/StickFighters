@@ -592,6 +592,16 @@ export class NavGraph {
   }
 
   /**
+   * A new match on this route map: what bots learnt in the last one (moves that went wrong,
+   * and the searches made since) is forgotten, so every match starts the same.
+   */
+  forget() {
+    for (const n of this.nodes) for (const l of n.links) if (l.penalty) this.penalize(l, 0);
+    this.searches = null;
+    this.spareSearch = null;
+  }
+
+  /**
    * The links turned round, as flat arrays: the spots with a link into spot i are
    * into[intoFrom[i]] to into[intoFrom[i + 1] - 1] (worked out again with _flat()).
    */

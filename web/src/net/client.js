@@ -60,6 +60,8 @@ export class NetClient {
     this.link.onclose = () => this.end('Lost the connection to the host');
     this.game = null;
     this.me = null;
+    this.matchNo = -1; // (the host's number for the match being played: snapshots from another are ignored)
+    this.welcomes = 0; // (welcomes so far: only the newest is set up, if two maps load at once)
     this.seq = 0;
     this.pending = [];
     this.recent = [];
@@ -130,12 +132,14 @@ export class NetClient {
 
   async start(w) {
     if (w.v !== PROTOCOL) { this.end('That game is running a different version. Refresh the page and try again.'); return; }
-    const m = w.match;
+    const m = w.match, mine = ++this.welcomes;
     const mapData = await this.opts.loadMap(m);
+    if (mine !== this.welcomes) return; // (a newer welcome came while this map loaded: that one's the match)
     const game = new Game({ mapData, mode: m.mode, fragLimit: m.fragLimit, options: m.options, speed: m.speed, effects: true, seed: 1 });
     game.online = true;
     this.game = game;
     this.me = null;
+    this.matchNo = w.n & 255;
     this.snaps = [];
     this.events = [];
     this.pending = [];
@@ -232,6 +236,8 @@ export class NetClient {
   }
 
   onSnapshot(snap) {
+    // (From another match: the last one's, overtaken on the way by the welcome to this one.)
+    if (snap.match !== this.matchNo) return;
     const last = this.snaps[this.snaps.length - 1];
     if (last && snap.tick <= last.tick) return; // late or repeated
     snap.arrival = this.clock();

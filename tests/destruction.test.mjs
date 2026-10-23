@@ -6,7 +6,8 @@ import { Game } from '../web/src/game.js';
 import { GameMap, seamsOf } from '../web/src/map.js';
 import { NavGraph } from '../web/src/nav.js';
 import { BotController, BOT_PROFILES } from '../web/src/bot.js';
-import { explode } from '../web/src/combat.js';
+import { explode, spawn } from '../web/src/combat.js';
+import { WEAPONS } from '../web/src/weapons.js';
 import { makeRng } from '../web/src/util.js';
 import { DEFAULT_SPEED } from '../web/src/config.js';
 import { setGameSpeed } from '../web/src/speed.js';
@@ -200,5 +201,53 @@ test('patching only re-simulates the jumps and drops that went near the change, 
       full.patch(a2);
       assert.equal(sig(quick), sig(full), `${file}, change ${i}`);
     }
+  }
+});
+
+test('a rocket\'s blast sets off mines and dynamite near it, and what lay on the floor it blows away falls', () => {
+  const FLAT = {
+    name: 'flat', bounds: { left: -1000, top: -600, right: 1000, bottom: 400 },
+    // (Spawns on floors of their own at the sides: the floor under a spawn point can't be broken.)
+    platforms: [{ left: -800, top: 0, right: -400, bottom: 60 }, { left: 400, top: 0, right: 800, bottom: 60 }, { left: -200, top: 0, right: 300, bottom: 60 }],
+    spawns: [{ x: -600, y: -20, team: 1 }, { x: 600, y: -20, team: 2 }], items: [],
+  };
+  const arena = destruction => {
+    const game = new Game({ mapData: FLAT, mode: 'ffa', fragLimit: 999, seed: 1, effects: false, options: { destruction } });
+    for (const s of game.map.solids) if (s.l === -200) s.hard = false; // (the middle floor breaks)
+    const idle = { input: () => ({ move: 0 }) };
+    const a = game.addSoldier({ name: 'A', isBot: false }, idle), b = game.addSoldier({ name: 'B', isBot: false }, idle);
+    a.spawnAt({ x: -600, y: -12 }, 0); b.spawnAt({ x: 600, y: -12 }, 0);
+    for (let i = 0; i < 5; i++) game.update();
+    // A's mine and dynamite on the floor, an arrow stuck in it and burning petrol on it, around x = 100.
+    const mine = spawn(game, { kind: 'placed', sprite: 'mine', cfg: WEAPONS.Mine, x: 90, y: -1, vx: 0, vy: 0, owner: a, weapon: 'Mine', life: 3600, armed: 0, triggered: -1, onGround: true });
+    const dyn = spawn(game, { kind: 'placed', sprite: 'dynamite', cfg: WEAPONS.Dynamite, x: 125, y: -1, vx: 0, vy: 0, owner: a, weapon: 'Dynamite', life: 3000, armed: 0, triggered: -1, onGround: true });
+    const arrow = spawn(game, { kind: 'arrow', sprite: 'arrow', cfg: WEAPONS.Longbow, x: 110, y: 0, vx: 0, vy: 0, owner: a, weapon: 'Longbow', life: 18000, stuck: true, angle: 1.4 });
+    const fire = spawn(game, { kind: 'fire', sprite: 'fire', cfg: WEAPONS.PetrolBomb.fire, x: 100, y: -1, vx: 0, vy: 0, owner: a, weapon: 'PetrolBomb', life: 2000, onGround: true });
+    game.update();
+    // B's rocket, straight down at the floor between them: it goes off while projectiles move.
+    spawn(game, { kind: 'rocket', sprite: 'rocket', cfg: WEAPONS.Bazooka, x: 108, y: -120, vx: 0, vy: 8.5, owner: b, weapon: 'Bazooka', life: 200 });
+    let blasted = false;
+    for (let i = 0; i < 40 && !blasted; i++) {
+      game.sounds.length = 0;
+      game.update();
+      blasted = game.sounds.some(x => x.name === 'explosion' || x.name === 'explosionSmall');
+    }
+    assert.ok(blasted, 'the rocket hit the floor');
+    for (let i = 0; i < 3; i++) game.update();
+    return { game, mine, dyn, arrow, fire };
+  };
+  const floorUnder = (game, x, y) => !!game.map.overlap(x - 1, y + 0.5, x + 1, y + 3);
+  {
+    const { game, mine, dyn, arrow, fire } = arena(true);
+    assert.ok(!floorUnder(game, 100, -1), 'a hole in the floor');
+    assert.ok(mine.dead || mine.triggered >= 0, 'the mine is set off');
+    assert.ok(dyn.dead || dyn.life <= 6, 'the dynamite\'s fuse is cut short');
+    assert.ok(arrow.dead, 'the arrow went with the floor it was stuck in');
+    assert.ok(fire.dead || !fire.onGround, 'the burning petrol falls');
+  }
+  {
+    const { mine, dyn } = arena(false);
+    assert.ok(mine.dead || mine.triggered >= 0, 'without holes too: the mine is set off');
+    assert.ok(dyn.dead || dyn.life <= 6, '...and the dynamite');
   }
 });

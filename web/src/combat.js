@@ -498,15 +498,22 @@ export function updateProjectiles(game) {
   let fresh = game.spawnList;
   if (!fresh || fresh === list) fresh = game.spawnList = [];
   game.projectiles = fresh;
+  // (The ones out there already, while game.projectiles holds only what's new: blasts still set
+  // off mines and dynamite among them, and holes still drop what's lying on them.)
+  game.moving = list;
   let n = 0;
-  for (let i = 0; i < list.length; i++) {
-    const p = list[i];
-    if (p.dead) continue;
-    if (p.delay > 0) { p.delay--; list[n++] = p; continue; } // air strike bombs waiting their turn
-    p.life--;
-    p.age++;
-    p.px = p.x; p.py = p.y;
-    if (STEP[p.kind](game, p) && !p.dead) list[n++] = p;
+  try {
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i];
+      if (p.dead) continue;
+      if (p.delay > 0) { p.delay--; list[n++] = p; continue; } // air strike bombs waiting their turn
+      p.life--;
+      p.age++;
+      p.px = p.x; p.py = p.y;
+      if (STEP[p.kind](game, p) && !p.dead) list[n++] = p;
+    }
+  } finally {
+    game.moving = null;
   }
   list.length = n;
   // (What's new goes after them. Something may have swapped the list meanwhile: then its list.)
@@ -1185,15 +1192,23 @@ export function explode(game, x, y, blast, owner, weapon, direct = null) {
   }
   blasting--;
   blastSentries(game, x, y, blast, owner);
-  // Explosions set off mines and dynamite nearby.
-  for (const p of game.projectiles) {
+  // Explosions set off mines and dynamite nearby (while projectiles move, among the ones out
+  // there already too: see updateProjectiles).
+  setOff(game.projectiles, x, y, blast.radius * 0.8);
+  if (game.moving) setOff(game.moving, x, y, blast.radius * 0.8);
+  // Destructible maps: a hole (after the damage, so the wall still shielded anyone behind it).
+  game.carve?.(x, y, blast.radius * CARVE_SHARE);
+}
+
+/** Mines and dynamite in `list` within r of (x, y): set off (a mine at once, dynamite's fuse cut short). */
+function setOff(list, x, y, r) {
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
     if (p.kind !== 'placed' || p.dead) continue;
-    if (hypot(p.x - x, p.y - y) > blast.radius * 0.8) continue;
+    if (hypot(p.x - x, p.y - y) > r) continue;
     if (p.cfg.mine) { p.armed = 0; if (p.triggered < 0 || p.triggered > 4) p.triggered = 4; }
     else p.life = Math.min(p.life, 4);
   }
-  // Destructible maps: a hole (after the damage, so the wall still shielded anyone behind it).
-  game.carve?.(x, y, blast.radius * CARVE_SHARE);
 }
 
 // How big a hole an explosion blows in the map (destructible maps), as a share of its blast radius.

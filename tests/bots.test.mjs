@@ -8,7 +8,8 @@ import { BotController, BOT_PROFILES } from '../web/src/bot.js';
 import { makeRng } from '../web/src/util.js';
 import { DEFAULT_SPEED } from '../web/src/config.js';
 import { WEAPONS } from '../web/src/weapons.js';
-import { botMatch } from './helpers.mjs';
+import { botMatch, loadMap } from './helpers.mjs';
+import { GameMap } from '../web/src/map.js';
 import { SELF_DESTRUCT_TICKS } from '../web/src/game.js';
 
 // A long floor with a Shotgun lying on it at x 0.
@@ -248,4 +249,25 @@ test("a bot's input: one object, everything left from the last update cleared", 
   }
   // (A field it wouldn't know to clear can't be added.)
   assert.throws(() => { again.somethingNew = true; }, TypeError);
+});
+
+test('a route map kept between matches starts each one afresh: what bots learnt in the last is forgotten', () => {
+  // (Gun game: no pickups, so matches use the kept route map itself, not a copy.)
+  const kept = new NavGraph(new GameMap(loadMap('ssdm4.json')));
+  const play = seed => {
+    const { game } = botMatch('ssdm4.json', { bots: 7, mode: 'gungame', seed, nav: kept });
+    for (let i = 0; i < 1500; i++) game.update();
+    return game.soldiers.map(s => `${s.body.x.toFixed(2)},${s.body.y.toFixed(2)},${s.frags},${s.deaths}`).join(' ');
+  };
+  const first = play(13);
+  play(29);
+  assert.ok(kept.searches || kept.nodes.some(n => n.links.some(l => l.penalty > 0)), 'the other match left its searches or penalties on the route map');
+  assert.equal(play(13), first, 'the same match plays out the same after another one');
+  // A copy of it (a match where the map can change) doesn't inherit them either.
+  const link = kept.nodes.find(n => n.links.length).links[0];
+  kept.penalize(link, 50);
+  const holes = new Game({ mapData: loadMap('ssdm4.json'), mode: 'ffa', seed: 3, speed: DEFAULT_SPEED, options: { destruction: true } });
+  const copy = holes.useNav(kept);
+  assert.ok(copy !== kept, 'a copy (holes can change the map)');
+  assert.ok(copy.nodes.every(n => n.links.every(l => !l.penalty)), 'with no penalties');
 });

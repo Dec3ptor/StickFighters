@@ -282,6 +282,28 @@ test('after the host starts a new match, players see everyone, bots included', a
   assert.ok(m.clients[0].game.pickups.items.every(it => it.dropped || m.clients[0].game.map.items.some(mi => mi.x === it.x && mi.y === it.y)), 'pickups belong to the new match');
 });
 
+test('a snapshot from the last match that turns up after the welcome to the next is ignored', async () => {
+  const m = await onlineMatch({ players: 1 });
+  // (Keep the last snapshot the host sends the player.)
+  const [p] = m.host.players;
+  let last = null;
+  const send = p.link.send.bind(p.link);
+  p.link.send = (data, reliable) => { if (data instanceof Uint8Array && data[0] === 2) last = data.slice(); return send(data, reliable); };
+  await m.step(300);
+  const stale = last;
+  const c = m.clients[0], oldGame = c.game;
+  await m.newMatch();
+  assert.ok(c.game !== oldGame, 'the player is in the new match');
+  // The last match's snapshot, overtaken on the way by the welcome (the fast channel's packets
+  // can be): taken, it would hold up every snapshot of the new match until its clock got that far.
+  c.receive(stale, false);
+  assert.equal(c.snaps.length, 0, 'ignored');
+  await m.step(60);
+  const newest = c.snaps.at(-1);
+  assert.ok(newest && m.game.tick - newest.tick < 10, `the new match's snapshots are taken (newest ${newest?.tick}, host at ${m.game.tick})`);
+  assert.ok(c.game.tick > 30, 'and others are shown moving on');
+});
+
 test('a player who somehow misses a roster update asks for it again', async () => {
   const m = await onlineMatch({ players: 1 });
   await m.step(60);

@@ -61,6 +61,7 @@ export class NetHost {
     this.players = new Set();
     this.game = null;
     this.chatLog = [];
+    this.matchNo = 0; // (each match is numbered, in its welcome and snapshots: see setGame)
     this.resetEvents();
   }
 
@@ -71,6 +72,9 @@ export class NetHost {
   /** Host this match. Players already connected get a soldier in it. */
   setGame(game) {
     this.game = game;
+    // (The last match's snapshots can still be on their way: players tell them apart by this.)
+    this.matchNo = (this.matchNo + 1) & 255;
+    game.matchNo = this.matchNo;
     game.recorder = this;
     if (game.fx && !game.fx.recording) game.fx = recordFx(game.fx, this);
     this.resetEvents();
@@ -164,7 +168,7 @@ export class NetHost {
   /** Everything a player needs to set up the match. (The chat so far only goes to players who just joined.) */
   welcome(p, { fresh = true } = {}) {
     p.link.send({
-      t: 'welcome', v: PROTOCOL, you: p.soldier.id, tick: this.game.tick,
+      t: 'welcome', v: PROTOCOL, n: this.matchNo, you: p.soldier.id, tick: this.game.tick,
       match: this.opts.matchInfo(), roster: this.roster(), chat: fresh ? this.chatLog.slice(-8) : [],
       carves: this.game.carves,
     });

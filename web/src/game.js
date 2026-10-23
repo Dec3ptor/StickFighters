@@ -30,6 +30,16 @@ export const SELF_DESTRUCT_TICKS = 60;
 const NAV_PATCH_DELAY = 20;
 const NAV_SPOTS_PER_UPDATE = 6;
 
+/** Projectiles in `list` over a hole just blown (area): what was lying there falls, arrows stuck in it go. */
+function dropFrom(list, area) {
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    if (p.x < area.l - 8 || p.x > area.r + 8 || p.y < area.t - 16 || p.y > area.b + 8) continue;
+    if (p.stuck) p.dead = true;
+    else if (p.onGround) p.onGround = false;
+  }
+}
+
 export class Game {
   /**
    * options: { lives (one in the chamber), gunGameKills (kills per weapon), crates: 'off'|'normal'|'lots',
@@ -64,6 +74,8 @@ export class Game {
     this.controllers = new Map();
     this.projectiles = [];
     this.spawnList = []; // (where projectiles made during an update go: combat.js updateProjectiles)
+    this.moving = null;  // (during that update: the ones already out there, which game.projectiles doesn't hold then)
+    this.matchNo = 0;    // (online: which of the host's matches this is, in its snapshots)
     this.pickups = new Pickups(this.map, this);
     this.fx = effects ? new Effects() : null;
     this.sounds = [];
@@ -212,6 +224,8 @@ export class Game {
     // (Where the map can change, by holes or building (the Hammer turns up wherever there are
     // pickups or crates), the match works on its own copy of the route map, kept up to date.)
     const changes = this.options.destruction || this.classesOn || this.rules.pickups || this.rules.crates;
+    // (The route map is kept between matches: what bots learnt on it last time is forgotten first.)
+    nav.forget();
     this.nav = changes ? nav.clone(this.map) : nav;
     this.spawnSets = null;
     return this.nav;
@@ -258,12 +272,10 @@ export class Game {
     if (this.online) this.carves.push([x, y, r]);
     if (!area) return false;
     if (!this.online) this.carves.push([x, y, r]);
-    // Things lying on what's gone fall; arrows stuck in it go with it.
-    for (const p of this.projectiles) {
-      if (p.x < area.l - 8 || p.x > area.r + 8 || p.y < area.t - 16 || p.y > area.b + 8) continue;
-      if (p.stuck) p.dead = true;
-      else if (p.onGround) p.onGround = false;
-    }
+    // Things lying on what's gone fall; arrows stuck in it go with it. (While projectiles move,
+    // the ones out there already too: see combat.js updateProjectiles.)
+    dropFrom(this.projectiles, area);
+    if (this.moving) dropFrom(this.moving, area);
     for (const it of this.pickups.items) {
       if (it.dropped && it.vy === null && it.x >= area.l - 4 && it.x <= area.r + 4 && it.y >= area.t - 16 && it.y <= area.b) it.vy = 0;
     }
