@@ -11,6 +11,7 @@
 import { buildPlan } from './building.js';
 import { BODY, PHYS } from './config.js';
 import { angleDiff } from './util.js';
+import { hypot } from './map.js';
 
 const STEP = { up: 78, low: 60, out: 42 };   // a step's top above our feet, and its middle across from us
 const HAMMER_CLIMB = 8 * 70;                   // about how high a hammer's blocks make steps
@@ -51,7 +52,7 @@ export function toolFor(s, it, to, from = s) {
 export function planAt(game, s, x, y, plank) {
   const keep = [s.aim, s.aimDist, s.buildPlank];
   s.aim = Math.atan2(y - s.shoulderY, x - s.shoulderX);
-  s.aimDist = Math.hypot(x - s.shoulderX, y - s.shoulderY);
+  s.aimDist = hypot(x - s.shoulderX, y - s.shoulderY);
   s.buildPlank = plank;
   const plan = buildPlan(game, s);
   [s.aim, s.aimDist, s.buildPlank] = keep;
@@ -61,7 +62,7 @@ export function planAt(game, s, x, y, plank) {
 /** Aim at (x, y) this update (and say how far: building goes where the aim ends). */
 function aimAt(s, inp, x, y) {
   inp.aim = Math.atan2(y - s.shoulderY, x - s.shoulderX);
-  inp.aimDist = Math.hypot(x - s.shoulderX, y - s.shoulderY);
+  inp.aimDist = hypot(x - s.shoulderX, y - s.shoulderY);
 }
 
 /**
@@ -93,7 +94,7 @@ export function exitSpot(nav, s, reach = 900) {
   let best = null, bs = Infinity;
   for (const n of nav.nodesNear(s.x, s.y, reach, reach)) {
     if (trapped[n.id]) continue;
-    const d = Math.hypot(n.x - s.x, n.y - s.y) + (n.y > s.y + 20 ? 300 : 0);
+    const d = hypot(n.x - s.x, n.y - s.y) + (n.y > s.y + 20 ? 300 : 0);
     if (d < bs) { bs = d; best = n; }
   }
   return best;

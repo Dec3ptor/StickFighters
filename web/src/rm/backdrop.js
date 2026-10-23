@@ -9,13 +9,22 @@
 
 import { makeRng } from '../util.js';
 import { css, mix, rgb, shade } from './color.js';
-import { drawVignette } from './fx.js';
+import { drawVignette, drawnByCPU } from './fx.js';
 
 const TILE_W = 1800;           // a layer's strip repeats every this many world units
 const MAX_STRIP = 4096;        // biggest strip, in pixels
 const VERTICAL = 0.6;          // layers move up and down this much less than sideways
 
 const canvas = (w, h) => Object.assign(document.createElement('canvas'), { width: Math.max(1, Math.ceil(w)), height: Math.max(1, Math.ceil(h)) });
+
+// The scenery last shown, stretched to the screen's size, for the frames where nothing has
+// moved (only when drawn by the processor: see drawnByCPU). One for all: one's shown at a time.
+const screen = { cv: null, ctx: null, of: null, picture: 0 };
+
+/** Let go of the screen-sized copy, and the scenery it was of (Remastered has stopped drawing). */
+export function dropScreenCopy() {
+  screen.cv = screen.ctx = screen.of = null;
+}
 
 // ---- Noise -------------------------------------------------------------------------------
 
@@ -1023,6 +1032,7 @@ export class Backdrop {
     if (!this.buf || this.buf.width !== W || this.buf.height !== H) {
       this.buf = canvas(W, H);
       this.bctx = this.buf.getContext('2d', { alpha: false });
+      if (this.last) this.last.S = NaN; // (a new picture: drawn from scratch)
     }
     const t = this.theme, b = this.built, bc = this.bctx, S = r.scale * r.dpr * res;
     const cx = r.cam.x, cy = r.cam.y;
@@ -1031,10 +1041,12 @@ export class Backdrop {
     const last = this.last, maxP = b.layers.length ? b.layers[b.layers.length - 1].p : 0;
     if (last && last.S === S && last.ground === ground && last.vignette === vignette &&
       Math.max(Math.abs(cx - last.cx) * maxP, Math.abs(cy - last.cy) * maxP * VERTICAL, Math.abs(this.drift - last.drift) * 0.5) * S < 0.33) {
-      this.present(ctx, r);
+      this.present(ctx, r, true);
       return;
     }
-    this.last = { cx, cy, S, ground, vignette, drift: this.drift };
+    this.picture = (this.picture || 0) + 1;
+    const was = this.last ||= {};
+    was.cx = cx; was.cy = cy; was.S = S; was.ground = ground; was.vignette = vignette; was.drift = this.drift;
     bc.globalCompositeOperation = 'copy';
     bc.drawImage(b.sky, 0, 0);
     bc.globalCompositeOperation = 'source-over';
@@ -1064,13 +1076,13 @@ export class Backdrop {
     }
     // Below the scenery, down into the dark.
     if (lastGround < H && t.ground) {
-      const key = `${lastGround | 0}|${H}`;
-      if (this.deepKey !== key) {
+      if (this.deepAt !== (lastGround | 0) || this.deepH !== H) {
         const g = bc.createLinearGradient(0, lastGround, 0, Math.max(lastGround + 1, H));
         g.addColorStop(0, css(t.ground, 0));
         g.addColorStop(1, css(t.ground, 0.9));
         this.deep = g;
-        this.deepKey = key;
+        this.deepAt = lastGround | 0;
+        this.deepH = H;
       }
       bc.fillStyle = this.deep;
       bc.fillRect(0, lastGround, W, H - lastGround);
@@ -1080,12 +1092,36 @@ export class Backdrop {
     this.present(ctx, r);
   }
 
-  /** Onto the screen, in one go (it covers everything: no blending needed). */
-  present(ctx, r) {
+  /**
+   * Onto the screen, in one go (it covers everything: no blending needed). still: the same
+   * picture as last frame; drawn by the processor, it's then copied from the screen-sized
+   * copy (stretched once: the same pixels) rather than stretched again.
+   */
+  present(ctx, r, still = false) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'copy';
-    ctx.drawImage(this.buf, 0, 0, r.pw, r.ph);
+    if (still && drawnByCPU()) ctx.drawImage(this.full(r), 0, 0);
+    else ctx.drawImage(this.buf, 0, 0, r.pw, r.ph);
     ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /** The picture stretched to the screen's size (stretched again only when it's changed). */
+  full(r) {
+    const f = screen;
+    if (!f.cv || f.cv.width !== r.pw || f.cv.height !== r.ph || f.ctx.isContextLost?.()) {
+      f.cv = canvas(r.pw, r.ph);
+      f.ctx = f.cv.getContext('2d', { alpha: false });
+      f.of = null;
+      // (A canvas given back after being lost comes back blank.)
+      f.cv.addEventListener?.('contextrestored', () => { f.of = null; });
+    }
+    if (f.of !== this || f.picture !== this.picture) {
+      f.ctx.globalCompositeOperation = 'copy';
+      f.ctx.drawImage(this.buf, 0, 0, r.pw, r.ph);
+      f.of = this;
+      f.picture = this.picture;
+    }
+    return f.cv;
   }
 
   /**

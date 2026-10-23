@@ -2,13 +2,13 @@
 // No DOM or audio in here, so whole matches can run headless in tests (and on
 // the host of an online game, which sends the results to everyone else).
 
-import { GameMap } from './map.js';
+import { GameMap, hypot } from './map.js';
 import { Soldier } from './soldier.js';
 import { Pickups } from './pickups.js';
 import { Effects } from './effects.js';
-import { fire, updateProjectiles, damage, explode, soldierBox, canHurt, reload, refill } from './combat.js';
+import { fire, updateProjectiles, damage, explode, canHurt, reload, refill } from './combat.js';
 import { buildPose } from './stickman.js';
-import { RULES, TICK_RATE, MOTION, PHYS } from './config.js';
+import { RULES, TICK_RATE, MOTION, PHYS, BODY } from './config.js';
 import { setGameSpeed } from './speed.js';
 import { WEAPONS } from './weapons.js';
 import { modeOf } from './modes.js';
@@ -20,6 +20,8 @@ import { useGadget, updateGadgets, removeGadgets, blastGadgets, beaconSpawn, bea
 import { onStreakKill, streakOff, useReward, updateStreaks, matchAwards } from './streaks.js';
 
 const IDLE = { move: 0 };
+// (The soldiers near a spawn point, for spawnDanger(): one list, filled again each time.)
+const NEAR_SPAWN = [];
 // Holding self-destruct this many updates (a second) blows you up: the way out of a pit you can't climb out of.
 export const SELF_DESTRUCT_TICKS = 60;
 // When the map changes (holes, building), the bots' route map is patched this many updates
@@ -61,6 +63,7 @@ export class Game {
     this.soldiers = [];
     this.controllers = new Map();
     this.projectiles = [];
+    this.spawnList = []; // (where projectiles made during an update go: combat.js updateProjectiles)
     this.pickups = new Pickups(this.map, this);
     this.fx = effects ? new Effects() : null;
     this.sounds = [];
@@ -110,6 +113,22 @@ export class Game {
     if (this.grid.tick !== this.tick) this.grid.rebuild(this.soldiers, this.tick);
     const m = 32;
     return this.grid.query(l - m, t - m, r + m, b + m);
+  }
+
+  /**
+   * near() without making a list, for code that asks thousands of times an update: the
+   * same soldiers, in the same order, written into `out` from the start. Returns how many
+   * (out[0] to out[n - 1]). Go through them before asking again with the same list.
+   */
+  nearInto(l, t, r, b, out) {
+    if (!this.crowded) {
+      const all = this.soldiers;
+      for (let i = 0; i < all.length; i++) out[i] = all[i];
+      return all.length;
+    }
+    if (this.grid.tick !== this.tick) this.grid.rebuild(this.soldiers, this.tick);
+    const m = 32;
+    return this.grid.queryInto(l - m, t - m, r + m, b + m, out);
   }
 
   /** Big games: the sheep (or other remote-controlled thing) each soldier has out, worked out once per update. */
@@ -517,8 +536,9 @@ export class Game {
     let victim = null;
     for (const o of this.soldiers) {
       if (o === s || !o.alive || !canHurt(this, s, o)) continue;
-      const bx = soldierBox(o);
-      if (s.x + vx > bx.l - 4 && s.x + vx < bx.r + 4 && s.y - 6 + vy > bx.t - 4 && s.y - 6 + vy < bx.b + 4) victim = o;
+      // (Inside the soldier's box, as soldierBox() has it, give or take 4.)
+      const ob = o.body, top = ob.crouching ? BODY.crouchTop : BODY.top;
+      if (s.x + vx > ob.x - BODY.halfW - 4 && s.x + vx < ob.x + BODY.halfW + 4 && s.y - 6 + vy > ob.y + top - 4 && s.y - 6 + vy < ob.y + BODY.bottom + 4) victim = o;
     }
     if (wall || victim || k.ticks <= 0) {
       s.kamikaze = null;
@@ -569,7 +589,7 @@ export class Game {
       else {
         for (const o of this.soldiers) {
           if (o === s || !o.alive || (this.rules.teams && o.team === s.team)) continue;
-          near = Math.min(near, Math.hypot(o.x - p.x, o.y - p.y));
+          near = Math.min(near, hypot(o.body.x - p.x, o.body.y - p.y));
         }
       }
       const score = near + this.rng() * 300;
@@ -587,11 +607,14 @@ export class Game {
     const c = (this.dangerCache ||= new Map()).get(key);
     // (Refreshed every quarter second: good enough for picking a spawn point.)
     if (c && this.tick - c.tick < 15 && this.tick >= c.tick && c.points === points) return c.near;
+    const list = NEAR_SPAWN;
     const near = points.map(p => {
       let n = 1000;
-      for (const o of this.near(p.x - 1000, p.y - 1000, p.x + 1000, p.y + 1000)) {
+      const count = this.nearInto(p.x - 1000, p.y - 1000, p.x + 1000, p.y + 1000, list);
+      for (let i = 0; i < count; i++) {
+        const o = list[i];
         if (!o.alive || (this.rules.teams && o.team === team)) continue;
-        n = Math.min(n, Math.hypot(o.x - p.x, o.y - p.y));
+        n = Math.min(n, hypot(o.body.x - p.x, o.body.y - p.y));
       }
       return n;
     });
@@ -676,12 +699,13 @@ export class Game {
       this.pickups.drop(victim.current, inv.ammo, victim.x, victim.y - 8, victim.body.vx * 0.5);
     }
 
-    if (!opts.fall) {
+    // (The pieces only matter to the effects: no working out the pose when they're off.)
+    if (!opts.fall && this.fx) {
       const pose = buildPose(victim);
-      const segs = pose.lines.map(([a, b, c, d]) => [victim.x + a, victim.y + b, victim.x + c, victim.y + d]);
+      const segs = pose.lines.map(l => [victim.x + l[0], victim.y + l[1], victim.x + l[2], victim.y + l[3]]);
       const head = { x: victim.x + pose.head.x, y: victim.y + pose.head.y, r: pose.head.r };
-      this.fx?.gibs(segs, head, victim.body.vx, victim.body.vy, opts.explosive ? 6 : 1.5);
-      this.fx?.blood(victim.x, victim.y - 8, 0, -1, 40);
+      this.fx.gibs(segs, head, victim.body.vx, victim.body.vy, opts.explosive ? 6 : 1.5);
+      this.fx.blood(victim.x, victim.y - 8, 0, -1, 40);
     }
     this.sound(opts.fall ? 'fall' : opts.explosive ? 'gib' : 'death', victim.x, victim.y);
     this.controllers.get(victim)?.onDeath?.(this, victim, killer);

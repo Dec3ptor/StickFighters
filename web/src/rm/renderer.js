@@ -6,16 +6,16 @@
 // It draws with the browser's 2D canvas, reusing the original renderer's camera,
 // objectives, pickups and the less common projectiles and effects.
 
-import { Renderer, between, fillSpikes } from '../render.js';
+import { Renderer, fillSpikes } from '../render.js';
 import { drawObjectives, drawCarried } from '../objdraw.js';
 import { Fog } from '../fog.js';
 import { lerp } from '../util.js';
 import { themeFor, THEMES } from './themes.js';
-import { Backdrop } from './backdrop.js';
+import { Backdrop, dropScreenCopy } from './backdrop.js';
 import { Blocks } from './blocks.js';
 import { makeMaterials } from './textures.js';
 import { drawSoldier, drawShadows, drawName } from './soldiers.js';
-import { Lights, Weather, LIGHT, glowSprite, fireballSprite, smokeSprite, cloudSprite, drawVignette } from './fx.js';
+import { Lights, Weather, LIGHT, glowSprite, fireballSprite, smokeSprite, cloudSprite, drawVignette, drawnByCPU, dropVignetteCopies } from './fx.js';
 import { styledContext } from './hudstyle.js';
 import { css } from './color.js';
 import { GameMap } from '../map.js';
@@ -33,6 +33,14 @@ function lowest(map) {
 
 const seedOf = s => { let h = 7; for (const c of String(s || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 100000; };
 
+// Night maps on lower quality: the plain dimming's colour, for each look.
+const dimmings = new WeakMap();
+function dimmingOf(theme) {
+  let c = dimmings.get(theme);
+  if (!c) dimmings.set(theme, c = `rgba(2,4,10,${(theme.dark * 0.6).toFixed(2)})`);
+  return c;
+}
+
 export class RemasteredRenderer extends Renderer {
   /**
    * quality: 'high' (everything), 'medium' (plain-coloured block sides, less weather, simpler
@@ -45,6 +53,14 @@ export class RemasteredRenderer extends Renderer {
     this.lights = new Lights();
     this.frameAt = performance.now();
     this.setQuality(quality);
+    drawnByCPU(); // (worked out now, while things are loading, not in the middle of a match)
+  }
+
+  /** Stop using this renderer: the screen-sized copies kept for drawing by the processor go too. */
+  destroy() {
+    super.destroy();
+    dropScreenCopy();
+    dropVignetteCopies();
   }
 
   setQuality(q) {
@@ -170,7 +186,7 @@ export class RemasteredRenderer extends Renderer {
     else if (theme.dark) {
       // (A plain dimming without the lights cut out of it, on lower quality.)
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = `rgba(2,4,10,${(theme.dark * 0.6).toFixed(2)})`;
+      ctx.fillStyle = dimmingOf(theme);
       ctx.fillRect(0, 0, this.pw, this.ph);
       ctx.setTransform(s, 0, 0, s, tx, ty);
     }
@@ -255,15 +271,18 @@ export class RemasteredRenderer extends Renderer {
 
   /** Bullets as glowing tracers; rockets, flames and magic with their light; the rest as in the original. */
   drawProjectiles(game, top) {
-    const ctx = this.ctx, rest = [];
+    const ctx = this.ctx, rest = this.rest ||= [], alpha = this.alpha ?? 1;
+    rest.length = 0;
     const cull = game.crowded;
     ctx.lineCap = 'round';
-    for (const p0 of game.projectiles) {
-      if (p0.delay > 0 || (cull && !this.inView(p0.x, p0.y))) continue;
-      const front = p0.kind === 'flame' || p0.kind === 'gas' || p0.kind === 'fire' || p0.kind === 'cloud';
+    for (const p of game.projectiles) {
+      if (p.delay > 0 || (cull && !this.inView(p.x, p.y))) continue;
+      const front = p.kind === 'flame' || p.kind === 'gas' || p.kind === 'fire' || p.kind === 'cloud';
       if (front !== top) continue;
-      const p = between(p0, this.alpha);
-      if (this.fogNow && !this.fogNow.sees(p.x, p.y)) continue;
+      // Where it's drawn: between the last two game updates (as between() works it out).
+      const now = p.px == null || alpha >= 1;
+      const x = now ? p.x : p.px + (p.x - p.px) * alpha, y = now ? p.y : p.py + (p.y - p.py) * alpha;
+      if (this.fogNow && !this.fogNow.sees(x, y)) continue;
       if (p.kind === 'cloud') {
         // A smoke grenade's cloud: soft puffs, thick enough that nobody can be seen inside.
         const r = p.r || 10, fade = Math.min(1, (p.life ?? 99) / 90), spr = cloudSprite(), t = game.tick;
@@ -271,39 +290,43 @@ export class RemasteredRenderer extends Renderer {
         for (let i = 0; i < 11; i++) {
           const a = (i / 11) * Math.PI * 2 + (p.id % 7) * 0.7, d = r * (i % 2 ? 0.38 : 0.62);
           const q = r * (0.75 + (i % 3) * 0.12), wob = Math.sin(t * 0.015 + i * 1.9) * r * 0.06;
-          ctx.drawImage(spr, p.x + Math.cos(a) * d + wob - q, p.y + Math.sin(a) * d * 0.7 - q, q * 2, q * 2);
+          ctx.drawImage(spr, x + Math.cos(a) * d + wob - q, y + Math.sin(a) * d * 0.7 - q, q * 2, q * 2);
         }
-        ctx.drawImage(spr, p.x - r, p.y - r, r * 2, r * 2);
+        ctx.drawImage(spr, x - r, y - r, r * 2, r * 2);
         ctx.globalAlpha = 1;
         continue;
       }
       if (p.kind === 'bullet') {
         const sp = Math.hypot(p.vx, p.vy) || 1;
-        const len = Math.min(0.9 * sp, 46, Math.max(0, (p0.age ?? 9) - 1 + this.alpha) * sp);
-        const x0 = p.x - (p.vx / sp) * len, y0 = p.y - (p.vy / sp) * len;
-        const g = ctx.createLinearGradient(x0, y0, p.x, p.y);
+        const len = Math.min(0.9 * sp, 46, Math.max(0, (p.age ?? 9) - 1 + this.alpha) * sp);
+        const x0 = x - (p.vx / sp) * len, y0 = y - (p.vy / sp) * len;
+        const g = ctx.createLinearGradient(x0, y0, x, y);
         g.addColorStop(0, 'rgba(255,200,90,0)');
         g.addColorStop(1, 'rgba(255,236,170,0.95)');
         ctx.strokeStyle = g;
         ctx.lineWidth = p.sprite === 'slug' ? 1.8 : 1.2;
-        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(p.x, p.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x, y); ctx.stroke();
         continue;
       }
-      if (p.kind === 'rocket' && p.sprite !== 'bomb' && p.sprite !== 'mortar') this.lights.add(p.x, p.y, 46, LIGHT.rocket, 0.6);
-      else if (p.kind === 'flame') this.lights.add(p.x, p.y, 34, LIGHT.fire, 0.18);
-      else if (p.kind === 'fire') this.lights.add(p.x, p.y - 4, 44, LIGHT.fire, 0.35);
-      else if (p.kind === 'seeker') this.lights.add(p.x, p.y, 40, LIGHT.magic, 0.5);
+      if (p.kind === 'rocket' && p.sprite !== 'bomb' && p.sprite !== 'mortar') this.lights.add(x, y, 46, LIGHT.rocket, 0.6);
+      else if (p.kind === 'flame') this.lights.add(x, y, 34, LIGHT.fire, 0.18);
+      else if (p.kind === 'fire') this.lights.add(x, y - 4, 44, LIGHT.fire, 0.35);
+      else if (p.kind === 'seeker') this.lights.add(x, y, 40, LIGHT.magic, 0.5);
       // A Sentry Sheep's gun: a soft red light (amber while it unfolds). A stampede sheep's fuse.
-      else if (p.kind === 'sentry') this.lights.add(p.x, p.y - 14, 24, p.armed > 0 ? LIGHT.jet : LIGHT.laser, 0.2);
-      else if (p.sprite === 'stampede') this.lights.add(p.x - 6.8 * (p.dir || 1), p.y - 13.6, 18, LIGHT.spark, 0.45);
-      rest.push(p0);
+      else if (p.kind === 'sentry') this.lights.add(x, y - 14, 24, p.armed > 0 ? LIGHT.jet : LIGHT.laser, 0.2);
+      else if (p.sprite === 'stampede') this.lights.add(x - 6.8 * (p.dir || 1), y - 13.6, 18, LIGHT.spark, 0.45);
+      rest.push(p);
     }
     if (rest.length) {
-      // (The original's drawing, given just these: they're already culled and in sight.)
-      const g = Object.create(game, { projectiles: { value: rest }, crowded: { value: false } });
+      // (The original's drawing, given just these: they're already culled and in sight. The
+      // game as it sees it is made once a match.)
+      if (this.restFor !== game) {
+        this.restFor = game;
+        this.restGame = Object.create(game, { projectiles: { value: rest }, crowded: { value: false } });
+      }
       const fog = this.fogNow;
       this.fogNow = null;
-      super.drawProjectiles(g, top);
+      super.drawProjectiles(this.restGame, top);
       this.fogNow = fog;
     }
   }

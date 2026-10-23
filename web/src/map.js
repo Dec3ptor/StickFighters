@@ -51,6 +51,16 @@ export class GameMap {
     }
     this._stamp = 0;
     this._seen = new Int32Array(Math.max(16, this.nextId));
+    this._hit = { t: 0, x: 0, y: 0, nx: 0, ny: 0, solid: null }; // what raycast() answers with
+  }
+
+  /**
+   * A new mark for one lookup (a block in several cells is visited once a lookup). The marks
+   * are kept in 32 bits: after about two billion lookups (hours of a big game) they start again.
+   */
+  nextStamp() {
+    if (this._stamp >= 0x7fffffff) { this._seen.fill(0); this._stamp = 0; }
+    return ++this._stamp;
   }
 
   _cells(s, fn) {
@@ -158,12 +168,21 @@ export class GameMap {
   _cx(x) { return Math.max(0, Math.min(this.gw - 1, Math.floor(x / CELL) - this.gx0)); }
   _cy(y) { return Math.max(0, Math.min(this.gh - 1, Math.floor(y / CELL) - this.gy0)); }
 
+  // The lookups below all go through the grid cells the box touches, row by row, each cell's
+  // solids in order, skipping solids already seen in this lookup (a solid can be in several
+  // cells). They're written out in full, rather than taking a callback, because they run
+  // tens of thousands of times an update: no closures or result objects to make.
+
   /** Calls fn(solid) once for each solid whose grid cells touch the box; stops if fn returns true. */
   query(l, t, r, b, fn) {
-    const stamp = ++this._stamp;
-    for (let cy = this._cy(t); cy <= this._cy(b); cy++) {
-      for (let cx = this._cx(l); cx <= this._cx(r); cx++) {
-        for (const s of this.grid[cy * this.gw + cx]) {
+    const stamp = this.nextStamp(), grid = this.grid, gw = this.gw;
+    const cx0 = this._cx(l), cx1 = this._cx(r), cy1 = this._cy(b);
+    for (let cy = this._cy(t); cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const cell = grid[cy * gw + cx];
+        for (let i = 0; i < cell.length; i++) {
+          const s = cell[i];
+          // (this._seen read each time: fn may add blocks, which can make it a new array.)
           if (this._seen[s.id] === stamp) continue;
           this._seen[s.id] = stamp;
           if (fn(s)) return true;
@@ -175,33 +194,129 @@ export class GameMap {
 
   /** First solid overlapping the box (edges touching don't count), or null. */
   overlap(l, t, r, b) {
-    let hit = null;
-    this.query(l, t, r, b, s => {
-      if (l < s.r && r > s.l && t < s.b && b > s.t) { hit = s; return true; }
-      return false;
-    });
+    const stamp = this.nextStamp(), seen = this._seen, grid = this.grid, gw = this.gw;
+    const cx0 = this._cx(l), cx1 = this._cx(r), cy1 = this._cy(b);
+    for (let cy = this._cy(t); cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const cell = grid[cy * gw + cx];
+        for (let i = 0; i < cell.length; i++) {
+          const s = cell[i];
+          if (seen[s.id] === stamp) continue;
+          seen[s.id] = stamp;
+          if (l < s.r && r > s.l && t < s.b && b > s.t) return s;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Every solid overlapping the box, written into `out` from the start: returns how many
+   * (out[0] to out[n - 1]; anything after that is left over from before). The list keeps
+   * its room this way: shortening it would make V8 let the room go and make it again.
+   */
+  overlapAll(l, t, r, b, out) {
+    let n = 0;
+    const stamp = this.nextStamp(), seen = this._seen, grid = this.grid, gw = this.gw;
+    const cx0 = this._cx(l), cx1 = this._cx(r), cy1 = this._cy(b);
+    for (let cy = this._cy(t); cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const cell = grid[cy * gw + cx];
+        for (let i = 0; i < cell.length; i++) {
+          const s = cell[i];
+          if (seen[s.id] === stamp) continue;
+          seen[s.id] = stamp;
+          if (l < s.r && r > s.l && t < s.b && b > s.t) out[n++] = s;
+        }
+      }
+    }
+    return n;
+  }
+
+  /**
+   * What a soldier standing in the box (a thin strip under their feet) stands on: the first
+   * solid overlapping it that isn't a jump pad, else the first jump pad, else null.
+   */
+  support(l, t, r, b) {
+    let pad = null;
+    const stamp = this.nextStamp(), seen = this._seen, grid = this.grid, gw = this.gw;
+    const cx0 = this._cx(l), cx1 = this._cx(r), cy1 = this._cy(b);
+    for (let cy = this._cy(t); cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const cell = grid[cy * gw + cx];
+        for (let i = 0; i < cell.length; i++) {
+          const s = cell[i];
+          if (seen[s.id] === stamp) continue;
+          seen[s.id] = stamp;
+          if (l < s.r && r > s.l && t < s.b && b > s.t) {
+            if (!s.bounce) return s;
+            if (!pad) pad = s;
+          }
+        }
+      }
+    }
+    return pad;
+  }
+
+  /**
+   * First point where the segment (x0,y0)->(x1,y1) enters a solid (the first solid found
+   * wins a tie). Returns { t, x, y, nx, ny, solid } with t in [0, 1], or null.
+   * The answer is one record, used again by the next raycast: read what you need from it
+   * straight away, and copy anything you keep (or hold on to across another raycast).
+   */
+  raycast(x0, y0, x1, y1) {
+    const dx = x1 - x0, dy = y1 - y0;
+    const l = Math.min(x0, x1), t = Math.min(y0, y1), r = Math.max(x0, x1), b = Math.max(y0, y1);
+    let best = null, bestT = 0, nx = 0, ny = 0;
+    const stamp = this.nextStamp(), seen = this._seen, grid = this.grid, gw = this.gw;
+    const cx0 = this._cx(l), cx1 = this._cx(r), cy1 = this._cy(b);
+    for (let cy = this._cy(t); cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const cell = grid[cy * gw + cx];
+        for (let i = 0; i < cell.length; i++) {
+          const s = cell[i];
+          if (seen[s.id] === stamp) continue;
+          seen[s.id] = stamp;
+          const h = segmentT(x0, y0, dx, dy, s.l, s.t, s.r, s.b);
+          if (h >= 0 && (!best || h < bestT)) { best = s; bestT = h; nx = SEG.nx; ny = SEG.ny; }
+        }
+      }
+    }
+    if (!best) return null;
+    const hit = this._hit;
+    hit.t = bestT; hit.nx = nx; hit.ny = ny; hit.solid = best;
+    hit.x = x0 + dx * bestT; hit.y = y0 + dy * bestT;
     return hit;
   }
 
   /**
-   * First point where the segment (x0,y0)->(x1,y1) enters a solid.
-   * Returns { t, x, y, nx, ny, solid } with t in [0, 1], or null.
+   * True if both points are in the same grid cell and there's nothing solid in it, so a
+   * raycast between them can't hit anything (quicker to ask than the raycast itself).
    */
-  raycast(x0, y0, x1, y1) {
-    const dx = x1 - x0, dy = y1 - y0;
-    let best = null;
-    this.query(Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1), s => {
-      const h = segmentBox(x0, y0, dx, dy, s.l, s.t, s.r, s.b);
-      if (h && (!best || h.t < best.t)) best = { ...h, solid: s };
-      return false;
-    });
-    if (best) { best.x = x0 + dx * best.t; best.y = y0 + dy * best.t; }
-    return best;
+  emptyBetween(x0, y0, x1, y1) {
+    const cx = this._cx(x0), cy = this._cy(y0);
+    return cx === this._cx(x1) && cy === this._cy(y1) && this.grid[cy * this.gw + cx].length === 0;
   }
 
   /** True if nothing solid blocks the straight line between two points. */
   clearLine(x0, y0, x1, y1) {
-    return !this.raycast(x0, y0, x1, y1);
+    // (Any solid in the way will do: no need to find the nearest.)
+    const dx = x1 - x0, dy = y1 - y0;
+    const l = Math.min(x0, x1), t = Math.min(y0, y1), r = Math.max(x0, x1), b = Math.max(y0, y1);
+    const stamp = this.nextStamp(), seen = this._seen, grid = this.grid, gw = this.gw;
+    const cx0 = this._cx(l), cx1 = this._cx(r), cy1 = this._cy(b);
+    for (let cy = this._cy(t); cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const cell = grid[cy * gw + cx];
+        for (let i = 0; i < cell.length; i++) {
+          const s = cell[i];
+          if (seen[s.id] === stamp) continue;
+          seen[s.id] = stamp;
+          if (segmentT(x0, y0, dx, dy, s.l, s.t, s.r, s.b) >= 0) return false;
+        }
+      }
+    }
+    return true;
   }
 }
 
@@ -315,28 +430,61 @@ export function courses(l, t, r, b, gap, line) {
 }
 
 /**
+ * Math.hypot(x, y), worked out the way V8 does it (the same steps, so exactly the same
+ * answer), without what it costs there: V8's Math.hypot takes any number of arguments,
+ * and every call makes about 80 bytes of garbage and takes five times as long.
+ * (Checked against Math.hypot on millions of pairs, edge cases included.)
+ */
+export function hypot(x, y) {
+  x = Math.abs(x);
+  y = Math.abs(y);
+  // (NaN never counts as the largest, and Infinity wins even over NaN.)
+  let max = 0;
+  if (x > max) max = x;
+  if (y > max) max = y;
+  if (max === Infinity) return Infinity;
+  if (x !== x || y !== y) return NaN;
+  if (max === 0) return 0;
+  const a = x / max, b = y / max;
+  return Math.sqrt(a * a + b * b) * max;
+}
+
+/**
  * Segment vs box (slab method). The segment starts at (x0,y0) and moves by (dx,dy).
  * Returns { t, nx, ny } for the entry point, or null. A segment starting inside the box hits at t = 0.
  */
 export function segmentBox(x0, y0, dx, dy, l, t, r, b) {
+  const h = segmentT(x0, y0, dx, dy, l, t, r, b);
+  return h < 0 ? null : { t: h, nx: SEG.nx, ny: SEG.ny };
+}
+
+// The side segmentT() last hit: its outward normal (nx, ny).
+export const SEG = { nx: 0, ny: 0 };
+
+/**
+ * segmentBox() without making an object: returns t (0 to 1) where the segment enters the
+ * box, or -1 if it misses; the normal of the side it went in by is left in SEG.
+ */
+export function segmentT(x0, y0, dx, dy, l, t, r, b) {
   let tmin = 0, tmax = 1, nx = 0, ny = 0;
   if (dx === 0) {
-    if (x0 <= l || x0 >= r) return null;
+    if (x0 <= l || x0 >= r) return -1;
   } else {
     let t1 = (l - x0) / dx, t2 = (r - x0) / dx, n = -1;
-    if (t1 > t2) { [t1, t2] = [t2, t1]; n = 1; }
+    if (t1 > t2) { const q = t1; t1 = t2; t2 = q; n = 1; }
     if (t1 > tmin) { tmin = t1; nx = n; ny = 0; }
     if (t2 < tmax) tmax = t2;
-    if (tmin > tmax) return null;
+    if (tmin > tmax) return -1;
   }
   if (dy === 0) {
-    if (y0 <= t || y0 >= b) return null;
+    if (y0 <= t || y0 >= b) return -1;
   } else {
     let t1 = (t - y0) / dy, t2 = (b - y0) / dy, n = -1;
-    if (t1 > t2) { [t1, t2] = [t2, t1]; n = 1; }
+    if (t1 > t2) { const q = t1; t1 = t2; t2 = q; n = 1; }
     if (t1 > tmin) { tmin = t1; nx = 0; ny = n; }
     if (t2 < tmax) tmax = t2;
-    if (tmin > tmax) return null;
+    if (tmin > tmax) return -1;
   }
-  return { t: tmin, nx, ny };
+  SEG.nx = nx; SEG.ny = ny;
+  return tmin;
 }

@@ -28,25 +28,45 @@ const SPEED = { lead: 0.6, slow: 0.22, tail: 0.5 };
 const FX = new Set(['blood', 'sparks', 'muzzle', 'shell', 'smoke', 'explosion', 'bang', 'rubble', 'built', 'fire', 'trail', 'ring', 'whack',
   'sparkle', 'spark', 'plane', 'gibs', 'killFlash']);
 
-/** A soldier as drawn: the same fields as a soldier in an online snapshot (protocol.js). */
-function soldierState(s) {
+/**
+ * A soldier as drawn: the same fields as a soldier in an online snapshot (protocol.js),
+ * written into `o` (a record from an older frame, used again) when there's one.
+ */
+function soldierState(s, o) {
   const b = s.body, a = s.anim;
-  return {
-    id: s.id, alive: s.alive, crouching: b.crouching, onGround: b.onGround, jetting: b.jetting, hasJetpack: b.hasJetpack,
-    burning: s.burnTicks > 0, protected: s.spawnProtect > 0, kamikaze: !!s.kamikaze, facing: s.facing, padLaunch: !!b.padLaunch,
-    x: b.x, y: b.y, vx: b.vx, vy: b.vy, aim: s.aim, health: s.health, armour: s.armour, current: s.current,
-    anim: { run: a.run, flip: a.flip, land: a.land, recoil: a.recoil, swing: a.swing },
-    rope: b.rope ? { x: b.rope.x, y: b.rope.y, len: b.rope.len } : null, jugger: s.jugger > 0 ? 1 : 0, streak: s.streak || 0, cls: s.cls,
-  };
+  if (!o) {
+    o = {
+      id: 0, alive: false, crouching: false, onGround: false, jetting: false, hasJetpack: false,
+      burning: false, protected: false, kamikaze: false, facing: 1, padLaunch: false,
+      x: 0, y: 0, vx: 0, vy: 0, aim: 0, health: 0, armour: 0, current: null,
+      anim: { run: 0, flip: 0, land: 0, recoil: 0, swing: 0 }, rope: null, jugger: 0, streak: 0, cls: undefined,
+    };
+  }
+  o.id = s.id; o.alive = s.alive; o.crouching = b.crouching; o.onGround = b.onGround; o.jetting = b.jetting; o.hasJetpack = b.hasJetpack;
+  o.burning = s.burnTicks > 0; o.protected = s.spawnProtect > 0; o.kamikaze = !!s.kamikaze; o.facing = s.facing; o.padLaunch = !!b.padLaunch;
+  o.x = b.x; o.y = b.y; o.vx = b.vx; o.vy = b.vy; o.aim = s.aim; o.health = s.health; o.armour = s.armour; o.current = s.current;
+  const an = o.anim;
+  an.run = a.run; an.flip = a.flip; an.land = a.land; an.recoil = a.recoil; an.swing = a.swing;
+  if (b.rope) {
+    const r = o.rope || (o.rope = { x: 0, y: 0, len: 0 });
+    r.x = b.rope.x; r.y = b.rope.y; r.len = b.rope.len;
+  } else o.rope = null;
+  o.jugger = s.jugger > 0 ? 1 : 0; o.streak = s.streak || 0; o.cls = s.cls;
+  return o;
 }
 
-/** A projectile as drawn (as in an online snapshot). */
-function projectileState(p) {
-  return {
-    id: p.id, kind: p.kind, sprite: p.sprite, x: p.x, y: p.y, vx: p.vx || 0, vy: p.vy || 0, angle: p.angle || 0, dir: p.dir ?? 1,
-    armed: p.armed > 0 ? 1 : 0, stuck: !!p.stuck, delay: p.delay > 0 ? 1 : 0, onGround: !!p.onGround, praying: !!p.praying,
-    age: p.age || 0, life: p.life || 0, r: p.r || 0, team: p.team || 0,
-  };
+/** A projectile as drawn (as in an online snapshot), written into `o` when there's one. */
+function projectileState(p, o) {
+  if (!o) {
+    o = {
+      id: 0, kind: null, sprite: null, x: 0, y: 0, vx: 0, vy: 0, angle: 0, dir: 1,
+      armed: 0, stuck: false, delay: 0, onGround: false, praying: false, age: 0, life: 0, r: 0, team: 0,
+    };
+  }
+  o.id = p.id; o.kind = p.kind; o.sprite = p.sprite; o.x = p.x; o.y = p.y; o.vx = p.vx || 0; o.vy = p.vy || 0; o.angle = p.angle || 0; o.dir = p.dir ?? 1;
+  o.armed = p.armed > 0 ? 1 : 0; o.stuck = !!p.stuck; o.delay = p.delay > 0 ? 1 : 0; o.onGround = !!p.onGround; o.praying = !!p.praying;
+  o.age = p.age || 0; o.life = p.life || 0; o.r = p.r || 0; o.team = p.team || 0;
+  return o;
 }
 
 /** The last few seconds of a match, kept for its replay. */
@@ -56,6 +76,11 @@ export class Tape {
     this.events = [];   // { tick, s: [{ name, x, y, to }], fx: [[method, ...args]] }
     this.pending = null;
     this.off = false;
+    // Frames this tape made that have dropped off the front, to fill again (with their
+    // soldiers' and projectiles' records): once it's full, taping makes no garbage. A replay
+    // made from the tape pins it (its frames aren't used again from then on).
+    this.spare = [];
+    this.pinned = false;
   }
 
   /** Offline and on the host: after every game update. */
@@ -70,14 +95,31 @@ export class Tape {
     }
     this.off = false;
     if (this.pending) { this.pending.tick = game.tick; this.events.push(this.pending); this.pending = null; }
-    // (Every update in small games; every other one, or every third, in bigger ones.)
-    const every = game.soldiers.length <= 24 ? 1 : game.soldiers.length <= 64 ? 2 : 3;
-    if (game.tick % every === 0 || game.over) {
-      const live = [];
-      for (const p of game.projectiles) if (!p.dead) live.push(projectileState(p));
-      this.frames.push({ tick: game.tick, soldiers: game.soldiers.map(soldierState), projectiles: live });
-    }
+    // (Every other update: the replay draws in between.)
+    if (game.tick % 2 === 0 || game.over) this.frames.push(this.fill(this.spare.pop() || { tick: 0, soldiers: [], projectiles: [], taped: true }, game));
     this.trim(game.tick);
+  }
+
+  /** Frame f, filled with the game as it is now (its records written over). */
+  fill(f, game) {
+    f.tick = game.tick;
+    const ss = f.soldiers, list = game.soldiers;
+    for (let i = 0; i < list.length; i++) {
+      if (i < ss.length) soldierState(list[i], ss[i]);
+      else ss.push(soldierState(list[i], null));
+    }
+    ss.length = list.length;
+    const ps = f.projectiles, all = game.projectiles;
+    let n = 0;
+    for (let i = 0; i < all.length; i++) {
+      const p = all[i];
+      if (p.dead) continue;
+      if (n < ps.length) projectileState(p, ps[n]);
+      else ps.push(projectileState(p, null));
+      n++;
+    }
+    ps.length = n;
+    return f;
   }
 
   /** Offline and on the host: a sound the game made this update. */
@@ -117,7 +159,10 @@ export class Tape {
   }
 
   trim(now) {
-    while (this.frames.length && this.frames[0].tick < now - KEEP) this.frames.shift();
+    while (this.frames.length && this.frames[0].tick < now - KEEP) {
+      const f = this.frames.shift();
+      if (f.taped && !this.pinned && this.spare.length < 4) this.spare.push(f);
+    }
     while (this.events.length && this.events[0].tick < now - KEEP) this.events.shift();
   }
 }
@@ -128,12 +173,19 @@ export class Tape {
  */
 export function tapeFx(fx, tape) {
   if (!fx || fx.taped) return fx;
+  // (Each method's wrapper is made once, not every time an effect is shown.)
+  const wrappers = new Map();
   return new Proxy(fx, {
     get(target, prop) {
       if (prop === 'taped') return true;
       const v = target[prop];
       if (typeof v !== 'function' || prop === 'update' || prop === 'add' || prop === 'trim') return v;
-      return (...args) => { tape.fx(prop, args); return v.apply(target, args); };
+      let w = wrappers.get(prop);
+      if (!w || w.fn !== v) {
+        w = { fn: v, call: (...args) => { tape.fx(prop, args); return v.apply(target, args); } };
+        wrappers.set(prop, w);
+      }
+      return w.call;
     },
   });
 }
@@ -157,6 +209,8 @@ export class ReplayPlayer {
     this.game = game;
     this.kill = kill;
     const frames = tape ? tape.frames.filter(f => f.tick >= kill.tick - LEAD - 6 && f.tick <= kill.tick + TAIL) : [];
+    // (The tape's frames are this replay's now: the tape doesn't use them again.)
+    if (tape) tape.pinned = true;
     this.frames = frames;
     const first = frames[0], last = frames[frames.length - 1];
     this.ok = frames.length >= 3 && first.tick <= kill.tick - 20 && last.tick >= kill.tick - 4;

@@ -6,13 +6,19 @@
 
 import { BODY, RULES, MOTION } from './config.js';
 import { WEAPONS, HEADSHOT_MULTIPLIER } from './weapons.js';
-import { segmentBox } from './map.js';
+import { segmentT, SEG, hypot } from './map.js';
 import { weaponFor } from './classes.js';
 import { projectileBeacon, shotBeacon, blastGadgets, meleeBeacon } from './gadgets.js';
 import { build } from './building.js';
 
 const HEAD_ZONE = 9; // top pixels of the body box that count as a headshot
 const MAX_MINES = 5; // per soldier
+
+// Lists for game.nearInto() to put soldiers in, one for each place that asks (filled again
+// each time, rather than a new list every shot and every flame, every update). None of these
+// places can be asked again while it's still going through its list.
+const NEAR_SHOT = [], NEAR_FOE = [], NEAR_MELEE = [], NEAR_FLASH = [], NEAR_FLAME = [], NEAR_FIRE = [],
+  NEAR_GAS = [], NEAR_WALKER = [], NEAR_MINE = [], NEAR_DONKEY = [], NEAR_BLAST = [];
 
 export function soldierBox(s) {
   const top = s.body.crouching ? BODY.crouchTop : BODY.top;
@@ -25,38 +31,45 @@ export function canHurt(game, attacker, target) {
   return !(game.rules.teams && attacker.team === target.team);
 }
 
-/** Nearest soldier the segment hits (excluding `skip`), or null. */
+/** Nearest soldier the segment hits (excluding `skip`): { t, nx, ny, soldier, box }, or null. */
 export function hitSoldier(game, x0, y0, dx, dy, skip, owner) {
-  const len = Math.hypot(dx, dy);
+  const len = hypot(dx, dy);
+  const crowded = game.crowded;
   // In big games, a long shot is checked a stretch at a time from the gun, stopping
   // one stretch after the first hit (nobody further on can be hit first).
-  const pieces = game.crowded ? Math.max(1, Math.ceil(len / 160)) : 1;
-  let best = null, firstHit = -1;
+  const pieces = crowded ? Math.max(1, Math.ceil(len / 160)) : 1;
+  let best = null, bestT = 0, nx = 0, ny = 0, firstHit = -1;
   for (let i = 0; i < pieces; i++) {
     if (firstHit >= 0 && i > firstHit + 1) break;
     const a = i / pieces, b = (i + 1) / pieces;
     const ax = x0 + dx * a, ay = y0 + dy * a, bx = x0 + dx * b, by = y0 + dy * b;
-    for (const s of game.near(Math.min(ax, bx) - 10, Math.min(ay, by) - 16, Math.max(ax, bx) + 10, Math.max(ay, by) + 26)) {
+    const near = NEAR_SHOT, n = game.nearInto(Math.min(ax, bx) - 10, Math.min(ay, by) - 16, Math.max(ax, bx) + 10, Math.max(ay, by) + 26, near);
+    for (let j = 0; j < n; j++) {
+      const s = near[j];
       if (s === skip || !s.alive || !canHurt(game, owner, s)) continue;
-      const bx2 = soldierBox(s);
-      const h = segmentBox(x0, y0, dx, dy, bx2.l, bx2.t, bx2.r, bx2.b);
+      // (The soldier's box, as soldierBox() has it.)
+      const sb = s.body, top = sb.crouching ? BODY.crouchTop : BODY.top;
+      const h = segmentT(x0, y0, dx, dy, sb.x - BODY.halfW, sb.y + top, sb.x + BODY.halfW, sb.y + BODY.bottom);
       // (Ties, like a shot starting inside two soldiers, go to the lower id, as in
       // the list of soldiers; the grid finds soldiers in a different order.)
-      if (h && (!best || h.t < best.t || (game.crowded && h.t === best.t && s.id < best.soldier.id))) best = { ...h, soldier: s, box: bx2 };
+      if (h >= 0 && (!best || h < bestT || (crowded && h === bestT && s.id < best.id))) { best = s; bestT = h; nx = SEG.nx; ny = SEG.ny; }
     }
     if (best && firstHit < 0) firstHit = i;
   }
-  return best;
+  return best ? { t: bestT, nx, ny, soldier: best, box: soldierBox(best) } : null;
 }
 
 /** Nearest enemy of `owner` near (x, y) that's in plain sight, or null. */
 export function nearestEnemy(game, owner, x, y, range, needSight = true) {
   let best = null, bd = range;
-  for (const s of game.near(x - range, y - range, x + range, y + range)) {
+  const near = NEAR_FOE, n = game.nearInto(x - range, y - range, x + range, y + range, near);
+  for (let i = 0; i < n; i++) {
+    const s = near[i];
     if (s === owner || !s.alive || !canHurt(game, owner, s) || s.spawnProtect > 0) continue;
-    const d = Math.hypot(s.x - x, s.y - 8 - y);
+    const b = s.body;
+    const d = hypot(b.x - x, b.y - 8 - y);
     if (d >= bd) continue;
-    if (needSight && !game.map.clearLine(x, y, s.x, s.y - 8)) continue;
+    if (needSight && !game.map.clearLine(x, y, b.x, b.y - 8)) continue;
     bd = d; best = s;
   }
   return best;
@@ -257,7 +270,7 @@ const LAUNCH = {
       let best = null, bs = Infinity;
       for (const o of game.soldiers) {
         if (o === s || !o.alive || !canHurt(game, s, o)) continue;
-        const ax = o.x - s.shoulderX, ay = o.y - 8 - s.shoulderY, d = Math.hypot(ax, ay);
+        const ax = o.body.x - s.shoulderX, ay = o.body.y - 8 - s.shoulderY, d = hypot(ax, ay);
         const off = Math.acos(Math.max(-1, Math.min(1, (ax * m.dx + ay * m.dy) / (d || 1))));
         const score = off * 400 + d * 0.3;
         if (off < 1.2 && score < bs) { bs = score; best = o; }
@@ -270,7 +283,8 @@ const LAUNCH = {
   flame(game, s, def, id, m) {
     for (let i = 0; i < 2; i++) {
       const [vx, vy] = aimed(game, s, def.spread, def.speed * (0.8 + game.rng() * 0.4), 1); // (flames spray just the same)
-      spawn(game, { kind: 'flame', sprite: 'flame', x: m.x, y: m.y, vx: vx + s.body.vx * 0.5, vy: vy + s.body.vy * 0.3, owner: s, weapon: id, life: def.life * (0.8 + game.rng() * 0.4), hit: new Set() });
+      // (hit: the soldiers it has burnt, a Set made when it first burns someone.)
+      spawn(game, { kind: 'flame', sprite: 'flame', x: m.x, y: m.y, vx: vx + s.body.vx * 0.5, vy: vy + s.body.vy * 0.3, owner: s, weapon: id, life: def.life * (0.8 + game.rng() * 0.4), hit: null });
     }
     return true;
   },
@@ -334,7 +348,7 @@ const LAUNCH = {
 
   teleport(game, s, def) {
     let t = aimTarget(s);
-    const dx = t.x - s.shoulderX, dy = t.y - s.shoulderY, d = Math.hypot(dx, dy);
+    const dx = t.x - s.shoulderX, dy = t.y - s.shoulderY, d = hypot(dx, dy);
     if (d > def.range) t = { x: s.shoulderX + dx / d * def.range, y: s.shoulderY + dy / d * def.range };
     const spot = freeSpot(game, t.x, t.y + 6);
     if (!spot) { game.notify(s, "Can't teleport there"); return false; }
@@ -357,7 +371,7 @@ const LAUNCH = {
     const x1 = s.shoulderX + m.dx * def.range, y1 = s.shoulderY + m.dy * def.range;
     const hit = game.map.raycast(s.shoulderX, s.shoulderY, x1, y1);
     if (!hit) { game.fx?.trail(s.shoulderX, s.shoulderY, x1, y1); return false; }
-    const len = Math.hypot(hit.x - s.x, hit.y - (s.y - 6));
+    const len = hypot(hit.x - s.x, hit.y - (s.y - 6));
     s.body.rope = { x: hit.x, y: hit.y, len: Math.max(20, len) };
     s.body.onGround = false;
     return true;
@@ -395,10 +409,12 @@ function meleeHit(game, s, def, id) {
   const sx = s.shoulderX, sy = s.shoulderY;
   let best = null, bd = Infinity;
   const reach = def.reach + 12;
-  for (const o of game.near(sx - reach, sy - reach, sx + reach, sy + reach)) {
+  const near = NEAR_MELEE, n = game.nearInto(sx - reach, sy - reach, sx + reach, sy + reach, near);
+  for (let i = 0; i < n; i++) {
+    const o = near[i];
     if (o === s || !o.alive || !canHurt(game, s, o)) continue;
-    const cx = o.x, cy = o.y - 6;
-    const rx = cx - sx, ry = cy - sy, d = Math.hypot(rx, ry);
+    const cx = o.body.x, cy = o.body.y - 6;
+    const rx = cx - sx, ry = cy - sy, d = hypot(rx, ry);
     if (d > def.reach + 12) continue;
     if (d > 8 && (rx * dx + ry * dy) / d < 0.3) continue; // behind you
     if (!game.map.clearLine(sx, sy, cx, cy)) continue;
@@ -475,17 +491,29 @@ export function updateProjectiles(game) {
   // (The Sentry Sheep out there, for shots and blasts to hit: kept apart, as game.projectiles
   // only holds what's new while they move.)
   if (game.sentries?.length) game.sentries = game.sentries.filter(p => !p.dead);
-  game.projectiles = []; // anything spawned during this update lands here
-  const keep = [];
-  for (const p of list) {
+  // Anything spawned during this update lands in a list of its own (kept to use again), and
+  // the ones still going are kept in the same list, moved up over the ones that are gone.
+  // (A new one if it's the list itself: an update an error stopped part way through leaves it
+  // there, and filling a list from itself would never end.)
+  let fresh = game.spawnList;
+  if (!fresh || fresh === list) fresh = game.spawnList = [];
+  game.projectiles = fresh;
+  let n = 0;
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
     if (p.dead) continue;
-    if (p.delay > 0) { p.delay--; keep.push(p); continue; } // air strike bombs waiting their turn
+    if (p.delay > 0) { p.delay--; list[n++] = p; continue; } // air strike bombs waiting their turn
     p.life--;
     p.age++;
     p.px = p.x; p.py = p.y;
-    if (STEP[p.kind](game, p) && !p.dead) keep.push(p);
+    if (STEP[p.kind](game, p) && !p.dead) list[n++] = p;
   }
-  game.projectiles = keep.concat(game.projectiles);
+  list.length = n;
+  // (What's new goes after them. Something may have swapped the list meanwhile: then its list.)
+  const added = game.projectiles;
+  for (let i = 0; i < added.length; i++) list.push(added[i]);
+  fresh.length = 0;
+  game.projectiles = list;
 }
 
 /** Set off a projectile's payload: blast, cluster bomblets, fire, gas. */
@@ -538,13 +566,15 @@ function detonate(game, p, direct = null) {
 export function flash(game, x, y, f) {
   game.fx?.bang?.(x, y);
   game.noise(x, y, 900, null);
-  for (const s of game.near(x - f.radius, y - f.radius, x + f.radius, y + f.radius)) {
+  const list = NEAR_FLASH, n = game.nearInto(x - f.radius, y - f.radius, x + f.radius, y + f.radius, list);
+  for (let i = 0; i < n; i++) {
+    const s = list[i];
     if (!s.alive) continue;
-    const hx = s.x, hy = s.y - 17;
-    const d = Math.hypot(hx - x, hy - y);
+    const hx = s.body.x, hy = s.body.y - 17;
+    const d = hypot(hx - x, hy - y);
     if (d > f.radius || !game.map.clearLine(x, y, hx, hy)) continue;
     const near = Math.sqrt(1 - d / f.radius);
-    const facing = d < 30 || Math.sign(x - s.x) === s.facing ? 1 : 0.4;
+    const facing = d < 30 || Math.sign(x - s.body.x) === s.facing ? 1 : 0.4;
     const ticks = f.duration * near * facing;
     if (ticks > (s.flashTicks || 0)) { s.flashTicks = ticks; s.flashFull = ticks; }
     if (ticks > 60 && !s.isBot) game.sound('flashRing', null, null, s.id);
@@ -568,7 +598,7 @@ export function smokeBetween(game, x0, y0, x1, y1) {
     // Distance from the cloud's middle to the segment.
     const dx = x1 - x0, dy = y1 - y0, len2 = dx * dx + dy * dy || 1;
     const t = Math.max(0, Math.min(1, ((p.x - x0) * dx + (p.y - y0) * dy) / len2));
-    if (Math.hypot(x0 + dx * t - p.x, y0 + dy * t - p.y) < r) return true;
+    if (hypot(x0 + dx * t - p.x, y0 + dy * t - p.y) < r) return true;
   }
   return false;
 }
@@ -601,7 +631,7 @@ const STEP = {
     if (hit) {
       const hy = p.y + p.vy * hit.t;
       const head = hy < hit.box.t + HEAD_ZONE;
-      const sp = Math.hypot(p.vx, p.vy);
+      const sp = hypot(p.vx, p.vy);
       damage(game, hit.soldier, p.damage * (head ? HEADSHOT_MULTIPLIER : 1), p.owner, p.weapon, { dirX: p.vx / sp, dirY: p.vy / sp, knock: p.knock, headshot: head });
       p.x += p.vx * hit.t; p.y = hy;
       return false;
@@ -625,7 +655,7 @@ const STEP = {
     if (hit) {
       const hy = p.y + p.vy * hit.t;
       const head = hy < hit.box.t + HEAD_ZONE;
-      const sp = Math.hypot(p.vx, p.vy);
+      const sp = hypot(p.vx, p.vy);
       damage(game, hit.soldier, p.cfg.damage * (head ? p.cfg.headMultiplier : 1), p.owner, p.weapon, { dirX: p.vx / sp, dirY: p.vy / sp, knock: p.cfg.knock, headshot: head });
       return false;
     }
@@ -731,7 +761,7 @@ const STEP = {
         while (d > Math.PI) d -= Math.PI * 2;
         while (d < -Math.PI) d += Math.PI * 2;
         a += Math.max(-c.homing.turn, Math.min(c.homing.turn, d));
-        const sp = Math.hypot(p.vx, p.vy);
+        const sp = hypot(p.vx, p.vy);
         p.vx = Math.cos(a) * sp; p.vy = Math.sin(a) * sp;
       }
     }
@@ -742,7 +772,7 @@ const STEP = {
     const sentry = findSentry(game, p.owner, p.x, p.y, p.vx, p.vy, Math.min(hit ? hit.t : 1, wall ? wall.t : 1));
     if (hit || wall || sentry) {
       const t = sentry ? sentry.t : hit ? hit.t : wall.t;
-      const back = 2 / (Math.hypot(p.vx, p.vy) || 1);
+      const back = 2 / (hypot(p.vx, p.vy) || 1);
       p.x += p.vx * Math.max(0, t - back); p.y += p.vy * Math.max(0, t - back);
       detonate(game, p, hit && !sentry ? hit.soldier : null);
       return false;
@@ -765,11 +795,14 @@ const STEP = {
       p.life -= 4 * MOTION.timeScale;
     } else { p.x = nx; p.y = ny; }
     const r = 3 + p.age * MOTION.flameGrow;
-    for (const s of game.near(p.x - r, p.y - r, p.x + r, p.y + r)) {
-      if (s === p.owner || p.hit.has(s) || !canHurt(game, p.owner, s)) continue;
-      const b = soldierBox(s);
-      if (p.x + r > b.l && p.x - r < b.r && p.y + r > b.t && p.y - r < b.b) {
-        p.hit.add(s);
+    const near = NEAR_FLAME, n = game.nearInto(p.x - r, p.y - r, p.x + r, p.y + r, near);
+    for (let i = 0; i < n; i++) {
+      const s = near[i];
+      if (s === p.owner || (p.hit && p.hit.has(s)) || !canHurt(game, p.owner, s)) continue;
+      // (Touching the soldier's box, as soldierBox() has it.)
+      const b = s.body, top = b.crouching ? BODY.crouchTop : BODY.top;
+      if (p.x + r > b.x - BODY.halfW && p.x - r < b.x + BODY.halfW && p.y + r > b.y + top && p.y - r < b.y + BODY.bottom) {
+        (p.hit || (p.hit = new Set())).add(s);
         damage(game, s, WEAPONS.Flamer.damage, p.owner, p.weapon, { dirX: p.vx * 0.1, dirY: 0, knock: 0.05 });
         ignite(s, p.owner);
       }
@@ -790,10 +823,12 @@ const STEP = {
     }
     if (game.tick % 4 === p.id % 4) game.fx?.fire(p.x + (game.rng() - 0.5) * 6, p.y - 2);
     if (game.tick % 6 === p.id % 6) {
-      for (const s of game.near(p.x - 8, p.y - 12, p.x + 8, p.y + 2)) {
+      const near = NEAR_FIRE, n = game.nearInto(p.x - 8, p.y - 12, p.x + 8, p.y + 2, near);
+      for (let i = 0; i < n; i++) {
+        const s = near[i];
         if (!canHurt(game, p.owner, s) || s.spawnProtect > 0) continue;
-        const b = soldierBox(s);
-        if (p.x + 8 > b.l && p.x - 8 < b.r && p.y + 2 > b.t && p.y - 12 < b.b) {
+        const b = s.body, top = b.crouching ? BODY.crouchTop : BODY.top;
+        if (p.x + 8 > b.x - BODY.halfW && p.x - 8 < b.x + BODY.halfW && p.y + 2 > b.y + top && p.y - 12 < b.y + BODY.bottom) {
           damage(game, s, 1.2, p.owner, p.weapon, { burn: true });
           ignite(s, p.owner);
         }
@@ -811,9 +846,11 @@ const STEP = {
     p.r = Math.min(c.radius, p.r + 0.3 * MOTION.timeScale);
     const fade = Math.min(1, p.life / 60);
     const gr = p.r * fade + 6;
-    for (const s of game.near(p.x - gr, p.y - gr, p.x + gr, p.y + gr)) {
+    const near = NEAR_GAS, n = game.nearInto(p.x - gr, p.y - gr, p.x + gr, p.y + gr, near);
+    for (let i = 0; i < n; i++) {
+      const s = near[i];
       if (!s.alive || s.spawnProtect > 0 || s.gassed === game.tick || !canHurt(game, p.owner, s)) continue;
-      if (Math.hypot(s.x - p.x, s.y - 8 - p.y) < p.r * fade + 6) {
+      if (hypot(s.body.x - p.x, s.body.y - 8 - p.y) < p.r * fade + 6) {
         s.gassed = game.tick; // overlapping clouds don't stack
         damage(game, s, c.dpt, p.owner, p.weapon, { burn: true, poison: true });
       }
@@ -866,9 +903,12 @@ const STEP = {
     }
     if (game.tick % 90 === p.id % 90) game.sound(p.weapon === 'MadCow' ? 'moo' : p.weapon === 'OldWoman' ? 'mumble' : 'baa', p.x, p.y);
     if (c.contact) {
-      for (const s of game.near(p.x - 11, p.y - 14, p.x + 11, p.y + 22)) {
+      const near = NEAR_WALKER, n = game.nearInto(p.x - 11, p.y - 14, p.x + 11, p.y + 22, near);
+      for (let i = 0; i < n; i++) {
+        const s = near[i];
         if (s === p.owner || !s.alive || !canHurt(game, p.owner, s)) continue;
-        if (Math.abs(s.x - p.x) < 11 && s.y - 22 < p.y && s.y + 14 > p.y - 12) { detonate(game, p, s); return false; }
+        const b = s.body;
+        if (Math.abs(b.x - p.x) < 11 && b.y - 22 < p.y && b.y + 14 > p.y - 12) { detonate(game, p, s); return false; }
       }
     }
     if (p.y > map.bounds.bottom + RULES.fallDeathMargin) return false;
@@ -887,7 +927,7 @@ const STEP = {
       let d = want - p.angle;
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
-      if (Math.hypot(t.x - p.x, t.y - p.y) > 12) p.angle += Math.max(-c.turn, Math.min(c.turn, d));
+      if (hypot(t.x - p.x, t.y - p.y) > 12) p.angle += Math.max(-c.turn, Math.min(c.turn, d));
     }
     p.vx = Math.cos(p.angle) * c.speed; p.vy = Math.sin(p.angle) * c.speed;
     const wall = game.map.raycast(p.x, p.y, p.x + p.vx, p.y + p.vy);
@@ -920,9 +960,11 @@ const STEP = {
       if (p.armed > 0) p.armed--;
       else if (p.triggered < 0) {
         const tr = c.mine.trigger;
-        for (const s of game.near(p.x - tr, p.y - tr, p.x + tr, p.y + tr)) {
+        const near = NEAR_MINE, n = game.nearInto(p.x - tr, p.y - tr, p.x + tr, p.y + tr, near);
+        for (let i = 0; i < n; i++) {
+          const s = near[i];
           if (s === p.owner || !s.alive || !canHurt(game, p.owner, s)) continue;
-          if (Math.hypot(s.x - p.x, s.y - p.y) < c.mine.trigger) { p.triggered = c.mine.delay; game.sound('beep', p.x, p.y); break; }
+          if (hypot(s.body.x - p.x, s.body.y - p.y) < c.mine.trigger) { p.triggered = c.mine.delay; game.sound('beep', p.x, p.y); break; }
         }
       } else if (--p.triggered <= 0) { detonate(game, p); return false; }
       return p.life > 0;
@@ -996,9 +1038,11 @@ const STEP = {
       blastGadgets(game, p.x, p.y, c.blast, p.owner);
     }
     p.inside = inside;
-    for (const s of game.near(p.x - 16, p.y - 12, p.x + 16, p.y + 24)) {
+    const near = NEAR_DONKEY, n = game.nearInto(p.x - 16, p.y - 12, p.x + 16, p.y + 24, near);
+    for (let i = 0; i < n; i++) {
+      const s = near[i];
       if (!s.alive || !canHurt(game, p.owner, s) || s === p.owner) continue;
-      if (Math.abs(s.x - p.x) < 16 && Math.abs(s.y - 6 - p.y) < 18 && !p.squashed?.has(s)) {
+      if (Math.abs(s.body.x - p.x) < 16 && Math.abs(s.body.y - 6 - p.y) < 18 && !p.squashed?.has(s)) {
         (p.squashed ||= new Set()).add(s);
         explode(game, p.x, p.y, c.blast, p.owner, p.weapon, s);
         blastGadgets(game, p.x, p.y, c.blast, p.owner);
@@ -1044,8 +1088,8 @@ function findSentry(game, owner, x, y, dx, dy, maxT = 1) {
   const l = Math.min(x, x + dx), r = Math.max(x, x + dx), t = Math.min(y, y + dy), b = Math.max(y, y + dy);
   for (const p of game.sentries) {
     if (p.x + SENTRY_W < l || p.x - SENTRY_W > r || p.y < t || p.y - SENTRY_H > b || !canHitSentry(game, owner, p)) continue;
-    const h = segmentBox(x, y, dx, dy, p.x - SENTRY_W, p.y - SENTRY_H, p.x + SENTRY_W, p.y);
-    if (h && h.t < maxT && (!best || h.t < best.t)) best = { t: h.t, p };
+    const h = segmentT(x, y, dx, dy, p.x - SENTRY_W, p.y - SENTRY_H, p.x + SENTRY_W, p.y);
+    if (h >= 0 && h < maxT && (!best || h < best.t)) best = { t: h, p };
   }
   return best;
 }
@@ -1073,7 +1117,7 @@ function blastSentries(game, x, y, blast, owner) {
   const reach = blast.radius + 10;
   for (const p of game.sentries) {
     if (Math.abs(p.x - x) > reach || Math.abs(p.y - 8 - y) > reach || !canHitSentry(game, owner, p)) continue;
-    const d = Math.hypot(p.x - x, p.y - 8 - y);
+    const d = hypot(p.x - x, p.y - 8 - y);
     if (d > reach) continue;
     if (!game.map.clearLine(x, y, p.x, p.y - 8) && !game.map.clearLine(x, y, p.x, p.y - 15)) continue;
     damageSentry(game, p, blast.damage * 1.5 * Math.max(0.15, 1 - d / reach), owner);
@@ -1085,7 +1129,7 @@ function meleeSentry(game, s, def) {
   if (!game.sentries?.length || !(def.damage > 0)) return false;
   const dx = Math.cos(s.aim), dy = Math.sin(s.aim);
   for (const p of game.sentries) {
-    const rx = p.x - s.shoulderX, ry = p.y - 8 - s.shoulderY, d = Math.hypot(rx, ry);
+    const rx = p.x - s.shoulderX, ry = p.y - 8 - s.shoulderY, d = hypot(rx, ry);
     if (d > def.reach + 12 || (d > 8 && (rx * dx + ry * dy) / d < 0.3) || !canHitSentry(game, s, p)) continue;
     game.sound(def.sound, p.x, p.y);
     game.fx?.whack(p.x, p.y - 8);
@@ -1099,6 +1143,9 @@ function ignite(s, by) {
   if (s.alive && s.spawnProtect <= 0) { s.burnTicks = RULES.burnTicks; s.burnBy = by; }
 }
 
+// Blasts going off right now (one inside another: see explode()).
+let blasting = 0;
+
 /** Blast damage with falloff, blocked by walls; also throws soldiers around and sets off nearby mines. */
 export function explode(game, x, y, blast, owner, weapon, direct = null) {
   game.fx?.explosion(x, y, blast.radius * 0.5);
@@ -1106,18 +1153,23 @@ export function explode(game, x, y, blast, owner, weapon, direct = null) {
   game.noise(x, y, 1100, owner);
   game.shake(x, y, Math.min(16, 5 + blast.radius / 20));
   const reach = blast.radius + 8;
-  let hit = game.near(x - reach, y - reach, x + reach, y + reach);
-  if (direct && !hit.includes(direct)) hit = [...hit, direct];
-  for (const s of hit) {
+  // Everyone near, then the one hit directly if they aren't among them. (Its own list, unless
+  // a blast is set off while another's still going: then a new one.)
+  const near = blasting ? [] : NEAR_BLAST, n = game.nearInto(x - reach, y - reach, x + reach, y + reach, near);
+  blasting++;
+  let extra = direct;
+  for (let i = 0; i < n && extra; i++) if (near[i] === direct) extra = null;
+  for (let i = 0, end = extra ? n + 1 : n; i < end; i++) {
+    const s = i < n ? near[i] : extra;
     if (!s.alive) continue;
-    const cx = s.x, cy = s.y - 5;
-    const d = Math.hypot(cx - x, cy - y);
+    const cx = s.body.x, cy = s.body.y - 5;
+    const d = hypot(cx - x, cy - y);
     if (d > reach && s !== direct) continue;
-    if (s !== direct && !game.map.clearLine(x, y, cx, cy) && !game.map.clearLine(x, y, cx, s.y - 18)) continue;
+    if (s !== direct && !game.map.clearLine(x, y, cx, cy) && !game.map.clearLine(x, y, cx, s.body.y - 18)) continue;
     const f = s === direct ? 1 : Math.max(0.15, 1 - d / reach);
     const self = s === owner;
     let dirX = (cx - x) / (d || 1), dirY = (cy - y) / (d || 1) - 0.6;
-    const dl = Math.hypot(dirX, dirY) || 1;
+    const dl = hypot(dirX, dirY) || 1;
     dirX /= dl; dirY /= dl;
     // Knockback applies even to teammates and yourself (rocket jumps!), not to a Juggernaut.
     const k = blast.knock * f * (self ? 0.85 : 1);
@@ -1131,11 +1183,12 @@ export function explode(game, x, y, blast, owner, weapon, direct = null) {
       damage(game, s, blast.damage * f * (self ? 0.5 : 1), owner, weapon, { dirX, dirY, knock: 0, explosive: true });
     }
   }
+  blasting--;
   blastSentries(game, x, y, blast, owner);
   // Explosions set off mines and dynamite nearby.
   for (const p of game.projectiles) {
     if (p.kind !== 'placed' || p.dead) continue;
-    if (Math.hypot(p.x - x, p.y - y) > blast.radius * 0.8) continue;
+    if (hypot(p.x - x, p.y - y) > blast.radius * 0.8) continue;
     if (p.cfg.mine) { p.armed = 0; if (p.triggered < 0 || p.triggered > 4) p.triggered = 4; }
     else p.life = Math.min(p.life, 4);
   }

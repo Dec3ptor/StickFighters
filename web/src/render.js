@@ -1,11 +1,11 @@
 // Drawing the world: white paper, black outlines, stick figures.
 
 import { VIEW_W, VIEW_H, MOTION } from './config.js';
-import { buildPose } from './stickman.js';
+import { buildPose, hypot } from './stickman.js';
 import { laserEnd } from './combat.js';
 import { WEAPONS } from './weapons.js';
 import { clamp, lerp } from './util.js';
-import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate, drawSupply, drawBeacon, drawStreakFlame } from './sprites.js';
+import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate, drawSupply, drawBeacon, drawStreakFlame, spriteOpts } from './sprites.js';
 import { BEACON_HP } from './gadgets.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
 import { MapTiles, paintMap, HATCH, HATCH_GAP, BUILT, BUILT_LINE, BUILT_ROW } from './maptiles.js';
@@ -23,6 +23,22 @@ const TEAM_COLORS = { 1: '#2f6fdb', 2: '#d33b2f' };
 const GLOW_COLORS = { smoke: 'rgb(140,140,140)', fireHot: 'rgb(255,220,90)', fireCool: 'rgb(255,110,30)' };
 const TEAM_HEAD = { 1: '#d9e6ff', 2: '#ffdcd8' };
 
+// Name tags' fonts (made once, not for every name every frame).
+const NAME_FONT = '8px Arial, sans-serif', NAME_FONT_ME = 'bold 8px Arial, sans-serif';
+const STREAK_FONT = 'bold 6px Arial, sans-serif', STREAK_FONT_BIG = 'bold 7px Arial, sans-serif';
+
+// Weapons drawn with fills only (no lines, so the line ends set don't matter to them).
+const FILLED_WEAPONS = new Set(['pistol', 'smg', 'rifle', 'ak', 'knife', 'shotgun', 'sniper', 'launcher', 'tube', 'flamer', 'minigun', 'wand', 'prod']);
+
+// Particles small enough to skip when they're off screen (the view's margin is far
+// bigger than any of them, wherever they are between two updates).
+const SMALL = new Set(['blood', 'spark', 'ember', 'sparkle', 'shell', 'chunk', 'flash', 'puff', 'smoke', 'fire', 'gib', 'head']);
+// Of those, the ones that leave the canvas's opacity at 1 once drawn.
+const SETS_ALPHA = new Set(['sparkle', 'puff', 'smoke', 'fire', 'gib', 'head']);
+
+// Each soldier's animation part way between updates: kept per soldier and filled in each frame.
+const views = new WeakMap();
+
 /** Draws with the browser's 2D canvas. (glrender.js draws the same things with WebGL.) */
 export class Renderer {
   // Keep the map in tiles (maptiles.js): off unless ?tiles=on is in the address. With the
@@ -39,17 +55,34 @@ export class Renderer {
     this.resize();
     this.onResize = () => this.resize();
     window.addEventListener('resize', this.onResize);
+    // The screen's pixel ratio can change with no change of size (browser zoom, a window
+    // moved to another screen): that sends no resize event, so it's watched for itself.
+    this.onDpr = () => { this.resize(); this.watchDpr(); };
+    this.watchDpr();
+  }
+
+  /** Listen for the pixel ratio changing from what it is now (and again after each change). */
+  watchDpr() {
+    this.dprQuery?.removeEventListener?.('change', this.onDpr);
+    this.dprQuery = window.matchMedia?.(`(resolution: ${window.devicePixelRatio || 1}dppx)`) || null;
+    this.dprQuery?.addEventListener?.('change', this.onDpr);
   }
 
   /** Stop using this renderer (Settings switched to another). */
   destroy() {
     window.removeEventListener('resize', this.onResize);
+    this.dprQuery?.removeEventListener?.('change', this.onDpr);
+    this.dprQuery = null;
   }
 
   resize() {
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.w = window.innerWidth;
-    this.h = window.innerHeight;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2), w = window.innerWidth, h = window.innerHeight;
+    // (Nothing changed, as when a zoom sends both a resize event and a pixel ratio change:
+    // the canvas is left alone. Giving it a size clears it.)
+    if (dpr === this.dpr && w === this.w && h === this.h) return;
+    this.dpr = dpr;
+    this.w = w;
+    this.h = h;
     this.pw = Math.round(this.w * this.dpr);
     this.ph = Math.round(this.h * this.dpr);
     this.canvas.style.width = this.w + 'px';
@@ -140,14 +173,14 @@ export class Renderer {
     drawObjectives(this, game);
     this.drawPickups(game);
     this.drawProjectiles(game, false);
-    const shown = this.shownSoldiers(game, viewer);
-    for (const sol of shown.soldiers) this.drawSoldier(game, sol, alpha, viewer);
+    const shown = this.shownSoldiers(game, viewer), list = shown.soldiers;
+    this.drawSoldiers(game, list, alpha, viewer);
     drawCarried(this, game);
     this.drawProjectiles(game, true);
     this.drawEffects(game);
-    for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);
+    for (let i = 0; i < list.length; i++) if (list[i].current === 'SR') this.drawLaser(game, list[i]);
     this.drawBuildGhost(game, viewer);
-    for (const sol of shown.names) this.drawName(game, sol, alpha, viewer);
+    this.drawNames(game, shown.names, alpha, viewer);
     fog?.drawAlerts(this.ctx);
   }
 
@@ -164,8 +197,11 @@ export class Renderer {
 
   /** The part of the world on screen (plus a margin), for skipping what's off it in big games. */
   updateView(s, tx, ty) {
-    const m = 80;
-    this.view = { l: -tx / s - m, t: -ty / s - m, r: (this.pw - tx) / s + m, b: (this.ph - ty) / s + m };
+    const m = 80, v = this.view ||= { l: 0, t: 0, r: 0, b: 0 };
+    v.l = -tx / s - m;
+    v.t = -ty / s - m;
+    v.r = (this.pw - tx) / s + m;
+    v.b = (this.ph - ty) / s + m;
   }
 
   inView(x, y) {
@@ -176,15 +212,33 @@ export class Renderer {
   /**
    * Soldiers to draw, and whose names to show. Small games: everyone alive.
    * Big games: only those on screen, and in a crowd, only human players' names.
+   * (The same lists are filled in every frame: use them before the next frame.)
    */
+  /** The match is over and gone: let go of its soldiers (the lists below are kept for the next). */
+  forgetMatch() {
+    const out = this.shown;
+    if (!out) return;
+    out.soldiers.length = 0;
+    out.humans.length = 0;
+    out.names = out.soldiers;
+  }
+
   shownSoldiers(game, viewer) {
-    const fog = this.fogNow;
-    if (!game.crowded) {
-      const alive = game.soldiers.filter(o => o.alive && (!fog || fog.shows(o)));
-      return { soldiers: alive, names: alive };
+    const fog = this.fogNow, crowded = game.crowded, all = game.soldiers;
+    const out = this.shown ||= { soldiers: [], names: [], humans: [] };
+    const list = out.soldiers;
+    list.length = 0;
+    for (let i = 0; i < all.length; i++) {
+      const o = all[i];
+      if (o.alive && (!crowded || this.inView(o.x, o.y)) && (!fog || fog.shows(o))) list.push(o);
     }
-    const soldiers = game.soldiers.filter(o => o.alive && this.inView(o.x, o.y) && (!fog || fog.shows(o)));
-    return { soldiers, names: soldiers.length > 60 ? soldiers.filter(o => o === viewer || !o.isBot) : soldiers };
+    out.names = list;
+    if (crowded && list.length > 60) {
+      const names = out.names = out.humans;
+      names.length = 0;
+      for (let i = 0; i < list.length; i++) if (list[i] === viewer || !list[i].isBot) names.push(list[i]);
+    }
+    return out;
   }
 
   /**
@@ -230,8 +284,9 @@ export class Renderer {
 
   /** Jump pads: light fill with upward chevrons that move. */
   drawPads(game, fill) {
-    const ctx = this.ctx;
-    for (const p of game.map.solids) {
+    const ctx = this.ctx, solids = game.map.solids;
+    for (let i = 0; i < solids.length; i++) {
+      const p = solids[i];
       if (!p.bounce) continue;
       if (fill) {
         ctx.fillStyle = '#eef3e2';
@@ -251,20 +306,26 @@ export class Renderer {
     }
   }
 
+  /** Blood on the walls. (Off screen: skipped. The opacity is only set when it changes: most are at 0.8.) */
   drawStains(game) {
     if (!game.fx) return;
-    const ctx = this.ctx;
+    const ctx = this.ctx, v = this.view, list = game.fx.stains;
     ctx.fillStyle = '#a30d0d';
-    for (const st of game.fx.stains) {
-      ctx.globalAlpha = Math.min(1, st.life / 200) * 0.8;
-      ctx.fillRect(st.x - st.size / 2, st.y - st.size / 2, st.size, st.size);
+    let alpha = -1;
+    for (let i = 0; i < list.length; i++) {
+      const st = list[i];
+      if (v && (st.x < v.l || st.x > v.r || st.y < v.t || st.y > v.b)) continue;
+      const a = Math.min(1, st.life / 200) * 0.8, h = st.size / 2;
+      if (a !== alpha) { ctx.globalAlpha = a; alpha = a; }
+      ctx.fillRect(st.x - h, st.y - h, st.size, st.size);
     }
     ctx.globalAlpha = 1;
   }
 
   drawPickups(game) {
-    const ctx = this.ctx, t = game.tick, a = this.alpha ?? 1;
-    for (const it of game.pickups.items) {
+    const ctx = this.ctx, t = game.tick, a = this.alpha ?? 1, items = game.pickups.items;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
       if (!it.active) continue;
       if (it.dropped && it.life < 120 && Math.floor(it.life / 6) % 2) continue;
       const bob = it.dropped ? 0 : Math.sin((t + a) * 0.06 + it.bob) * 1.5;
@@ -282,7 +343,9 @@ export class Renderer {
       ctx.restore();
     }
     // Spawn beacons (classes on).
-    for (const b of game.beacons || []) {
+    const beacons = game.beacons || NONE;
+    for (let i = 0; i < beacons.length; i++) {
+      const b = beacons[i];
       ctx.save();
       ctx.translate(b.x, b.y);
       drawBeacon(ctx, b, t, b.hp / BEACON_HP);
@@ -291,35 +354,40 @@ export class Renderer {
   }
 
   drawProjectiles(game, top) {
-    const ctx = this.ctx, t = game.tick;
+    const ctx = this.ctx, t = game.tick, a = this.alpha ?? 1, list = game.projectiles;
     const cull = game.crowded;
-    for (const p0 of game.projectiles) {
-      if (p0.delay > 0 || (cull && !this.inView(p0.x, p0.y))) continue;
-      const front = p0.kind === 'flame' || p0.kind === 'gas' || p0.kind === 'fire' || p0.kind === 'cloud';
+    for (let i = 0; i < list.length; i++) {
+      // (Each position read once: projectiles come in many shapes, and reading a number from
+      // one of those makes a new one each time.)
+      const p = list[i], nx = p.x, ny = p.y;
+      if (p.delay > 0 || (cull && !this.inView(nx, ny))) continue;
+      const kind = p.kind, front = kind === 'flame' || kind === 'gas' || kind === 'fire' || kind === 'cloud';
       if (front !== top) continue;
-      const p = between(p0, this.alpha);
-      if (this.fogNow && !this.fogNow.sees(p.x, p.y)) continue; // (fog of war: out of sight)
-      switch (p.kind) {
-        case 'flame': drawFlame(ctx, p); break;
-        case 'fire': drawFirePatch(ctx, p, t); break;
-        case 'gas': drawGas(ctx, p); break;
-        case 'cloud': drawCloud(ctx, p, t); break;
+      // Drawn part way between updates, as between() works it out (with no new object).
+      const ox = p.px, oy = p.py, mid = ox != null && a < 1;
+      const x = mid ? ox + (nx - ox) * a : nx, y = mid ? oy + (ny - oy) * a : ny;
+      if (this.fogNow && !this.fogNow.sees(x, y)) continue; // (fog of war: out of sight)
+      switch (kind) {
+        case 'flame': drawFlame(ctx, p, x, y); break;
+        case 'fire': drawFirePatch(ctx, p, t, x, y); break;
+        case 'gas': drawGas(ctx, p, x, y); break;
+        case 'cloud': drawCloud(ctx, p, t, x, y); break;
         case 'bullet': {
           // A streak behind it: how far it goes in 0.7 updates, but no more than 40 px (fast
           // bullets), and not back past the gun it came from.
-          const sp = Math.hypot(p.vx, p.vy) || 1;
-          const len = Math.min(0.7 * sp, 40, Math.max(0, (p0.age ?? 9) - 1 + this.alpha) * sp);
+          const sp = hypot(p.vx, p.vy) || 1;
+          const len = Math.min(0.7 * sp, 40, Math.max(0, (p.age ?? 9) - 1 + this.alpha) * sp);
           ctx.strokeStyle = 'rgba(40,40,40,0.75)';
           ctx.lineWidth = p.sprite === 'slug' ? 1.6 : 1;
           ctx.beginPath();
-          ctx.moveTo(p.x - (p.vx / sp) * len, p.y - (p.vy / sp) * len);
-          ctx.lineTo(p.x, p.y);
+          ctx.moveTo(x - (p.vx / sp) * len, y - (p.vy / sp) * len);
+          ctx.lineTo(x, y);
           ctx.stroke();
           break;
         }
         case 'arrow': {
           ctx.save();
-          ctx.translate(p.x, p.y);
+          ctx.translate(x, y);
           ctx.rotate(p.angle ?? Math.atan2(p.vy, p.vx));
           ctx.strokeStyle = '#5a3d1e'; ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(0, 0); ctx.stroke();
@@ -331,17 +399,17 @@ export class Renderer {
           break;
         }
         case 'seeker': {
-          const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 5);
+          const g = ctx.createRadialGradient(x, y, 0, x, y, 5);
           g.addColorStop(0, 'rgba(255,255,255,1)');
           g.addColorStop(0.4, 'rgba(170,120,255,0.9)');
           g.addColorStop(1, 'rgba(120,60,220,0)');
           ctx.fillStyle = g;
-          ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
           break;
         }
         case 'rocket': {
           ctx.save();
-          ctx.translate(p.x, p.y);
+          ctx.translate(x, y);
           ctx.rotate(Math.atan2(p.vy, p.vx));
           if (p.sprite === 'bomb') {
             ctx.fillStyle = '#333';
@@ -364,61 +432,113 @@ export class Renderer {
         }
         case 'thrown': {
           ctx.save();
-          ctx.translate(p.x, p.y);
+          ctx.translate(x, y);
           const round = p.sprite === 'grenade' || p.sprite === 'bomblet' || p.sprite === 'cluster' || p.sprite === 'holy';
           if (p.sprite === 'napalm') ctx.rotate(Math.atan2(p.vy, p.vx) - Math.PI / 2);
           else if (!round) ctx.rotate(p.angle || 0);
-          drawSprite(ctx, p.sprite, { t, lit: p.life < 60 && Math.floor(p.life / 5) % 2 === 1 });
+          drawSprite(ctx, p.sprite, spriteOpts(t, p.life < 60 && Math.floor(p.life / 5) % 2 === 1));
           ctx.restore();
           break;
         }
         case 'walker':
           ctx.save();
-          ctx.translate(p.x, p.y - (p.sprite === 'oldwoman' ? 8 : 6));
+          ctx.translate(x, y - (p.sprite === 'oldwoman' ? 8 : 6));
           ctx.scale(p.dir || 1, 1);
-          drawSprite(ctx, p.sprite, { t: p.age });
+          drawSprite(ctx, p.sprite, spriteOpts(p.age));
           ctx.restore();
           break;
         case 'flyer':
           ctx.save();
-          ctx.translate(p.x, p.y);
+          ctx.translate(x, y);
           ctx.rotate(p.angle || 0);
           if (Math.cos(p.angle || 0) < 0) ctx.scale(1, -1);
-          drawSprite(ctx, p.sprite, { t: p.age });
+          drawSprite(ctx, p.sprite, spriteOpts(p.age));
           ctx.restore();
           break;
         case 'placed':
           ctx.save();
-          ctx.translate(p.x, p.y - (p.sprite === 'mine' ? 1 : 4));
-          drawSprite(ctx, p.sprite, { t, armed: p.armed <= 0 });
+          ctx.translate(x, y - (p.sprite === 'mine' ? 1 : 4));
+          drawSprite(ctx, p.sprite, spriteOpts(t, undefined, p.armed <= 0));
           ctx.restore();
           break;
         case 'donkey':
           ctx.save();
-          ctx.translate(p.x, p.y);
-          drawSprite(ctx, 'donkey', { t });
+          ctx.translate(x, y);
+          drawSprite(ctx, 'donkey', spriteOpts(t));
           ctx.restore();
           break;
-        case 'sentry': drawSentry(ctx, p, t); break;
+        case 'sentry': drawSentry(ctx, p, t, x, y); break;
       }
     }
   }
 
+  /** One soldier (see drawSoldiers). */
   drawSoldier(game, s, alpha, viewer) {
+    ONE[0] = s;
+    this.drawFigures(game, ONE, alpha);
+    ONE[0] = null;
+  }
+
+  /** Soldiers, each part way between the last two game updates (see drawFigures). */
+  drawSoldiers(game, list, alpha, viewer) {
+    // (A renderer with soldiers of its own: each one its own way.)
+    if (this.drawSoldier !== Renderer.prototype.drawSoldier) {
+      for (let i = 0; i < list.length; i++) this.drawSoldier(game, list[i], alpha, viewer);
+      return;
+    }
+    this.drawFigures(game, list, alpha);
+  }
+
+  /**
+   * The canvas's state is kept once for the lot (not twice per soldier): each one sets
+   * what it draws with, and everything's as it was afterwards. Ropes and weapons are
+   * drawn with the line ends the canvas had (round ones are only for the body), as ever.
+   */
+  drawFigures(game, list, alpha) {
+    if (!list.length) return;
+    const ctx = this.ctx, st = this.figure ||= { cap0: 'butt', join0: 'miter', alpha0: 1, cap: 'butt', join: 'miter', rope: false };
+    ctx.save();
+    st.cap0 = st.cap = ctx.lineCap;
+    st.join0 = st.join = ctx.lineJoin;
+    st.alpha0 = ctx.globalAlpha;
+    st.rope = false;
+    for (let i = 0; i < list.length; i++) this.drawFigure(game, list[i], alpha, st);
+    ctx.restore();
+    // (A rope's colours were set before each soldier's own state, so they stayed set after it.)
+    if (st.rope) {
+      ctx.strokeStyle = '#8a6a3a';
+      ctx.lineWidth = 0.9;
+      ctx.fillStyle = '#555';
+    }
+  }
+
+  /** Set the line ends (only if they aren't already). */
+  lineEnds(st, cap, join) {
     const ctx = this.ctx;
+    if (st.cap !== cap) { ctx.lineCap = cap; st.cap = cap; }
+    if (st.join !== join) { ctx.lineJoin = join; st.join = join; }
+  }
+
+  /** One soldier, inside drawFigures (st: the line ends and opacity it started with, and the ones set now). */
+  drawFigure(game, s, alpha, st) {
+    const ctx = this.ctx, k = this.s;
     const x = lerp(s.prevX, s.x, alpha) + (s.drawDX || 0), y = lerp(s.prevY, s.y, alpha) + (s.drawDY || 0);
     const v = this.animated(s);
     const pose = buildPose(v);
+    // (The world's transform, then the soldier's place: the same sums as saving and restoring would give.)
+    ctx.setTransform(k, 0, 0, k, this.tx, this.ty);
     if (s.body.rope) {
+      this.lineEnds(st, st.cap0, st.join0);
       ctx.strokeStyle = '#8a6a3a';
       ctx.lineWidth = 0.9;
       ctx.beginPath(); ctx.moveTo(x + pose.shoulder[0], y + pose.shoulder[1]); ctx.lineTo(s.body.rope.x, s.body.rope.y); ctx.stroke();
       ctx.fillStyle = '#555';
       ctx.fillRect(s.body.rope.x - 1.5, s.body.rope.y - 1.5, 3, 3);
+      st.rope = true;
     }
-    ctx.save();
     ctx.translate(x, y);
-    if (s.spawnProtect > 0) ctx.globalAlpha = 0.35 + 0.35 * Math.abs(Math.sin(game.tick * 0.25));
+    const faded = s.spawnProtect > 0;
+    if (faded) ctx.globalAlpha = 0.35 + 0.35 * Math.abs(Math.sin(game.tick * 0.25));
     // A Juggernaut glows, so everyone knows to run.
     if (s.jugger > 0) drawJuggerGlow(ctx, pose, game.tick);
 
@@ -429,33 +549,36 @@ export class Renderer {
       ctx.fillRect(bx, -14, 2.5, 8);
     }
 
-    // Weapon first, so the front hand overlaps it.
-    ctx.save();
-    ctx.translate(pose.gun.x, pose.gun.y);
-    let angle = pose.gun.angle;
-    if ((pose.gun.def.kind === 'melee' || pose.gun.def.kind === 'build') && v.anim.swing > 0) angle -= Math.sin(v.anim.swing * Math.PI) * 1.7 * (Math.cos(angle) < 0 ? -1 : 1);
+    // Weapon first, so the front hand overlaps it. (Then back to the soldier's own place.)
+    const gun = pose.gun, def = gun.def;
+    ctx.translate(gun.x, gun.y);
+    let angle = gun.angle;
+    if ((def.kind === 'melee' || def.kind === 'build') && v.anim.swing > 0) angle -= Math.sin(v.anim.swing * Math.PI) * 1.7 * (Math.cos(angle) < 0 ? -1 : 1);
     ctx.rotate(angle);
-    if (Math.cos(pose.gun.angle) < 0) ctx.scale(1, -1);
-    drawWeapon(ctx, pose.gun.def, false);
-    ctx.restore();
+    if (Math.cos(gun.angle) < 0) ctx.scale(1, -1);
+    if (!FILLED_WEAPONS.has(def.look.type)) this.lineEnds(st, st.cap0, st.join0);
+    drawWeapon(ctx, def, false);
+    ctx.setTransform(k, 0, 0, k, this.tx, this.ty);
+    ctx.translate(x, y);
 
     ctx.strokeStyle = INK;
     ctx.lineWidth = 1.5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    this.lineEnds(st, 'round', 'round');
+    const L = pose.lines;
     ctx.beginPath();
-    for (const [a, b, c, d] of pose.lines) { ctx.moveTo(a, b); ctx.lineTo(c, d); }
+    for (let i = 0; i < L.length; i++) { const l = L[i]; ctx.moveTo(l[0], l[1]); ctx.lineTo(l[2], l[3]); }
     ctx.stroke();
+    const head = pose.head;
     ctx.fillStyle = game.rules.teams ? TEAM_HEAD[s.team] : '#fff';
     ctx.beginPath();
-    ctx.arc(pose.head.x, pose.head.y, pose.head.r, 0, Math.PI * 2);
+    ctx.arc(head.x, head.y, head.r, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
     if (s.armour > 0) {
       // A little helmet shows the soldier has armour.
       ctx.fillStyle = '#4a4a4a';
       ctx.beginPath();
-      ctx.arc(pose.head.x, pose.head.y - 0.5, pose.head.r + 0.6, Math.PI * 1.05, Math.PI * 1.95);
+      ctx.arc(head.x, head.y - 0.5, head.r + 0.6, Math.PI * 1.05, Math.PI * 1.95);
       ctx.fill();
     }
     if (s.body.jetting) {
@@ -463,55 +586,87 @@ export class Renderer {
       const bx = -s.facing * 3.5 + (s.facing > 0 ? -1.2 : 1.2);
       ctx.beginPath(); ctx.moveTo(bx - 2, -6); ctx.lineTo(bx, 2 + Math.random() * 5); ctx.lineTo(bx + 2, -6); ctx.fill();
     }
-    ctx.restore();
+    if (faded) ctx.globalAlpha = st.alpha0;
   }
 
   /**
-   * The soldier with its animation (running legs, flips, recoil, swings) part
-   * way between the last two game updates. Things that start suddenly (a flip,
-   * a shot's kick) show at once; things winding down ease out.
+   * The soldier's animation (running legs, flips, recoil, swings) part way between the
+   * last two game updates, for drawing it: { body, facing, aim, current, anim }, all
+   * buildPose() needs. Things that start suddenly (a flip, a shot's kick) show at once;
+   * things winding down ease out. (Kept per soldier and filled in again each time, so
+   * no new objects every frame; at an update itself, it's just the soldier.)
    */
   animated(s) {
     const a = this.alpha ?? 1, prev = s.animPrev, cur = s.anim;
     if (!prev || a >= 1) return s;
     let d = cur.run - prev.run;
     if (d > 0.5) d -= 1; else if (d < -0.5) d += 1;
-    const ease = k => (cur[k] < prev[k] ? prev[k] + (cur[k] - prev[k]) * a : cur[k]);
-    const v = Object.create(s);
-    v.anim = {
-      run: (((prev.run + d * a) % 1) + 1) % 1,
-      idle: prev.idle + (cur.idle - prev.idle) * a,
-      land: ease('land'), flip: ease('flip'), recoil: ease('recoil'), swing: ease('swing'),
-    };
+    let v = views.get(s);
+    if (!v) views.set(s, v = { body: null, facing: 0, aim: 0, current: null, anim: { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, swing: 0 } });
+    v.body = s.body;
+    v.facing = s.facing;
+    v.aim = s.aim;
+    v.current = s.current;
+    const an = v.anim;
+    an.run = (((prev.run + d * a) % 1) + 1) % 1;
+    an.idle = prev.idle + (cur.idle - prev.idle) * a;
+    an.land = easeOut(cur.land, prev.land, a);
+    an.flip = easeOut(cur.flip, prev.flip, a);
+    an.recoil = easeOut(cur.recoil, prev.recoil, a);
+    an.swing = easeOut(cur.swing, prev.swing, a);
     return v;
   }
 
+  /** One name tag (see drawNames). */
   drawName(game, s, alpha, viewer) {
+    const st = this.nameState ||= { font: null, align: null, fill: null };
+    st.font = st.align = st.fill = null;
+    this.drawTag(game, s, alpha, viewer, st);
+  }
+
+  /**
+   * Names over soldiers, in the same order as ever (where they overlap, the same one's on
+   * top), with the font, alignment and colour only set when they change: most names share them.
+   */
+  drawNames(game, list, alpha, viewer) {
+    // (A renderer with name tags of its own: each one its own way.)
+    if (this.drawName !== Renderer.prototype.drawName) {
+      for (let i = 0; i < list.length; i++) this.drawName(game, list[i], alpha, viewer);
+      return;
+    }
+    const st = this.nameState ||= { font: null, align: null, fill: null };
+    st.font = st.align = st.fill = null;
+    for (let i = 0; i < list.length; i++) this.drawTag(game, list[i], alpha, viewer, st);
+  }
+
+  drawTag(game, s, alpha, viewer, st) {
     const ctx = this.ctx;
     const x = lerp(s.prevX, s.x, alpha) + (s.drawDX || 0), y = lerp(s.prevY, s.y, alpha) + (s.drawDY || 0);
-    ctx.font = `${s === viewer ? 'bold ' : ''}8px Arial, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = game.rules.teams ? TEAM_COLORS[s.team] : s === viewer ? '#333' : '#999';
+    const font = s === viewer ? NAME_FONT_ME : NAME_FONT;
+    if (st.font !== font) { ctx.font = font; st.font = font; }
+    if (st.align !== 'center') { ctx.textAlign = 'center'; st.align = 'center'; }
+    const color = game.rules.teams ? TEAM_COLORS[s.team] : s === viewer ? '#333' : '#999';
+    if (st.fill !== color) { ctx.fillStyle = color; st.fill = color; }
     ctx.fillText(s.name, x, y - 30);
     // Kill streaks: a flame and the count after the name (3 or more in a row), and a Juggernaut's tag over it.
     if (s.streak >= 3) {
       const big = s.streak >= 5, bx = x + ctx.measureText(s.name).width / 2 + (big ? 4 : 3.4);
       drawStreakFlame(ctx, bx, y - 33, big);
-      ctx.font = `bold ${big ? 7 : 6}px Arial, sans-serif`;
+      ctx.font = st.font = big ? STREAK_FONT_BIG : STREAK_FONT;
       ctx.textAlign = 'left';
-      ctx.fillStyle = big ? '#d8340c' : '#d0700c';
+      ctx.fillStyle = st.fill = big ? '#d8340c' : '#d0700c';
       ctx.fillText(String(s.streak), bx + (big ? 2.8 : 2.4), y - 30);
       ctx.textAlign = 'center';
     }
     if (s.jugger > 0) {
-      ctx.font = 'bold 6px Arial, sans-serif';
-      ctx.fillStyle = '#e8740c';
+      ctx.font = st.font = STREAK_FONT;
+      ctx.fillStyle = st.fill = '#e8740c';
       ctx.fillText('JUGGERNAUT', x, y - 38);
     }
     if (s !== viewer && s.health < 100) {
       ctx.fillStyle = '#ddd';
       ctx.fillRect(x - 8, y - 28, 16, 1.6);
-      ctx.fillStyle = s.health > 40 ? '#555' : '#c22';
+      ctx.fillStyle = st.fill = s.health > 40 ? '#555' : '#c22';
       ctx.fillRect(x - 8, y - 28, 16 * Math.max(0, s.health) / 100, 1.6);
     }
   }
@@ -529,9 +684,28 @@ export class Renderer {
     ctx.fillRect(l.x - 1.2, l.y - 1.2, 2.4, 2.4);
   }
 
+  /**
+   * Particles, in the order they were made (where they overlap, the same one's on top).
+   * Small ones off screen are skipped, leaving the canvas as drawing them would have (its
+   * opacity back at 1, and a limb's round line ends: what's drawn after goes by those).
+   */
   drawEffects(game) {
     if (!game.fx) return;
-    for (const p of game.fx.parts) this.drawEffect(this.ctx, p);
+    const ctx = this.ctx, parts = game.fx.parts, v = this.view;
+    // (A renderer drawing some kinds its own way: each one through its drawEffect.)
+    const own = this.drawEffect !== Renderer.prototype.drawEffect;
+    let one = false, round = false;
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      if (!own && v && SMALL.has(p.kind) && (p.x < v.l || p.x > v.r || p.y < v.t || p.y > v.b)) {
+        if (SETS_ALPHA.has(p.kind)) one = true;
+        if (p.kind === 'gib' && !round) { ctx.lineCap = 'round'; round = true; }
+        continue;
+      }
+      if (one) { ctx.globalAlpha = 1; one = false; }
+      this.drawEffect(ctx, p);
+    }
+    if (one) ctx.globalAlpha = 1;
   }
 
   /** A soft round thing (smoke, fire) of radius r at (x, y), faded to `alpha`. */
@@ -685,17 +859,19 @@ export class Renderer {
         ctx.beginPath(); ctx.moveTo(-18, 0); ctx.lineTo(-24, -9); ctx.lineTo(-19, -9); ctx.lineTo(-12, 0); ctx.fill();
         ctx.restore();
         break;
-      case 'gib':
+      case 'gib': {
+        const dx = Math.cos(p.angle) * p.len / 2, dy = Math.sin(p.angle) * p.len / 2;
         ctx.globalAlpha = Math.min(1, p.life / 40);
         ctx.strokeStyle = INK;
         ctx.lineWidth = 1.5;
         ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.moveTo(x - Math.cos(p.angle) * p.len / 2, y - Math.sin(p.angle) * p.len / 2);
-        ctx.lineTo(x + Math.cos(p.angle) * p.len / 2, y + Math.sin(p.angle) * p.len / 2);
+        ctx.moveTo(x - dx, y - dy);
+        ctx.lineTo(x + dx, y + dy);
         ctx.stroke();
         ctx.globalAlpha = 1;
         break;
+      }
       case 'head':
         ctx.globalAlpha = Math.min(1, p.life / 40);
         ctx.fillStyle = '#fff';
@@ -743,7 +919,8 @@ export class Renderer {
     ctx.strokeStyle = red ? '#e22' : '#111';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    for (let i = 0; i < 8; i += 2) {
+      const dx = ARMS[i], dy = ARMS[i + 1];
       ctx.moveTo(mx + dx * 4, my + dy * 4);
       ctx.lineTo(mx + dx * 10, my + dy * 10);
     }
@@ -753,14 +930,34 @@ export class Renderer {
   }
 }
 
+// drawSoldier() draws a list of one.
+const ONE = [null];
+// (No spawn beacons.)
+const NONE = [];
+// The crosshair's four arms (x, y pairs).
+const ARMS = [1, 0, -1, 0, 0, 1, 0, -1];
+
+/** Part way (a) from prev to cur when it's winding down; straight to cur when it's starting up. */
+function easeOut(cur, prev, a) {
+  return cur < prev ? prev + (cur - prev) * a : cur;
+}
+
 // ---- Shapes -----------------------------------------------------------------
 
 /**
  * Where something is drawn between two game updates: `alpha` of the way from
  * where it was (px, py) to where it is. (Things with no earlier position are
- * drawn where they are.)
+ * drawn where they are.) With `out`, just the position is written into it
+ * (out.x, out.y) and out is returned: no new object. Without, it's a view of p
+ * with x and y moved (made new each time).
  */
-export function between(p, alpha = 1) {
+export function between(p, alpha = 1, out = null) {
+  if (out) {
+    const mid = p.px != null && alpha < 1;
+    out.x = mid ? p.px + (p.x - p.px) * alpha : p.x;
+    out.y = mid ? p.py + (p.y - p.py) * alpha : p.y;
+    return out;
+  }
   if (p.px == null || alpha >= 1) return p;
   const v = Object.create(p);
   v.x = p.px + (p.x - p.px) * alpha;
@@ -793,16 +990,16 @@ const SENTRY_GUN = 13;
 /**
  * A Sentry Sheep (kill streak reward): its body facing its way, the gun on its back aimed
  * at the true angle (folded up while it unfolds), its armour left once it's been hit, and
- * blinking in its last 3 seconds.
+ * blinking in its last 3 seconds. (x, y: where it's drawn.)
  */
-function drawSentry(ctx, p, t) {
+function drawSentry(ctx, p, t, x = p.x, y = p.y) {
   const dim = p.life < 180 && Math.floor(p.life / 6) % 2 === 1;
   ctx.save();
   if (dim) ctx.globalAlpha *= 0.35;
-  ctx.translate(p.x, p.y - 7.5);
+  ctx.translate(x, y - 7.5);
   ctx.save();
   ctx.scale(p.dir || 1, 1);
-  drawSprite(ctx, 'sentry', { t, collar: SENTRY_COLLAR[p.team] || SENTRY_COLLAR[0] });
+  drawSprite(ctx, 'sentry', spriteOpts(t, undefined, undefined, SENTRY_COLLAR[p.team] || SENTRY_COLLAR[0]));
   ctx.restore();
   // The turret: a mount on the plate, and the gun turning on it.
   ctx.translate(0, 7.5 - SENTRY_GUN);
@@ -828,69 +1025,101 @@ function drawSentry(ctx, p, t) {
     ctx.save();
     if (dim) ctx.globalAlpha *= 0.35;
     ctx.fillStyle = '#ddd';
-    ctx.fillRect(p.x - 7, p.y - 23, 14, 1.6);
+    ctx.fillRect(x - 7, y - 23, 14, 1.6);
     ctx.fillStyle = p.r > 40 ? '#555' : '#c22';
-    ctx.fillRect(p.x - 7, p.y - 23, 14 * Math.max(0, p.r) / 100, 1.6);
+    ctx.fillRect(x - 7, y - 23, 14 * Math.max(0, p.r) / 100, 1.6);
     ctx.restore();
   }
 }
 
 /** A Juggernaut's glow: fat soft orange strokes round its body and head, pulsing (soldier's transform set). */
 function drawJuggerGlow(ctx, pose, tick) {
-  const pulse = 0.5 + 0.5 * Math.sin(tick * 0.2), base = ctx.globalAlpha, h = pose.head;
+  const pulse = 0.5 + 0.5 * Math.sin(tick * 0.2), base = ctx.globalAlpha;
   const cap = ctx.lineCap, join = ctx.lineJoin;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  for (const [w, a, color] of [[6.5 + pulse * 2, 0.2 + 0.15 * pulse, '#ff8a1f'], [3.8 + pulse, 0.45 + 0.2 * pulse, '#ffb02e']]) {
-    ctx.globalAlpha = base * a;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = w;
-    ctx.beginPath();
-    for (const [x0, y0, x1, y1] of pose.lines) { ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); }
-    ctx.stroke();
-    ctx.fillStyle = color;
-    ctx.beginPath(); ctx.arc(h.x, h.y, h.r + w / 2, 0, Math.PI * 2); ctx.fill();
-  }
+  glowPass(ctx, pose, base, 6.5 + pulse * 2, 0.2 + 0.15 * pulse, '#ff8a1f');
+  glowPass(ctx, pose, base, 3.8 + pulse, 0.45 + 0.2 * pulse, '#ffb02e');
   // (Back as they were, so the gun drawn next looks the same as anyone else's.)
   ctx.globalAlpha = base;
   ctx.lineCap = cap;
   ctx.lineJoin = join;
 }
 
-function drawFirePatch(ctx, p, t) {
+/** One stroke of the Juggernaut's glow: w wide, at opacity a (of base), in `color`. */
+function glowPass(ctx, pose, base, w, a, color) {
+  const L = pose.lines, h = pose.head;
+  ctx.globalAlpha = base * a;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = w;
+  ctx.beginPath();
+  for (let i = 0; i < L.length; i++) { const l = L[i]; ctx.moveTo(l[0], l[1]); ctx.lineTo(l[2], l[3]); }
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(h.x, h.y, h.r + w / 2, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawFirePatch(ctx, p, t, x = p.x, y = p.y) {
   const flick = Math.sin(t * 0.7 + p.id) * 1.2;
   ctx.fillStyle = 'rgba(255,120,30,0.85)';
-  ctx.beginPath(); ctx.moveTo(p.x - 4, p.y); ctx.quadraticCurveTo(p.x - 2, p.y - 6 - flick, p.x, p.y - 9 - flick); ctx.quadraticCurveTo(p.x + 2, p.y - 6, p.x + 4, p.y); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x - 4, y); ctx.quadraticCurveTo(x - 2, y - 6 - flick, x, y - 9 - flick); ctx.quadraticCurveTo(x + 2, y - 6, x + 4, y); ctx.fill();
   ctx.fillStyle = 'rgba(255,225,110,0.9)';
-  ctx.beginPath(); ctx.moveTo(p.x - 2, p.y); ctx.quadraticCurveTo(p.x, p.y - 5 - flick, p.x + 2, p.y); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x - 2, y); ctx.quadraticCurveTo(x, y - 5 - flick, x + 2, y); ctx.fill();
 }
 
-/** A smoke grenade's cloud: thick grey puffs you can't see through. */
-export function drawCloud(ctx, p, t) {
+// A smoke cloud's colours (strings made from its opacity): each made once, then looked up.
+const fades = new Map();
+function faded(prefix, n) {
+  let m = fades.get(prefix);
+  if (!m) fades.set(prefix, m = new Map());
+  let s = m.get(n);
+  if (s === undefined) {
+    if (m.size > 600) m.clear();
+    m.set(n, s = `${prefix}${n})`);
+  }
+  return s;
+}
+
+const CLOUD_PUFFS = ['rgba(196,196,200,', 'rgba(182,182,186,', 'rgba(168,168,172,'];
+
+/** A smoke grenade's cloud: thick grey puffs you can't see through. (x, y: where it's drawn.) */
+export function drawCloud(ctx, p, t, x = p.x, y = p.y) {
   const r = p.r || 10, fade = Math.min(1, (p.life ?? 99) / 90);
+  const a = (0.92 * fade).toFixed(3);
   for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2 + (p.id % 7) * 0.7;
+    const ang = (i / 9) * Math.PI * 2 + (p.id % 7) * 0.7;
     const d = r * (i % 2 ? 0.42 : 0.6);
     const wob = Math.sin(t * 0.02 + i * 1.7) * r * 0.05;
-    const g = 196 - (i % 3) * 14;
-    ctx.fillStyle = `rgba(${g},${g},${g + 4},${(0.92 * fade).toFixed(3)})`;
-    ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * d + wob, p.y + Math.sin(a) * d * 0.72, r * 0.56, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = faded(CLOUD_PUFFS[i % 3], a);
+    ctx.beginPath(); ctx.arc(x + Math.cos(ang) * d + wob, y + Math.sin(ang) * d * 0.72, r * 0.56, 0, Math.PI * 2); ctx.fill();
   }
-  ctx.fillStyle = `rgba(212,212,216,${(0.96 * fade).toFixed(3)})`;
-  ctx.beginPath(); ctx.arc(p.x, p.y, r * 0.7, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = faded('rgba(212,212,216,', (0.96 * fade).toFixed(3));
+  ctx.beginPath(); ctx.arc(x, y, r * 0.7, 0, Math.PI * 2); ctx.fill();
 }
 
-function drawGas(ctx, p) {
+// Fading things (gas, flames) are drawn in a fixed colour at an opacity: the same as an
+// rgba() colour with that opacity, with no new colour string for every one every frame.
+function fadedFill(ctx, color, a) {
+  const base = ctx.globalAlpha;
+  ctx.fillStyle = color;
+  ctx.globalAlpha = base * a;
+  ctx.fill();
+  ctx.globalAlpha = base;
+}
+
+function drawGas(ctx, p, x = p.x, y = p.y) {
   const k = Math.min(1, p.life / 60);
-  ctx.fillStyle = `rgba(120,170,40,${0.22 * k})`;
-  ctx.beginPath(); ctx.arc(p.x, p.y, p.r || 10, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = `rgba(150,200,60,${0.18 * k})`;
-  ctx.beginPath(); ctx.arc(p.x + 3, p.y - 2, (p.r || 10) * 0.6, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x, y, p.r || 10, 0, Math.PI * 2);
+  fadedFill(ctx, 'rgb(120,170,40)', 0.22 * k);
+  ctx.beginPath(); ctx.arc(x + 3, y - 2, (p.r || 10) * 0.6, 0, Math.PI * 2);
+  fadedFill(ctx, 'rgb(150,200,60)', 0.18 * k);
 }
 
-function drawFlame(ctx, p) {
+function drawFlame(ctx, p, x = p.x, y = p.y) {
   const k = p.age / (p.age + p.life);
   const r = 2.5 + p.age * MOTION.flameGrow;
-  ctx.fillStyle = k < 0.35 ? `rgba(255,225,110,0.9)` : k < 0.7 ? `rgba(255,130,30,${0.85 - k * 0.4})` : `rgba(150,60,30,${0.6 - k * 0.5})`;
-  ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (k < 0.35) { ctx.fillStyle = 'rgba(255,225,110,0.9)'; ctx.fill(); }
+  else if (k < 0.7) fadedFill(ctx, 'rgb(255,130,30)', 0.85 - k * 0.4);
+  else fadedFill(ctx, 'rgb(150,60,30)', 0.6 - k * 0.5);
 }

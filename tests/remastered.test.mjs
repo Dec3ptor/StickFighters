@@ -139,3 +139,195 @@ test('Auto quality: a level down each time the frame pacer finds frames can\'t k
   assert.equal(fixed.shed(50000), false);
   assert.equal(fixed.quality, 'high', 'a quality picked in Settings stays');
 });
+
+test('the HUD stand-in passes everything else straight through, to the real context', () => {
+  // A context like a browser's: methods and properties on its prototype.
+  class FakeContext {
+    constructor() { this.log = []; this._fill = '#000000'; this._font = '10px sans-serif'; this.lineWidth = 1; }
+    get fillStyle() { return this._fill; }
+    set fillStyle(v) { this._fill = v; }
+    get strokeStyle() { return this._stroke; }
+    set strokeStyle(v) { this._stroke = v; }
+    get font() { return this._font; }
+    set font(v) { this._font = v; }
+    get canvas() { return 'the canvas'; }
+    drawImage(...a) { this.log.push(['drawImage', a.length, this instanceof FakeContext]); }
+    measureText(t) { return { width: t.length * 5 }; }
+    fillText(t) { this.log.push(['text', t, this.shadowColor]); }
+  }
+  const real = new FakeContext();
+  const hud = styledContext(real, () => 1);
+  hud.drawImage('img', 1, 2);
+  hud.drawImage('img', 1, 2, 3, 4, 5, 6, 7, 8);
+  assert.deepEqual(real.log, [['drawImage', 3, true], ['drawImage', 9, true]], 'as many arguments as were given, to the real context');
+  assert.equal(hud.measureText('abc').width, 15);
+  assert.equal(hud.canvas, 'the canvas');
+  hud.lineWidth = 4;
+  assert.equal(real.lineWidth, 4);
+  assert.equal(hud.lineWidth, 4);
+  hud.strokeStyle = '#333';
+  assert.equal(real.strokeStyle, '#e3e8ef');
+  hud.font = 'bold 12px Arial, Helvetica, sans-serif';
+  assert.equal(real.font, `bold 12px ${HUD_FONT}`);
+  hud.fillStyle = '#123456';
+  assert.equal(hud.fillStyle, '#123456', 'other colours stay');
+  // One kind of context, one class: made once.
+  const again = styledContext(new FakeContext(), () => 1);
+  assert.equal(Object.getPrototypeOf(again), Object.getPrototypeOf(hud));
+});
+
+test('night maps, drawn by the processor: the darkness is stretched over the screen only round the lights, and filled plainly everywhere else, once', async () => {
+  const { Lights, fillAround } = await import('../web/src/rm/fx.js');
+  const L = new Lights();
+  L.add(100, 100, 20, '#fff', 0.8);
+  L.add(110, 105, 10, '#fff', 0.8); // (overlaps the first: one box for both)
+  L.add(600, 300, 15, '#fff', 0.5);
+  L.add(5000, 5000, 15, '#fff', 0.5); // (far off the screen: no box)
+  const boxes = L.litBoxes(1 / 4, 0, 0, 4, 4, 1280, 720);
+  assert.equal(boxes.length, 2, 'overlapping lights share a box; off-screen ones have none');
+  for (const b of boxes) assert.ok(b.every(Number.isInteger), 'whole pixels');
+  // Every light's reach (1.6 x its radius, and a bit) is inside a box.
+  for (const l of L.list.slice(0, 3)) {
+    const R = l.r * 1.6;
+    assert.ok(boxes.some(([x0, y0, x1, y1]) => x0 <= l.x - R && y0 <= l.y - R && x1 >= l.x + R && y1 >= l.y + R), `light at ${l.x},${l.y} covered`);
+  }
+  // The fills cover the rest of the screen, every pixel exactly once.
+  const W = 64, H = 48, grid = new Uint8Array(W * H), rects = [[5, 4, 20, 30], [30, 10, 50, 20], [40, 30, 64, 48]];
+  for (const [x0, y0, x1, y1] of rects) for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) grid[y * W + x]++;
+  fillAround({ fillRect: (x, y, w, h) => { for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) grid[j * W + i]++; } }, rects, W, H);
+  assert.ok(grid.every(v => v === 1), 'each pixel drawn once: in a box or by a fill');
+  // Too many lights over too much of the screen: just stretched over all of it.
+  const many = new Lights();
+  for (let i = 0; i < 20; i++) many.add(i * 70, 360, 200, '#fff', 0.9);
+  assert.equal(many.litBoxes(1 / 4, 0, 0, 4, 4, 1280, 720), null);
+});
+
+test('the darkness is worked out again only when the view or the lights change', async () => {
+  const { Lights } = await import('../web/src/rm/fx.js');
+  const L = new Lights();
+  L.add(10, 10, 20, '#fff', 0.5);
+  assert.equal(L.darkChanged(0.3, 4, 5), true);
+  L.clear(); L.add(10, 10, 20, '#fff', 0.5);
+  assert.equal(L.darkChanged(0.3, 4, 5), false, 'the same lights in the same view');
+  assert.equal(L.darkChanged(0.3, 4.25, 5), true, 'the view moved');
+  L.clear(); L.add(10, 11, 20, '#fff', 0.5);
+  assert.equal(L.darkChanged(0.3, 4.25, 5), true, 'a light moved');
+  const first = L.list[0];
+  L.clear(); L.add(1, 2, 3, '#fff', 0.4);
+  assert.equal(L.list[0], first, 'light objects are reused');
+});
+
+test('weather: a drop starting again draws its random numbers in the same order as a new one', async () => {
+  const { Weather } = await import('../web/src/rm/fx.js');
+  const random = Math.random;
+  let seed = 5;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  try {
+    Math.random = rnd;
+    const w = new Weather('snow', 'high');
+    seed = 99;
+    const made = w.spawn(0.3);
+    seed = 99;
+    const again = w.respawn({ x: 7, y: 7, z: 7, v: 7, s: 7, ph: 7 }, 0.3);
+    assert.deepEqual(again, made);
+    // As it was worked out before: depth first, then across, speed, size and phase.
+    seed = 99;
+    const d = { fall: [0.6, 1.6], size: [1.2, 3.4] }, z = 0.35 + Math.random() * 1.25;
+    assert.deepEqual(made, { x: Math.random(), y: 0.3, z, v: d.fall[0] + Math.random() * (d.fall[1] - d.fall[0]), s: d.size[0] + Math.random() * (d.size[1] - d.size[0]), ph: Math.random() * 6.3 });
+  } finally {
+    Math.random = random;
+  }
+});
+
+test('soldiers\' colours are worked out once, and stay the same', async () => {
+  const { soldierColor } = await import('../web/src/rm/soldiers.js');
+  const ffa = { rules: { teams: false } }, teams = { rules: { teams: true } };
+  const a = soldierColor(ffa, { id: 7 }), b = soldierColor(ffa, { id: 7 });
+  assert.equal(a, `hsl(${((7 * 137.508) % 360).toFixed(0)},70%,55%)`);
+  assert.equal(a, b);
+  assert.equal(soldierColor(teams, { team: 2 }), '#e8483a');
+  assert.equal(soldierColor(teams, { team: 5 }), '#9aa4b2');
+});
+
+test('drawn by the processor: the still scenery and the vignette are copied on from screen-sized copies, stretched once', async () => {
+  const { Backdrop } = await import('../web/src/rm/backdrop.js');
+  const { drawnByCPU, drawVignette } = await import('../web/src/rm/fx.js');
+  assert.equal(drawnByCPU(), true, 'no graphics card here');
+  // Pretend canvases that note what's drawn onto them.
+  const fakeCanvas = name => {
+    const log = [];
+    const ctx = {
+      log, globalCompositeOperation: 'source-over', fillStyle: '#000',
+      setTransform() {}, fillRect() {}, createRadialGradient: () => ({ addColorStop() {} }),
+      drawImage(img, ...a) { log.push([img.name, this.globalCompositeOperation, ...a]); },
+    };
+    return { name, width: 0, height: 0, getContext: () => ctx, addEventListener() {}, log };
+  };
+  const made = [], realDocument = globalThis.document;
+  globalThis.document = { createElement: () => { const c = fakeCanvas(`made${made.length}`); made.push(c); return c; } };
+  try {
+    const screen = fakeCanvas('screen'), ctx = screen.getContext(), r = { pw: 1280, ph: 720 };
+    const b = Object.create(Backdrop.prototype);
+    b.buf = fakeCanvas('small');
+    b.picture = 1;
+    b.present(ctx, r);
+    assert.deepEqual(screen.log, [['small', 'copy', 0, 0, 1280, 720]], 'a new picture: stretched over the screen');
+    b.present(ctx, r, true);
+    b.present(ctx, r, true);
+    assert.equal(made.length, 1, 'one screen-sized copy');
+    assert.deepEqual(made[0].log, [['small', 'copy', 0, 0, 1280, 720]], 'the picture stretched into it once');
+    assert.deepEqual(screen.log.slice(1), [['made0', 'copy', 0, 0], ['made0', 'copy', 0, 0]], 'then copied on as it is');
+    b.picture++; // (drawn again: the camera moved)
+    b.present(ctx, r);
+    b.present(ctx, r, true);
+    assert.equal(made[0].log.length, 2, 'a new picture is stretched into the copy again, when it stays still');
+    b.present(ctx, { pw: 1000, ph: 600 }, true);
+    assert.deepEqual(made[1].log, [['small', 'copy', 0, 0, 1000, 600]], 'and for a new screen size, a new copy');
+    // The vignette: worked out small, stretched to full size once, then copied on.
+    screen.log.length = 0;
+    const before = made.length;
+    drawVignette(ctx, 640, 360, 0.37);
+    drawVignette(ctx, 640, 360, 0.37);
+    assert.equal(made.length - before, 2, 'the small one, and the full-size one');
+    const [small, full] = made.slice(before);
+    assert.deepEqual(full.log, [[small.name, 'source-over', 0, 0, 640, 360]]);
+    assert.deepEqual(screen.log, [[full.name, 'source-over', 0, 0], [full.name, 'source-over', 0, 0]]);
+  } finally {
+    globalThis.document = realDocument;
+  }
+});
+
+test('leaving Remastered lets go of the screen-sized copies, and the scenery they were of', async () => {
+  const { Backdrop } = await import('../web/src/rm/backdrop.js');
+  const { drawVignette } = await import('../web/src/rm/fx.js');
+  const fakeCanvas = name => {
+    const ctx = {
+      globalCompositeOperation: 'source-over', fillStyle: '#000',
+      setTransform() {}, fillRect() {}, createRadialGradient: () => ({ addColorStop() {} }), drawImage() {},
+    };
+    return { name, width: 0, height: 0, getContext: () => ctx, addEventListener() {} };
+  };
+  const made = [], realDocument = globalThis.document, realWindow = globalThis.window;
+  globalThis.document = { createElement: () => { const c = fakeCanvas(`made${made.length}`); made.push(c); return c; } };
+  globalThis.window = { removeEventListener() {} };
+  try {
+    const ctx = fakeCanvas('screen').getContext(), r = { pw: 800, ph: 450 };
+    const b = Object.create(Backdrop.prototype);
+    b.buf = fakeCanvas('small');
+    b.picture = 1;
+    b.present(ctx, r, true);
+    drawVignette(ctx, 800, 450, 0.21);
+    const copies = made.length;
+    b.present(ctx, r, true);
+    drawVignette(ctx, 800, 450, 0.21);
+    assert.equal(made.length, copies, 'kept while Remastered draws');
+    // Switched to the original game: the renderer goes, and its copies with it.
+    RemasteredRenderer.prototype.destroy.call(Object.create(RemasteredRenderer.prototype));
+    b.present(ctx, r, true);
+    drawVignette(ctx, 800, 450, 0.21);
+    assert.equal(made.length, copies + 2, 'made again when needed: the scenery\'s copy and the full-size vignette');
+  } finally {
+    globalThis.document = realDocument;
+    globalThis.window = realWindow;
+  }
+});

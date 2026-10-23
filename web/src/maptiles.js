@@ -34,51 +34,64 @@ export const BUILT = '#efe5cf', BUILT_LINE = '#c4ae86', BUILT_ROW = 6;
 export function paintMap(ctx, map, e, rect, destruction) {
   let list = map.solids;
   if (rect) {
-    list = [];
-    map.query(rect.l - e - 1, rect.t - e - 1, rect.r + e + 1, rect.b + e + 1, s => {
-      if (s.r + e >= rect.l && s.l - e <= rect.r && s.b + e >= rect.t && s.t - e <= rect.b) list.push(s);
-      return false;
-    });
+    list = Q.list;
+    list.length = 0;
+    Q.rect = rect; Q.e = e;
+    map.query(rect.l - e - 1, rect.t - e - 1, rect.r + e + 1, rect.b + e + 1, near);
+    Q.rect = null;
     if (!list.length) return null;
   }
+  // (Indexed loops: drawn every frame, these must make no garbage.)
+  const n = list.length;
   ctx.fillStyle = INK;
-  for (const p of list) ctx.fillRect(p.l - e, p.t - e, p.r - p.l + 2 * e, p.b - p.t + 2 * e);
+  for (let i = 0; i < n; i++) { const p = list[i]; ctx.fillRect(p.l - e, p.t - e, p.r - p.l + 2 * e, p.b - p.t + 2 * e); }
   ctx.fillStyle = '#fff';
-  for (const p of list) ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t);
+  for (let i = 0; i < n; i++) { const p = list[i]; ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t); }
   // No hairlines where blocks just meet.
-  const seams = rect ? map.getSeams().filter(s => (s.x !== undefined
-    ? s.x + e >= rect.l && s.x - e <= rect.r && s.b >= rect.t && s.t <= rect.b
-    : s.y + e >= rect.t && s.y - e <= rect.b && s.r >= rect.l && s.l <= rect.r)) : map.getSeams();
-  fillSeams(seams, e, (x, y, w, h) => ctx.fillRect(x, y, w, h));
-  // Built blocks (the Engineer's Builder): sandbag colour, with the rows drawn in.
-  if (map.builtCount) {
-    const built = list.filter(p => p.built);
-    if (built.length) {
-      ctx.fillStyle = BUILT;
-      for (const p of built) ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t);
-      ctx.strokeStyle = BUILT_LINE;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (const p of built) courses(p.l, p.t, p.r, p.b, BUILT_ROW, (x0, y0, x1, y1) => { ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); });
-      ctx.stroke();
+  let seams = map.getSeams();
+  if (rect) {
+    const all = seams;
+    seams = Q.seams;
+    seams.length = 0;
+    for (let i = 0; i < all.length; i++) {
+      const s = all[i];
+      if (s.x !== undefined
+        ? s.x + e >= rect.l && s.x - e <= rect.r && s.b >= rect.t && s.t <= rect.b
+        : s.y + e >= rect.t && s.y - e <= rect.b && s.r >= rect.l && s.l <= rect.r) seams.push(s);
     }
+  }
+  Q.ctx = ctx;
+  fillSeams(seams, e, fillTo);
+  // Built blocks (the Engineer's Builder): sandbag colour, with the rows drawn in.
+  if (map.builtCount && list.some(isBuilt)) {
+    ctx.fillStyle = BUILT;
+    for (let i = 0; i < n; i++) { const p = list[i]; if (p.built) ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t); }
+    ctx.strokeStyle = BUILT_LINE;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) { const p = list[i]; if (p.built) courses(p.l, p.t, p.r, p.b, BUILT_ROW, lineTo); }
+    ctx.stroke();
   }
   // Destructible maps: blocks explosions can't break are hatched.
   if (destruction) {
     ctx.strokeStyle = HATCH;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (const p of list) {
+    for (let i = 0; i < n; i++) {
+      const p = list[i];
       if (!p.hard || p.bounce) continue;
-      hatch(p.l, p.t, p.r, p.b, HATCH_GAP, (x0, y0, x1, y1) => { ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); });
+      hatch(p.l, p.t, p.r, p.b, HATCH_GAP, lineTo);
     }
     ctx.stroke();
   }
+  Q.ctx = null;
   // Jump pads: a light fill (their chevrons move, so they're drawn each frame).
   ctx.fillStyle = '#eef3e2';
-  for (const p of list) if (p.bounce) ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t);
-  const box = { l: Infinity, t: Infinity, r: -Infinity, b: -Infinity };
-  for (const p of list) {
+  for (let i = 0; i < n; i++) { const p = list[i]; if (p.bounce) ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t); }
+  const box = Q.box;
+  box.l = Infinity; box.t = Infinity; box.r = -Infinity; box.b = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const p = list[i];
     if (p.l - e < box.l) box.l = p.l - e;
     if (p.t - e < box.t) box.t = p.t - e;
     if (p.r + e > box.r) box.r = p.r + e;
@@ -86,6 +99,19 @@ export function paintMap(ctx, map, e, rect, destruction) {
   }
   return box;
 }
+
+// paintMap's working state, used again on every call (no new lists or functions each
+// frame): the blocks and seams near the area, the area, the outline width, the canvas,
+// and the box it returns (read it straight away: the next call fills it in again).
+const Q = { list: [], seams: [], rect: null, e: 0, ctx: null, box: { l: 0, t: 0, r: 0, b: 0 } };
+const near = s => {
+  const rect = Q.rect, e = Q.e;
+  if (s.r + e >= rect.l && s.l - e <= rect.r && s.b + e >= rect.t && s.t - e <= rect.b) Q.list.push(s);
+  return false;
+};
+const fillTo = (x, y, w, h) => Q.ctx.fillRect(x, y, w, h);
+const lineTo = (x0, y0, x1, y1) => { Q.ctx.moveTo(x0, y0); Q.ctx.lineTo(x1, y1); };
+const isBuilt = p => p.built;
 
 const makeCanvas = () => (typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(TILE, TILE) : Object.assign(document.createElement('canvas'), { width: TILE, height: TILE }));
 const contextOf = (canvas, opaque) => canvas.getContext('2d', { alpha: !opaque });

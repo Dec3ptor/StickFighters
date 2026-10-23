@@ -20,6 +20,67 @@ const CALLOUT_RANK = { first: 6, shutdown: 5, spree: 4, multi: 3, jugger: 2, rew
 // How long they show, in updates: your own (big, in the middle), and news about others (small, at the top).
 const CALLOUT_LIFE = 150, NEWS_LIFE = 240;
 
+// Each game's standings, kept between frames: { list (best first), idx (where each one is
+// in game.soldiers), compare, ok (false: can't be kept) }.
+const standingsKept = new WeakMap();
+// Where each soldier is in its game's list (set again when the standings change).
+const placeOf = new WeakMap();
+
+/**
+ * game.standings(), sorted again only when the order has changed. The kept order is
+ * checked first (one pass, no garbage): the same soldiers, each pair in order, ties
+ * in the order they're in the game. That's just what sorting again would give.
+ */
+export function standingsOf(game) {
+  const soldiers = game.soldiers, compare = game.rules.compare;
+  let k = standingsKept.get(game);
+  if (k && k.ok && k.compare === compare && k.list.length === soldiers.length && stillInOrder(k, soldiers, compare)) return k.list;
+  const list = game.standings();
+  if (!k) standingsKept.set(game, k = { list, idx: new Int32Array(0), compare, ok: false });
+  k.list = list;
+  k.compare = compare;
+  k.ok = list.length === soldiers.length;
+  if (!k.ok) return list;
+  if (k.idx.length !== list.length) k.idx = new Int32Array(list.length);
+  for (let i = 0; i < soldiers.length; i++) placeOf.set(soldiers[i], i);
+  for (let i = 0; i < list.length; i++) {
+    const at = placeOf.get(list[i]);
+    if (at === undefined || soldiers[at] !== list[i]) { k.ok = false; break; }
+    k.idx[i] = at;
+  }
+  return list;
+}
+
+function stillInOrder(k, soldiers, compare) {
+  const list = k.list, idx = k.idx;
+  for (let i = 0; i < list.length; i++) {
+    if (soldiers[idx[i]] !== list[i]) return false;
+    if (i > 0) {
+      const d = compare(list[i - 1], list[i]);
+      if (d > 0 || (d === 0 && idx[i - 1] > idx[i])) return false;
+    }
+  }
+  return true;
+}
+
+/** A text made from up to three values (by `make`), made again only when they change. */
+function textOf(make) {
+  let a, b, c, text = null;
+  return (x, y, z) => {
+    if (text === null || x !== a || y !== b || z !== c) { a = x; b = y; c = z; text = make(x, y, z); }
+    return text;
+  };
+}
+
+// The newest few of a list that pass a test, oldest first: into `out` (used again each frame).
+function newest(list, n, keep, out, arg) {
+  out.length = 0;
+  for (let i = list.length - 1; i >= 0 && out.length < n; i--) if (keep(list[i], arg)) out.push(list[i]);
+  out.reverse();
+  return out;
+}
+const NOTES = [], FEED = [], CHAT = [];
+
 /**
  * opts: { showScores, watching (soldier the camera follows when you're out), chat: [{ text, tick }],
  *   online (show everyone's ping on the scoreboard), hostId (the host's soldier),
@@ -50,7 +111,7 @@ export function drawHud(r, game, me, opts = {}) {
     drawWeaponBar(ctx, me, W, H);
   }
 
-  const standings = game.standings();
+  const standings = standingsOf(game);
   // (Defuse: your money where the scores go; Tab shows everyone.)
   if (game.mode === 'defuse' && game.modeState) drawMoney(ctx, game, me, W, H);
   else drawScores(ctx, game, me, H, standings);
@@ -65,15 +126,17 @@ export function drawHud(r, game, me, opts = {}) {
   const notesY = !game.over && game.callouts?.length ? drawCallouts(ctx, game, me, W, H) : H * 0.3;
 
   // Messages for the player ("You got the Sniper Rifle").
-  const notes = game.over ? [] : game.notes.filter(n => (n.to == null || n.to === me.id) && game.tick - n.tick < 150).slice(-3);
+  NOTE_FOR.me = me; NOTE_FOR.tick = game.tick;
+  const notes = game.over ? newest(game.notes, 0, noteShown, NOTES, NOTE_FOR) : newest(game.notes, 3, noteShown, NOTES, NOTE_FOR);
   ctx.textAlign = 'center';
-  notes.forEach((n, i) => {
-    const age = game.tick - n.tick;
+  for (let i = 0; i < notes.length; i++) {
+    const n = notes[i], age = game.tick - n.tick;
     ctx.globalAlpha = Math.min(1, (150 - age) / 30);
-    ctx.font = `14px ${FONT}`;
+    ctx.font = FONT_14;
     ctx.fillStyle = '#222';
     ctx.fillText(n.text, W / 2, notesY + i * 20);
-  });
+  }
+  NOTE_FOR.me = null;
   ctx.globalAlpha = 1;
 
   if (me.alive && opts.selfDestruct > 0) {
@@ -140,6 +203,13 @@ export function drawHud(r, game, me, opts = {}) {
   if (opts.killMark) drawKillMark(ctx, opts.killMark, W, H);
 }
 
+// A message shown to the player: theirs (or everyone's), from the last 150 updates.
+const NOTE_FOR = { me: null, tick: 0 };
+const noteShown = (n, f) => (n.to == null || n.to === f.me.id) && f.tick - n.tick < 150;
+// Fonts used every frame (made once).
+const FONT_14 = `14px ${FONT}`, FONT_12 = `12px ${FONT}`, FONT_BOLD_12 = `bold 12px ${FONT}`, FONT_11 = `11px ${FONT}`;
+const FONT_BOLD_10 = `bold 10px ${FONT}`, FONT_10 = `10px ${FONT}`, FONT_9 = `9px ${FONT}`, FONT_8 = `8px ${FONT}`;
+
 const BAR_COLORS = {
   health: ['#e02020', '#5c0f0f'],
   armour: ['#3f9a3a', '#1c4a1a'],
@@ -163,6 +233,15 @@ function weaponBarScale(W) {
   return Math.min(1, (W - 24) / total);
 }
 
+// The status bars' texts (made again only when what's in them changes).
+const healthLabel = textOf(h => `Health ${h}%`);
+// (mag -1: reloading.)
+const magLabel = textOf((def, mag, ammo) => {
+  const spare = ammo === Infinity ? '' : `  ·  ${ammo}`;
+  return mag < 0 ? `${def.name}: reloading${spare}` : `${def.name}  ${mag}/${def.mag}${spare}`;
+});
+const ammoLabel = textOf((def, ammo) => `${def.name}  ${ammo}`);
+
 /**
  * Health, armour, ammo, jet fuel and stamina: just above the weapon bar, in the
  * middle at the bottom of the screen, where your eyes are anyway.
@@ -180,23 +259,22 @@ function drawStatus(ctx, game, me, W, H, opts) {
   }
   // The main row: health on the left, the weapon in hand on the right.
   let y = -11 - h;
-  bar(ctx, -half - gap / 2, y, half, h, me.health / RULES.maxHealth, 'health', `Health ${Math.max(0, Math.ceil(me.health))}%`, true);
+  bar(ctx, -half - gap / 2, y, half, h, me.health / RULES.maxHealth, 'health', healthLabel(Math.max(0, Math.ceil(me.health))), true);
   // (With the soldier's upgrade: Extended mag holds more.)
   const def = weaponFor(me, me.current), inv = me.weapons[me.current];
   if (def && inv) {
     let frac = 1, label = def.name;
     if (def.mag) {
       // (With spare ammo: what's in the magazine, then what's left to reload with.)
-      const spare = inv.ammo === Infinity ? '' : `  ·  ${inv.ammo}`;
       frac = me.reloadTimer > 0 ? 1 - me.reloadTimer / def.reload : inv.mag / def.mag;
-      label = me.reloadTimer > 0 ? `${def.name}: reloading${spare}` : `${def.name}  ${inv.mag}/${def.mag}${spare}`;
+      label = magLabel(def, me.reloadTimer > 0 ? -1 : inv.mag, inv.ammo);
     } else if (def.tool) {
       // Building (the Hammer, the Builder): blocks left, and what a click puts up (right click turns it).
       frac = inv.ammo / (me.kitAmmo?.[me.current] || def.maxAmmo || 1);
       label = `${def.name}  ${inv.ammo} block${inv.ammo === 1 ? '' : 's'}  ·  ${me.buildPlank ? 'plank' : 'wall'}`;
     } else if (inv.ammo !== Infinity && !game.rules.infiniteAmmo) {
       frac = inv.ammo / (def.maxAmmo || def.ammo || 1);
-      label = `${def.name}  ${inv.ammo}`;
+      label = ammoLabel(def, inv.ammo);
     }
     bar(ctx, gap / 2, y, half, h, frac, 'ammo', label, true);
   }
@@ -462,7 +540,7 @@ function bar(ctx, x, y, w, h, frac, kind, label, bold = false) {
   ctx.fillStyle = fg;
   ctx.fillRect(x, y, w * Math.max(0, Math.min(1, frac)), h);
   if (!label) return;
-  ctx.font = bold ? `bold 12px ${FONT}` : `11px ${FONT}`;
+  ctx.font = bold ? FONT_BOLD_12 : FONT_11;
   ctx.textAlign = 'left';
   ctx.fillStyle = '#fff';
   ctx.fillText(label, x + 6, y + h / 2 + 1);
@@ -476,73 +554,115 @@ function drawWeaponBar(ctx, me, W, H) {
   ctx.save();
   ctx.translate(W / 2 - (total * scale) / 2, H - (size + 10) * scale);
   ctx.scale(scale, scale);
-  const owned = Object.keys(me.weapons).filter(id => WEAPONS[id] && me.has(id));
-  SLOTS.forEach((slot, i) => {
-    const x = i * (size + gap);
-    const mine = owned.filter(id => WEAPONS[id].slot === i);
+  // (The weapons you have: worked out once, not again for every slot.)
+  const owned = OWNED;
+  owned.length = 0;
+  for (const id in me.weapons) if (WEAPONS[id] && me.has(id)) owned.push(id);
+  for (let i = 0; i < SLOTS.length; i++) {
+    const slot = SLOTS[i], x = i * (size + gap);
+    // How many you have in this slot, the first of them, and whether the one you last had out is one.
+    let count = 0, first, last = false;
+    for (let j = 0; j < owned.length; j++) {
+      const id = owned[j];
+      if (WEAPONS[id].slot !== i) continue;
+      if (!count) first = id;
+      count++;
+      if (id === me.lastInSlot[i]) last = true;
+    }
     const current = WEAPONS[me.current]?.slot === i;
-    const show = current ? me.current : mine.includes(me.lastInSlot[i]) ? me.lastInSlot[i] : mine[0];
-    ctx.fillStyle = current ? 'rgba(30,30,30,0.88)' : mine.length ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.35)';
+    const show = current ? me.current : last ? me.lastInSlot[i] : first;
+    ctx.fillStyle = current ? 'rgba(30,30,30,0.88)' : count ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.35)';
     ctx.fillRect(x, 0, size, size);
-    ctx.strokeStyle = mine.length ? '#333' : 'rgba(0,0,0,0.12)';
+    ctx.strokeStyle = count ? '#333' : 'rgba(0,0,0,0.12)';
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, 0.5, size - 1, size - 1);
     ctx.textAlign = 'left';
-    ctx.font = `bold 10px ${FONT}`;
-    ctx.fillStyle = current ? '#fff' : mine.length ? '#333' : 'rgba(0,0,0,0.25)';
+    ctx.font = FONT_BOLD_10;
+    ctx.fillStyle = current ? '#fff' : count ? '#333' : 'rgba(0,0,0,0.25)';
     ctx.fillText(slot.key, x + 4, 9);
-    if (mine.length > 1) {
+    if (count > 1) {
       ctx.textAlign = 'right';
-      ctx.font = `9px ${FONT}`;
-      ctx.fillText(`${mine.length}`, x + size - 4, 9);
+      ctx.font = FONT_9;
+      ctx.fillText(String(count), x + size - 4, 9);
     }
     ctx.textAlign = 'center';
     if (show) {
       const def = weaponFor(me, show), inv = me.weapons[show];
-      ctx.font = `${def.short.length > 8 ? 8 : 10}px ${FONT}`;
+      ctx.font = def.short.length > 8 ? FONT_8 : FONT_10;
       ctx.fillText(def.short, x + size / 2, 24);
-      ctx.font = `9px ${FONT}`;
-      ctx.fillText(def.mag ? (inv.ammo === Infinity ? '∞' : `${inv.mag}/${inv.ammo}`) : inv.ammo === Infinity ? '' : String(inv.ammo), x + size / 2, 37);
+      ctx.font = FONT_9;
+      ctx.fillText(def.mag ? (inv.ammo === Infinity ? '∞' : slotAmmo[i](inv.mag, inv.ammo)) : inv.ammo === Infinity ? '' : String(inv.ammo), x + size / 2, 37);
     } else {
-      ctx.font = `9px ${FONT}`;
-      ctx.fillText(slot.name.split(' ')[0], x + size / 2, 26);
+      ctx.font = FONT_9;
+      ctx.fillText(SLOT_WORDS[i], x + size / 2, 26);
     }
-  });
+  }
   ctx.restore();
 }
 
+const OWNED = [];
+// Each slot's first word ("Automatics") and its magazine text ("8/24"), made when it changes.
+const SLOT_WORDS = SLOTS.map(slot => slot.name.split(' ')[0]);
+const slotAmmo = SLOTS.map(() => textOf((mag, ammo) => `${mag}/${ammo}`));
+
 function drawScores(ctx, game, me, H, standings) {
-  const list = standings.slice(0, 8);
+  const n = Math.min(8, standings.length);
   const rules = game.rules;
   ctx.textAlign = 'left';
-  list.forEach((s, i) => {
-    ctx.font = `${s === me ? 'bold ' : ''}12px ${FONT}`;
+  for (let i = 0; i < n; i++) {
+    const s = standings[i];
+    ctx.font = s === me ? FONT_BOLD_12 : FONT_12;
     ctx.fillStyle = rules.teams ? TEAM[s.team] : '#333';
-    const extra = rules.scoreLabel === 'Frags' ? s.frags : `${rules.scoreLabel.toLowerCase()} ${rules.score(s)}`;
-    ctx.fillText(`${s.name}: ${extra}`, 12, H - 70 - (list.length - 1 - i) * 15);
-  });
+    const score = rules.scoreLabel === 'Frags' ? s.frags : rules.score(s);
+    ctx.fillText(scoreLine(s, rules, score), 12, H - 70 - (n - 1 - i) * 15);
+  }
 }
 
+// Each soldier's line in the scores ("Sarge: 3"), made again only when it changes.
+const scoreLines = new WeakMap();
+function scoreLine(s, rules, score) {
+  let l = scoreLines.get(s);
+  if (!l) scoreLines.set(s, l = { name: null, label: null, score: null, text: '' });
+  if (l.name !== s.name || l.label !== rules.scoreLabel || l.score !== score) {
+    l.name = s.name; l.label = rules.scoreLabel; l.score = score;
+    l.text = rules.scoreLabel === 'Frags' ? `${s.name}: ${score}` : `${s.name}: ${rules.scoreLabel.toLowerCase()} ${score}`;
+  }
+  return l.text;
+}
+
+const feedShown = (f, tick) => tick - f.tick < 360;
+const chatShown = (c, now) => now - c.time < 12000;
+// Kill feed and chat lines as shown ("A fragged B (Bazooka)", "Bob: gg"), made once each.
+const lineTexts = new WeakMap();
+function lineText(item, make) {
+  let t = lineTexts.get(item);
+  if (t === undefined) lineTexts.set(item, t = make(item));
+  return t;
+}
+const feedText = f => f.text + (f.weapon ? ` (${f.weapon})` : '');
+const chatText = c => (c.system ? c.text : `${c.name}: ${c.text}`);
+
 function drawFeed(ctx, game, W, chat = []) {
-  const items = game.feed.filter(f => game.tick - f.tick < 360).slice(-5);
+  const items = newest(game.feed, 5, feedShown, FEED, game.tick);
   ctx.textAlign = 'right';
-  ctx.font = `12px ${FONT}`;
-  items.forEach((f, i) => {
-    const age = game.tick - f.tick;
+  ctx.font = FONT_12;
+  for (let i = 0; i < items.length; i++) {
+    const f = items[i], age = game.tick - f.tick;
     ctx.globalAlpha = Math.min(1, (360 - age) / 60);
     ctx.fillStyle = '#c21b1b';
-    ctx.fillText(f.text + (f.weapon ? ` (${f.weapon})` : ''), W - 12, 16 + i * 16);
-  });
+    ctx.fillText(lineText(f, feedText), W - 12, 16 + i * 16);
+  }
   ctx.globalAlpha = 1;
   const now = performance.now();
-  const lines = chat.filter(c => now - c.time < 12000).slice(-6);
+  const lines = newest(chat, 6, chatShown, CHAT, now);
   ctx.textAlign = 'left';
-  lines.forEach((c, i) => {
+  for (let i = 0; i < lines.length; i++) {
+    const c = lines[i];
     ctx.globalAlpha = Math.min(1, (12000 - (now - c.time)) / 1500);
-    ctx.font = `12px ${FONT}`;
+    ctx.font = FONT_12;
     ctx.fillStyle = c.system ? '#777' : '#1a1a1a';
-    ctx.fillText(c.system ? c.text : `${c.name}: ${c.text}`, 180, 20 + i * 16);
-  });
+    ctx.fillText(lineText(c, chatText), 180, 20 + i * 16);
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -574,9 +694,11 @@ function drawTop(ctx, game, me, W, standings, r, H) {
     const bullets = me.weapons.Chamber?.ammo ?? 0;
     ctx.fillText(`Lives: ${me.lives ?? 0}  ·  Bullets: ${me.alive ? bullets : '-'}  ·  ${left} still in`, W / 2, 16);
   } else {
-    ctx.fillText(`${me.frags} / ${game.fragLimit} frags  ·  ${ordinal(rank)} place`, W / 2, 16);
+    ctx.fillText(topLine(me.frags, game.fragLimit, rank), W / 2, 16);
   }
 }
+
+const topLine = textOf((frags, limit, rank) => `${frags} / ${limit} frags  ·  ${ordinal(rank)} place`);
 
 function drawScoreboard(ctx, game, me, W, H, opts, standings) {
   // Huge games: the top 20, then you (if you're further down).
@@ -922,7 +1044,8 @@ export function drawReplay(r, info) {
   ctx.globalAlpha = 1;
 }
 
+const ORDINAL = ['th', 'st', 'nd', 'rd'];
 function ordinal(n) {
-  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  const s = ORDINAL, v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }

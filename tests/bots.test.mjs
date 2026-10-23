@@ -182,3 +182,70 @@ test("a team walled into its own part of the map doesn't self-destruct over and 
   for (let i = 0; i < 1800; i++) game.update();
   assert.deepEqual(feed.filter(t => /self-destructed/.test(t)), []);
 });
+
+/** Cheapest costs from `start`, worked out the slow way (each move's penalty read off the move itself). */
+function slowCosts(nav, start) {
+  const cost = new Array(nav.nodes.length).fill(Infinity), done = new Uint8Array(nav.nodes.length);
+  cost[start.id] = 0;
+  for (;;) {
+    let u = -1;
+    for (let i = 0; i < cost.length; i++) if (!done[i] && cost[i] < Infinity && (u < 0 || cost[i] < cost[u])) u = i;
+    if (u < 0) return cost;
+    done[u] = 1;
+    for (const l of nav.nodes[u].links) cost[l.to.id] = Math.min(cost[l.to.id], cost[u] + l.cost + (l.penalty || 0));
+  }
+}
+
+test('route searches: moves that went wrong cost more, and searches in reused arrays come out the same', () => {
+  const { nav } = botMatch('ssdm1.json', { bots: 0 });
+  // (Worked out when the route map is made, not in the first update a bot plans in.)
+  for (const g of [nav, nav.clone()]) assert.ok(g._flatLinks && g.nodeCells && g._trapped, 'ready up front');
+  const start = nav.nodes[0], far = nav.nodes[nav.nodes.length - 1];
+  assert.deepEqual([...nav.costsFrom(start).cost], slowCosts(nav, start));
+  // Moves that went wrong for bots: the searches see what's on the moves.
+  const before = nav.costsFrom(start), path = nav.pathTo(before, far);
+  assert.ok(path.length > 3);
+  for (const link of path.slice(0, 3)) nav.penalize(link, 270);
+  nav.penalize(path[1], 90);
+  assert.equal(path[1].penalty, 90);
+  const fresh = nav.costsFrom(start);
+  assert.deepEqual([...fresh.cost], slowCosts(nav, start));
+  assert.ok(fresh.cost[far.id] > before.cost[far.id] || nav.pathTo(fresh, far)[0] !== path[0], 'dearer, or another way');
+  // (A move that isn't on the route map, like one worked out on the spot, changes nothing there.)
+  nav.penalize({ ...path[0] }, 999);
+  assert.deepEqual([...nav.costsFrom(start).cost], slowCosts(nav, start));
+  // A search worked out in an earlier one's arrays is the same as one in new arrays.
+  const other = nav.costsFrom(far);
+  const again = nav.costsFrom(start, other);
+  assert.equal(again, other, 'the same object');
+  assert.deepEqual([...again.cost], [...fresh.cost]);
+  assert.deepEqual([...again.prev], [...fresh.prev]);
+  assert.deepEqual(nav.pathTo(again, far), nav.pathTo(fresh, far));
+  // Remembered searches: worked out again (in the old one's arrays) once they're old, and in a
+  // dropped one's arrays once there are lots: the same answers as a new search.
+  const first = nav.cachedCostsFrom(start, 0);
+  assert.equal(nav.cachedCostsFrom(start, 50), first, 'still fresh');
+  assert.deepEqual([...nav.cachedCostsFrom(start, 200).cost], [...fresh.cost]);
+  for (let i = 0; i < nav.nodes.length; i++) {
+    const n = nav.nodes[i], s = nav.cachedCostsFrom(n, 300);
+    if (i % 25 === 0) assert.deepEqual([...s.cost], [...nav.costsFrom(n).cost], `from spot ${i}`);
+  }
+  assert.ok(nav.searches.size <= 200);
+});
+
+test("a bot's input: one object, everything left from the last update cleared", () => {
+  const { game, nav } = arena();
+  const { s, ctl } = bot(game, nav, 'B', 300);
+  const inp = ctl.input(game, s);
+  Object.assign(inp, { move: 1, jump: true, jumpPressed: true, fire: true, firePressed: true, aimDist: 50, sprint: true, jet: true,
+    switchTo: 'Shotgun', plank: true, streak: 'sentry', gadget: true, use: true, selfDestruct: true });
+  s.alive = false; // (nothing for it to do: what's left is the clearing)
+  const again = ctl.input(game, s);
+  assert.equal(again, inp, 'the same object');
+  assert.deepEqual([again.move, again.jump, again.jumpPressed, again.fire, again.aimDist, again.aim], [0, false, false, false, 200, ctl.aim ?? s.aim]);
+  for (const k of ['firePressed', 'sprint', 'crouch', 'jet', 'switchTo', 'cycle', 'reload', 'drop', 'gadget', 'streak', 'use', 'plank', 'selfDestruct']) {
+    assert.equal(again[k], undefined, `${k} cleared`);
+  }
+  // (A field it wouldn't know to clear can't be added.)
+  assert.throws(() => { again.somethingNew = true; }, TypeError);
+});

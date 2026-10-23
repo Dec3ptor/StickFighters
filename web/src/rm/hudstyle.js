@@ -33,6 +33,19 @@ export function swapColor(c) {
   return c;
 }
 
+// The HUD sets the same few colours over and over: each is worked out once.
+const swapped = new Map();
+function swapCached(c) {
+  if (typeof c !== 'string') return c;
+  let out = swapped.get(c);
+  if (out === undefined) {
+    out = swapColor(c);
+    if (swapped.size > 500) swapped.clear();
+    swapped.set(c, out);
+  }
+  return out;
+}
+
 const fonts = new Map();
 function swapFont(f) {
   let out = fonts.get(f);
@@ -59,42 +72,65 @@ function isLight(c) {
 }
 
 /**
+ * The stand-in's class for contexts like `ctx`: every method and property goes straight
+ * through to the real context (this.ctx), except the colours and font, swapped as they're
+ * set, and fillText, which gives light text its shadow. Made once per kind of context.
+ */
+const classes = new WeakMap();
+function classFor(ctx) {
+  const proto = Object.getPrototypeOf(ctx);
+  // (A real canvas context: one class for all of them. Anything else: its own.)
+  const key = proto && proto !== Object.prototype ? proto : ctx;
+  let C = classes.get(key);
+  if (C) return C;
+  C = class StyledContext {
+    constructor(real, dpr) { this.ctx = real; this.dpr = dpr; }
+  };
+  const names = new Set();
+  for (let o = ctx; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) for (const k of Object.getOwnPropertyNames(o)) names.add(k);
+  for (const k of names) {
+    if (k === 'constructor' || k === 'ctx' || k === 'dpr') continue;
+    let d = null;
+    for (let o = ctx; o && !d; o = Object.getPrototypeOf(o)) d = Object.getOwnPropertyDescriptor(o, k);
+    if (typeof d.value === 'function') {
+      // (apply with `arguments`: the same arguments, as many as were given, and nothing made for it.)
+      Object.defineProperty(C.prototype, k, { value: function () { const c = this.ctx; return c[k].apply(c, arguments); }, writable: true, configurable: true });
+    } else {
+      Object.defineProperty(C.prototype, k, { get() { return this.ctx[k]; }, set(v) { this.ctx[k] = v; }, configurable: true });
+    }
+  }
+  const style = k => ({ get() { return this.ctx[k]; }, set(v) { this.ctx[k] = swapCached(v); }, configurable: true });
+  Object.defineProperty(C.prototype, 'fillStyle', style('fillStyle'));
+  Object.defineProperty(C.prototype, 'strokeStyle', style('strokeStyle'));
+  Object.defineProperty(C.prototype, 'font', { get() { return this.ctx.font; }, set(v) { this.ctx.font = swapFont(v); }, configurable: true });
+  Object.defineProperty(C.prototype, 'fillText', {
+    value(text, x, y, maxWidth) {
+      const ctx = this.ctx, shadow = isLight(ctx.fillStyle);
+      if (shadow) {
+        const d = this.dpr();
+        ctx.shadowColor = 'rgba(0,0,0,0.7)';
+        ctx.shadowOffsetY = Math.max(1, Math.round(d));
+        ctx.shadowBlur = 2 * d;
+      }
+      if (maxWidth === undefined) ctx.fillText(text, x, y);
+      else ctx.fillText(text, x, y, maxWidth);
+      if (shadow) {
+        ctx.shadowColor = 'rgba(0,0,0,0)';
+        ctx.shadowOffsetY = 0;
+        ctx.shadowBlur = 0;
+      }
+    },
+    writable: true, configurable: true,
+  });
+  classes.set(key, C);
+  return C;
+}
+
+/**
  * A stand-in for ctx that swaps colours and fonts as they're set, and gives light
  * text a dark drop shadow so it reads over bright scenery (everything else goes
  * straight through). dpr(): the screen's pixel ratio (the shadow is in screen pixels).
  */
 export function styledContext(ctx, dpr = () => 1) {
-  const bound = new Map();
-  const fillText = (text, x, y, maxWidth) => {
-    const shadow = isLight(ctx.fillStyle);
-    if (shadow) {
-      const d = dpr();
-      ctx.shadowColor = 'rgba(0,0,0,0.7)';
-      ctx.shadowOffsetY = Math.max(1, Math.round(d));
-      ctx.shadowBlur = 2 * d;
-    }
-    if (maxWidth === undefined) ctx.fillText(text, x, y);
-    else ctx.fillText(text, x, y, maxWidth);
-    if (shadow) {
-      ctx.shadowColor = 'rgba(0,0,0,0)';
-      ctx.shadowOffsetY = 0;
-      ctx.shadowBlur = 0;
-    }
-  };
-  return new Proxy(ctx, {
-    get(t, k) {
-      if (k === 'fillText') return fillText;
-      const v = t[k];
-      if (typeof v !== 'function') return v;
-      let f = bound.get(k);
-      if (!f) { f = v.bind(t); bound.set(k, f); }
-      return f;
-    },
-    set(t, k, v) {
-      if (k === 'fillStyle' || k === 'strokeStyle') v = swapColor(v);
-      else if (k === 'font') v = swapFont(v);
-      t[k] = v;
-      return true;
-    },
-  });
+  return new (classFor(ctx))(ctx, dpr);
 }

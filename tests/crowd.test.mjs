@@ -117,3 +117,18 @@ test('1,000 bots: everyone arrives within 2 seconds, and the game keeps up', () 
   assert.ok(game.stats.kills > 15, `they fight (${game.stats.kills} kills)`);
   for (const s of game.soldiers) assert.ok(Number.isFinite(s.x) && Number.isFinite(s.y), 'positions are numbers');
 });
+
+test('in a big game, only so many bots plan in one update (the rest plan the next)', () => {
+  const { game } = botMatch('ssdm1.json', { bots: 250, mode: 'ffa', seed: 5 });
+  let now = 0, most = 0, total = 0;
+  const planned = new Set();
+  for (const ctl of game.controllers.values()) {
+    const think = ctl.think;
+    ctl.think = function (...a) { now++; total++; planned.add(this); return think.apply(this, a); };
+  }
+  // (Everyone arrives in the first 2 seconds: a rush of first plans.)
+  for (let i = 0; i < 300; i++) { now = 0; game.update(); most = Math.max(most, now); }
+  assert.equal(most, Math.ceil(250 / 20), 'at most one in 20 of the soldiers in one update');
+  assert.ok(total > 500, `they keep planning (${total} plans)`);
+  assert.ok(planned.size > 245, `nearly every bot has planned (${planned.size})`);
+});

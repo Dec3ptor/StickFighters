@@ -64,6 +64,55 @@ export class Soldier {
     this.jugger = 0;
     this.headshots = 0;
     this.blasts = 0;
+    // Every field a soldier gets later on (elsewhere in the game), made here, so all soldiers
+    // share one shape and reading their fields stays fast. Each starts out undefined, just as
+    // it was before anything set it (code checks these with == null, ?? and ||).
+    // Respawning (spawnAt) and the hurt and burn credit (combat.js):
+    this.reloading = undefined;
+    this.burnBy = undefined;
+    this.lastHurtBy = undefined;
+    this.lastHurtWeapon = undefined;
+    this.lastHurtTick = undefined;
+    this.animPrev = undefined;
+    // The game (game.js): use key, self-destruct, where they died, spectating, held respawns, the Builder's choice.
+    this.using = undefined;
+    this.destructHold = undefined;
+    this.deathX = undefined;
+    this.deathY = undefined;
+    this.toldTrapped = undefined;
+    this.spectating = undefined;
+    this.holdSpawn = undefined;
+    this.buildPlank = undefined;
+    this.toldBuild = undefined;
+    this.gassed = undefined;   // the update skunk gas last hurt them (combat.js)
+    this.gridCell = undefined; // the soldier grid's cell they're in (grid.js)
+    this.bankedAt = undefined; // kill streaks (streaks.js)
+    // Modes: gun game, one in the chamber (modes.js) and Defuse (defuse.js).
+    this.level = undefined;
+    this.levelKills = undefined;
+    this.lives = undefined;
+    this.bullets = undefined;
+    this.shop = undefined;
+    this.helmet = undefined;
+    this.kit = undefined;
+    this.fresh = undefined;
+    // Classes (classes.js, gadgets.js).
+    this.cls = undefined;
+    this.pickCls = undefined;
+    this.loadouts = undefined;
+    this.mods = undefined;
+    this.kitAmmo = undefined;
+    this.gadgetCharge = undefined;
+    this.blockRegen = undefined;
+    this.deployAt = undefined;
+    this.spawnedAt = undefined;
+    this.toldCharging = undefined;
+    this.beforeTool = undefined;
+    // Online play (net/): a remote player, their ping, and smoothing our own corrections.
+    this.remote = undefined;
+    this.ping = undefined;
+    this.drawDX = undefined;
+    this.drawDY = undefined;
   }
 
   get x() { return this.body.x; }
@@ -149,7 +198,9 @@ export class Soldier {
   move(input, map) {
     this.prevX = this.body.x;
     this.prevY = this.body.y;
-    this.animPrev = { ...this.anim }; // (the renderer draws the animation in between)
+    // The animation as it was (the renderer draws in between): copied into the same object every update.
+    const a0 = this.anim, p = this.animPrev || (this.animPrev = { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, swing: 0 });
+    p.run = a0.run; p.idle = a0.idle; p.land = a0.land; p.flip = a0.flip; p.recoil = a0.recoil; p.swing = a0.swing;
     if (input.aim != null) this.aim = input.aim;
     const c = Math.cos(this.aim);
     if (Math.abs(c) > 0.05) this.facing = c < 0 ? -1 : 1;

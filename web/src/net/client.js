@@ -9,13 +9,18 @@ import { Game } from '../game.js';
 import { stepBody } from '../physics.js';
 import { WEAPONS } from '../weapons.js';
 import { MOTION, TICK_RATE } from '../config.js';
-import { encodeInputs, decodeSnapshot, messageType, PROTOCOL } from './protocol.js';
+import { encodeInputs, decodeSnapshot, messageType, PROTOCOL, SNAPSHOT_EVERY } from './protocol.js';
 import { FX_METHODS } from './host.js';
 import { beaconKey } from '../gadgets.js';
 import { Tape } from '../replay.js';
 
+const NONE = [];
 const INPUT_REPEAT = 4;     // each input packet carries the last few inputs, in case some are lost
-const VIEW_DELAY = 7;       // ticks behind the newest snapshot that others are shown (smooths out late packets)
+const VIEW_DELAY = 7;       // ticks behind the host's clock that others are shown at first (room for late snapshots)...
+const MIN_DELAY = 5, MAX_DELAY = 10; // ...then as many as late snapshots need, within these
+const CLOCK_SNAPS = 48;     // snapshots the host's clock is worked out from (about 2.4 seconds of them)
+const LATEST_SNAPS = 6;     // ...and where it's up to now, from the quickest of the last few
+const FAR_BEHIND = 12;      // ticks later than it should be past which the view jumps on rather than catch up (after a gap in snapshots)
 
 const lerp = (a, b, t) => a + (b - a) * t;
 function lerpAngle(a, b, t) {
@@ -23,6 +28,21 @@ function lerpAngle(a, b, t) {
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
   return a + d * t;
+}
+
+/**
+ * A snapshot list's entries by id (ids in snapshots are 8 or 16 bits; the last of any with the
+ * same id, as a Map would have it). Refilled for each list, never reallocated: no garbage.
+ */
+class IdIndex {
+  constructor(size) { this.at = new Int16Array(size).fill(-1); this.list = []; }
+  fill(list) {
+    const at = this.at, old = this.list;
+    for (let i = 0; i < old.length; i++) at[old[i].id] = -1;
+    for (let i = 0; i < list.length; i++) at[list[i].id] = i;
+    this.list = list;
+  }
+  get(id) { const i = this.at[id]; return i >= 0 ? this.list[i] : undefined; }
 }
 
 export class NetClient {
@@ -45,14 +65,14 @@ export class NetClient {
     this.recent = [];
     this.snaps = [];
     this.events = [];
-    this.offsets = [];
-    this.offset = 0;
     this.ping = null;
     this.chat = [];
     this.inputEnabled = true;
     this.ended = false;
     this.step = 1000 / TICK_RATE;
     this.clock = opts.clock || (() => performance.now());
+    this.resetClock();
+    this.resetView();
     this.pingTimer = setInterval(() => this.sendPing(), 2000);
     this.pingTimer.unref?.(); // (in Node tests, don't keep the process alive)
   }
@@ -120,10 +140,11 @@ export class NetClient {
     this.events = [];
     this.pending = [];
     this.recent = [];
-    this.offsets = [];
+    this.resetClock();
     this.fixed = null;       // the new match's pickups
     this.switchSeq = 0;
     this.myBeacon = null;    // our newest spawn beacon (classes on)
+    this.resetView();
     this.tape = new Tape();  // the last few seconds, for the replay of the winning kill (replay.js)
     this.applyRoster(w.roster);
     this.applyCarves(0, w.carves);
@@ -223,14 +244,14 @@ export class NetClient {
       this.carvesBehind ??= snap.arrival;
       if (snap.arrival - this.carvesBehind > 500) this.askCarves();
     } else this.carvesBehind = null;
-    // The host's clock: the least-delayed snapshot says best when each tick happened.
-    this.offsets.push(snap.arrival - snap.tick * this.step);
-    if (this.offsets.length > 60) this.offsets.shift();
-    this.offset = Math.min(...this.offsets);
+    this.timeSnapshot(snap.tick, snap.arrival);
 
     const g = this.game;
     // Someone in the snapshot we don't know about: ask for the player list again.
-    if (snap.soldiers.some(s => !g.soldiers.some(x => x.id === s.id)) && snap.arrival - (this.rosterAsked || -1e9) > 1000) {
+    const known = this.soldiersById();
+    let stranger = false;
+    for (let i = 0; i < snap.soldiers.length && !stranger; i++) stranger = !known.has(snap.soldiers[i].id);
+    if (stranger && snap.arrival - (this.rosterAsked || -1e9) > 1000) {
       this.rosterAsked = snap.arrival;
       this.link.send({ t: 'roster?' }, true);
     }
@@ -296,24 +317,167 @@ export class NetClient {
     if (Math.abs(me.drawDY) < 0.05) me.drawDY = 0;
   }
 
+  /**
+   * What's drawn of the host's match, kept and refilled every frame so drawing makes no garbage:
+   * the lists given to the game, the objects in them (copies of a snapshot's, and which one each
+   * was copied `from`), and the earlier snapshot's soldiers and projectiles by id.
+   */
+  resetView() {
+    this.shots = []; this.shotPool = []; this.shotFrom = [];
+    this.items = []; this.itemPool = []; this.itemFrom = [];
+    this.beacons = []; this.beaconPool = []; this.beaconFrom = [];
+    this.soldiersBefore = new IdIndex(256);
+    this.shotsBefore = new IdIndex(65536);
+    this.pairA = this.pairB = null;
+    this.smooth = new Uint8Array(64);
+    this.indexed = null;
+  }
+
+  /** The game's soldiers by id (the first of any with the same id); worked out again when the list changes. */
+  soldiersById() {
+    const list = this.game.soldiers;
+    if (list !== this.indexed || list.length !== this.indexedCount) {
+      const m = this.byId = new Map();
+      for (let i = 0; i < list.length; i++) if (!m.has(list[i].id)) m.set(list[i].id, list[i]);
+      this.indexed = list;
+      this.indexedCount = list.length;
+    }
+    return this.byId;
+  }
+
   /** Before drawing: put everyone else where they were a moment ago, between two snapshots. */
   updateView(now = this.clock()) {
-    const g = this.game;
-    if (!g || !this.snaps.length) return;
-    const newest = this.snaps[this.snaps.length - 1];
-    let rt = (now - this.offset) / this.step - VIEW_DELAY;
-    rt = Math.min(rt, newest.tick + 6);
-    let a = this.snaps[0], b = a;
-    for (let i = this.snaps.length - 1; i >= 0; i--) {
-      if (this.snaps[i].tick <= rt) { a = this.snaps[i]; b = this.snaps[i + 1] || a; break; }
+    if (!this.game || !this.snaps.length) return;
+    this.showAt(this.viewTime(now));
+  }
+
+  /** The host's clock, worked out from when snapshots arrive (timeSnapshot), and the tick shown (viewTime). */
+  resetClock() {
+    this.arrivals = new Float64Array(CLOCK_SNAPS);     // when each of the last snapshots arrived,
+    this.arrivalTicks = new Float64Array(CLOCK_SNAPS); // its tick,
+    this.lateness = new Float64Array(CLOCK_SNAPS);     // and how many ticks later than the quickest it was
+    this.clockHead = 0; this.clockCount = 0; this.lateCount = 0;
+    this.hostRate = 1;   // host ticks per tick of ours (a slow host drops some)
+    this.hostTick = 0;   // where the host was up to at hostAt
+    this.hostAt = 0;
+    this.delay = VIEW_DELAY; this.shrink = 0;
+    this.viewTick = null; this.viewAt = 0;
+  }
+
+  /**
+   * A snapshot arrived: work out the host's clock. How fast its ticks come (a slow host drops
+   * some, so not always 60 a second) and where it's up to now, as the quickest snapshots show
+   * it (the rest were held up on the way). And how far behind to show others: room for all but
+   * the latest snapshots.
+   */
+  timeSnapshot(tick, at) {
+    const N = CLOCK_SNAPS, times = this.arrivals, ticks = this.arrivalTicks, step = this.step;
+    // After a long gap (the host stalled, or the connection did), start again.
+    if (this.clockCount && at - times[(this.clockHead + N - 1) % N] > 250) this.clockCount = 0;
+    const head = this.clockHead;
+    times[head] = at; ticks[head] = tick;
+    this.clockHead = (head + 1) % N;
+    const n = this.clockCount = Math.min(this.clockCount + 1, N), first = this.clockHead + N - n;
+    // Its pace: the quickest snapshot early in the window against the quickest late in it. (Far
+    // from 60 a second is a stall or a jump in the window, not a pace: left out.)
+    if (n >= 18) {
+      const third = Math.floor(n / 3), i = this.quickest(first, third), j = this.quickest(first + n - third, third);
+      const span = times[j] - times[i], rate = (ticks[j] - ticks[i]) * step / span;
+      if (span > 400 && rate >= 0.5 && rate <= 1.1) this.hostRate += (rate - this.hostRate) * 0.1;
+    }
+    // Where it's up to: the furthest on of the last few, carried forward to now at that pace.
+    let host = -Infinity;
+    for (let k = Math.max(0, n - LATEST_SNAPS); k < n; k++) {
+      const i = (first + k) % N;
+      host = Math.max(host, ticks[i] + (at - times[i]) * this.hostRate / step);
+    }
+    this.hostTick = host; this.hostAt = at;
+    // How far behind to show others: the gap between snapshots, the second latest of the last
+    // few seconds, and 2 ticks to spare. Up at once; down a tick at a time, after 5 seconds.
+    this.lateness[head] = host - tick;
+    this.lateCount = Math.min(this.lateCount + 1, N);
+    if (this.lateCount < 20) return;
+    let late = 0, latest = 0;
+    for (let k = 0; k < this.lateCount; k++) {
+      const v = this.lateness[k];
+      if (v > latest) { late = latest; latest = v; } else if (v > late) late = v;
+    }
+    const want = Math.max(MIN_DELAY, Math.min(MAX_DELAY, Math.ceil(SNAPSHOT_EVERY + late + 2)));
+    if (want > this.delay) { this.delay = want; this.shrink = 0; }
+    else if (want === this.delay) this.shrink = 0;
+    else if (++this.shrink >= 100) { this.delay--; this.shrink = 0; }
+  }
+
+  /** Of `count` snapshots in the window from `from` on, the one that arrived soonest for its tick. */
+  quickest(from, count) {
+    const N = CLOCK_SNAPS, pace = this.hostRate / this.step;
+    let best = from % N, most = -Infinity;
+    for (let k = 0; k < count; k++) {
+      const i = (from + k) % N, v = this.arrivalTicks[i] - this.arrivals[i] * pace;
+      if (v > most) { most = v; best = i; }
+    }
+    return best;
+  }
+
+  /**
+   * The host tick to show everyone else at: `delay` ticks behind the host's clock. It moves on
+   * at the host's pace, up to a tenth faster or slower to close any gap, so it never goes back;
+   * and at the newest snapshot it waits for the next rather than run on past it. Only after a
+   * long wait (no snapshots for a fifth of a second or so, the host carrying on) does it jump on,
+   * as catching up a tenth faster would show everyone late for seconds.
+   */
+  viewTime(now) {
+    const newest = this.snaps[this.snaps.length - 1].tick;
+    const target = this.hostTick + (now - this.hostAt) * this.hostRate / this.step - this.delay;
+    let rt = this.viewTick;
+    if (rt == null || target - rt > FAR_BEHIND) rt = target; // (just started, or far behind: straight there)
+    else {
+      const move = Math.max(0, now - this.viewAt) * this.hostRate / this.step;
+      rt += move * Math.max(0.9, Math.min(1.1, 1 + 0.04 * (target - rt - move)));
+    }
+    this.viewAt = now;
+    return this.viewTick = Math.min(rt, newest);
+  }
+
+  /** Everyone else as they were at host tick `rt`: part way between the two snapshots around it. */
+  showAt(rt) {
+    const g = this.game, snaps = this.snaps;
+    rt = Math.min(rt, snaps[snaps.length - 1].tick + 6);
+    let a = snaps[0], b = a;
+    for (let i = snaps.length - 1; i >= 0; i--) {
+      if (snaps[i].tick <= rt) { a = snaps[i]; b = snaps[i + 1] || a; break; }
     }
     if (rt < a.tick) rt = a.tick;
     const t = b.tick > a.tick ? Math.min(1.25, (rt - a.tick) / (b.tick - a.tick)) : 0;
     g.tick = Math.floor(rt);
+    if (a !== this.pairA || b !== this.pairB) this.pair(a, b);
+    this.showSoldiers(b, t);
+    this.showProjectiles(a, b, t);
+    this.showItems(b);
+    while (this.events.length && this.events[0].tick <= rt + 0.5) this.applyEvents(this.events.shift());
+    if (this.events.length > 200) this.events.splice(0, this.events.length - 200);
+  }
 
-    const before = new Map(a.soldiers.map(s => [s.id, s]));
-    for (const sb of b.soldiers) {
-      const s = g.soldiers.find(x => x.id === sb.id);
+  /** Two new snapshots to show between: the first's soldiers and projectiles by id, and who moves smoothly from one to the other. */
+  pair(a, b) {
+    this.pairA = a; this.pairB = b;
+    this.soldiersBefore.fill(a.soldiers);
+    this.shotsBefore.fill(a.projectiles);
+    const list = b.soldiers;
+    if (this.smooth.length < list.length) this.smooth = new Uint8Array(list.length * 2);
+    // (How far is too far depends on how long between the two: longer after lost snapshots.)
+    const far = 150 * Math.max(1, (b.tick - a.tick) / SNAPSHOT_EVERY);
+    for (let i = 0; i < list.length; i++) {
+      const sb = list[i], sa = this.soldiersBefore.get(sb.id) || sb;
+      // (Alive in both and not far apart: anything else, a respawn or a teleport, jumps.)
+      this.smooth[i] = sa.alive && sb.alive && Math.hypot(sb.x - sa.x, sb.y - sa.y) < far ? 1 : 0;
+    }
+  }
+
+  showSoldiers(b, t) {
+    const g = this.game, list = b.soldiers, ours = this.soldiersById();
+    for (let i = 0; i < list.length; i++) {
+      const sb = list[i], s = ours.get(sb.id);
       if (!s) continue;
       if (s === this.me) {
         // Firing animations come from the host.
@@ -321,8 +485,8 @@ export class NetClient {
         s.body.jetting = s.body.jetting || false;
         continue;
       }
-      const sa = before.get(sb.id) || sb;
-      const smooth = sa.alive && sb.alive && Math.hypot(sb.x - sa.x, sb.y - sa.y) < 150;
+      const sa = this.soldiersBefore.get(sb.id) || sb;
+      const smooth = this.smooth[i] === 1;
       const k = smooth ? t : 1;
       const src = t < 0.5 && smooth ? sa : sb;
       const body = s.body;
@@ -343,43 +507,75 @@ export class NetClient {
       s.respawnTimer = sb.respawnTimer;
       s.spawnProtect = sb.protected ? 1 : 0;
       s.burnTicks = sb.burning ? 1 : 0;
-      s.kamikaze = sb.kamikaze ? { remote: true } : null;
+      s.kamikaze = sb.kamikaze ? s.kamikaze || { remote: true } : null;
       s.anim.run = smooth && Math.abs(sb.anim.run - sa.anim.run) < 0.5 ? lerp(sa.anim.run, sb.anim.run, t) : sb.anim.run;
       s.anim.flip = sb.anim.flip; s.anim.land = sb.anim.land; s.anim.recoil = sb.anim.recoil; s.anim.swing = sb.anim.swing;
       s.anim.idle = g.tick;
     }
+  }
 
-    const prev = new Map(a.projectiles.map(p => [p.id, p]));
-    g.projectiles = b.projectiles.map(pb => {
-      const pa = prev.get(pb.id);
-      const p = { ...pb };
+  showProjectiles(a, b, t) {
+    const list = b.projectiles, shown = this.shots, pool = this.shotPool, from = this.shotFrom;
+    for (let i = 0; i < list.length; i++) {
+      const pb = list[i], pa = this.shotsBefore.get(pb.id);
+      // (A copy of the snapshot's, made again only when that changes: the snapshot's own are kept for the replay.)
+      const p = pool[i] ||= {};
+      if (from[i] !== pb) { Object.assign(p, pb); from[i] = pb; }
       if (pa && t <= 1) {
         p.x = lerp(pa.x, pb.x, t); p.y = lerp(pa.y, pb.y, t);
         p.angle = lerpAngle(pa.angle, pb.angle, t);
       } else if (!pa) {
         // New this snapshot: work back along its path so it doesn't pop in ahead.
         const back = Math.max(0, 1 - t) * (b.tick - a.tick || 3);
-        p.x -= pb.vx * back; p.y -= pb.vy * back;
-      }
-      return p;
-    });
+        p.x = pb.x - pb.vx * back; p.y = pb.y - pb.vy * back; p.angle = pb.angle;
+      } else { p.x = pb.x; p.y = pb.y; p.angle = pb.angle; }
+      shown[i] = p;
+    }
+    shown.length = list.length;
+    this.game.projectiles = shown;
+  }
 
+  /** Pickups (the map's on or off, dropped ones as sent) and spawn beacons, as in snapshot b. */
+  showItems(b) {
+    const g = this.game;
     if (!this.fixed) this.fixed = g.pickups.items.filter(it => !it.dropped);
-    b.fixedItems.forEach((on, i) => { if (this.fixed[i]) this.fixed[i].active = on; });
-    g.pickups.items = this.fixed.concat(b.looseItems.map(it => ({ ...it, active: true, dropped: true, bob: 0 })));
-    g.beacons = b.beacons.map(x => ({ ...x }));
+    const fixed = this.fixed, on = b.fixedItems, loose = b.looseItems, items = this.items;
+    for (let i = 0; i < on.length; i++) if (fixed[i]) fixed[i].active = on[i];
+    let n = 0;
+    for (let i = 0; i < fixed.length; i++) items[n++] = fixed[i];
+    for (let i = 0; i < loose.length; i++) {
+      const it = this.itemPool[i] ||= {};
+      if (this.itemFrom[i] !== loose[i]) { Object.assign(it, loose[i]); this.itemFrom[i] = loose[i]; }
+      it.active = true; it.dropped = true; it.bob = 0;
+      items[n++] = it;
+    }
+    items.length = n;
+    g.pickups.items = items;
+    const sent = b.beacons, beacons = this.beacons;
+    for (let i = 0; i < sent.length; i++) {
+      const x = beacons[i] = this.beaconPool[i] ||= {};
+      if (this.beaconFrom[i] !== sent[i]) { Object.assign(x, sent[i]); this.beaconFrom[i] = sent[i]; }
+    }
+    beacons.length = sent.length;
+    g.beacons = beacons;
     // A spawn beacon we've just placed: spawn on it next time (the host is told, as for any choice).
-    const mine = this.me && b.beacons.filter(x => x.owner === this.me.id).pop();
-    if (mine && mine.id !== this.myBeacon) { this.myBeacon = mine.id; this.me.deployAt = beaconKey(mine); }
-
-    while (this.events.length && this.events[0].tick <= rt + 0.5) this.applyEvents(this.events.shift());
-    if (this.events.length > 200) this.events.splice(0, this.events.length - 200);
+    const me = this.me;
+    for (let i = sent.length - 1; me && i >= 0; i--) {
+      if (sent[i].owner !== me.id) continue;
+      if (sent[i].id !== this.myBeacon) { this.myBeacon = sent[i].id; me.deployAt = beaconKey(sent[i]); }
+      break;
+    }
   }
 
   applyEvents(e) {
     const g = this.game, me = this.me;
-    for (const [name, x, y] of e.s || []) g.sounds.push({ name: String(name), x, y });
-    if (g.fx) for (const [m, ...args] of e.fx || []) { if (FX_METHODS.has(m)) { try { g.fx[m](...args); } catch { /* bad args */ } } }
+    // (Sounds and effects by index: a batch can hold hundreds, and taking each apart made garbage.)
+    const sounds = Array.isArray(e.s) ? e.s : NONE, fx = g.fx && Array.isArray(e.fx) ? e.fx : NONE;
+    for (let i = 0; i < sounds.length; i++) { const s = sounds[i]; g.sounds.push({ name: String(s[0]), x: s[1], y: s[2] }); }
+    for (let i = 0; i < fx.length; i++) {
+      const f = fx[i];
+      if (FX_METHODS.has(f[0])) { try { g.fx[f[0]](...f.slice(1)); } catch { /* bad args */ } }
+    }
     for (const [text, weapon] of e.k || []) g.feed.push({ text: String(text), weapon: weapon && String(weapon), tick: g.tick });
     if (g.feed.length > 6) g.feed.splice(0, g.feed.length - 6);
     for (const text of e.n || []) g.notes.push({ text: String(text), tick: g.tick, to: me?.id });
@@ -402,16 +598,25 @@ export class NetClient {
     if (!g || !Array.isArray(list)) return;
     from = Math.floor(Number(from) || 0);
     if (from > g.carves.length) { this.askCarves(); return; }
-    for (let i = g.carves.length - from; i < list.length; i++) {
-      const e = Array.isArray(list[i]) ? list[i] : [];
-      if (e[0] === '+') {
-        // A block built: ['+', l, t, r, b, built].
-        const [l, t, r, b] = e.slice(1, 5).map(v => Number(v) || 0);
-        g.applyBuild(l, t, Math.min(r, l + 400), Math.min(b, t + 400), !!e[5]);
-        continue;
+    // (The projectiles shown are copies of the host's, kept and refilled every frame: a hole
+    // mustn't knock them down or kill them here, or that would stick to the next one shown in
+    // their place. The host's own are knocked down there, and its snapshots show it.)
+    const shown = g.projectiles;
+    g.projectiles = [];
+    try {
+      for (let i = g.carves.length - from; i < list.length; i++) {
+        const e = Array.isArray(list[i]) ? list[i] : [];
+        if (e[0] === '+') {
+          // A block built: ['+', l, t, r, b, built].
+          const [l, t, r, b] = e.slice(1, 5).map(v => Number(v) || 0);
+          g.applyBuild(l, t, Math.min(r, l + 400), Math.min(b, t + 400), !!e[5]);
+          continue;
+        }
+        const [x, y, r] = e.map(v => Math.round(Number(v) || 0));
+        g.applyCarve(x, y, Math.max(0, Math.min(400, r)));
       }
-      const [x, y, r] = e.map(v => Math.round(Number(v) || 0));
-      g.applyCarve(x, y, Math.max(0, Math.min(400, r)));
+    } finally {
+      g.projectiles = shown;
     }
   }
 

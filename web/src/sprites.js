@@ -4,6 +4,33 @@
 
 const INK = '#111';
 
+// Shapes drawn as a few circles or lines: [x, y, r] or x positions, flat (made once).
+const SHEEP_PUFFS = [-4, 0, 3, -1, -2, 3.2, 2, 0, 3, -1, 1.5, 3];
+const SENTRY_PUFFS = [-5, 0, 3.7, -1.2, -2.4, 3.9, 2.6, 0, 3.7, -1.2, 1.9, 3.7];
+const SENTRY_LEGS = [-5.2, -2.6, 1.2, 3.6];
+const SENTRY_RIVETS = [-5.6, -2.6, 0.6, 3.6];
+const COW_LEGS = [-5, -2, 3, 5];
+const DONKEY_LEGS = [-10, -5, 1, 5];
+const JETPACK_TANKS = [-4, 1];
+const AMMO_SHELLS = [-4, -1, 2];
+
+/** Circles (x, y, r triples from `puffs`) filled and outlined one by one. */
+function puffs(ctx, list) {
+  for (let i = 0; i < list.length; i += 3) { ctx.beginPath(); ctx.arc(list[i], list[i + 1], list[i + 2], 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+}
+
+// A sprite in someone's hand (only read, never changed).
+const HELD = { held: true };
+
+// drawSprite's options, filled in again for each call that uses spriteOpts() (no new object each time).
+const OPTS = { t: 0, lit: undefined, armed: undefined, collar: undefined, held: undefined };
+
+/** Options for drawSprite: { t, lit, armed, collar } in one object used again (use it straight away). */
+export function spriteOpts(t, lit, armed, collar) {
+  OPTS.t = t; OPTS.lit = lit; OPTS.armed = armed; OPTS.collar = collar; OPTS.held = undefined;
+  return OPTS;
+}
+
 /** A weapon drawn along +x from the grip. `lying` = drawn as a pickup (centred). */
 export function drawWeapon(ctx, def, lying) {
   const look = def.look;
@@ -13,7 +40,7 @@ export function drawWeapon(ctx, def, lying) {
     if (!lying) ctx.translate(6, 0);
     if (look.type === 'radio') drawRadio(ctx, look.color);
     else if (look.type === 'glove') drawGlove(ctx, look.color);
-    else drawSprite(ctx, look.sprite, { held: true });
+    else drawSprite(ctx, look.sprite, HELD);
     ctx.restore();
     return;
   }
@@ -274,7 +301,7 @@ export function drawSprite(ctx, name, opts = {}) {
         ctx.beginPath(); ctx.moveTo(-2, -3); ctx.lineTo(-11, -4 + flap); ctx.lineTo(-10, 1 + flap); ctx.lineTo(-2, 1); ctx.fill();
       }
       ctx.fillStyle = '#fff';
-      for (const [x, y, r] of [[-4, 0, 3], [-1, -2, 3.2], [2, 0, 3], [-1, 1.5, 3]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+      puffs(ctx, SHEEP_PUFFS);
       ctx.fillStyle = '#222';
       ctx.beginPath(); ctx.ellipse(5.5, -1.5, 2.3, 1.8, 0.3, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#fff';
@@ -292,7 +319,7 @@ export function drawSprite(ctx, name, opts = {}) {
       ctx.moveTo(3, 2); ctx.lineTo(3 - step, 6);
       ctx.stroke();
       ctx.fillStyle = '#fff';
-      for (const [x, y, r] of [[-4, 0, 3], [-1, -2, 3.2], [2, 0, 3], [-1, 1.5, 3]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+      puffs(ctx, SHEEP_PUFFS);
       // The dynamite, strapped across its back.
       ctx.fillStyle = '#c82020';
       ctx.lineWidth = 0.6;
@@ -331,11 +358,11 @@ export function drawSprite(ctx, name, opts = {}) {
       ctx.strokeStyle = INK;
       ctx.lineWidth = 1.3;
       ctx.beginPath();
-      for (const x of [-5.2, -2.6, 1.2, 3.6]) { ctx.moveTo(x, 2.5); ctx.lineTo(x + (x < 0 ? -0.4 : 0.4), 7.5); }
+      for (let i = 0; i < SENTRY_LEGS.length; i++) { const x = SENTRY_LEGS[i]; ctx.moveTo(x, 2.5); ctx.lineTo(x + (x < 0 ? -0.4 : 0.4), 7.5); }
       ctx.stroke();
       ctx.lineWidth = 0.9;
       ctx.fillStyle = '#fff';
-      for (const [x, y, r] of [[-5, 0, 3.7], [-1.2, -2.4, 3.9], [2.6, 0, 3.7], [-1.2, 1.9, 3.7]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+      puffs(ctx, SENTRY_PUFFS);
       // The steel plate over its back, riveted, with a band in its side's colour along the bottom.
       const side = opts.collar || '#e0a020';
       ctx.fillStyle = '#8d949c';
@@ -347,7 +374,7 @@ export function drawSprite(ctx, name, opts = {}) {
       ctx.lineWidth = 0.6;
       ctx.beginPath(); ctx.moveTo(-6.4, -2); ctx.quadraticCurveTo(-1, -9.6, 4.4, -2); ctx.stroke();
       ctx.fillStyle = '#3a3e44';
-      for (const x of [-5.6, -2.6, 0.6, 3.6]) ctx.fillRect(x - 0.4, -2.2, 0.8, 0.8);
+      for (let i = 0; i < SENTRY_RIVETS.length; i++) ctx.fillRect(SENTRY_RIVETS[i] - 0.4, -2.2, 0.8, 0.8);
       // The head under its helmet, and the collar round its neck.
       ctx.fillStyle = '#222';
       ctx.beginPath(); ctx.ellipse(7.2, -1.4, 2.9, 2.2, 0.3, 0, Math.PI * 2); ctx.fill();
@@ -384,7 +411,7 @@ export function drawSprite(ctx, name, opts = {}) {
       ctx.strokeStyle = INK;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      for (const x of [-5, -2, 3, 5]) { ctx.moveTo(x, 2); ctx.lineTo(x + (x < 0 ? step : -step), 6); }
+      for (let i = 0; i < COW_LEGS.length; i++) { const x = COW_LEGS[i]; ctx.moveTo(x, 2); ctx.lineTo(x + (x < 0 ? step : -step), 6); }
       ctx.stroke();
       ctx.fillStyle = '#fff';
       ctx.beginPath(); ctx.rect(-7, -4, 13, 7); ctx.fill(); ctx.stroke();
@@ -417,7 +444,7 @@ export function drawSprite(ctx, name, opts = {}) {
       ctx.beginPath(); ctx.rect(-12, -6, 20, 10); ctx.fill(); ctx.stroke();
       ctx.beginPath(); ctx.rect(6, -14, 8, 10); ctx.fill(); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(7, -14); ctx.lineTo(6, -20); ctx.lineTo(9, -14); ctx.moveTo(11, -14); ctx.lineTo(12, -20); ctx.lineTo(13, -14); ctx.fill(); ctx.stroke();
-      for (const x of [-10, -5, 1, 5]) ctx.fillRect(x, 4, 3, 7);
+      for (let i = 0; i < DONKEY_LEGS.length; i++) ctx.fillRect(DONKEY_LEGS[i], 4, 3, 7);
       ctx.fillStyle = '#333';
       ctx.fillRect(11, -11, 1.4, 1.4);
       break;
@@ -489,7 +516,7 @@ export function drawJetpack(ctx) {
   ctx.fillStyle = '#5b5b5b';
   ctx.strokeStyle = '#222';
   ctx.lineWidth = 0.8;
-  for (const x of [-4, 1]) { ctx.beginPath(); ctx.rect(x, -7, 3.5, 11); ctx.fill(); ctx.stroke(); }
+  for (let i = 0; i < JETPACK_TANKS.length; i++) { ctx.beginPath(); ctx.rect(JETPACK_TANKS[i], -7, 3.5, 11); ctx.fill(); ctx.stroke(); }
   ctx.fillStyle = '#ff8a1f';
   ctx.fillRect(-3.6, 4.5, 2.6, 1.6);
   ctx.fillRect(1.4, 4.5, 2.6, 1.6);
@@ -561,12 +588,11 @@ function drawSupplyDrop(ctx, crate, t) {
     ctx.beginPath(); ctx.moveTo(-7, -7); ctx.lineTo(-11, -22); ctx.moveTo(7, -7); ctx.lineTo(11, -22); ctx.moveTo(0, -7); ctx.lineTo(0, -22); ctx.stroke();
     // The canopy in six panels, gold and red (the curve's top edge: y = -21 - 30u(1 - u)).
     const sway = Math.sin(t * 0.05) * 1.5, n = 6;
-    const edge = u => [sway - 15 + 30 * u, -21 - 30 * u * (1 - u)];
     for (let i = 0; i < n; i++) {
       ctx.fillStyle = i % 2 ? DROP_RED : DROP_GOLD;
       ctx.beginPath();
       ctx.moveTo(sway - 15 + 30 * i / n, -21);
-      for (let j = 0; j <= 4; j++) ctx.lineTo(...edge((i + j / 4) / n));
+      for (let j = 0; j <= 4; j++) { const u = (i + j / 4) / n; ctx.lineTo(sway - 15 + 30 * u, -21 - 30 * u * (1 - u)); }
       ctx.lineTo(sway - 15 + 30 * (i + 1) / n, -21);
       ctx.closePath();
       ctx.fill();
@@ -615,7 +641,7 @@ export function drawSupply(ctx, type, team) {
     ctx.strokeStyle = edge;
     ctx.beginPath(); ctx.rect(-7, -4.5, 14, 9); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#d9b44a';
-    for (const x of [-4, -1, 2]) ctx.fillRect(x, -3, 2, 4);
+    for (let i = 0; i < AMMO_SHELLS.length; i++) ctx.fillRect(AMMO_SHELLS[i], -3, 2, 4);
     ctx.fillStyle = '#3d3d20';
     ctx.fillRect(-7, 2, 14, 1.2);
   }

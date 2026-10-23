@@ -2,9 +2,11 @@
 
 import { MOTION, PHYS, RULES } from './config.js';
 import { WEAPONS } from './weapons.js';
+import { makeBody } from './physics.js';
 import { jumpSteer, dropSteer } from './nav.js';
 import { angleDiff, clamp } from './util.js';
 import { CELL } from './grid.js';
+import { hypot } from './map.js';
 import { inZone } from './objectives.js';
 import { botWantsGadget } from './gadgets.js';
 import { botReward, canOpen, REWARD_WEAPONS } from './streaks.js';
@@ -25,6 +27,52 @@ const onScreen = (def, dx, dy, k = 1) => {
   const v = def.kind === 'rail' ? SCOPE_VIEW : FIRE_VIEW;
   return Math.abs(dx) <= v.hw * k && Math.abs(dy) <= v.hh * k;
 };
+
+/** True if o is someone soldier s would fight: alive, an enemy, and not just spawned. */
+const foe = (o, s, teams) => o !== s && o.alive && o.spawnProtect <= 30 && !(teams && o.team === s.team);
+
+/**
+ * True if anyone soldier s would fight, other than its target and threat, is within sight
+ * and nearer than bestD (distances as lookAround measures them).
+ */
+function foeWithin(game, s, teams, target, threat, bestD) {
+  const sx = s.body.x, sy = s.body.y;
+  for (const o of game.soldiers) {
+    if (o === target || o === threat || !foe(o, s, teams)) continue;
+    const dx = o.body.x - sx, dy = o.body.y - sy;
+    // (Never nearer than the larger of |dx| and |dy|: see lookAround.)
+    const m = Math.max(Math.abs(dx), Math.abs(dy));
+    if (m > SIGHT || m >= bestD) continue;
+    const d = hypot(dx, dy);
+    if (!(d > SIGHT || d >= bestD)) return true;
+  }
+  return false;
+}
+
+// Scratch space for lookAround (bots look around one at a time): the soldiers in the rings
+// of cells looked through so far (emptied now and then), and the nearest few in a ring,
+// nearest first (distances and soldiers side by side).
+const RING = [], RING_KEEP = 1024;
+const NEAR_D = new Float64Array(LOOKS), NEAR_O = new Array(LOOKS).fill(null);
+
+/**
+ * An enemy Sentry Sheep as something for a bot to fight: shaped like a soldier where aiming
+ * looks (x and y read from a body, like a soldier's), standing still. Kept on the sentry
+ * (p.mark), so it's the same one each look; the bot moves it to where the sentry is.
+ */
+class SentryMark {
+  constructor(p) {
+    this.sentry = p;
+    this.body = makeBody(p.x, p.y - 4);
+    this.body.onGround = true;
+    this.spawnProtect = 0;
+    this.team = p.team;
+    this.alive = true;
+  }
+
+  get x() { return this.body.x; }
+  get y() { return this.body.y; }
+}
 
 /** The route map spot nearest an item (remembered while the item stays put). */
 function nodeFor(nav, it) {
@@ -144,8 +192,59 @@ const YIELD_TICKS = 240;
 const TOOL_VALUE = 30;
 // When the route map changes, bots plan again over this many updates (a few at a time).
 const REPLAN_SPREAD = 30;
+// Planning (think) is the costly part of a bot's update: in one update, at most THINKS_MIN
+// bots plan, or one in THINKS_PER of the soldiers if that's more (in soldier order); any
+// others due to plan wait for a later update (a few at most). So a lot of bots due at once,
+// after a respawn wave or a change to the route map, don't all plan in the same update.
+const THINKS_MIN = 3, THINKS_PER = 20;
+const thinkQuota = new WeakMap(); // game -> { tick, left }
+
+/** True if a bot may plan this update (taking one of the update's turns). */
+function mayThink(game) {
+  let q = thinkQuota.get(game);
+  if (!q) thinkQuota.set(game, (q = { tick: -1, left: 0 }));
+  if (q.tick !== game.tick) { q.tick = game.tick; q.left = Math.max(THINKS_MIN, Math.ceil(game.soldiers.length / THINKS_PER)); }
+  if (q.left <= 0) return false;
+  q.left--;
+  return true;
+}
+
 // Bots sprint when at least this many steps of straight walking lie ahead (about 100 px).
 const SPRINT_RUN = 8;
+
+/**
+ * A bot's input, one object per bot used every update (the game reads it straight away and
+ * keeps none of it). Every field the game reads is there; sealed, so one can't be added
+ * that clearInput() doesn't know about.
+ */
+function newInput() {
+  return Object.seal({
+    move: 0, jump: false, jumpPressed: false, aim: 0, fire: false, aimDist: 200,
+    firePressed: undefined, sprint: undefined, crouch: undefined, jet: undefined,
+    switchTo: undefined, cycle: undefined, reload: undefined, drop: undefined,
+    gadget: undefined, streak: undefined, use: undefined, plank: undefined, selfDestruct: undefined,
+  });
+}
+
+/** The input as a bot that does nothing gives it (what isn't set stays undefined, as it would be on a fresh object). */
+function clearInput(inp, aim) {
+  inp.move = 0; inp.jump = false; inp.jumpPressed = false; inp.aim = aim; inp.fire = false; inp.aimDist = 200;
+  inp.firePressed = undefined; inp.sprint = undefined; inp.crouch = undefined; inp.jet = undefined;
+  inp.switchTo = undefined; inp.cycle = undefined; inp.reload = undefined; inp.drop = undefined;
+  inp.gadget = undefined; inp.streak = undefined; inp.use = undefined; inp.plank = undefined; inp.selfDestruct = undefined;
+  return inp;
+}
+
+// Kinds of weapon (fight, think): shots that aren't led, and weapons with a long reach.
+const NO_LEAD = new Set(['rail', 'seeker', 'flyer', 'strike']);
+const LONG_REACH = new Set(['rail', 'seeker', 'strike']);
+// Goals (think, watchdog): going for an item; ways of getting about that can lead somewhere
+// cut off; waiting on purpose.
+const ITEM_GOALS = new Set(['health', 'weapon', 'armour', 'tool']);
+const GO_KINDS = new Set(['roam', 'hunt', 'chase']);
+const WAITING = new Set(['fight', 'hold', 'toward']);
+const NO_BOT = Object.freeze({}); // (weapons without bot numbers)
+const ITEMS = []; // (think's scratch list)
 
 export class BotController {
   constructor(nav, difficulty, profile, rng) {
@@ -161,6 +260,23 @@ export class BotController {
     this.seenCount = 0;
     this.seenOf = null;
     this.aimOff = 0;
+    this.inp = newInput();
+    // Set as it goes (here as they are until then, so every bot's fields are laid out alike;
+    // `aim` comes with its first spawn, a number from the start).
+    this.me = undefined;          // its soldier
+    this.quick = undefined;       // onto the next target quicker (just in a fight)
+    this.start = undefined;       // where its route starts
+    this.seenView = undefined;    // (remember()'s answer)
+    this.heardId = undefined;     // the last noise it heard
+    this.glanceAt = undefined;    // when to look the other way next (bot vision 'sight')
+    this.glance = undefined;
+    this.lastMine = undefined;    // when it last laid a mine
+    this.offDir = undefined;      // which way to step off a spot it's above
+    this.unstuck = undefined;     // times the watchdog sent it elsewhere
+    this.watchKey = undefined;    // (watching()'s remembered answer)
+    this.watchList = undefined;
+    this.objPick = undefined;     // the objective modes' choice of point (objmodes.js)
+    this.objPickUntil = undefined;
     this.reset();
   }
 
@@ -201,7 +317,7 @@ export class BotController {
     this.towardAt = -1e9;      // (when it last tried to get somewhere it couldn't by building or flying)
     this.cover = null;         // a wall for cover being put up
     this.coverAt = -1e9;
-    this.ignore = this.ignore || new Map();
+    this.ignore = this.ignore || new WeakMap(); // (items given up on: forgotten once they're gone)
   }
 
   /**
@@ -219,7 +335,7 @@ export class BotController {
     const xs = h.map(p => p.x);
     const fighting = this.target && game.tick - (this.lastSeen?.tick ?? -1e9) < 60;
     // (Or waiting where it is on purpose: holding a point, or at the spot to fly from, for fuel.)
-    if (Math.max(...xs) - Math.min(...xs) > 50 || fighting || ['fight', 'hold', 'toward'].includes(this.goalKind)) return;
+    if (Math.max(...xs) - Math.min(...xs) > 50 || fighting || WAITING.has(this.goalKind)) return;
     // (Not in the middle of a jump: dropping it there could land us somewhere worse. Once it's down.)
     if (this.exec || !s.body.onGround) return;
     if (this.goalItem) this.ignore.set(this.goalItem, game.tick + 2400);
@@ -254,14 +370,14 @@ export class BotController {
     // (Shot by a Sentry Sheep or caught by a stampede: its owner isn't where the hurt came from.)
     if (attacker && attacker !== s && attacker.alive && !REWARD_WEAPONS.has(weapon)) {
       this.threat = attacker;
-      this.lastSeen = { x: attacker.x, y: attacker.y, tick: game.tick };
+      this.lastSeen = { x: attacker.body.x, y: attacker.body.y, tick: game.tick };
       if (!this.target) this.thinkIn = Math.min(this.thinkIn, 4);
     }
   }
 
   input(game, s) {
     this.me = s;
-    const inp = { move: 0, jump: false, jumpPressed: false, aim: this.aim ?? s.aim, fire: false, aimDist: 200 };
+    const inp = clearInput(this.inp, this.aim ?? s.aim);
     if (!s.alive) return inp;
     // Held still by the mode (Defuse's freeze at the start of a round): not stuck.
     if (game.rules.frozen?.(game, s)) { this.history.length = 0; this.stuck = 0; }
@@ -289,7 +405,10 @@ export class BotController {
       this.grabTicks = 0;
       this.thinkIn = Math.min(this.thinkIn, 3);
     }
-    if (--this.thinkIn <= 0 && !this.exec && s.body.onGround && !this.escape) this.think(game, s);
+    if (--this.thinkIn <= 0 && !this.exec && s.body.onGround && !this.escape) {
+      if (mayThink(game)) this.think(game, s);
+      else this.thinkIn = 1; // (enough bots have planned this update: next update)
+    }
     if (!this.escape) this.steer(game, s, inp);
     this.fight(game, s, inp);
     // Getting out of a pit or past what's in the way: a jetpack, or building with a hammer.
@@ -310,7 +429,8 @@ export class BotController {
   /** The bot's sheep (or other remote-controlled thing) still out there, if any. */
   remoteOut(game, s) {
     if (game.crowded) return game.remoteOf(s); // (looked up once per update for everyone)
-    return game.projectiles.find(p => p.owner === s && p.remote && !p.dead) || null;
+    for (const p of game.projectiles) if (p.owner === s && p.remote && !p.dead) return p;
+    return null;
   }
 
   /** A super sheep we're steering: keep aiming it for a few seconds before fighting on. */
@@ -324,7 +444,7 @@ export class BotController {
     const p = this.remoteOut(game, s);
     if (!p || p.weapon !== s.current || p.age < 10) return;
     const r = (p.cfg.blast?.radius || 60) * 0.55;
-    if (this.enemies(game, s).some(o => Math.hypot(o.x - p.x, o.y - 8 - p.y) < r)) {
+    if (this.enemies(game, s).some(o => hypot(o.x - p.x, o.y - 8 - p.y) < r)) {
       inp.fire = !this.prevFire;
     }
   }
@@ -344,18 +464,19 @@ export class BotController {
   }
 
   canSee(game, s, o) {
-    const sx = s.shoulderX, sy = s.shoulderY;
-    if (!game.map.clearLine(sx, sy, o.x, o.y - 8) && !game.map.clearLine(sx, sy, o.x, o.y - 17)) return false;
+    const sx = s.shoulderX, sy = s.shoulderY, ox = o.body.x, oy = o.body.y;
+    if (!game.map.clearLine(sx, sy, ox, oy - 8) && !game.map.clearLine(sx, sy, ox, oy - 17)) return false;
     // (Nobody sees through smoke.)
-    return !smokeBetween(game, sx, sy, o.x, o.y - 12);
+    return !smokeBetween(game, sx, sy, ox, oy - 12);
   }
 
   /** Bot vision 'sight': is `o` where this bot could see them (on its screen, in front of it)? */
   inView(game, s, o) {
     if (game.options.botVision !== 'sight') return true;
-    const dx = o.x - s.x, dy = o.y - 10 - (s.y - 20);
+    const ox = o.body.x, oy = o.body.y, sy = s.body.y;
+    const dx = ox - s.body.x, dy = oy - 10 - (sy - 20);
     if (Math.abs(dx) > VIEW.hw || Math.abs(dy) > VIEW.hh) return false;
-    if (Math.hypot(dx, o.y - s.y) < VIEW.touch) return true;
+    if (hypot(dx, oy - sy) < VIEW.touch) return true;
     const facing = Math.cos(this.aim ?? s.aim) >= 0 ? 1 : -1;
     return dx * facing >= -VIEW.behind;
   }
@@ -370,7 +491,7 @@ export class BotController {
       this.heardId = n.id;
       const o = n.by;
       if (!o || o === s || (game.rules.teams && o.team === s.team)) continue;
-      if (Math.hypot(n.x - s.x, n.y - s.y) > n.r) continue;
+      if (hypot(n.x - s.x, n.y - s.y) > n.r) continue;
       if (this.target && this.target.alive) continue;
       this.lastSeen = { x: n.x, y: n.y, tick: game.tick, heard: true };
       this.thinkIn = Math.min(this.thinkIn, 8);
@@ -390,15 +511,16 @@ export class BotController {
       if (best && !this.target) this.thinkIn = Math.min(this.thinkIn, 6);
     }
     this.target = best;
-    if (best) this.lastSeen = { x: best.x, y: best.y, tick: game.tick };
+    if (best) this.lastSeen = { x: best.body.x, y: best.body.y, tick: game.tick };
   }
 
   /** The enemy to fight: the nearest one in sight (sticking with the current target or attacker a bit longer). */
   lookAtAll(game, s) {
+    const teams = game.rules.teams, sx = s.body.x, sy = s.body.y;
     let best = null, bestD = Infinity;
-    for (const o of this.enemies(game, s)) {
-      if (o.spawnProtect > 30) continue;
-      const d = Math.hypot(o.x - s.x, o.y - s.y);
+    for (const o of game.soldiers) {
+      if (o === s || !o.alive || (teams && o.team === s.team) || o.spawnProtect > 30) continue;
+      const d = hypot(o.body.x - sx, o.body.y - sy);
       if (d > SIGHT || !this.inView(game, s, o) || !this.canSee(game, s, o)) continue;
       const score = d * (o === this.target ? 0.6 : 1) * (o === this.threat ? 0.7 : 1);
       if (score < bestD) { bestD = score; best = o; }
@@ -414,10 +536,10 @@ export class BotController {
     let best = null, bestD = Infinity;
     for (const p of game.sentries) {
       if (p.dead || p.owner === s || (game.rules.teams && p.team === s.team)) continue;
-      const d = Math.hypot(p.x - s.x, p.y - s.y);
+      const d = hypot(p.x - s.x, p.y - s.y);
       if (d > SIGHT * 0.8 || d >= bestD) continue;
-      const t = (p.mark ||= { sentry: p, body: { vx: 0, vy: 0, onGround: true }, spawnProtect: 0, team: p.team, alive: true });
-      t.x = p.x; t.y = p.y - 4;
+      const t = (p.mark ||= new SentryMark(p));
+      t.body.x = p.x; t.body.y = p.y - 4;
       if (!this.inView(game, s, t) || !this.canSee(game, s, t)) continue;
       bestD = d; best = t;
     }
@@ -429,37 +551,58 @@ export class BotController {
    * outward from here, nearest soldiers first, and check at most a few.
    */
   lookAround(game, s) {
-    const enemy = o => o !== s && o.alive && o.spawnProtect <= 30 && !(game.rules.teams && o.team === s.team);
+    const teams = game.rules.teams, target = this.target, threat = this.threat;
+    const sx = s.body.x, sy = s.body.y;
     let best = null, bestD = Infinity;
-    for (const o of [this.target, this.threat]) {
-      if (!o || !enemy(o)) continue;
-      const d = Math.hypot(o.x - s.x, o.y - s.y);
+    // The target and whoever last hurt us first (both checks, even when they're one and the same).
+    for (let i = 0; i < 2; i++) {
+      const o = i === 0 ? target : threat;
+      if (!o || !foe(o, s, teams)) continue;
+      const d = hypot(o.body.x - sx, o.body.y - sy);
       if (d > SIGHT || !this.inView(game, s, o) || !this.canSee(game, s, o)) continue;
-      const score = d * (o === this.target ? 0.6 : 1) * (o === this.threat ? 0.7 : 1);
+      const score = d * (o === target ? 0.6 : 1) * (o === threat ? 0.7 : 1);
       if (score < bestD) { bestD = score; best = o; }
     }
-    const grid = game.soldierGrid(), cx = Math.floor(s.x / CELL), cy = Math.floor(s.y / CELL);
-    const ring = [], near = [];
+    // (The grid is brought up to date for this update now, as ever: whatever else looks
+    // soldiers up this update finds them where they were at this moment.)
+    const grid = game.soldierGrid(), cx = Math.floor(sx / CELL), cy = Math.floor(sy / CELL);
+    // Nobody about (most looks, on a big map): when no enemy is within sight at all, nearer
+    // than one already in view, checking everyone is quicker than looking through the hundreds
+    // of cells in the rings to find that out. (The same answer: the rings only hold soldiers
+    // from game.soldiers, and would add none of them.)
+    const across = 2 * Math.floor(Math.min(SIGHT, bestD) / CELL) + 3; // (cells across the rings)
+    if (game.soldiers.length * 4 < across * across && !foeWithin(game, s, teams, target, threat, bestD)) return best;
+    // (Each ring's soldiers go on the end of RING: it's emptied once in a while, not every ring.)
+    const ring = RING, nearD = NEAR_D, nearO = NEAR_O;
+    if (ring.length > RING_KEEP) ring.length = 0;
     let looks = 0;
     for (let k = 0; (k - 1) * CELL <= Math.min(SIGHT, bestD); k++) {
-      ring.length = 0;
-      near.length = 0;
+      const from = ring.length;
+      grid.ring(cx, cy, k, ring);
       // The nearest few in this ring, nearest first (kept sorted as we go).
       // In a packed crowd, the first few dozen are plenty to choose from.
-      let seen = 0;
-      for (const o of grid.ring(cx, cy, k, ring)) {
-        if (++seen > 48) break;
-        if (o === this.target || o === this.threat || !enemy(o)) continue;
-        const d = Math.hypot(o.x - s.x, o.y - s.y);
-        if (d > SIGHT || d >= bestD || (near.length === LOOKS && d >= near[LOOKS - 1].d)) continue;
-        let i = near.length < LOOKS ? near.length : LOOKS - 1;
-        while (i > 0 && near[i - 1].d > d) { near[i] = near[i - 1]; i--; }
-        near[i] = { d, o };
+      const end = Math.min(ring.length, from + 48);
+      let n = 0;
+      for (let j = from; j < end; j++) {
+        const o = ring[j];
+        if (o === target || o === threat || !foe(o, s, teams)) continue;
+        const dx = o.body.x - sx, dy = o.body.y - sy;
+        // (The distance is never less than the larger of |dx| and |dy|: when even that is too
+        // far, so is the distance, and it needn't be worked out. NaN gets past this, as it does
+        // the checks below.)
+        const m = Math.max(Math.abs(dx), Math.abs(dy));
+        if (m > SIGHT || m >= bestD || (n === LOOKS && m >= nearD[LOOKS - 1])) continue;
+        const d = hypot(dx, dy);
+        if (d > SIGHT || d >= bestD || (n === LOOKS && d >= nearD[LOOKS - 1])) continue;
+        let i = n < LOOKS ? n++ : LOOKS - 1;
+        while (i > 0 && nearD[i - 1] > d) { nearD[i] = nearD[i - 1]; nearO[i] = nearO[i - 1]; i--; }
+        nearD[i] = d; nearO[i] = o;
       }
-      for (const { d, o } of near) {
+      for (let i = 0; i < n; i++) {
+        const o = nearO[i];
         if (!this.inView(game, s, o)) continue;
         if (looks++ >= LOOKS) return best;
-        if (this.canSee(game, s, o)) { bestD = d; best = o; break; }
+        if (this.canSee(game, s, o)) { bestD = nearD[i]; best = o; break; }
       }
     }
     return best;
@@ -467,7 +610,8 @@ export class BotController {
 
   pickWeapon(game, s, inp) {
     if (this.steering(game, s)) return; // keep hold of the super sheep's controls
-    const d = this.target ? Math.hypot(this.target.x - s.x, this.target.y - s.y) : 450;
+    const t = this.target;
+    const d = t ? hypot(t.body.x - s.body.x, t.body.y - s.body.y) : 450;
     let best = s.current, bestScore = s.has(s.current) ? weaponScore(s.current, d, s, game, this.target) + 0.5 : -1;
     for (const id in s.weapons) {
       if (!s.has(id)) continue;
@@ -495,24 +639,32 @@ export class BotController {
    * There's no point racing them for it.
    */
   beaten(game, s, it, eta) {
-    // (Bots that only know what they see don't know where enemies out of sight are.)
-    const sight = game.options.botVision === 'sight';
-    const knows = o => !sight || (game.rules.teams && o.team === s.team) || (this.inView(game, s, o) && this.canSee(game, s, o));
-    for (const c of it.racers || []) {
-      const o = c.me;
-      if (!o || o === s || !o.alive || game.controllers.get(o) !== c) continue;
-      const theirs = c.routeLeft();
-      if ((theirs < eta - RACE_MARGIN || (theirs <= eta + RACE_MARGIN && o.id < s.id)) && knows(o)) return true;
+    if (it.racers) {
+      for (const c of it.racers) {
+        const o = c.me;
+        if (!o || o === s || !o.alive || game.controllers.get(o) !== c) continue;
+        const theirs = c.routeLeft();
+        if ((theirs < eta - RACE_MARGIN || (theirs <= eta + RACE_MARGIN && o.id < s.id)) && this.knows(game, s, o)) return true;
+      }
     }
     for (const o of game.near(it.x - NEAR_ITEM, it.y - NEAR_ITEM, it.x + NEAR_ITEM, it.y + NEAR_ITEM)) {
       if (o.isBot || !o.alive || o === s) continue;
-      const d = Math.hypot(o.x - it.x, o.y - it.y);
-      if (d < NEAR_ITEM && d / PHYS.runSpeed < eta - RACE_MARGIN && wantsItem(game, o, it) && knows(o)) return true;
+      const d = hypot(o.x - it.x, o.y - it.y);
+      if (d < NEAR_ITEM && d / PHYS.runSpeed < eta - RACE_MARGIN && wantsItem(game, o, it) && this.knows(game, s, o)) return true;
     }
     return false;
   }
 
+  /** True if this bot knows where o is (bots that only know what they see don't know where enemies out of sight are). */
+  knows(game, s, o) {
+    return game.options.botVision !== 'sight' || (game.rules.teams && o.team === s.team) || (this.inView(game, s, o) && this.canSee(game, s, o));
+  }
+
   think(game, s) {
+    try { this.plan(game, s); } finally { ITEMS.length = 0; } // (the list lets go of this match's items)
+  }
+
+  plan(game, s) {
     this.thinkIn = 35 + Math.floor(this.rng() * 25);
     const start = this.nav.nodeAt(s.x, s.y, 10);
     if (!start) {
@@ -535,7 +687,7 @@ export class BotController {
     // Pits nobody can climb out of: only go into one if already in it.
     const trapped = this.nav.trapped(), inPit = trapped[start.id] === 1;
     const ok = n => !!n && (inPit || !trapped[n.id]);
-    const search = game.crowded ? this.nav.cachedCostsFrom(start, game.tick) : this.nav.costsFrom(start);
+    const search = game.crowded ? this.nav.cachedCostsFrom(start, game.tick) : this.nav.costsFromHere(start);
     // The objective modes: where the mode wants this bot to be (a hill, a flag, a capture point...).
     const obj = game.rules.botGoal?.(game, s, this) || null;
     const inObj = obj && inZone(s, obj.zone);
@@ -552,8 +704,8 @@ export class BotController {
     };
     const def = WEAPONS[s.current];
     const far = def.bot?.far ?? def.range ?? 400;
-    const reach = def.kind === 'melee' ? far + 4 : ['rail', 'seeker', 'strike'].includes(def.kind) ? 1400 : Math.min(far * 0.9, 650);
-    const inRange = this.target && Math.hypot(this.target.x - s.x, this.target.y - s.y) < reach && onScreen(def, this.target.x - s.x, this.target.y - s.y, 0.9);
+    const reach = def.kind === 'melee' ? far + 4 : LONG_REACH.has(def.kind) ? 1400 : Math.min(far * 0.9, 650);
+    const inRange = this.target && hypot(this.target.x - s.x, this.target.y - s.y) < reach && onScreen(def, this.target.x - s.x, this.target.y - s.y, 0.9);
     // Where it wants to be but can't get to at all from here (a spot): out of the pit it's in
     // (with nobody to fight down here), or the objective, or the enemy it's after, past a gap
     // or up a ledge (a hole blown in a bridge, say).
@@ -563,7 +715,7 @@ export class BotController {
     if (this.forceRoam) {
       // Just got unstuck: go somewhere well away from here first.
       this.forceRoam = false;
-      const far = this.nav.nodes.filter(n => search.cost[n.id] < Infinity && ok(n) && Math.hypot(n.x - s.x, n.y - s.y) > 250);
+      const far = this.nav.nodes.filter(n => search.cost[n.id] < Infinity && ok(n) && hypot(n.x - s.x, n.y - s.y) > 250);
       if (far.length) {
         this.goalKind = 'roam';
         this.goalItem = null;
@@ -573,7 +725,10 @@ export class BotController {
         return;
       }
     }
-    const items = game.pickups.items.filter(it => it.active && !((this.ignore.get(it) || 0) > game.tick));
+    // (The items worth thinking about, in a list kept for this: bots think one at a time.)
+    const items = ITEMS;
+    items.length = 0;
+    for (const it of game.pickups.items) if (it.active && !((this.ignore.get(it) || 0) > game.tick)) items.push(it);
     let goalItem = null;
     const best = (filter, value, within = pickupReach) => {
       let pick = null, pv = -Infinity, item = null;
@@ -603,8 +758,9 @@ export class BotController {
       kind = 'health';
     }
     if (!goal) {
-      const owned = Object.keys(s.weapons).filter(id => s.has(id) && !WEAPONS[id].tool);
-      const topValue = Math.max(...owned.map(id => weaponValue(id)));
+      // (The best gun it has: -Infinity with none.)
+      let topValue = -Infinity;
+      for (const id in s.weapons) if (s.has(id) && !WEAPONS[id].tool) topValue = Math.max(topValue, weaponValue(id));
       // Just the pistol: a proper gun is worth a longer detour on the way.
       if (busy && topValue < 3) pickupReach = Math.max(pickupReach, 300);
       const isWeapon = it => (it.type === 'weapon' || (it.type === 'crate' && it.landed && !it.health)) && WEAPONS[it.weapon];
@@ -643,7 +799,7 @@ export class BotController {
             const c = search.cost[n.id];
             if (c === Infinity || !ok(n) || (obj.avoid && inZone(n, obj.avoid))) continue;
             // Getting there: the quickest way in. Already there: move about inside, nearby.
-            const v = inObj ? Math.hypot(n.x - s.x, n.y - s.y) * 0.4 + this.rng() * 160 : c + this.rng() * 30;
+            const v = inObj ? hypot(n.x - s.x, n.y - s.y) * 0.4 + this.rng() * 160 : c + this.rng() * 30;
             if (v < pv) { pv = v; goal = n; }
           }
         }
@@ -695,12 +851,12 @@ export class BotController {
     // Cut off from it, with a way of its own past (blocks, a jetpack): over to a spot with room
     // above to fly or build from; once there, fly there, or build a way (steps up, a bridge across).
     let toward = null;
-    if (cutOff && !inPit && want && ['roam', 'hunt', 'chase'].includes(kind) && this.escapeFails < 3 && game.tick - this.towardAt > 600 && canGetPast(s, cutOff)) {
+    if (cutOff && !inPit && want && GO_KINDS.has(kind) && this.escapeFails < 3 && game.tick - this.towardAt > 600 && canGetPast(s, cutOff)) {
       const from = launchSpot(game, this.nav, search, cutOff, ok);
       if (from) { goal = from; kind = 'toward'; toward = { to: cutOff, want }; }
     }
     this.goalKind = kind;
-    this.goalItem = ['health', 'weapon', 'armour', 'tool'].includes(kind) ? goalItem : null;
+    this.goalItem = ITEM_GOALS.has(kind) ? goalItem : null;
     // In a pit, nobody to fight and nothing to pick up: fly or build a way out (with no
     // way of its own, after a few seconds, self-destruct: lastResort).
     if (inPit && !this.target && !this.goalItem && this.startEscape(game, s, exitSpot(this.nav, s))) return;
@@ -807,14 +963,14 @@ export class BotController {
     const c = this.cover;
     if (c) {
       // (Put up where we stand: given up if we've been moved off it.)
-      if (game.tick > c.until || !s.weapons[c.tool] || !s.alive || !s.body.onGround || Math.abs(s.x - c.fromX) > 8 || Math.abs(s.y - c.fromY) > 4) { this.cover = null; return; }
+      if (game.tick > c.until || !s.weapons[c.tool] || !s.alive || !s.body.onGround || Math.abs(s.body.x - c.fromX) > 8 || Math.abs(s.body.y - c.fromY) > 4) { this.cover = null; return; }
       inp.move = 0;
       inp.jump = inp.jumpPressed = false;
       if (s.current !== c.tool) { inp.switchTo = c.tool; return; }
       inp.switchTo = undefined;
       inp.plank = false;
       inp.aim = Math.atan2(c.y - s.shoulderY, c.x - s.shoulderX);
-      inp.aimDist = Math.hypot(c.x - s.shoulderX, c.y - s.shoulderY);
+      inp.aimDist = hypot(c.x - s.shoulderX, c.y - s.shoulderY);
       inp.fire = Math.abs(angleDiff(s.aim, inp.aim)) < 0.05 && !s.buildPlank && game.tick % 2 === 0;
       if (s.weapons[c.tool].ammo < c.ammo) {
         // Up: stay behind it a moment (then back to the gun: pickWeapon).
@@ -826,8 +982,8 @@ export class BotController {
     }
     const t = this.target;
     if (!t || !s.body.onGround || game.tick - this.coverAt < 480 || blocksLeft(s) < 2) return;
-    const dx = t.x - s.x;
-    if (Math.abs(dx) < 220 || Math.abs(dx) > 750 || Math.abs(t.y - s.y) > 60) return;
+    const dx = t.body.x - s.body.x;
+    if (Math.abs(dx) < 220 || Math.abs(dx) > 750 || Math.abs(t.body.y - s.body.y) > 60) return;
     if (!(s.health < 60 || s.reloadTimer > 0)) return;
     this.coverAt = game.tick;
     const spot = coverSpot(game, s, t.x);
@@ -884,16 +1040,16 @@ export class BotController {
       e.t++;
       if (e.airborne && b.onGround) {
         this.exec = null;
-        const n = this.nav.nodeAt(s.x, s.y, 10);
-        if (n === link.to) { this.li++; link.penalty &&= link.penalty > 10 ? link.penalty * 0.6 : 0; }
+        const n = this.nav.nodeAt(b.x, b.y, 10);
+        if (n === link.to) { this.li++; if (link.penalty) this.nav.penalize(link, link.penalty > 10 ? link.penalty * 0.6 : 0); }
         else {
           // Landed somewhere else. Unless something hit us on the way, remember this move is unreliable.
-          if (s.lastHurtTick === e.hurt) linkFailed(link);
+          if (s.lastHurtTick === e.hurt) linkFailed(this.nav, link);
           this.thinkIn = 0;
         }
       } else if (e.t > (link.ticks ? link.ticks * 1.5 + 30 : 400 / MOTION.timeScale) || (!e.airborne && e.t > 30)) {
         // Taking far longer than it should (bouncing on the edge of a jump pad, say): it failed.
-        if (e.airborne && s.lastHurtTick === e.hurt) linkFailed(link);
+        if (e.airborne && s.lastHurtTick === e.hurt) linkFailed(this.nav, link);
         this.exec = null;
         this.thinkIn = 0;
         this.path = null;
@@ -903,7 +1059,7 @@ export class BotController {
     if (!b.onGround) {
       // Slipped off a ledge while following the route (not knocked off, not a jump pad): that step is unreliable.
       const link = this.path && this.path[this.li];
-      if (this.airTicks === 0 && link && !b.bounced && game.tick - (s.lastHurtTick ?? -1e9) > 30) linkFailed(link);
+      if (this.airTicks === 0 && link && !b.bounced && game.tick - (s.lastHurtTick ?? -1e9) > 30) linkFailed(this.nav, link);
       this.steerInAir(game, s, inp);
       return;
     }
@@ -911,10 +1067,10 @@ export class BotController {
     this.bounces = 0;
 
     if (this.offGraph) {
-      const n = this.offGraph, dx = n.x - s.x;
+      const n = this.offGraph, dx = n.x - b.x;
       // Right above it (on a jump pad's raised edge, say): step off to one side to drop down to it.
-      inp.move = Math.abs(dx) > 2 || (n.y < s.y - 4 && Math.abs(dx) > 0.5) ? Math.sign(dx) : n.y > s.y + 4 ? (this.offDir ||= this.rng() < 0.5 ? -1 : 1) : 0;
-      if (n.y < s.y - 4) { inp.jump = true; inp.jumpPressed = true; }
+      inp.move = Math.abs(dx) > 2 || (n.y < b.y - 4 && Math.abs(dx) > 0.5) ? Math.sign(dx) : n.y > b.y + 4 ? (this.offDir ||= this.rng() < 0.5 ? -1 : 1) : 0;
+      if (n.y < b.y - 4) { inp.jump = true; inp.jumpPressed = true; }
       return;
     }
     const link = this.path && this.path[this.li];
@@ -922,7 +1078,7 @@ export class BotController {
       // At the goal. Items often float above the floor or over a jump pad:
       // walk to them and hop up to grab them, but give up if it takes too long.
       const it = this.goalItem;
-      if (it && it.active && Math.abs(it.x - s.x) < 100 && Math.abs(it.y - s.y) < 120) {
+      if (it && it.active && Math.abs(it.x - b.x) < 100 && Math.abs(it.y - b.y) < 120) {
         this.grabTicks = (this.grabTicks || 0) + 1;
         if (this.grabTicks > 150 / MOTION.timeScale) {
           this.ignore.set(it, game.tick + 900);
@@ -931,8 +1087,8 @@ export class BotController {
           this.thinkIn = 0;
           return;
         }
-        inp.move = Math.abs(it.x - s.x) > 3 ? Math.sign(it.x - s.x) : 0;
-        if (Math.abs(it.x - s.x) < 14 && it.y < s.y - 10) inp.jump = inp.jumpPressed = true;
+        inp.move = Math.abs(it.x - b.x) > 3 ? Math.sign(it.x - b.x) : 0;
+        if (Math.abs(it.x - b.x) < 14 && it.y < b.y - 10) inp.jump = inp.jumpPressed = true;
         // Walking into something (the side of a raised jump pad, say): hop over it.
         if (inp.move && Math.abs(b.vx) < 0.2 && this.grabTicks > 6) inp.jump = inp.jumpPressed = true;
         this.thinkIn = Math.max(this.thinkIn, 10);
@@ -944,12 +1100,12 @@ export class BotController {
       return;
     }
     if (link.type === 'walk') {
-      const dx = link.to.x - s.x;
+      const dx = link.to.x - b.x;
       // Keep running if the route carries on the same way; otherwise slow down to stop on the spot.
       const next = this.path[this.li + 1];
       const through = next && next.type === 'walk' && next.dir === link.dir;
       // (There once level with it: a step up right by the spot isn't climbed yet.)
-      if ((Math.abs(dx) < 3 && Math.abs(s.y - link.to.y) < 3) || Math.sign(dx) !== link.dir) { this.li++; inp.move = through ? link.dir : 0; }
+      if ((Math.abs(dx) < 3 && Math.abs(b.y - link.to.y) < 3) || Math.sign(dx) !== link.dir) { this.li++; inp.move = through ? link.dir : 0; }
       else inp.move = through || Math.abs(dx) < 3 ? link.dir : approach(dx, b.vx);
       // A long clear run ahead and nobody to fight: sprint (easing off before the route turns or jumps).
       if (!this.target && this.goalKind !== 'hold') {
@@ -960,11 +1116,11 @@ export class BotController {
         }
         inp.sprint = run >= SPRINT_RUN;
       }
-      if (Math.abs(s.y - link.to.y) > 14) this.thinkIn = 0;
+      if (Math.abs(b.y - link.to.y) > 14) this.thinkIn = 0;
     } else {
       const from = this.li === 0 ? this.start : this.path[this.li - 1].to;
-      const dx = from.x - s.x;
-      if (Math.abs(s.y - from.y) > 14) { this.thinkIn = 0; return; }
+      const dx = from.x - b.x;
+      if (Math.abs(b.y - from.y) > 14) { this.thinkIn = 0; return; }
       if (Math.abs(dx) > 6) inp.move = approach(dx, b.vx);
       else if (Math.abs(dx) > 1.5) inp.move = Math.abs(b.vx) < 1 ? Math.sign(dx) : 0;
       else if (Math.abs(b.vx) > 0.6) inp.move = 0;
@@ -987,11 +1143,11 @@ export class BotController {
     if (b.bounced) this.bounces++;
     const it = this.goalItem;
     const link = this.path && this.path[this.li];
-    const want = it && it.active && Math.abs(it.x - s.x) < 120 ? it : link ? link.to : this.offGraph;
+    const want = it && it.active && Math.abs(it.x - b.x) < 120 ? it : link ? link.to : this.offGraph;
     // Hopping for an item: steer for it straight away, and hold the jump for its full height.
     const grabbing = want === it && !link && this.grabTicks > 0;
     if (want && (this.bounces > 0 || this.airTicks > 45 || grabbing)) {
-      const dx = want.x - s.x;
+      const dx = want.x - b.x;
       inp.move = Math.abs(dx) > 4 ? Math.sign(dx) : 0;
     }
     if (grabbing && b.vy < 0) inp.jump = true;
@@ -1004,7 +1160,7 @@ export class BotController {
       this.thinkIn = 0;
       this.path = null;
     }
-    if (it && it.active && !link && Math.abs(it.x - s.x) < 100) {
+    if (it && it.active && !link && Math.abs(it.x - b.x) < 100) {
       // At the item but can't land next to it: don't keep trying forever.
       this.grabTicks++;
       if (this.grabTicks > 150 / MOTION.timeScale) { this.ignore.set(it, game.tick + 1800); this.goalItem = null; this.grabTicks = 0; }
@@ -1019,7 +1175,7 @@ export class BotController {
 
   /** If the bot hasn't moved for a while, jump somewhere and rethink. */
   watchStuck(game, s, inp) {
-    const n = this.nav.nodeAt(s.x, s.y, 14);
+    const n = this.nav.nodeAt(s.body.x, s.body.y, 14);
     if (n && n === this.lastNode && this.goalKind !== 'fight' && this.goalKind !== 'hold') this.stuck++;
     else this.stuck = 0;
     this.lastNode = n;
@@ -1071,7 +1227,7 @@ export class BotController {
     if (!t) {
       // Look where we're going, or where the enemy was last seen (or away from our own flashbang).
       let want;
-      if (this.lookAway && game.tick < this.lookAway.until) want = this.lookAway.x < s.x ? -0.05 : Math.PI + 0.05;
+      if (this.lookAway && game.tick < this.lookAway.until) want = this.lookAway.x < s.body.x ? -0.05 : Math.PI + 0.05;
       else if (this.lastSeen && game.tick - this.lastSeen.tick < 120) want = Math.atan2(this.lastSeen.y - 10 - sy, this.lastSeen.x - sx);
       else if (Math.abs(s.body.vx) > 0.5) want = s.body.vx < 0 ? Math.PI + 0.05 : -0.05;
       else if (game.options.botVision === 'sight') {
@@ -1089,13 +1245,13 @@ export class BotController {
     this.seen++;
     const d = this.d;
     const def = WEAPONS[s.current];
-    const b = def.bot || {};
+    const b = def.bot || NO_BOT;
     // Where the bot thinks the target is: where it saw them `delay` updates ago, carried on
     // part of the way at the speed they were going then.
     const seen = this.remember(t, d.delay);
     const ahead = d.delay * d.extrap;
     let tx = seen.x + seen.vx * ahead, ty = seen.y + seen.vy * ahead - (def.kind === 'rail' && this.profile.skill >= 2 ? 15 : 7);
-    const dist = Math.hypot(tx - sx, ty - sy);
+    const dist = hypot(tx - sx, ty - sy);
     inp.aimDist = dist;
     let desired;
     if (b.lob) {
@@ -1105,7 +1261,7 @@ export class BotController {
     } else if (b.walker) {
       desired = tx < sx ? Math.PI : 0;
     } else {
-      if (def.speed && !['rail', 'seeker', 'flyer', 'strike'].includes(def.kind)) {
+      if (def.speed && !NO_LEAD.has(def.kind)) {
         const lead = (dist / shotSpeed(game, def)) * (0.5 + this.profile.skill * 0.15);
         tx += seen.vx * lead;
         ty += seen.vy * lead * 0.4;
@@ -1134,7 +1290,7 @@ export class BotController {
       : this.d.fireCone;
     if (off > cone) return;
     const maxRange = def.kind === 'melee' ? (b.far ?? 22) + 8 : (b.far ?? def.range ?? 600) * 1.05;
-    if (dist > maxRange || !onScreen(def, t.x - s.x, t.y - s.y)) return;
+    if (dist > maxRange || !onScreen(def, t.body.x - s.body.x, t.body.y - s.body.y)) return;
     if (b.walker && Math.abs(ty - sy) > 70) return;
     if (b.mine && (this.lastMine && game.tick - this.lastMine < 600)) return;
     const explosive = def.kind === 'rocket' || def.kind === 'thrown' || def.kind === 'flyer' || def.kind === 'kamikaze';
@@ -1158,7 +1314,8 @@ export class BotController {
     const a = this.seenAt;
     if (t !== this.seenOf) { this.seenOf = t; this.seenCount = 0; }
     const i = (this.seenCount % SEEN_LEN) * 4;
-    a[i] = t.x; a[i + 1] = t.y; a[i + 2] = t.body.vx; a[i + 3] = t.body.vy;
+    const b = t.body;
+    a[i] = b.x; a[i + 1] = b.y; a[i + 2] = b.vx; a[i + 3] = b.vy;
     this.seenCount++;
     const back = Math.min(delay, this.seenCount - 1, SEEN_LEN - 1);
     const j = ((this.seenCount - 1 - back) % SEEN_LEN) * 4;
@@ -1173,8 +1330,9 @@ export class BotController {
   }
 }
 
-function linkFailed(link) {
-  link.penalty = Math.min(MAX_PENALTY, (link.penalty || 0) + FAIL_COST);
+/** A move that went wrong for a bot: it costs more to plan (for every bot using the route map). */
+function linkFailed(nav, link) {
+  nav.penalize(link, Math.min(MAX_PENALTY, (link.penalty || 0) + FAIL_COST));
 }
 
 /** Launch angle that lobs a projectile (speed v, gravity g) onto a point dx,dy away; y points down. */

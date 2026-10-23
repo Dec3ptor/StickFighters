@@ -588,6 +588,7 @@ function enterMatch(game, me) {
 function endMatch(to = state.returnTo) {
   state.replay = null;
   renderer.cam.zoom = 1;
+  renderer.forgetMatch?.();
   closePicker();
   closeBuy();
   input.unlock();
@@ -1793,6 +1794,7 @@ async function boot() {
   };
   setLegAnimations(legs);
   audio.preload();
+  audio.listen(window); // (sound starts at the first click, tap or key; nothing listens once it's running)
   maps.index = index;
   await Promise.all(index.map(async m => maps.data.set(m.file, await fetch('data/maps/' + m.file).then(r => r.json()))));
   state.tab = settings.tab === 'offline' ? 'offline' : 'online';

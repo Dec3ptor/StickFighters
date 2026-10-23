@@ -66,6 +66,18 @@ export class NavGraph {
     this.drops = DROPS.map(d => ({ ...d, hold: d.hold * t }));
     this._buildNodes();
     this._buildLinks();
+    this._prepare();
+  }
+
+  /**
+   * Work out now what searches and lookups need (the links as flat arrays, the spots by
+   * grid cell, which spots are in pits), rather than in the middle of the first update
+   * that wants them. (The same as working it out then: nothing changes in between.)
+   */
+  _prepare() {
+    this._flat();
+    this._indexNodes();
+    this.trapped();
   }
 
   _standable(x, y) {
@@ -135,9 +147,13 @@ export class NavGraph {
   /** Nearest node to a standing position (same height, within `reach` px), or null. */
   nodeAt(x, y, reach = NODE_STEP) {
     let best = null, bd = reach;
-    for (const k of [Math.round(y) - 1, Math.round(y), Math.round(y) + 1]) {
-      for (const n of this.rows.get(k) || []) {
-        const d = Math.abs(n.x - x);
+    const r = Math.round(y);
+    // (The rows just above, at and just below, in that order.)
+    for (let i = -1; i <= 1; i++) {
+      const row = this.rows.get(r + i);
+      if (!row) continue;
+      for (let j = 0; j < row.length; j++) {
+        const n = row[j], d = Math.abs(n.x - x);
         if (d <= bd) { bd = d; best = n; }
       }
     }
@@ -173,10 +189,11 @@ export class NavGraph {
     const out = [];
     for (let cx = Math.floor((x - rx) / NODE_CELL); cx <= Math.floor((x + rx) / NODE_CELL); cx++) {
       for (let cy = Math.floor((y - ry) / NODE_CELL); cy <= Math.floor((y + ry) / NODE_CELL); cy++) {
-        for (const n of cells.get(cx * 100003 + cy) || []) if (Math.abs(n.x - x) < rx && Math.abs(n.y - y) < ry) out.push(n);
+        const list = cells.get(cx * 100003 + cy);
+        if (list) for (const n of list) if (Math.abs(n.x - x) < rx && Math.abs(n.y - y) < ry) out.push(n);
       }
     }
-    return out.sort((a, b) => a.id - b.id);
+    return out.sort(byId);
   }
 
   _indexNodes() {
@@ -433,6 +450,7 @@ export class NavGraph {
       // (Where each try went doesn't change, so the boxes are shared.)
       c.tries = n.tries && n.tries.map(t => t && { box: t.box, res: t.res && { node: g.nodes[t.res.node.id], ticks: t.res.ticks } });
     }
+    g._prepare();
     return g;
   }
 
@@ -543,21 +561,34 @@ export class NavGraph {
 
   /**
    * The links as flat arrays, for searching (worked out again after they change):
-   * node i's links are from[i] to from[i + 1] - 1 in to (node ids), cost and link (the objects).
+   * node i's links are from[i] to from[i + 1] - 1 in to (node ids), cost, penalty (as
+   * link.penalty || 0: kept in step by penalize()) and link (the objects; each link's
+   * place in these is link.index).
    */
   _flat() {
     if (this._flatLinks) return this._flatLinks;
     const n = this.nodes.length;
     let e = 0;
     for (const a of this.nodes) e += a.links.length;
-    const from = new Int32Array(n + 1), to = new Int32Array(e), cost = new Float64Array(e), link = new Array(e);
+    const from = new Int32Array(n + 1), to = new Int32Array(e), cost = new Float64Array(e), penalty = new Float64Array(e), link = new Array(e);
     let k = 0;
     for (let i = 0; i < n; i++) {
       from[i] = k;
-      for (const l of this.nodes[i].links) { to[k] = l.to.id; cost[k] = l.cost; link[k] = l; k++; }
+      for (const l of this.nodes[i].links) { to[k] = l.to.id; cost[k] = l.cost; penalty[k] = l.penalty || 0; link[k] = l; l.index = k; k++; }
     }
     from[n] = k;
-    return (this._flatLinks = { from, to, cost, link });
+    return (this._flatLinks = { from, to, cost, penalty, link });
+  }
+
+  /**
+   * The extra cost bots put on a move that went wrong for them (bot.js): on the link, and
+   * where searches read it (if the link is in this route map's flat arrays as they are now:
+   * not one from before a patch, nor a move worked out on the spot, like escape()'s).
+   */
+  penalize(link, penalty) {
+    link.penalty = penalty;
+    const g = this._flatLinks;
+    if (g && g.link[link.index] === link) g.penalty[link.index] = penalty || 0;
   }
 
   /**
@@ -576,14 +607,21 @@ export class NavGraph {
     return (g.into = { intoFrom, into });
   }
 
-  /** Cheapest cost from `start` to every node: { cost: Float64Array, prev: Int32Array, via: [] }. */
-  costsFrom(start) {
+  /**
+   * Cheapest cost from `start` to every node: { cost: Float64Array, prev: Int32Array, via: [] }.
+   * into: an earlier result to work in rather than new arrays (it's overwritten, and returned).
+   */
+  costsFrom(start, into = null) {
     const n = this.nodes.length;
-    const cost = new Float64Array(n).fill(Infinity);
-    const prev = new Int32Array(n).fill(-1);
-    const via = new Array(n);
-    const done = new Uint8Array(n);
-    const g = this._flat();
+    const reuse = !!into && into.cost.length === n;
+    const cost = reuse ? into.cost.fill(Infinity) : new Float64Array(n).fill(Infinity);
+    const prev = reuse ? into.prev.fill(-1) : new Int32Array(n).fill(-1);
+    // (via is only read where prev says a link led there, so what's left from before can stay.)
+    const via = reuse ? into.via : new Array(n);
+    let done = this._done;
+    if (done && done.length === n) done.fill(0);
+    else done = this._done = new Uint8Array(n);
+    const g = this._flat(), from = g.from, linkTo = g.to, linkCost = g.cost, penalty = g.penalty, link = g.link;
     cost[start.id] = 0;
     // A binary heap of (cost, node) in two typed arrays, so a search makes no garbage.
     // (Each link can add one entry at most.)
@@ -610,13 +648,13 @@ export class NavGraph {
       }
       if (done[id]) continue;
       done[id] = 1;
-      for (let k = g.from[id], end = g.from[id + 1]; k < end; k++) {
+      for (let k = from[id], end = from[id + 1]; k < end; k++) {
         // (penalty: extra cost bots add to moves that went wrong for them, see bot.js)
-        const to = g.to[k], nc = c + g.cost[k] + (g.link[k].penalty || 0);
+        const to = linkTo[k], nc = c + linkCost[k] + penalty[k];
         if (nc < cost[to]) {
           cost[to] = nc;
           prev[to] = id;
-          via[to] = g.link[k];
+          via[to] = link[k];
           // Add it, and let it rise to its place.
           let i = size++;
           hc[i] = nc; hn[i] = to;
@@ -630,23 +668,38 @@ export class NavGraph {
         }
       }
     }
-    return { cost, prev, via };
+    return reuse ? into : { cost, prev, via };
   }
 
   /**
    * costsFrom(), but remembered for a couple of seconds and shared: in big
    * games, lots of bots plan from the same spots. (A recent search is plenty
-   * good enough: it only matters which way to go.)
+   * good enough: it only matters which way to go.) A search is worked out in the
+   * arrays of the one it replaces, or of the last one dropped from the cache.
    */
   cachedCostsFrom(start, tick) {
     const cache = (this.searches ||= new Map());
     const hit = cache.get(start.id);
     if (hit && tick - hit.tick < 120 && tick >= hit.tick) return hit.search;
-    const search = this.costsFrom(start);
+    const search = this.costsFrom(start, hit ? hit.search : this.spareSearch);
+    if (!hit) this.spareSearch = null;
     cache.delete(start.id);
     cache.set(start.id, { tick, search });
-    if (cache.size > 200) cache.delete(cache.keys().next().value); // oldest first
+    if (cache.size > 200) {
+      // (Oldest first.)
+      const oldest = cache.keys().next().value;
+      this.spareSearch = cache.get(oldest).search;
+      cache.delete(oldest);
+    }
     return search;
+  }
+
+  /**
+   * costsFrom(), in the same arrays every time: for a search used straight away and
+   * then let go of (the next one overwrites it).
+   */
+  costsFromHere(start) {
+    return (this.hereSearch = this.costsFrom(start, this.hereSearch));
   }
 
   /** The list of links from the search's start to `goal`, or null if unreachable. */
@@ -657,6 +710,8 @@ export class NavGraph {
     return links.reverse();
   }
 }
+
+const byId = (a, b) => a.id - b.id;
 
 /** Stretches [[a, b], ...] less the open stretch (l, r). */
 function without(stretches, l, r) {

@@ -48,6 +48,14 @@ export class SoundSystem {
     this.playing = new Map(); // name -> count playing right now
     this.raw = new Map();     // file -> ArrayBuffer, waiting to be decoded
     this.buffers = new Map(); // file -> decoded AudioBuffer
+    this.live = false;        // the audio is running (nothing left to unlock)
+    this.seen = new Set();    // sounds played this frame (playQueue)
+    // When each sound playing ends (audio clock) and its name, oldest first: counted off
+    // `playing` as they end, instead of a timer for every sound.
+    this.endAt = [];
+    this.endName = [];
+    this.onGesture = () => this.unlock();
+    this.listening = null;
   }
 
   /** Download the recordings (they're decoded once audio is allowed to start). */
@@ -67,12 +75,19 @@ export class SoundSystem {
     }
   }
 
-  /** Browsers only allow audio after a click or key press. */
+  /**
+   * Browsers only allow audio after a click or key press. (Once it's running this does
+   * nothing, so it costs nothing to call on every key and click.)
+   */
   unlock() {
+    if (this.live) return;
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     this.ctx = new AC();
+    // Running: stop listening for clicks and keys; stopped by the browser again: listen again.
+    this.ctx.onstatechange = () => this.stateChanged();
+    this.stateChanged();
     this.master = this.ctx.createGain();
     this.master.gain.value = this.gain;
     this.master.connect(this.ctx.destination);
@@ -81,6 +96,30 @@ export class SoundSystem {
     const d = this.noise.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this.decode();
+  }
+
+  /**
+   * Start audio at the first click, tap or key press (and again whenever the browser
+   * stops it), listening on `target` only until it's running.
+   */
+  listen(target = window) {
+    this.target = target;
+    if (this.live || this.listening) return;
+    this.listening = target;
+    for (const type of GESTURES) target.addEventListener(type, this.onGesture, { capture: true, passive: true });
+  }
+
+  unlisten() {
+    const t = this.listening;
+    if (!t) return;
+    for (const type of GESTURES) t.removeEventListener(type, this.onGesture, { capture: true });
+    this.listening = null;
+  }
+
+  stateChanged() {
+    this.live = this.ctx.state === 'running';
+    if (this.live) this.unlisten();
+    else if (this.target) this.listen(this.target);
   }
 
   /** What everything's played at: the volume setting, or nothing when muted. */
@@ -104,7 +143,8 @@ export class SoundSystem {
    */
   playQueue(queue, lx, ly, me = null, team = 0) {
     if (!this.ctx || this.muted) return;
-    const seen = new Set();
+    const seen = this.seen;
+    seen.clear();
     for (const s of queue) {
       if (s.to != null && s.to !== me && !(s.to < 0 && -s.to === team)) continue;
       const key = s.name + Math.round((s.x ?? 0) / 64);
@@ -124,10 +164,19 @@ export class SoundSystem {
     const buffer = sample && this.buffers.get(sample[0]);
     const fn = SOUNDS[name];
     if ((!buffer && !fn) || !this.ctx || this.muted) return;
+    const now = this.ctx.currentTime;
+    this.ended(now);
     if ((this.playing.get(name) || 0) >= 4) return;
     const out = this.ctx.createGain();
-    out.gain.value = vol;
-    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+    // A sound in the middle goes straight out, without a panner. A panner in the middle sends
+    // a one-channel sound to each side at cos 45° (its equal-power law): the same here. A
+    // two-channel recording goes through a centred panner as it is.
+    // (Browsers without panners always sent it straight out, at full level.)
+    const stereo = buffer ? buffer.numberOfChannels : 1, panners = !!this.ctx.createStereoPanner;
+    const direct = !panners || (pan === 0 && stereo <= 2);
+    const level = panners && direct && stereo === 1 ? Math.SQRT1_2 : 1;
+    out.gain.value = vol * level;
+    const panner = direct ? null : this.ctx.createStereoPanner();
     if (panner) { panner.pan.value = pan; out.connect(panner).connect(this.master); }
     else out.connect(this.master);
     this.playing.set(name, (this.playing.get(name) || 0) + 1);
@@ -136,14 +185,27 @@ export class SoundSystem {
       const src = this.ctx.createBufferSource();
       src.buffer = buffer;
       src.playbackRate.value = 0.96 + Math.random() * 0.08; // slight variety
-      out.gain.value = vol * sample[1];
+      out.gain.value = vol * sample[1] * level;
       src.connect(out);
       src.start();
       dur = buffer.duration;
     } else {
-      dur = fn(this, out, this.ctx.currentTime) || 0.3;
+      dur = fn(this, out, now) || 0.3;
     }
-    setTimeout(() => this.playing.set(name, this.playing.get(name) - 1), dur * 1000);
+    this.endAt.push(now + dur);
+    this.endName.push(name);
+  }
+
+  /** Count off the sounds that have ended by `now` (audio clock). */
+  ended(now) {
+    const at = this.endAt, names = this.endName;
+    let n = 0;
+    for (let i = 0; i < at.length; i++) {
+      if (at[i] <= now) this.playing.set(names[i], this.playing.get(names[i]) - 1);
+      else { at[n] = at[i]; names[n] = names[i]; n++; }
+    }
+    at.length = n;
+    names.length = n;
   }
 
   // Building blocks -----------------------------------------------------------
@@ -183,6 +245,10 @@ export class SoundSystem {
     o.stop(t + dur + 0.05);
   }
 }
+
+// What counts as the click or key press that lets audio start. (A browser lets audio start on
+// a mouse button going down, but on a pen or finger only once it's lifted: pointerup.)
+const GESTURES = ['pointerdown', 'pointerup', 'keydown', 'touchend'];
 
 const SOUNDS = {
   pistol: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.12, freq: 1800, gain: 0.9 }); a.tone(o, t, { dur: 0.08, from: 180, to: 60, gain: 0.5 }); return 0.15; },

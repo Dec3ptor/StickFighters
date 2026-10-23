@@ -19,6 +19,7 @@ import { objectivesOf, inZone, floorBelow, STAND } from './objectives.js';
 import { damage } from './combat.js';
 import { weaponFor } from './classes.js';
 import { BODY } from './config.js';
+import { hypot } from './map.js';
 
 const SEC = 60; // the game always updates 60 times a second
 
@@ -559,7 +560,7 @@ export function defuseMode(base) {
       game.noise(x, y, 2000, null);
       for (const s of game.near(x - k.radius, y - k.radius, x + k.radius, y + k.radius)) {
         if (!s.alive) continue;
-        const d = Math.hypot(s.x - x, s.y - 8 - y);
+        const d = hypot(s.x - x, s.y - 8 - y);
         if (d > k.radius) continue;
         const f = 1 - d / k.radius;
         s.body.vx += Math.sign(s.x - x || 1) * k.knock * f;
@@ -825,7 +826,7 @@ function botGoal(game, s, bot) {
   const role = hash(s.id, st.round);
   if (side === 'T') {
     if (b.s === 'carried' && b.by === s.id) return { zone: site(st.target), hold: true, urgent: true };
-    if (b.s === 'dropped' && (role < 0.6 || Math.hypot(b.x - s.x, b.y - s.y) < 500)) return { zone: around(b.x, b.y, 10, 46), urgent: true, moving: true };
+    if (b.s === 'dropped' && (role < 0.6 || hypot(b.x - s.x, b.y - s.y) < 500)) return { zone: around(b.x, b.y, 10, 46), urgent: true, moving: true };
     if (b.s === 'planted') {
       // Guard it from a few steps away, somewhere with a view of it (standing right on it
       // would give away where it is, and behind cover there'd be no stopping a defuse).
@@ -835,17 +836,17 @@ function botGoal(game, s, bot) {
     if (role < 0.2 && sites.length > 1) return { zone: sites.find(z => z !== target), hold: true };
     // With the carrier: a step behind or ahead of them.
     const c = b.s === 'carried' ? byId(game, b.by) : null;
-    if (c && role < 0.55 && Math.hypot(c.x - s.x, c.y - s.y) > 260) return { zone: around(c.x, c.y + STAND, 120), moving: true };
+    if (c && role < 0.55 && hypot(c.x - s.x, c.y - s.y) > 260) return { zone: around(c.x, c.y + STAND, 120), moving: true };
     return { zone: target, hold: true };
   }
   if (b.s === 'planted') {
     // Retaking the site: clear it from somewhere with a view of the bomb, then defuse
     // (straight for the bomb when nobody's in sight, or when time's running out).
-    const need = (gearOf(game, s).kit ? DEFUSE.kitTime : DEFUSE.defuseTime) + 3 * SEC + Math.hypot(b.x - s.x, b.y - s.y) / 2;
+    const need = (gearOf(game, s).kit ? DEFUSE.kitTime : DEFUSE.defuseTime) + 3 * SEC + hypot(b.x - s.x, b.y - s.y) / 2;
     if (!bot?.target || b.fuse < need) return { zone: around(b.x, b.y, 14, 50), hold: true, urgent: true };
     return { zone: around(b.x, b.y, 260, 160), avoid: around(b.x, b.y, 30, 60), hold: true, see: { x: b.x, y: b.y - 8 } };
   }
-  if (b.s === 'dropped' && Math.hypot(b.x - s.x, b.y - s.y) < 700) {
+  if (b.s === 'dropped' && hypot(b.x - s.x, b.y - s.y) < 700) {
     // Defenders keep an eye on a dropped bomb.
     return { zone: around(b.x, b.y, 200, 140), hold: true };
   }
@@ -880,7 +881,7 @@ function botThrow(game, s, bot) {
   const side = sideOf(game, s.team), b = st.bomb;
   const seen = bot.lastSeen, ago = seen ? game.tick - seen.tick : Infinity;
   // (A grenade lobbed as hard as it goes lands about 250 pixels off, on the flat.)
-  const within = (x, y, near, far) => { const d = Math.hypot(x - s.x, y - s.y); return d >= near && d <= far; };
+  const within = (x, y, near, far) => { const d = hypot(x - s.x, y - s.y); return d >= near && d <= far; };
   if (has('Flashbang') && ago > 20 && ago < 150 && within(seen.x, seen.y, 110, 280) && hash(s.id, game.tick >> 7) < 0.6) {
     return { id: 'Flashbang', x: seen.x, y: seen.y - 30 };
   }

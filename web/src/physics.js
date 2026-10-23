@@ -2,6 +2,7 @@
 // Keeping one function for all three means a jump the planner tested works the same in play.
 
 import { BODY, PHYS, RULES } from './config.js';
+import { hypot } from './map.js';
 
 export function makeBody(x, y) {
   return {
@@ -20,17 +21,10 @@ export function bodyTop(body) {
   return body.crouching ? BODY.crouchTop : BODY.top;
 }
 
-/** The solid directly under the body's feet (touching), or null. */
+/** The solid directly under the body's feet (touching), or null. (Floor rather than a jump pad, where there's both.) */
 export function supportUnder(body, map) {
-  const l = body.x - BODY.halfW, r = body.x + BODY.halfW, y = body.y + BODY.bottom;
-  let best = null;
-  map.query(l, y, r, y + 1, s => {
-    if (l < s.r && r > s.l && y < s.b && y + 1 > s.t) {
-      if (!best || (best.bounce && !s.bounce)) best = s;
-    }
-    return false;
-  });
-  return best;
+  const y = body.y + BODY.bottom;
+  return map.support(body.x - BODY.halfW, y, body.x + BODY.halfW, y + 1);
 }
 
 /**
@@ -118,7 +112,7 @@ function holdRope(body, input, map) {
   if (input.jump) r.len = Math.max(ROPE_MIN, r.len - PHYS.ropeClimb);
   if (input.crouch) r.len = Math.min(ROPE_MAX, r.len + PHYS.ropeClimb);
   const cy = body.y - 6;
-  const dx = body.x - r.x, dy = cy - r.y, d = Math.hypot(dx, dy);
+  const dx = body.x - r.x, dy = cy - r.y, d = hypot(dx, dy);
   if (d <= r.len || d === 0) return;
   const ux = dx / d, uy = dy / d;
   // Pull back onto the circle, as far as walls allow.
@@ -138,6 +132,8 @@ function overlapAt(body, map, x, y) {
 
 function moveX(body, map, wasGround) {
   let remaining = body.vx;
+  // (A speed that isn't a number, from a bug elsewhere, would never be used up: the page would hang.)
+  if (!Number.isFinite(remaining)) { body.vx = 0; return; }
   while (remaining !== 0) {
     const dx = Math.abs(remaining) > PHYS.maxStep ? Math.sign(remaining) * PHYS.maxStep : remaining;
     remaining -= dx;
@@ -171,28 +167,31 @@ function moveX(body, map, wasGround) {
   }
 }
 
+// The blocks a step of moveY() runs into (one list, used again every step: see map.overlapAll).
+const HITS = [];
+
 /** Moves vertically; returns true if the body hit a floor, pad or ceiling. */
 function moveY(body, map, wasGround) {
   let remaining = body.vy;
+  if (!Number.isFinite(remaining)) { body.vy = 0; return false; }
   while (remaining !== 0) {
     const dy = Math.abs(remaining) > PHYS.maxStep ? Math.sign(remaining) * PHYS.maxStep : remaining;
     remaining -= dy;
     const ny = body.y + dy;
     const top = bodyTop(body);
-    const l = body.x - BODY.halfW, r = body.x + BODY.halfW;
-    const hits = [];
-    map.query(l, ny + top, r, ny + BODY.bottom, s => {
-      if (l < s.r && r > s.l && ny + top < s.b && ny + BODY.bottom > s.t) hits.push(s);
-      return false;
-    });
-    if (hits.length === 0) { body.y = ny; continue; }
+    const hits = HITS, n = map.overlapAll(body.x - BODY.halfW, ny + top, body.x + BODY.halfW, ny + BODY.bottom, hits);
+    if (n === 0) { body.y = ny; continue; }
 
     if (dy > 0) {
       let floor = hits[0];
-      for (const s of hits) if (s.t < floor.t) floor = s;
+      for (let i = 0; i < n; i++) if (hits[i].t < floor.t) floor = hits[i];
       body.y = floor.t - BODY.bottom;
       // Bounce only if a jump pad is under the soldier's middle.
-      const pad = hits.find(s => s.bounce && s.l <= body.x && body.x <= s.r && s.t <= floor.t + 0.5);
+      let pad = null;
+      for (let i = 0; i < n && !pad; i++) {
+        const s = hits[i];
+        if (s.bounce && s.l <= body.x && body.x <= s.r && s.t <= floor.t + 0.5) pad = s;
+      }
       if (pad) {
         body.vy = pad.bounce * PHYS.bounceScale;
         body.bounced = true;
@@ -206,7 +205,7 @@ function moveY(body, map, wasGround) {
       }
     } else {
       let ceil = hits[0];
-      for (const s of hits) if (s.b > ceil.b) ceil = s;
+      for (let i = 0; i < n; i++) if (hits[i].b > ceil.b) ceil = hits[i];
       body.y = ceil.b - top;
       body.vy = 0;
       body.onGround = false;

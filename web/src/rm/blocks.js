@@ -30,7 +30,20 @@ export class Blocks {
     this.open = new WeakMap(); // block -> its open edges { top, bottom, left, right }
     this.map = null;
     this.seen = 0;
+    // (Kept from frame to frame: the blocks in view, the faces to draw and their objects.)
+    this.shown = [];
     this.faces = [];
+    this.pool = [];
+    this.collect = s => { this.shown.push(s); return false; };
+  }
+
+  /** A face to draw (an object reused from earlier frames). */
+  face(kind, a, b, at, d, mat, s) {
+    const n = this.faces.length;
+    let f = this.pool[n];
+    if (!f) this.pool[n] = f = { kind: '', a: 0, b: 0, at: 0, d: 0, mat: null, s: null };
+    f.kind = kind; f.a = a; f.b = b; f.at = at; f.d = d; f.mat = mat; f.s = s;
+    this.faces.push(f);
   }
 
   /** The open stretches of each edge of block s (not touching or inside another block). */
@@ -78,19 +91,20 @@ export class Blocks {
     const bx = x => vx + (x - vx) * k, by = y => vy + (y - vy) * k;
     const lightLeft = (theme.light?.x ?? 0) < 0;
     const margin = Math.max(v.r - v.l, v.b - v.t) * (1 - k) * 0.6 + 10;
-    const shown = [];
-    map.query(v.l - margin, v.t - margin, v.r + margin, v.b + margin, s => { shown.push(s); return false; });
+    const shown = this.shown;
+    shown.length = 0;
+    map.query(v.l - margin, v.t - margin, v.r + margin, v.b + margin, this.collect);
     const faces = this.faces;
     faces.length = 0;
     for (const s of shown) {
       const e = this.edges(map, s);
       const m = s.built ? mats.built : mats.main;
-      if (s.t > vy) for (const [a, b] of e.top) faces.push({ kind: 'top', a, b, at: s.t, d: segDist(vx, vy, a, b, s.t, true), mat: s.bounce ? null : s.built ? mats.built : mats.top, s });
-      if (s.b < vy) for (const [a, b] of e.bottom) faces.push({ kind: 'under', a, b, at: s.b, d: segDist(vx, vy, a, b, s.b, true), mat: m, s });
-      if (s.l > vx) for (const [a, b] of e.left) faces.push({ kind: 'left', a, b, at: s.l, d: segDist(vx, vy, a, b, s.l, false), mat: m, s });
-      if (s.r < vx) for (const [a, b] of e.right) faces.push({ kind: 'right', a, b, at: s.r, d: segDist(vx, vy, a, b, s.r, false), mat: m, s });
+      if (s.t > vy) for (const [a, b] of e.top) this.face('top', a, b, s.t, segDist(vx, vy, a, b, s.t, true), s.bounce ? null : s.built ? mats.built : mats.top, s);
+      if (s.b < vy) for (const [a, b] of e.bottom) this.face('under', a, b, s.b, segDist(vx, vy, a, b, s.b, true), m, s);
+      if (s.l > vx) for (const [a, b] of e.left) this.face('left', a, b, s.l, segDist(vx, vy, a, b, s.l, false), m, s);
+      if (s.r < vx) for (const [a, b] of e.right) this.face('right', a, b, s.r, segDist(vx, vy, a, b, s.r, false), m, s);
     }
-    faces.sort((p, q) => q.d - p.d);
+    faces.sort(byDistance);
     for (const f of faces) {
       ctx.beginPath();
       if (f.kind === 'top' || f.kind === 'under') {
@@ -145,9 +159,8 @@ export class Blocks {
         for (const [a, b] of this.edges(map, s).top) ctx.fillRect(a, s.t, b - a, Math.min(lip, s.b - s.t));
       }
     }
-    const rim = theme.rim || '#ffffff';
     ctx.lineWidth = 0.9;
-    ctx.strokeStyle = css(rim, 0.55);
+    ctx.strokeStyle = rimOf(theme);
     ctx.beginPath();
     for (const s of shown) for (const [a, b] of this.edges(map, s).top) { ctx.moveTo(a, s.t + 0.45); ctx.lineTo(b, s.t + 0.45); }
     ctx.stroke();
@@ -162,6 +175,17 @@ export class Blocks {
     }
     ctx.stroke();
   }
+}
+
+// Furthest first.
+const byDistance = (p, q) => q.d - p.d;
+
+// The lit rim's colour for each theme.
+const rims = new WeakMap();
+function rimOf(theme) {
+  let c = rims.get(theme);
+  if (!c) rims.set(theme, c = css(theme.rim || '#ffffff', 0.55));
+  return c;
 }
 
 /** Distance from (px, py) to an edge: from a to b along y = at (horizontal) or x = at. */

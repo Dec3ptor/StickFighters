@@ -1,14 +1,15 @@
 // Drawing the world with WebGL, through PixiJS. All the drawing code is shared
 // with the canvas renderer (render.js, sprites.js, hud.js), which draws onto a
 // GLContext here instead of a canvas. The busiest things get faster paths: the
-// map is built once, and blood stains and most particles are sprites.
+// map is built once, and blood stains and most particles are drawn as sprites,
+// all of them in one go (glctx.js's QuadBatch).
 //
 // createRenderer() picks WebGL when the graphics card can do it, and the plain
 // canvas otherwise (Settings -> Graphics, or ?renderer=canvas / webgl in the address).
 
 import { Renderer, HATCH, HATCH_GAP, BUILT, BUILT_LINE, BUILT_ROW } from './render.js';
 import { hasGPU } from './gpu.js';
-import { GLContext } from './glctx.js';
+import { GLContext, QuadBatch, QP } from './glctx.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
 import { fillSeams, hatch, courses } from './map.js';
 
@@ -89,14 +90,14 @@ export class GLRenderer extends Renderer {
         c.fillRect(0, 0, 128, 128);
       }),
     };
-    // Layers in world coordinates (they follow the camera).
+    // The map, in world coordinates (it follows the camera).
     this.mapLayer = new P.Container();
     this.mapGfx = new P.Graphics();
     this.mapLayer.addChild(this.mapGfx);
-    this.stainLayer = new P.Container();
-    this.stainSprites = [];
-    this.partLayer = new P.Container();
-    this.partSprites = [];
+    // Stains and particles: sprites in world units, drawn in batches (textures: 0 square, 1 disc, 2 glow).
+    const textures = [this.tex.square, this.tex.disc, this.tex.boom];
+    this.stainQuads = new QuadBatch(P, textures);
+    this.partQuads = new QuadBatch(P, textures);
     this.applySize();
   }
 
@@ -107,6 +108,10 @@ export class GLRenderer extends Renderer {
 
   destroy() {
     super.destroy();
+    // (The sprite batches' shaders listen to PixiJS's shared white texture, which would keep
+    // them, and the textures they draw with, alive after this renderer's gone.)
+    this.stainQuads?.mesh?.shader.destroy();
+    this.partQuads?.mesh?.shader.destroy();
     this.gl?.destroy(false);
     this.gl = null;
   }
@@ -134,10 +139,8 @@ export class GLRenderer extends Renderer {
     this.s = s; this.tx = tx; this.ty = ty; // (for drawing turned things: Renderer.turn())
     ctx.setTransform(s, 0, 0, s, tx, ty);
     this.updateView(s, tx, ty);
-    for (const layer of [this.mapLayer, this.stainLayer, this.partLayer]) {
-      layer.position.set(tx, ty);
-      layer.scale.set(s);
-    }
+    this.mapLayer.position.set(tx, ty);
+    this.mapLayer.scale.set(s);
     this.lineW = Math.max(1.1, 1.3 / this.scale);
 
     const fog = this.startFog(game, alpha, viewer);
@@ -147,13 +150,16 @@ export class GLRenderer extends Renderer {
     this.drawPickups(game);
     this.drawProjectiles(game, false);
     const shown = this.shownSoldiers(game, viewer);
-    for (const sol of shown.soldiers) this.drawSoldier(game, sol, alpha, viewer);
+    // (All the soldiers in one go where render.js can, as the canvas draws them.)
+    if (this.drawSoldiers) this.drawSoldiers(game, shown.soldiers, alpha, viewer);
+    else for (const sol of shown.soldiers) this.drawSoldier(game, sol, alpha, viewer);
     drawCarried(this, game);
     this.drawProjectiles(game, true);
     this.drawEffects(game);
     for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);
     this.drawBuildGhost(game, viewer);
-    for (const sol of shown.names) this.drawName(game, sol, alpha, viewer);
+    if (this.drawNames) this.drawNames(game, shown.names, alpha, viewer);
+    else for (const sol of shown.names) this.drawName(game, sol, alpha, viewer);
     fog?.drawAlerts(ctx);
   }
 
@@ -195,90 +201,62 @@ export class GLRenderer extends Renderer {
     this.drawPads(game, false);
   }
 
+  /** Sprites from a batch into the picture at this point (the camera's scale and place set). */
+  insertQuads(q) {
+    if (!q.n) return;
+    q.upload();
+    this.ctx.insert(q.mesh);
+  }
+
   drawStains(game) {
     if (!game.fx) return;
-    const pool = this.stainSprites;
-    let i = 0;
+    const q = this.stainQuads;
+    q.n = 0;
+    // (The sprite's numbers go in QP: handed to a function one by one, each could cost a new object.)
+    QP[4] = 0; QP[6] = this.s; QP[7] = this.tx; QP[8] = this.ty;
     for (const st of game.fx.stains) {
-      const sp = this.spriteFrom(pool, i++, this.stainLayer, this.tex.square);
-      put(sp, st.x, st.y, st.size, st.size, 0, 0xa30d0d, Math.min(1, st.life / 200) * 0.8);
+      QP[0] = st.x; QP[1] = st.y; QP[2] = QP[3] = st.size; QP[5] = Math.min(1, st.life / 200) * 0.8;
+      q.add(0, 0xa30d0d);
     }
-    hideFrom(pool, i);
-    this.ctx.insert(this.stainLayer);
+    this.insertQuads(q);
   }
 
   /** Blood, sparks, smoke and fire as sprites; everything else as shapes. */
   drawEffects(game) {
     if (!game.fx) return;
-    const pool = this.partSprites, { square, disc, boom } = this.tex, a = this.alpha ?? 1;
-    let i = 0;
+    const q = this.partQuads, a = this.alpha ?? 1;
+    q.n = 0;
+    QP[6] = this.s; QP[7] = this.tx; QP[8] = this.ty;
     for (const p of game.fx.parts) {
       if (!SPRITE_PARTS.has(p.kind)) continue;
       // Drawn between game updates, like everything else.
-      const x = p.px == null ? p.x : p.px + (p.x - p.px) * a, y = p.py == null ? p.y : p.py + (p.y - p.py) * a;
+      QP[0] = p.px == null ? p.x : p.px + (p.x - p.px) * a;
+      QP[1] = p.py == null ? p.y : p.py + (p.y - p.py) * a;
+      // Each kind's picture: texture (0 square, 1 disc, 2 glow), size (w x h, world units), turn, tint, alpha.
+      let tex = 0, tint = 0xffffff;
+      QP[2] = QP[3] = 1; QP[4] = 0; QP[5] = 1;
       switch (p.kind) {
-        case 'blood':
-          put(this.spriteFrom(pool, i++, this.partLayer, square), x, y, p.size, p.size, 0, 0xc40f0f, 1);
-          break;
-        case 'spark':
-          put(this.spriteFrom(pool, i++, this.partLayer, square), x, y, 1, 1, 0, 0x444444, 1);
-          break;
-        case 'ember':
-          put(this.spriteFrom(pool, i++, this.partLayer, square), x, y, 1.6, 1.6, 0, p.life > 15 ? 0xffb02e : 0xc4561a, 1);
-          break;
-        case 'sparkle':
-          put(this.spriteFrom(pool, i++, this.partLayer, square), x, y, 1.6, 1.6, 0, 0xaa78ff, p.life / p.max);
-          break;
-        case 'shell':
-          put(this.spriteFrom(pool, i++, this.partLayer, square), x, y, 2.4, 1, p.angle, 0xc9a227, 1);
-          break;
-        case 'smoke':
-          put(this.spriteFrom(pool, i++, this.partLayer, disc), x, y, p.r * 2, p.r * 2, 0, 0x8c8c8c, 0.32 * p.life / p.max);
-          break;
+        case 'blood': QP[2] = QP[3] = p.size; tint = 0xc40f0f; break;
+        case 'spark': tint = 0x444444; break;
+        case 'ember': QP[2] = QP[3] = 1.6; tint = p.life > 15 ? 0xffb02e : 0xc4561a; break;
+        case 'sparkle': QP[2] = QP[3] = 1.6; tint = 0xaa78ff; QP[5] = p.life / p.max; break;
+        case 'shell': QP[2] = 2.4; QP[4] = p.angle; tint = 0xc9a227; break;
+        case 'smoke': tex = 1; QP[2] = QP[3] = p.r * 2; tint = 0x8c8c8c; QP[5] = 0.32 * p.life / p.max; break;
         case 'fire': {
-          const k = p.life / p.max, d = 2 * p.r * (0.6 + k * 0.4);
-          put(this.spriteFrom(pool, i++, this.partLayer, disc), x, y, d, d, 0, k > 0.6 ? 0xffdc5a : 0xff6e1e, k);
+          const k = p.life / p.max;
+          tex = 1; QP[2] = QP[3] = 2 * p.r * (0.6 + k * 0.4); tint = k > 0.6 ? 0xffdc5a : 0xff6e1e; QP[5] = k;
           break;
         }
         case 'boom': {
-          const k = p.life / p.max, d = 2 * p.r * (1.3 - k * 0.6);
-          put(this.spriteFrom(pool, i++, this.partLayer, boom), x, y, d, d, 0, 0xffffff, k);
+          const k = p.life / p.max;
+          tex = 2; QP[2] = QP[3] = 2 * p.r * (1.3 - k * 0.6); QP[5] = k;
           break;
         }
       }
+      q.add(tex, tint);
     }
-    hideFrom(pool, i);
-    this.ctx.insert(this.partLayer);
+    this.insertQuads(q);
     for (const p of game.fx.parts) if (!SPRITE_PARTS.has(p.kind)) this.drawEffect(this.ctx, p);
-  }
-
-  /** Sprite number i of a pool, made (and added to the layer) the first time. */
-  spriteFrom(pool, i, layer, tex) {
-    let sp = pool[i];
-    if (!sp) {
-      sp = new this.P.Sprite(tex);
-      sp.anchor.set(0.5);
-      pool.push(sp);
-      layer.addChild(sp);
-    } else if (sp.texture !== tex) sp.texture = tex;
-    sp.visible = true;
-    return sp;
-  }
-}
-
-/** Place a centred sprite: size w x h (world units), turned by `angle`, tinted. */
-function put(sp, x, y, w, h, angle, tint, alpha) {
-  sp.position.set(x, y);
-  sp.rotation = angle;
-  sp.scale.set(w / sp.texture.width, h / sp.texture.height);
-  sp.tint = tint;
-  sp.alpha = alpha;
-}
-
-function hideFrom(pool, i) {
-  for (; i < pool.length; i++) {
-    if (!pool[i].visible) break;
-    pool[i].visible = false;
   }
 }
 
@@ -286,5 +264,6 @@ function textureFrom(P, size, draw) {
   const cv = document.createElement('canvas');
   cv.width = cv.height = size;
   draw(cv.getContext('2d'));
-  return P.Texture.from(cv);
+  // (Not in PixiJS's shared cache, which would keep it, and its canvas, after this renderer's gone.)
+  return P.Texture.from(cv, true);
 }

@@ -11,11 +11,32 @@ import { css, mix, shade, rgb } from './color.js';
 
 export const TEAM_COLORS = { 1: '#3d7ff0', 2: '#e8483a' };
 
+// Free-for-all colours, by soldier id (each worked out once).
+const ownColors = new Map();
+
 /** A soldier's own colour in free-for-all (spread round the colour wheel by id). */
 export function soldierColor(game, s) {
   if (game.rules.teams) return TEAM_COLORS[s.team] || '#9aa4b2';
-  const h = (s.id * 137.508) % 360;
-  return `hsl(${h.toFixed(0)},70%,55%)`;
+  let c = ownColors.get(s.id);
+  if (c === undefined) {
+    const h = (s.id * 137.508) % 360;
+    c = `hsl(${h.toFixed(0)},70%,55%)`;
+    if (ownColors.size > 5000) ownColors.clear();
+    ownColors.set(s.id, c);
+  }
+  return c;
+}
+
+// The darker shades of a team's colour (backpack, vest, helmet band), worked out once per colour.
+const teamShades = new Map();
+function shadesOf(team) {
+  let t = teamShades.get(team);
+  if (!t) {
+    t = { pack: css(shade(team, 0.55)), vest: css(shade(team, 0.7)), band: css(shade(team, 0.65)) };
+    if (teamShades.size > 5000) teamShades.clear();
+    teamShades.set(team, t);
+  }
+  return t;
 }
 
 // Limb widths (world units), and which of buildPose's lines is which.
@@ -41,6 +62,8 @@ function inks(theme) {
 }
 
 const line = (ctx, l) => { ctx.moveTo(l[0], l[1]); ctx.lineTo(l[2], l[3]); };
+// The lines down the near side that get a highlight.
+const LIT = [LINES.torso, LINES.frontThigh, LINES.frontShin];
 
 /** Shadows on the ground under the soldiers (drawn before any of them). */
 export function drawShadows(r, game, list, alpha) {
@@ -68,7 +91,7 @@ export function drawSoldier(r, game, s, alpha, theme) {
   const v = r.animated(s);
   const pose = buildPose(v);
   const L = pose.lines, facing = s.facing;
-  const team = soldierColor(game, s);
+  const team = soldierColor(game, s), shades = shadesOf(team);
 
   if (s.body.rope) {
     ctx.strokeStyle = '#a4844f';
@@ -103,7 +126,7 @@ export function drawSoldier(r, game, s, alpha, theme) {
   ctx.beginPath(); line(ctx, L[LINES.backUpper]); line(ctx, L[LINES.backFore]); ctx.stroke();
 
   // Backpack, or a jetpack (with its flame).
-  const [nx, ny] = [L[0][0], L[0][1]];
+  const nx = L[0][0], ny = L[0][1];
   const bx = nx - facing * 3.4;
   if (s.body.hasJetpack) {
     ctx.fillStyle = '#4b525c';
@@ -119,7 +142,7 @@ export function drawSoldier(r, game, s, alpha, theme) {
       ctx.beginPath(); ctx.moveTo(bx - 2, ny + 10); ctx.lineTo(bx, ny + 10 + len); ctx.lineTo(bx + 2, ny + 10); ctx.fill();
     }
   } else {
-    ctx.fillStyle = css(shade(team, 0.55));
+    ctx.fillStyle = shades.pack;
     roundRect(ctx, bx - 1.9, ny + 1.5, 3.8, 6.5, 1.3);
     ctx.fill();
   }
@@ -145,7 +168,7 @@ export function drawSoldier(r, game, s, alpha, theme) {
   // Armour: a vest over the chest.
   if (s.armour > 0) {
     const [x0, y0, x1, y1] = L[LINES.torso];
-    ctx.strokeStyle = css(shade(team, 0.7));
+    ctx.strokeStyle = shades.vest;
     ctx.lineWidth = W.torso + 1.6;
     ctx.beginPath(); ctx.moveTo(x0 + (x1 - x0) * 0.15, y0 + (y1 - y0) * 0.15); ctx.lineTo(x0 + (x1 - x0) * 0.62, y0 + (y1 - y0) * 0.62); ctx.stroke();
   }
@@ -154,7 +177,7 @@ export function drawSoldier(r, game, s, alpha, theme) {
   ctx.strokeStyle = c.hi;
   ctx.lineWidth = 0.7;
   ctx.beginPath();
-  for (const k of [LINES.torso, LINES.frontThigh, LINES.frontShin]) {
+  for (const k of LIT) {
     const l = L[k];
     ctx.moveTo(l[0] - 0.7, l[1] - 0.4); ctx.lineTo(l[2] - 0.7, l[3] - 0.4);
   }
@@ -166,7 +189,7 @@ export function drawSoldier(r, game, s, alpha, theme) {
   ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = team;
   ctx.beginPath(); ctx.arc(h.x, h.y - 0.3, h.r + 0.7, Math.PI * 1.02, Math.PI * 1.98); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = css(shade(team, 0.65));
+  ctx.fillStyle = shades.band;
   ctx.fillRect(h.x - h.r - 0.9, h.y - 0.6, h.r * 2 + 1.8, 1.1);
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   ctx.beginPath(); ctx.arc(h.x - facing * 1.2, h.y - h.r * 0.55, 1, 0, Math.PI * 2); ctx.fill();
@@ -189,7 +212,8 @@ function drawJuggerGlow(ctx, L, head, tick) {
   const pulse = 0.5 + 0.5 * Math.sin(tick * 0.2), base = ctx.globalAlpha;
   ctx.globalCompositeOperation = 'lighter';
   ctx.strokeStyle = ctx.fillStyle = '#ff7a1a';
-  for (const [w, a] of [[12 + pulse * 4, 0.16 + 0.1 * pulse], [7 + pulse * 2, 0.32 + 0.18 * pulse]]) {
+  for (let i = 0; i < 2; i++) {
+    const w = i ? 7 + pulse * 2 : 12 + pulse * 4, a = i ? 0.32 + 0.18 * pulse : 0.16 + 0.1 * pulse;
     ctx.globalAlpha = base * a;
     ctx.lineWidth = w;
     ctx.beginPath();
@@ -211,15 +235,29 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// How wide each text is in each font (measured once: the same names every frame).
+const widths = new Map(); // font -> text -> width
+function widthOf(ctx, font, text) {
+  let byText = widths.get(font);
+  if (!byText) widths.set(font, byText = new Map());
+  let w = byText.get(text);
+  if (w === undefined) {
+    w = ctx.measureText(text).width;
+    if (byText.size > 5000) byText.clear();
+    byText.set(text, w);
+  }
+  return w;
+}
+
 /** A name tag (a small label in the soldier's colour) and their health under it. */
 export function drawName(r, game, s, alpha, viewer) {
   const ctx = r.ctx;
   const x = lerp(s.prevX, s.x, alpha) + (s.drawDX || 0), y = lerp(s.prevY, s.y, alpha) + (s.drawDY || 0);
-  const me = s === viewer;
-  ctx.font = `${me ? '700' : '600'} 7.5px ${FONT}`;
+  const me = s === viewer, font = me ? NAME_FONT_ME : NAME_FONT;
+  ctx.font = font;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const w = ctx.measureText(s.name).width + 6;
+  const w = widthOf(ctx, font, s.name) + 6;
   const col = soldierColor(game, s);
   ctx.fillStyle = 'rgba(10,14,20,0.55)';
   roundRect(ctx, x - w / 2, y - 37, w, 9, 3);
@@ -230,9 +268,9 @@ export function drawName(r, game, s, alpha, viewer) {
   ctx.fillText(s.name, x, y - 32.4);
   // Kill streaks: a flame and the count beside the tag (3 or more in a row), and a Juggernaut's tag over it.
   if (s.streak >= 3) {
-    const big = s.streak >= 5, n = String(s.streak);
-    ctx.font = `700 ${big ? 7.5 : 6.5}px ${FONT}`;
-    const bw = ctx.measureText(n).width + (big ? 10 : 8.6), bx = x + w / 2 + 1.2;
+    const big = s.streak >= 5, n = String(s.streak), font = big ? STREAK_FONT_BIG : STREAK_FONT;
+    ctx.font = font;
+    const bw = widthOf(ctx, font, n) + (big ? 10 : 8.6), bx = x + w / 2 + 1.2;
     ctx.fillStyle = big ? 'rgba(130,28,6,0.8)' : 'rgba(10,14,20,0.55)';
     roundRect(ctx, bx, y - 37, bw, 9, 3);
     ctx.fill();
@@ -243,8 +281,8 @@ export function drawName(r, game, s, alpha, viewer) {
     ctx.textAlign = 'center';
   }
   if (s.jugger > 0) {
-    ctx.font = `800 5.5px ${FONT}`;
-    const tw = ctx.measureText('JUGGERNAUT').width + 6;
+    ctx.font = JUGGER_FONT;
+    const tw = widthOf(ctx, JUGGER_FONT, 'JUGGERNAUT') + 6;
     ctx.fillStyle = 'rgba(110,36,0,0.8)';
     roundRect(ctx, x - tw / 2, y - 44.5, tw, 6.8, 2.4);
     ctx.fill();
@@ -261,3 +299,5 @@ export function drawName(r, game, s, alpha, viewer) {
 }
 
 export const FONT = '"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const NAME_FONT = `600 7.5px ${FONT}`, NAME_FONT_ME = `700 7.5px ${FONT}`;
+const STREAK_FONT = `700 6.5px ${FONT}`, STREAK_FONT_BIG = `700 7.5px ${FONT}`, JUGGER_FONT = `800 5.5px ${FONT}`;

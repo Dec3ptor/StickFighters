@@ -61,7 +61,11 @@ export class Pickups {
         game.sound('respawnItem', it.x, it.y);
       }
     }
-    this.items = this.items.filter(it => !it.dropped || it.life > 0);
+    // (The ones gone, taken out of the same list.)
+    const items = this.items;
+    let n = 0;
+    for (let i = 0; i < items.length; i++) if (!items[i].dropped || items[i].life > 0) items[n++] = items[i];
+    items.length = n;
 
     if (this.crates && this.spots.length && --this.crateTimer <= 0) {
       this.crateTimer = this.crates.every / (game.speed || 1) * (0.7 + game.rng() * 0.6);
@@ -83,12 +87,14 @@ export class Pickups {
 
   /** Give the soldier anything they're touching. */
   touch(game, s) {
-    const top = s.y + (s.body.crouching ? BODY.crouchTop : BODY.top);
-    for (const it of this.items) {
+    const top = s.body.y + (s.body.crouching ? BODY.crouchTop : BODY.top);
+    const items = this.items;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
       if (!it.active) continue;
       const size = it.type === 'crate' ? ITEM_SIZE + 4 : ITEM_SIZE;
-      if (Math.abs(it.x - s.x) > BODY.halfW + size) continue;
-      if (it.y < top - size || it.y > s.y + BODY.bottom + size) continue;
+      if (Math.abs(it.x - s.body.x) > BODY.halfW + size) continue;
+      if (it.y < top - size || it.y > s.body.y + BODY.bottom + size) continue;
       if (!give(game, s, it)) continue;
       if (it.dropped) it.life = 0;
       else { it.active = false; it.timer = ITEM_RESPAWN[it.type] || 600; }
