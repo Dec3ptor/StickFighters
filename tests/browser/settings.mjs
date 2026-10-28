@@ -55,7 +55,7 @@ expect(await visible('#setBotVision') && await visible('#setFog'), 'experimental
 await page.selectOption('#setFog', 'on');
 expect(await page.inputValue('#fog') === 'on', 'fog of war chosen in settings shows in the game setup');
 await page.selectOption('#setFog', 'off');
-// Bullet speed and time between shots are fixed (3x, 50%): no sliders for them anywhere.
+// Bullet speed and time between shots are the original's: no sliders for them anywhere.
 expect(await page.evaluate(() => ['bulletSpeed', 'fireDelay', 'setBulletSpeed', 'setFireDelay'].every(id => !document.getElementById(id))), 'no bullet speed or between-shots sliders');
 // Sprint: hold (the default) or toggle.
 expect(await page.inputValue('#sprintMode') === 'hold', 'sprint is hold-to-sprint by default');
@@ -72,7 +72,7 @@ await page.evaluate(() => {
 });
 await page.waitForFunction(() => window.stickSoldiers.state.me?.alive && window.stickSoldiers.state.game.tick > 60, null, { timeout: 20000 });
 const shotOptions = await page.evaluate(() => { const o = window.stickSoldiers.state.game.options; return [o.bulletSpeed, o.fireDelay]; });
-expect(shotOptions[0] === 3 && shotOptions[1] === 0.5, `bullets 3x as fast, half the time between shots (${shotOptions})`);
+expect(shotOptions[0] === 1 && shotOptions[1] === 1, `bullets and time between shots as in the original (${shotOptions})`);
 await page.keyboard.press('Escape');
 await page.click('#pauseSettings');
 await page.selectOption('#graphics', 'webgl');

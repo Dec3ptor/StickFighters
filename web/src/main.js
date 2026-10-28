@@ -117,9 +117,6 @@ function loadSettings() {
   if (!s.graphicsPicked) s.graphics = 'canvas';
   return s;
 }
-// Guns' bullets fly this many times as fast as the original's, and every weapon's wait between
-// shots is this share of the original's. (Fixed: there's no setting for them.)
-const BULLET_SPEED = 3, FIRE_DELAY = 0.5;
 
 function saveSettings(s) {
   try { localStorage.setItem('stick-soldiers', JSON.stringify(s)); } catch { /* private mode */ }
@@ -503,7 +500,6 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const options = {
     lives: settings.lives, gunGameKills: settings.gunKills, crates: settings.crates,
     botVision: settings.botVision === 'sight' ? 'sight' : 'classic', fog: settings.fog === 'on',
-    bulletSpeed: BULLET_SPEED, fireDelay: FIRE_DELAY,
     destruction: settings.destruction !== 'off',
     streaks: settings.streaks !== 'off',
     classes: CLASSES_ON && settings.classes === 'on' && MODES[settings.mode]?.classes !== false,
