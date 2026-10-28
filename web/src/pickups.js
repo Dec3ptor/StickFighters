@@ -141,8 +141,8 @@ function crateSpots(map) {
 function give(game, s, it) {
   switch (it.type) {
     case 'health':
-      if (s.health >= RULES.maxHealth && s.burnTicks <= 0) return false;
-      s.health = RULES.maxHealth;
+      if (s.health >= s.maxHealth && s.burnTicks <= 0) return false;
+      s.health = s.maxHealth;
       s.burnTicks = 0;
       game.sound('health', it.x, it.y);
       game.notify(s, 'Health restored');
@@ -164,7 +164,7 @@ function give(game, s, it) {
       if (!it.landed && it.y < s.y - 40) return false;
       if (!canOpen(game, s, it)) return false;
       if (it.health) {
-        s.health = RULES.maxHealth;
+        s.health = s.maxHealth;
         s.burnTicks = 0;
         game.sound('health', it.x, it.y);
         game.notify(s, 'Health crate!');

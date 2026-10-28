@@ -47,6 +47,18 @@ test('the camera follows at the same speed at 60, 144 and 240 frames a second', 
   }
 });
 
+test('holding fire closes the camera in a little; sniping zooms out instead', () => {
+  const { game } = botMatch('ssdm1.json', { bots: 0 });
+  const r = new Renderer(fakeCanvas(), {});
+  r.snapCamera(0, 0);
+  for (let i = 0; i < 60; i++) r.updateCamera(game, 0, 0, null, false, 1000 / 60, 1.1);
+  assert.equal(r.cam.zoom, 1.1);
+  for (let i = 0; i < 60; i++) r.updateCamera(game, 0, 0, null, true, 1000 / 60, 1.1);
+  assert.equal(r.cam.zoom, 0.72, 'sniping wins');
+  for (let i = 0; i < 60; i++) r.updateCamera(game, 0, 0, null, false, 1000 / 60);
+  assert.equal(r.cam.zoom, 1, 'and back');
+});
+
 test('the running animation is drawn in between updates, even where its loop wraps round', () => {
   const r = new Renderer(fakeCanvas(), {});
   const s = { anim: { run: 0.04, idle: 11, land: 0, flip: 0.5, recoil: 0, swing: 0 }, animPrev: { run: 0.96, idle: 10, land: 0, flip: 0.6, recoil: 0, swing: 0 } };

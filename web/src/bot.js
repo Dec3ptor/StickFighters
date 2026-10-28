@@ -131,7 +131,7 @@ function weaponScore(id, d, s, game, target) {
   if (!b) return 0;
   // The prod does no damage: only worth it to push someone off a ledge.
   if (id === 'Prod') return d <= b.far + 10 && game && nearLedge(game, s, target) ? 9 : 0.1;
-  if (b.lastResort) return s && s.health < 30 && d < b.far ? 12 : 0;
+  if (b.lastResort) return s && s.health < s.maxHealth * 0.3 && d < b.far ? 12 : 0;
   if (!b.score) return 0;
   if (def.kind === 'melee') return d <= b.far + 10 ? b.score : 0.2;
   const near = b.near ?? 0, far = b.far ?? 600;
@@ -152,7 +152,7 @@ function reachable(game, n, it) {
 
 /** True if picking up `it` would do the soldier any good (the game won't hand over what they can't use). */
 function wants(s, it) {
-  if (it.type === 'health' || (it.type === 'crate' && it.health)) return s.health < RULES.maxHealth || s.burnTicks > 0;
+  if (it.type === 'health' || (it.type === 'crate' && it.health)) return s.health < s.maxHealth || s.burnTicks > 0;
   if (it.type === 'armour') return s.armour < RULES.maxArmour;
   if (it.type === 'jetpack') return !s.body.hasJetpack || s.body.fuel < 100;
   if (it.type === 'weapon' || it.type === 'crate') {
@@ -753,8 +753,8 @@ export class BotController {
       return pick;
     };
 
-    if (s.health < 55) {
-      goal = best(it => it.type === 'health' || (it.type === 'crate' && it.landed && it.health), () => (70 - s.health) / 6);
+    if (s.health < s.maxHealth * 0.55) {
+      goal = best(it => it.type === 'health' || (it.type === 'crate' && it.landed && it.health), () => (0.7 - s.health / s.maxHealth) * 100 / 6);
       kind = 'health';
     }
     if (!goal) {
@@ -984,7 +984,7 @@ export class BotController {
     if (!t || !s.body.onGround || game.tick - this.coverAt < 480 || blocksLeft(s) < 2) return;
     const dx = t.body.x - s.body.x;
     if (Math.abs(dx) < 220 || Math.abs(dx) > 750 || Math.abs(t.body.y - s.body.y) > 60) return;
-    if (!(s.health < 60 || s.reloadTimer > 0)) return;
+    if (!(s.health < s.maxHealth * 0.6 || s.reloadTimer > 0)) return;
     this.coverAt = game.tick;
     const spot = coverSpot(game, s, t.x);
     const tool = buildTool(s);

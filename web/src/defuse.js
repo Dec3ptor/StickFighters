@@ -328,6 +328,7 @@ export function defuseMode(base) {
     limit: 'goal',
     helmets: true,        // armour covers the head only with a helmet
     armourAbsorb: 0.35,   // and soaks up less than elsewhere (as kevlar does)
+    maxHealth: 100,       // (less than elsewhere: the weapons and money are made for it)
     teamWatch: true,      // the dead watch their teammates
     goal: { label: 'Rounds to win', options: [3, 5, 7, 9, 13], value: 7 },
     scoreLabel: 'Score',

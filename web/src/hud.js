@@ -82,7 +82,7 @@ function newest(list, n, keep, out, arg) {
 const NOTES = [], FEED = [], CHAT = [];
 
 /**
- * opts: { showScores, watching (soldier the camera follows when you're out), chat: [{ text, tick }],
+ * opts: { showScores, watching (soldier the camera follows when you're out), chat: [{ name, text, system, team, time }],
  *   online (show everyone's ping on the scoreboard), hostId (the host's soldier),
  *   ping (your ping in ms, or a label like 'Host'), perf (frame rate text),
  *   picking (the class picker is open), spectating ({ free (the free camera), target (who it follows) }),
@@ -259,7 +259,7 @@ function drawStatus(ctx, game, me, W, H, opts) {
   }
   // The main row: health on the left, the weapon in hand on the right.
   let y = -11 - h;
-  bar(ctx, -half - gap / 2, y, half, h, me.health / RULES.maxHealth, 'health', healthLabel(Math.max(0, Math.ceil(me.health))), true);
+  bar(ctx, -half - gap / 2, y, half, h, me.health / me.maxHealth, 'health', healthLabel(Math.max(0, Math.ceil(me.health))), true);
   // (With the soldier's upgrade: Extended mag holds more.)
   const def = weaponFor(me, me.current), inv = me.weapons[me.current];
   if (def && inv) {
@@ -641,6 +641,14 @@ function lineText(item, make) {
 }
 const feedText = f => f.text + (f.weapon ? ` (${f.weapon})` : '');
 const chatText = c => (c.system ? c.text : `${c.name}: ${c.text}`);
+// In team modes a chat line's name is in its team's colour: the name part ("Bob: "), and how wide it is in the font now set.
+const chatNames = new WeakMap();
+function chatName(ctx, c) {
+  let n = chatNames.get(c);
+  if (!n) chatNames.set(c, n = { text: `${c.name}: `, font: null, w: 0 });
+  if (n.font !== ctx.font) { n.font = ctx.font; n.w = ctx.measureText(n.text).width; }
+  return n;
+}
 
 function drawFeed(ctx, game, W, chat = []) {
   const items = newest(game.feed, 5, feedShown, FEED, game.tick);
@@ -660,6 +668,14 @@ function drawFeed(ctx, game, W, chat = []) {
     const c = lines[i];
     ctx.globalAlpha = Math.min(1, (12000 - (now - c.time)) / 1500);
     ctx.font = FONT_12;
+    if (!c.system && TEAM[c.team]) {
+      const name = chatName(ctx, c);
+      ctx.fillStyle = TEAM[c.team];
+      ctx.fillText(name.text, 180, 20 + i * 16);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillText(c.text, 180 + name.w, 20 + i * 16);
+      continue;
+    }
     ctx.fillStyle = c.system ? '#777' : '#1a1a1a';
     ctx.fillText(lineText(c, chatText), 180, 20 + i * 16);
   }

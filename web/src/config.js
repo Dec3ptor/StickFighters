@@ -59,7 +59,7 @@ export const MOTION = {
 };
 
 export const RULES = {
-  maxHealth: 100,
+  maxHealth: 150,          // (Defuse keeps 100: its weapons and money are made for it)
   maxArmour: 100,
   armourAbsorb: 2 / 3,      // share of damage the armour takes
   respawnTicks: 120,

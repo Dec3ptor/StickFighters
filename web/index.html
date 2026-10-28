@@ -285,9 +285,35 @@
           <option value="toggle">Press to start or stop</option>
         </select>
       </label>
+      <label class="field">Zoom while firing
+        <select id="fireZoom">
+          <option value="off">Off</option>
+          <option value="slight">Slight</option>
+          <option value="more">More</option>
+        </select>
+      </label>
       <label class="check"><input type="checkbox" id="lockMouse"> Lock the mouse to the game while playing</label>
       <label class="check"><input type="checkbox" id="fullscreenPref"> Full screen while playing</label>
       <p class="muted-note">With the mouse locked, only the game gets it: no browser menus, zooming or text selection, whatever keys you hold. <kbd>Esc</kbd> frees it and opens the menu. In full screen, Chrome and Edge also keep their own shortcuts (like <kbd>Ctrl</kbd>+<kbd>W</kbd>) for the game: hold <kbd>Esc</kbd> to leave it.</p>
+      <h3 class="exp-head">Crosshair</h3>
+      <div class="xhair" id="xhair">
+        <canvas id="xhPreview" width="480" height="144" aria-label="How the crosshair looks, on a light and a dark background"></canvas>
+        <div class="field-pair">
+          <label class="field">Style <select id="xhStyle"></select></label>
+          <label class="field">Colour <select id="xhColor"></select></label>
+        </div>
+        <label class="field xh-custom hidden" id="xhCustomField">Custom colour <input type="color" id="xhCustom" value="#3dff5a"></label>
+        <div class="field-pair">
+          <label class="field">Size <output id="xhSizeOut"></output><input type="range" id="xhSize" min="2" max="20" step="1"></label>
+          <label class="field">Thickness <output id="xhThicknessOut"></output><input type="range" id="xhThickness" min="1" max="5" step="0.5"></label>
+          <label class="field">Gap <output id="xhGapOut"></output><input type="range" id="xhGap" min="0" max="12" step="1"></label>
+          <label class="field">Opacity <output id="xhOpacityOut"></output><input type="range" id="xhOpacity" min="20" max="100" step="5"></label>
+        </div>
+        <div class="field-row">
+          <label class="check"><input type="checkbox" id="xhOutline"> Edge, to stand out</label>
+          <button type="button" class="small" id="xhReset">Reset</button>
+        </div>
+      </div>
       <h3 class="exp-head">Experimental</h3>
       <div class="field-pair">
         <label class="field">Bot vision

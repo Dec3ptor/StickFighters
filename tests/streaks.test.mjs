@@ -504,7 +504,7 @@ test('a sentry and a stampede go with a player who sits out or leaves; sheep let
   run(t, 30);
   t.removeSoldier(o);
   run(t, 900);
-  assert.ok(mate.alive && mate.health === 100 && t.teamScore[1] === 0, 'the teammate is left alone');
+  assert.ok(mate.alive && mate.health === mate.maxHealth && t.teamScore[1] === 0, 'the teammate is left alone');
   assert.ok(foe.alive);
   // Sheep after someone who left go after someone else.
   const f = arena();

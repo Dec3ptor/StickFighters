@@ -176,7 +176,7 @@ function singleShot(aimY, shooterIsBot) {
   shooter.weapons.M4 = { ammo: 10 };
   shooter.current = 'M4';
   for (let i = 0; i < 30; i++) game.update();
-  return { damage: 100 - target.health, sounds: game.sounds.map(s => s.name) };
+  return { damage: target.maxHealth - target.health, sounds: game.sounds.map(s => s.name) };
 }
 
 test('headshots do double damage, and the player hears a hitmarker', () => {

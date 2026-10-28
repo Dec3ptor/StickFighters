@@ -32,6 +32,7 @@ import { loadKit, saveKit, KIT_KEY } from './kitchoice.js';
 import { BuyMenu } from './buymenu.js';
 import { canShop } from './defuse.js';
 import { renderLoadout, renderPicker } from './loadout.js';
+import { CROSSHAIR_STYLES, CROSSHAIR_COLORS, CROSSHAIR_DEFAULTS, setCrosshair, drawCrosshair } from './crosshair.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -72,7 +73,7 @@ const CLASSES_ON = params.has('classes');
 // (?tiles=on: the canvas keeps the map in tiles, maptiles.js. Off by default: slower with a graphics card.)
 if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
-const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', lockMouse: true, fullscreen: false, volume: 60 };
+const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', lockMouse: true, fullscreen: false, volume: 60, fireZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS } };
 // Locking the mouse to the game: ?lock=on / ?lock=off in the address. (Browsers driven by tests
 // move the mouse oddly while it's locked, so it's off for them unless the address asks.)
 const LOCK_PARAM = params.get('lock');
@@ -103,6 +104,8 @@ const DEFAULTS = {
   lockMouse: true,  // lock the mouse to the game while playing (Esc frees it)
   fullscreen: false, // play in full screen (with the keyboard's browser shortcuts kept for the game, where browsers allow it)
   volume: 60,       // sound volume, percent (100: as loud as it goes; it was a bit much, so 60 to start with)
+  fireZoom: 'slight', // the camera closes in while you hold fire: 'off', 'slight' or 'more' (FIRE_ZOOM)
+  crosshair: { ...CROSSHAIR_DEFAULTS }, // how the crosshair looks (crosshair.js)
   edition: null,   // the game last picked
 };
 
@@ -128,6 +131,8 @@ function rememberMenu() {
 
 // Guns with at least this many updates between shots (about half a second) show the reload ring between them.
 const SLOW_GUN = 35;
+// How much closer the camera gets while you hold fire (Settings: Zoom while firing). Sniping zooms out instead.
+const FIRE_ZOOM = { off: 1, slight: 1.1, more: 1.2 };
 
 // The player's controls follow the Settings screen (read each update, so changes apply mid-match).
 const playerOptions = { sprintMode: () => prefs.sprint };
@@ -882,6 +887,8 @@ function openSettings() {
   $('showPing').checked = prefs.showPing;
   $('lockMouse').checked = prefs.lockMouse;
   $('fullscreenPref').checked = prefs.fullscreen;
+  $('fireZoom').value = FIRE_ZOOM[prefs.fireZoom] ? prefs.fireZoom : 'slight';
+  showCrosshair();
   settingsNotes();
   show('settings', true);
   $('settingsDone').focus();
@@ -889,6 +896,39 @@ function openSettings() {
 
 function closeSettings() {
   show('settings', false);
+}
+
+// The crosshair's settings: the controls, and a picture of it on a light and a dark background.
+const XH_RANGES = { xhSize: ['size', v => `${v}`], xhThickness: ['thickness', v => `${v}`], xhGap: ['gap', v => `${v}`], xhOpacity: ['opacity', v => `${v}%`] };
+
+/** Put the crosshair's settings in the controls, and draw the picture. */
+function showCrosshair() {
+  const xh = prefs.crosshair;
+  $('xhStyle').value = xh.style;
+  $('xhColor').value = xh.color;
+  $('xhCustom').value = xh.custom;
+  $('xhCustomField').classList.toggle('hidden', xh.color !== 'custom');
+  for (const [id, [k, label]] of Object.entries(XH_RANGES)) {
+    if ($(id).value !== String(xh[k])) $(id).value = String(xh[k]);
+    setText($(`${id}Out`), label(xh[k]));
+  }
+  $('xhOutline').checked = xh.outline;
+  const cv = $('xhPreview'), ctx = cv.getContext('2d'), w = cv.width, h = cv.height;
+  const rm = edition === 'remastered';
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = rm ? '#8fa3b8' : '#ffffff';
+  ctx.fillRect(0, 0, w / 2, h);
+  ctx.fillStyle = rm ? '#141a22' : '#3a3f46';
+  ctx.fillRect(w / 2, 0, w / 2, h);
+  ctx.setTransform(2, 0, 0, 2, 0, 0);
+  for (const x of [w / 8, w * 3 / 8]) drawCrosshair(ctx, x, h / 4, { edition: rm ? 'remastered' : 'classic' });
+}
+
+/** A crosshair setting changed: use it, save it and show it. */
+function changeCrosshair(change) {
+  prefs.crosshair = setCrosshair({ ...prefs.crosshair, ...change });
+  savePrefs();
+  showCrosshair();
 }
 
 /** Set an element's text, only if it's different (no needless changes to the page). */
@@ -1209,7 +1249,7 @@ function leaveOnline() {
 // ---- Chat ----------------------------------------------------------------------------
 
 function addChat(m) {
-  state.chat.push({ name: m.name || '', text: m.text, system: !!m.system, time: performance.now() });
+  state.chat.push({ name: m.name || '', text: m.text, system: !!m.system, team: m.team || 0, time: performance.now() });
   if (state.chat.length > 30) state.chat.shift();
   if (!m.system) audio.play('chat');
 }
@@ -1236,7 +1276,7 @@ function closeChat() {
 function sendChat(text) {
   text = text.trim();
   if (!text) return;
-  if (state.net?.role === 'host') state.net.host.chat(state.settings.name, text);
+  if (state.net?.role === 'host') state.net.host.chat(state.settings.name, text, state.me?.team);
   else if (state.net?.role === 'client') state.net.client.sendChat(text);
 }
 
@@ -1327,9 +1367,12 @@ function frame(now) {
   if (state.mode !== 'offline' && now < state.hitStopUntil && state.drawnOnce) { pacer.drawn(now, 0); return; }
 
   const sniping = me.alive && me.current === 'SR' && input.mouse.right && !state.menuOpen && !state.chatOpen;
+  // Holding the fire button: the camera closes in a little (Settings: Zoom while firing).
+  const firing = !sniping && me.alive && input.mouse.left && !watchMode && !g.over &&
+    !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open;
   const ax = free ? free.x : lerp(view.prevX ?? view.x, view.x, alpha) + (view.drawDX || 0);
   const ay = free ? free.y : lerp(view.prevY ?? view.y, view.y, alpha) + (view.drawDY || 0);
-  renderer.updateCamera(g, ax, ay, state.menuOpen || watchMode ? null : input.mouse, sniping, dt);
+  renderer.updateCamera(g, ax, ay, state.menuOpen || watchMode ? null : input.mouse, sniping, dt, firing ? FIRE_ZOOM[prefs.fireZoom] ?? 1 : 1);
   const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
   renderer.fogFrom = view;
@@ -1599,6 +1642,16 @@ function wire() {
   $('sprintMode').addEventListener('change', () => { prefs.sprint = $('sprintMode').value === 'toggle' ? 'toggle' : 'hold'; savePrefs(); });
   $('lockMouse').addEventListener('change', () => { prefs.lockMouse = $('lockMouse').checked; savePrefs(); if (!prefs.lockMouse) input.unlock(); });
   $('fullscreenPref').addEventListener('change', () => { prefs.fullscreen = $('fullscreenPref').checked; savePrefs(); if (!prefs.fullscreen) leaveFullscreen(true); });
+  $('fireZoom').addEventListener('change', () => { prefs.fireZoom = FIRE_ZOOM[$('fireZoom').value] ? $('fireZoom').value : 'slight'; savePrefs(); });
+  // The crosshair.
+  for (const [id, label] of CROSSHAIR_STYLES) $('xhStyle').add(new Option(label, id));
+  for (const [id, label] of CROSSHAIR_COLORS) $('xhColor').add(new Option(label, id));
+  $('xhStyle').addEventListener('change', () => changeCrosshair({ style: $('xhStyle').value }));
+  $('xhColor').addEventListener('change', () => changeCrosshair({ color: $('xhColor').value }));
+  $('xhCustom').addEventListener('input', () => changeCrosshair({ color: 'custom', custom: $('xhCustom').value }));
+  for (const [id, [k]] of Object.entries(XH_RANGES)) $(id).addEventListener('input', () => changeCrosshair({ [k]: Number($(id).value) }));
+  $('xhOutline').addEventListener('change', () => changeCrosshair({ outline: $('xhOutline').checked }));
+  $('xhReset').addEventListener('click', () => changeCrosshair({ ...CROSSHAIR_DEFAULTS }));
   $('fullscreen').addEventListener('click', () => {
     // (From the menu: full screen now, and for the matches after this one.)
     prefs.fullscreen = !document.fullscreenElement;
@@ -1744,6 +1797,7 @@ async function boot() {
   document.body.classList.toggle('no-classes', !CLASSES_ON);
   for (const k in prefs) prefs[k] = settings[k];
   setVolume(prefs.volume, false);
+  prefs.crosshair = setCrosshair(prefs.crosshair);
   pacer.setMode(prefs.fpsCap);
   perf.on ||= prefs.showFps;
   const [index, legs, r] = await Promise.all([

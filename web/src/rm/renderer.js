@@ -475,31 +475,6 @@ export class RemasteredRenderer extends Renderer {
     }
     super.drawEffect(ctx, p);
   }
-
-  /** The crosshair: white with a dark edge, a gap in the middle, and the reload ring. */
-  drawCrosshair(mx, my, red, reload = null) {
-    const ctx = this.ctx, d = this.dpr;
-    ctx.setTransform(d, 0, 0, d, 0, 0);
-    ctx.lineCap = 'round';
-    if (reload != null) {
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-      ctx.beginPath(); ctx.arc(mx, my, 16, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(mx, my, 16, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(1, reload))); ctx.stroke();
-    }
-    const arms = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-    for (const [w, c] of [[3.6, 'rgba(0,0,0,0.55)'], [1.6, red ? '#ff4a3a' : '#ffffff']]) {
-      ctx.lineWidth = w;
-      ctx.strokeStyle = c;
-      ctx.beginPath();
-      for (const [dx, dy] of arms) { ctx.moveTo(mx + dx * 5, my + dy * 5); ctx.lineTo(mx + dx * 11, my + dy * 11); }
-      ctx.stroke();
-    }
-    ctx.fillStyle = red ? '#ff4a3a' : '#ffffff';
-    ctx.beginPath(); ctx.arc(mx, my, 1.3, 0, Math.PI * 2); ctx.fill();
-  }
 }
 
 /**

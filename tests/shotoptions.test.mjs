@@ -56,5 +56,5 @@ test('a fast bullet still hits someone in the way (and not through a wall)', () 
   s.current = 'M4';
   fire(game, s, { firePressed: true });
   for (let t = 0; t < 10; t++) game.update();
-  assert.ok(target.health < 100, 'hit');
+  assert.ok(target.health < target.maxHealth, 'hit');
 });

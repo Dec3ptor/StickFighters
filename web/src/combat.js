@@ -1187,7 +1187,8 @@ export function explode(game, x, y, blast, owner, weapon, direct = null) {
       if (k > 8) s.body.momentum = 20;
     }
     if (canHurt(game, owner, s)) {
-      damage(game, s, blast.damage * f * (self ? 0.5 : 1), owner, weapon, { dirX, dirY, knock: 0, explosive: true });
+      // (Blasts were made for 100 health: they take the same share of the mode's.)
+      damage(game, s, blast.damage * f * (self ? 0.5 : 1) * game.maxHealth / 100, owner, weapon, { dirX, dirY, knock: 0, explosive: true });
     }
   }
   blasting--;

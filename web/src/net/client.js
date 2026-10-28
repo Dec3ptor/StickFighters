@@ -124,7 +124,7 @@ export class NetClient {
   }
 
   addChat(m) {
-    const msg = { name: String(m.name || ''), text: String(m.text || '').slice(0, 140), system: !!m.system, time: this.clock() };
+    const msg = { name: String(m.name || ''), text: String(m.text || '').slice(0, 140), system: !!m.system, team: m.team === 1 || m.team === 2 ? m.team : 0, time: this.clock() };
     this.chat.push(msg);
     if (this.chat.length > 30) this.chat.shift();
     this.opts.onChat?.(msg);

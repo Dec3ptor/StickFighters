@@ -1,6 +1,7 @@
 // The Settings screen: switching graphics mid-match (WebGL and back), the frame
 // rate cap, the frame rate readout, the volume (here and in the game's menu), the
-// dropdowns left alone while it's open, and everything being remembered next visit.
+// dropdowns left alone while it's open, the crosshair's look and the zoom while firing,
+// and everything being remembered next visit.
 // Usage: node tests/browser/settings.mjs [outDir]
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -62,6 +63,35 @@ expect(await page.inputValue('#sprintMode') === 'hold', 'sprint is hold-to-sprin
 await page.selectOption('#sprintMode', 'toggle');
 expect(await page.evaluate(() => window.stickSoldiers.prefs.sprint) === 'toggle', 'sprint toggle chosen');
 await page.selectOption('#sprintMode', 'hold');
+// The panel is taller than the window: it scrolls, and its top isn't cut off.
+const top = await page.evaluate(() => { const s = document.getElementById('settings'); s.scrollTop = 0; return s.querySelector('.panel').getBoundingClientRect().top; });
+expect(top >= 0, `the top of settings shows (${top})`);
+// Zoom while firing: slight to start with.
+expect(await page.inputValue('#fireZoom') === 'slight', 'zoom while firing: slight by default');
+await page.selectOption('#fireZoom', 'more');
+// The crosshair: its picture, on a light and a dark background, follows the settings.
+const pixel = (x, y) => page.evaluate(([x, y]) => [...document.getElementById('xhPreview').getContext('2d').getImageData(x, y, 1, 1).data], [x, y]);
+expect(await page.inputValue('#xhStyle') === 'crossDot' && await page.inputValue('#xhColor') === 'default', 'the crosshair starts as it was');
+const dot0 = await pixel(120, 72);
+expect(dot0[0] < 60 && dot0[1] < 60 && dot0[2] < 60, `the default crosshair is dark in the original (${dot0})`);
+expect(!(await visible('#xhCustom')), 'no colour picker until Custom is chosen');
+await page.selectOption('#xhColor', '#3dff5a');
+const green = await pixel(120, 72), greenDark = await pixel(360, 72);
+expect(green[1] > 200 && green[0] < 120 && greenDark[1] > 200, `green crosshair in the picture, on both backgrounds (${green} / ${greenDark})`);
+await page.selectOption('#xhColor', 'custom');
+expect(await visible('#xhCustom'), 'Custom shows the colour picker');
+await page.$eval('#xhCustom', el => { el.value = '#ff00ff'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+const pink = await pixel(120, 72);
+expect(pink[0] > 200 && pink[2] > 200 && pink[1] < 80, `custom colour (${pink})`);
+const slide = (id, v) => page.$eval(id, (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+await page.selectOption('#xhStyle', 'circle');
+await slide('#xhSize', 12); await slide('#xhThickness', 3); await slide('#xhGap', 2); await slide('#xhOpacity', 80);
+expect(await page.textContent('#xhThicknessOut') === '3' && await page.textContent('#xhOpacityOut') === '80%', 'the sliders show their values');
+const ring = await pixel(120 + 2 * 8, 72), middle = await pixel(120, 72);
+expect(ring[0] > 150 && ring[2] > 150 && !(middle[0] > 150 && middle[1] < 80), `a circle, nothing in the middle (${ring} / ${middle})`);
+const xh = await page.evaluate(() => ({ ...window.stickSoldiers.prefs.crosshair }));
+expect(xh.style === 'circle' && xh.color === 'custom' && xh.custom === '#ff00ff' && xh.size === 12 && xh.thickness === 3 && xh.gap === 2 && xh.opacity === 80, `crosshair settings kept (${JSON.stringify(xh)})`);
+await page.screenshot({ path: `${outDir}/settings-crosshair.png` });
 await page.keyboard.press('Escape');
 expect(!(await visible('#settings')), 'Esc closes settings');
 
@@ -86,13 +116,18 @@ const aimAt = async x => { await page.mouse.move(x, 350); await page.waitForTime
 const right = await aimAt(1050), left = await aimAt(50);
 expect(right > 0 && left < 0, `aiming follows the mouse after switching (${right.toFixed(2)}, ${left.toFixed(2)})`);
 const x0 = await page.evaluate(() => window.stickSoldiers.state.me.x);
+const zoomIdle = await page.evaluate(() => window.stickSoldiers.renderer.cam.zoom);
 await page.keyboard.down('KeyD');
 await page.mouse.down();
 await page.waitForTimeout(800);
+const zoomFiring = await page.evaluate(() => window.stickSoldiers.renderer.cam.zoom);
 await page.mouse.up();
 await page.keyboard.up('KeyD');
 const x1 = await page.evaluate(() => window.stickSoldiers.state.me.x);
 expect(Math.abs(x1 - x0) > 20, `still moves after switching (${x0} -> ${x1})`);
+expect(zoomIdle === 1 && Math.abs(zoomFiring - 1.2) < 0.02, `holding fire zooms in a little ("More": ${zoomIdle} -> ${zoomFiring})`);
+await page.waitForTimeout(800);
+expect(await page.evaluate(() => window.stickSoldiers.renderer.cam.zoom) === 1, 'and back out when you let go');
 await page.screenshot({ path: `${outDir}/settings-webgl-match.png` });
 
 // 3. Back to the canvas, then cap the frame rate at 30, and back to auto.
@@ -147,8 +182,13 @@ const saved = await page.evaluate(() => ({ kind: window.stickSoldiers.renderer.k
 expect(saved.kind === 'webgl' && saved.prefs.graphics === 'webgl', `graphics remembered (${saved.kind})`);
 expect(saved.prefs.showFps === true && saved.prefs.showPing === false && saved.prefs.fpsCap === 'auto' && saved.prefs.volume === 30, `other settings remembered (${JSON.stringify(saved.prefs)})`);
 expect(Math.abs(await page.evaluate(() => window.stickSoldiers.audio.level) - 0.3) < 1e-9, 'the volume remembered');
+expect(saved.prefs.fireZoom === 'more' && saved.prefs.crosshair?.style === 'circle' && saved.prefs.crosshair?.custom === '#ff00ff', `zoom and crosshair remembered (${JSON.stringify(saved.prefs.crosshair)})`);
+await page.click('#openSettings');
+expect(await page.inputValue('#xhStyle') === 'circle' && await page.inputValue('#xhSize') === '12', 'and shown in settings');
+await page.click('#xhReset');
+expect(await page.evaluate(() => window.stickSoldiers.prefs.crosshair.style) === 'crossDot', 'Reset puts the crosshair back');
 
-console.log(JSON.stringify({ autoLabel, rewrites, vol0, vol1, capped, full, hz, readout, saved, errors }, null, 2));
+console.log(JSON.stringify({ autoLabel, rewrites, vol0, vol1, capped, full, hz, readout, saved, zoomIdle, zoomFiring, errors }, null, 2));
 await browser.close();
 server.close();
 await relay.close();

@@ -16,7 +16,7 @@ import { segmentBox } from './map.js';
 
 /** Recharge times are in updates at full speed, like weapon numbers (game speed stretches them: 900 is 20 s at 75%). */
 export const GADGETS = {
-  medkit: { name: 'Medkit', item: 'medkit', recharge: 900, blurb: 'G drops a medkit: 60 health for you or a teammate.' },
+  medkit: { name: 'Medkit', item: 'medkit', recharge: 900, blurb: 'G drops a medkit: 90 health for you or a teammate.' },
   builder: {
     name: 'Builder', tool: 'Builder', recharge: 0,
     blurb: 'G takes out the Builder: click to put up a wall (right click turns it into a plank) or, where explosions broke the map, repair it. A block comes back every few seconds.',
@@ -25,7 +25,7 @@ export const GADGETS = {
   beacon: { name: 'Spawn beacon', recharge: 450, blurb: 'G places a spawn beacon: you and your team can spawn on it until an enemy destroys it.' },
 };
 
-export const MEDKIT_HEAL = 60;
+export const MEDKIT_HEAL = 90;
 export const BEACON_HP = 60;
 export const BLOCK_REGEN = 240; // the Builder gets a block back this often, up to what the kit gives (5.3 s at 75%)
 const SUPPLY_LIFE = 1800;   // a dropped supply lasts this long (updates at full speed: 40 s at 75%)
@@ -108,8 +108,8 @@ function dropSupply(game, s, type) {
 export function takeSupply(game, s, it) {
   if (!friendly(game, s, it.owner, it.team)) return false;
   if (it.type === 'medkit') {
-    if (s.health >= RULES.maxHealth && s.burnTicks <= 0) return false;
-    s.health = Math.min(RULES.maxHealth, s.health + MEDKIT_HEAL);
+    if (s.health >= s.maxHealth && s.burnTicks <= 0) return false;
+    s.health = Math.min(s.maxHealth, s.health + MEDKIT_HEAL);
     s.burnTicks = 0;
     game.sound('health', it.x, it.y);
   } else if (it.type === 'ammo') {
@@ -349,7 +349,7 @@ function objectiveSpots(game) {
 export function botWantsGadget(game, s, bot) {
   if (!s.alive || s.gadgetCharge > 0 || !s.body.onGround || s.body.rope) return false;
   switch (CLASSES[s.cls]?.gadget) {
-    case 'medkit': return s.health < 60 || s.burnTicks > 0 || mateNear(game, s, 130, o => o.health < 60 || o.burnTicks > 0);
+    case 'medkit': return s.health < s.maxHealth * 0.6 || s.burnTicks > 0 || mateNear(game, s, 130, o => o.health < o.maxHealth * 0.6 || o.burnTicks > 0);
     case 'ammo': return lowAmmo(s) || mateNear(game, s, 130, lowAmmo);
     case 'beacon': {
       if (bot.target || game.beacons.some(b => b.owner === s.id)) return false;

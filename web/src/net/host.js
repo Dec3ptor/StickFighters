@@ -231,7 +231,7 @@ export class NetHost {
         p.said = (p.said || []).filter(x => t - x < 5000);
         if (p.said.length >= 5) break;
         p.said.push(t);
-        this.chat(p.soldier?.name || p.name, data.text);
+        this.chat(p.soldier?.name || p.name, data.text, p.soldier?.team);
         break;
       }
       case 'bye': p.link.close('left'); break;
@@ -244,11 +244,12 @@ export class NetHost {
     s.loadouts = kit.loadouts;
   }
 
-  /** Send a chat message from `name` to everyone. */
-  chat(name, text) {
+  /** Send a chat message from `name` (on `team`, in team modes: their name's shown in its colour) to everyone. */
+  chat(name, text, team = 0) {
     const clean = String(text ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, MAX_CHAT);
     if (!clean) return;
     const msg = { t: 'chat', name: cleanName(name), text: clean };
+    if (this.game?.rules.teams && (team === 1 || team === 2)) msg.team = team;
     this.chatLog.push(msg);
     if (this.chatLog.length > 30) this.chatLog.shift();
     this.broadcast(msg);

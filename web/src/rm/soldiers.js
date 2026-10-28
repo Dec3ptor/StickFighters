@@ -289,11 +289,11 @@ export function drawName(r, game, s, alpha, viewer) {
     ctx.fillStyle = '#ffae4a';
     ctx.fillText('JUGGERNAUT', x, y - 41);
   }
-  if (!me && s.health < 100) {
+  if (!me && s.health < s.maxHealth) {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(x - 9, y - 27.6, 18, 1.8);
-    ctx.fillStyle = s.health > 40 ? '#7ee07a' : '#ff5a4a';
-    ctx.fillRect(x - 9, y - 27.6, 18 * Math.max(0, s.health) / 100, 1.8);
+    ctx.fillStyle = s.health > s.maxHealth * 0.4 ? '#7ee07a' : '#ff5a4a';
+    ctx.fillRect(x - 9, y - 27.6, 18 * Math.max(0, s.health) / s.maxHealth, 1.8);
   }
   ctx.textBaseline = 'alphabetic';
 }

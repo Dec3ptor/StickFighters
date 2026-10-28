@@ -11,6 +11,7 @@ import { drawObjectives, drawCarried } from './objdraw.js';
 import { MapTiles, paintMap, HATCH, HATCH_GAP, BUILT, BUILT_LINE, BUILT_ROW } from './maptiles.js';
 import { buildPlan } from './building.js';
 import { Fog } from './fog.js';
+import { drawCrosshair as drawCrosshairAt } from './crosshair.js';
 
 export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate };
 
@@ -121,13 +122,14 @@ export class Renderer {
   snapCamera(x, y) { this.cam.x = x; this.cam.y = y; }
 
   /**
-   * Follow a point, looking a little toward the mouse; zoomed out while sniping.
+   * Follow a point, looking a little toward the mouse; zoomed out while sniping, and
+   * `zoomIn` times closer otherwise (a little, while firing: see main.js).
    * dt: milliseconds since the last frame (the camera moves the same at any frame rate).
    */
-  updateCamera(game, fx, fy, mouse, sniping, dt = 1000 / 60) {
+  updateCamera(game, fx, fy, mouse, sniping, dt = 1000 / 60, zoomIn = 1) {
     const f = dt / (1000 / 60);
     const ease = k => 1 - Math.pow(1 - k, f);
-    const zoomTarget = sniping ? 0.72 : 1;
+    const zoomTarget = sniping ? 0.72 : zoomIn;
     this.cam.zoom = lerp(this.cam.zoom, zoomTarget, ease(0.12));
     // (Settled: exactly there, so the map's tiles can be made for it.)
     if (Math.abs(this.cam.zoom - zoomTarget) < 0.001) this.cam.zoom = zoomTarget;
@@ -663,11 +665,11 @@ export class Renderer {
       ctx.fillStyle = st.fill = '#e8740c';
       ctx.fillText('JUGGERNAUT', x, y - 38);
     }
-    if (s !== viewer && s.health < 100) {
+    if (s !== viewer && s.health < s.maxHealth) {
       ctx.fillStyle = '#ddd';
       ctx.fillRect(x - 8, y - 28, 16, 1.6);
-      ctx.fillStyle = st.fill = s.health > 40 ? '#555' : '#c22';
-      ctx.fillRect(x - 8, y - 28, 16 * Math.max(0, s.health) / 100, 1.6);
+      ctx.fillStyle = st.fill = s.health > s.maxHealth * 0.4 ? '#555' : '#c22';
+      ctx.fillRect(x - 8, y - 28, 16 * Math.max(0, s.health) / s.maxHealth, 1.6);
     }
   }
 
@@ -900,33 +902,11 @@ export class Renderer {
     }
   }
 
-  /** Crosshair in screen space. */
-  /** The crosshair at the mouse. reload: how far through a reload (0-1), drawn as a ring filling up. */
+  /** The crosshair at the mouse, as set up in Settings (crosshair.js). reload: how far through a reload (0-1), drawn as a ring filling up. */
   drawCrosshair(mx, my, red, reload = null) {
-    const ctx = this.ctx, d = this.dpr;
-    ctx.setTransform(d, 0, 0, d, 0, 0);
-    if (reload != null) {
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-      ctx.beginPath();
-      ctx.arc(mx, my, 15, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.strokeStyle = '#111';
-      ctx.beginPath();
-      ctx.arc(mx, my, 15, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(1, reload)));
-      ctx.stroke();
-    }
-    ctx.strokeStyle = red ? '#e22' : '#111';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    for (let i = 0; i < 8; i += 2) {
-      const dx = ARMS[i], dy = ARMS[i + 1];
-      ctx.moveTo(mx + dx * 4, my + dy * 4);
-      ctx.lineTo(mx + dx * 10, my + dy * 10);
-    }
-    ctx.stroke();
-    ctx.fillStyle = ctx.strokeStyle;
-    ctx.fillRect(mx - 1, my - 1, 2, 2);
+    const d = this.dpr;
+    this.ctx.setTransform(d, 0, 0, d, 0, 0);
+    drawCrosshairAt(this.ctx, mx, my, { edition: this.kind === 'remastered' ? 'remastered' : 'classic', red, reload });
   }
 }
 
@@ -935,7 +915,6 @@ const ONE = [null];
 // (No spawn beacons.)
 const NONE = [];
 // The crosshair's four arms (x, y pairs).
-const ARMS = [1, 0, -1, 0, 0, 1, 0, -1];
 
 /** Part way (a) from prev to cur when it's winding down; straight to cur when it's starting up. */
 function easeOut(cur, prev, a) {

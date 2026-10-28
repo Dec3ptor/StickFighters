@@ -225,6 +225,23 @@ test('players hear the host\'s sounds, see the feed, and can chat', async () => 
   host.chat('Host', 'welcome!');
   await step(2);
   assert.ok(clients[1].chat.some(m => m.text === 'welcome!'));
+  assert.ok(c.chat.every(m => !m.team), 'no teams: no team colours');
+});
+
+test('in team modes, chat says which team each message is from (its name is shown in that colour)', async () => {
+  const { host, clients, step } = await onlineMatch({ players: 2, mode: 'team' });
+  await step(60);
+  const from = clients[1];
+  const team = from.me?.team;
+  assert.ok(team === 1 || team === 2, `on a team (${team})`);
+  from.sendChat('push left');
+  host.chat('Host', 'on it', 2);
+  host.chat('Nobody', 'no team', 0);
+  await step(5);
+  const got = clients[0].chat;
+  assert.equal(got.find(m => m.text === 'push left')?.team, team);
+  assert.equal(got.find(m => m.text === 'on it')?.team, 2);
+  assert.equal(got.find(m => m.text === 'no team')?.team, 0);
 });
 
 test('a player leaving removes their soldier and a bot takes the slot back', async () => {

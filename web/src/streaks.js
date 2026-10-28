@@ -217,7 +217,7 @@ const USE = {
 
   juggernaut(game, s) {
     s.jugger = JUGGER_TICKS;
-    s.health = RULES.maxHealth;
+    s.health = s.maxHealth;
     s.armour = RULES.maxArmour;
     s.burnTicks = 0;
     s.weapons.JuggerGun = { ammo: Infinity };

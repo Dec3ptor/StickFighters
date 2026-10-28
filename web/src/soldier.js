@@ -21,7 +21,7 @@ function startingWeapons() {
 export const SHOULDER_Y = -12;
 
 export class Soldier {
-  constructor({ id, name, team = 0, isBot = false, profile = null }) {
+  constructor({ id, name, team = 0, isBot = false, profile = null, maxHealth = RULES.maxHealth }) {
     this.id = id;
     this.name = name;
     this.team = team;
@@ -40,6 +40,7 @@ export class Soldier {
     this.anim = { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, swing: 0 };
     // Placeholder state until the first spawn.
     this.health = 0;
+    this.maxHealth = maxHealth; // (the mode's: see Game.maxHealth)
     this.armour = 0;
     this.weapons = startingWeapons();
     this.current = 'Platinum';
@@ -126,7 +127,7 @@ export class Soldier {
     this.prevX = point.x;
     this.prevY = point.y;
     this.alive = true;
-    this.health = RULES.maxHealth;
+    this.health = this.maxHealth;
     this.armour = 0;
     this.weapons = startingWeapons();
     this.current = 'Platinum';

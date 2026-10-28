@@ -268,7 +268,7 @@ test('Melee: prod and bat knock people off ledges (your frag); the axe halves he
   arm(a, 'BattleAxe');
   const b = put(g, 'B', 16, -12);
   run(g, () => false, 3);
-  assert.equal(Math.round(b.health), 50);
+  assert.equal(Math.round(b.health), b.maxHealth / 2);
 
   const g2 = arena();
   const c = put(g2, 'C', 0, -12, fireOnce(0));
@@ -276,7 +276,7 @@ test('Melee: prod and bat knock people off ledges (your frag); the axe halves he
   const d = put(g2, 'D', 16, -12);
   run(g2, () => false, 2);
   assert.ok(d.body.vy < -5, 'launched upward');
-  assert.ok(d.health <= 70);
+  assert.ok(d.health <= d.maxHealth - 30);
 });
 
 test('The minigun spins up before it fires, and slows you down', () => {
@@ -296,8 +296,8 @@ test('Homing missile and magic bullet find targets you are not aiming at', () =>
     const a = put(game, 'A', 0, -12, fireOnce(aim));
     arm(a, id);
     const b = put(game, 'B', 350, -12);
-    run(game, () => b.health < 100 || !b.alive, 600);
-    assert.ok(b.health < 100 || !b.alive, `${id} missed`);
+    run(game, () => b.health < b.maxHealth || !b.alive, 600);
+    assert.ok(b.health < b.maxHealth || !b.alive, `${id} missed`);
   }
 });
 

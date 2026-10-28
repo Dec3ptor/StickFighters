@@ -190,7 +190,7 @@ test('upgrades: a bigger charge blasts further; an extra round is one more grena
     place(target, dyn.x + gap);
     place(s, -850);
     run(game, 400);
-    return { hurt: target.health < 100 || !target.alive, left: game.projectiles.some(p => p.weapon === 'Dynamite') };
+    return { hurt: target.health < target.maxHealth || !target.alive, left: game.projectiles.some(p => p.weapon === 'Dynamite') };
   };
   const r = WEAPONS.Dynamite.blast.radius;
   const plain = hurtAt({}, r * 1.2), big = hurtAt({ Dynamite: 'charge' }, r * 1.2);

@@ -8,7 +8,7 @@ Two games on one site: the **Original**, drawn as it was, and **Stick Soldiers R
 
 ## What's in it
 
-- **Online multiplayer**: quick match, a server browser, hosting your own game (public, or invite-link only), chat, and bots that fill empty slots and make room as people join. No game server: players connect directly to each other (see [Online play](#online-play)).
+- **Online multiplayer**: quick match, a server browser, hosting your own game (public, or invite-link only), chat (in team modes, names in their team's colour), and bots that fill empty slots and make room as people join. No game server: players connect directly to each other (see [Online play](#online-play)).
 - **Nine modes**: free-for-all, team deathmatch, **gun game** and **one in the chamber**, plus five objective modes for two teams: **king of the hill**, **capture the flag**, Battlefield-style **Conquest** and **Rush**, and **Defuse**, played like Counter-Strike: rounds with no respawning, a buy menu and an economy, and a bomb to plant or defuse (see [Defuse](#defuse)).
 - **Battlefield-style classes** (switched off for now: add `?classes` to the address to try them): **Assault**, **Engineer**, **Support** and **Recon**, each spawning with its own kit and a gadget on `G` (medkits, ammo boxes, spawn beacons, and the Engineer's **Builder**, which puts up walls and planks and repairs what explosions broke), with a **Loadout** screen for each class's weapons and upgrades (see [Classes](#classes)).
 - **44 weapons**: the original eight with their original numbers, plus Worms-style ones like sheep, the Holy Hand Grenade, air strikes and the ninja rope, and Counter-Strike-style ones: the AK-47, MP5K and Beretta (cut from the original game), a knife, and HE, flash and smoke grenades (full list below). **Supply crates** parachute in with random weapons.
@@ -25,7 +25,7 @@ Two games on one site: the **Original**, drawn as it was, and **Stick Soldiers R
 - **Destructible maps** (setup → **Destruction**, on by default): explosions blow holes in walls, floors and platforms, so you can blast a way through a wall, drop enemies through the floor, or dig into a hill. The bigger the blast, the bigger the hole (a bazooka goes through a wall; the Holy Hand Grenade takes a big bite out of anything). Floors that spawn points, flags, M-COMs, hills, capture points and bomb sites stand on can't be destroyed, so every mode keeps working; neither can jump pads, or platforms a map maker marks indestructible. Blocks that can't be destroyed are lightly hatched. Bots find their way through new holes, and in online games everyone sees the same holes, including players who join late.
 - **A map maker** with mirror editing, spawn loadouts, test play, share links and **community maps** anyone can browse and play.
 - **Stick Soldiers Remastered**: the same game in 2.5D, picked when you first visit (see [Stick Soldiers Remastered](#stick-soldiers-remastered)).
-- **Health, armour, jetpacks and jump pads**, placed where the original had them. Dead soldiers drop their weapon. Picking up a new weapon only takes it out if you're holding the starting pistol; otherwise it goes in your inventory (the message says which key selects it).
+- **Health, armour, jetpacks and jump pads**, placed where the original had them. Everyone has 150 health (100 in Defuse, as its weapons and money are made for that): guns and melee take half as many hits again to kill, explosions take the same share of your health as they always did, and a sniper or longbow headshot still kills outright. Dead soldiers drop their weapon. Picking up a new weapon only takes it out if you're holding the starting pistol; otherwise it goes in your inventory (the message says which key selects it).
 - **Experimental options** (in the game setup and in **Settings**, under **Experimental**):
   - **Bot vision: only what they see or hear.** Bots spot enemies only on their own screen (a view about as big as yours), in front of them and in a clear line. Behind them, they can only hear you: gunfire, explosions, jetpacks, hard landings and running close by. Creeping along crouched is silent. A bot that hears something turns round and goes to have a look, and a bot standing still looks over its shoulder now and then. The default is the classic bots, which notice anyone nearby in a clear line.
   - **Fog of war.** You only see what your soldier can see from where they stand. Everything out of their line of sight is greyed out, and soldiers there (and what they fire) aren't drawn, teammates included; on big maps the minimap still shows where your team is. Sounds from places you can't see show as orange ripples where they came from, or as arrows at the screen's edge. In online games the host's choice applies to everyone.
@@ -39,7 +39,9 @@ Two games on one site: the **Original**, drawn as it was, and **Stick Soldiers R
 - **Settings** (on the main menu and the pause menu):
   - **Volume**: 60% to start with (100% is as loud as the game used to be). Also on the pause menu (`Esc`), next to **Mute sound** (`M`).
   - **Graphics**: Canvas (the default), WebGL or Auto. Switches straight away, even mid-match.
-  - **Experimental**: the same bot vision, fog of war, bullet speed and between-shots choices as the game setup, for the next game you start or host.
+  - **Crosshair**: its style (cross and dot, cross, dot, circle, circle and dot, T or X), colour (the game's own, a few bright ones, or any colour you pick), size, thickness, gap, opacity, and an edge in the opposite shade so it shows on any background. A picture shows it on a light and a dark background as you change it; **Reset** puts it back.
+  - **Zoom while firing**: holding the fire button closes the camera in a little (Slight, to start with, More or Off). Sniping still zooms out.
+  - **Experimental**: the same bot vision and fog of war choices as the game setup, for the next game you start or host.
   - **Frame rate**: Auto, half the screen rate, or a cap from 30 to 240 fps. Auto draws at your screen's refresh rate; if your computer can't keep up, it first draws lighter (Remastered's auto quality), then drops to an even fraction of the rate (144 → 72) so frames stay evenly spaced, and tries the full rate again later (a few tries, so it doesn't keep flicking between rates). Half the screen rate is a steady every-other-refresh. A cap close to an even fraction of your screen's rate is drawn at that fraction (60 on a 165 Hz screen: 55, every third refresh); Settings says when a cap can't be even on your screen. Moving the window to a screen with a different refresh rate is noticed after a few seconds.
   - **Show frame rate** and **show ping in online games**.
   - **Sprint**: hold `Shift` to sprint, or press it to start and stop. The scoreboard (`Tab`) shows everyone's ping in online games.
@@ -176,7 +178,7 @@ Bots pick hammers up too, and use them for what they're for: steps out of a pit,
 | Sprint | `Shift`: about 40% faster, using up stamina (the thin bar over the weapon bar). It lasts about 4 seconds and refills in about 7; run it out and you're winded until it's back to 30%. Hold it, or set it to toggle in Settings |
 | Jetpack | hold jump in the air |
 | Crouch | `S` or `Ctrl`; your shots spread half as much while crouched (a shotgun's a quarter less) |
-| Aim / fire | mouse / left click |
+| Aim / fire | mouse / left click (the camera closes in a little while you hold it: see Settings) |
 | Sniper zoom | right click |
 | Switch weapon | `1`–`0`, melee `F` (press again to cycle), `Q` / `E`, or mouse wheel |
 | Ninja rope | click to fire, `W` / `S` to climb, `A` / `D` to swing, click again to let go |
@@ -202,7 +204,7 @@ During a match the browser's own `Ctrl` shortcuts (bookmark, save, select all...
 
 | Class | Kit | Gadget (`G`) | Other main weapons |
 |---|---|---|---|
-| Assault | M4 (120 rounds), Grenade Launcher ×2 | **Medkit**: 60 health for you or a teammate | Shotgun / Uzi |
+| Assault | M4 (120 rounds), Grenade Launcher ×2 | **Medkit**: 90 health for you or a teammate | Shotgun / Uzi |
 | Engineer | Bazooka ×3, Uzi (150), Mines ×2 | **Builder**: walls, planks and repairs (below) | Homing Missile / Mortar (instead of the bazooka) |
 | Support | Shotgun (16), Dynamite ×2 | **Ammo box**: half a kit's ammo back for you or a teammate | Minigun / Flamethrower |
 | Recon | Sniper Rifle (15) | **Spawn beacon**: you and your team can spawn on it | Longbow / Magic Bullet |

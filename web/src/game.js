@@ -113,6 +113,8 @@ export class Game {
   get streaksOn() { return this.options.streaks !== false && this.rules.streaks !== false; }
 
   /** True when there are enough soldiers that looking them up by area is worth it. */
+  /** A soldier's full health in this mode. */
+  get maxHealth() { return this.rules.maxHealth ?? RULES.maxHealth; }
   get crowded() { return this.soldiers.length > GRID_MIN; }
 
   /**
@@ -166,7 +168,7 @@ export class Game {
   }
 
   addSoldier(opts, controller) {
-    const s = new Soldier({ id: opts.id ?? this.nextSoldierId(), ...opts });
+    const s = new Soldier({ id: opts.id ?? this.nextSoldierId(), maxHealth: this.maxHealth, ...opts });
     // Soldiers arrive a few at a time; with lots of them, in groups (all in within 2 seconds).
     s.respawnTimer = 1 + (this.soldiers.length % 30) * 4;
     this.rules.setup(this, s);

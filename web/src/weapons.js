@@ -123,7 +123,7 @@ export const WEAPONS = {
   },
   Longbow: {
     name: 'Longbow', short: 'Bow', slot: 2, kind: 'arrow',
-    rof: 42, damage: 55, headMultiplier: 2, knock: 3.5, speed: 17, gravity: 0.16, range: 1400,
+    rof: 42, damage: 55, headMultiplier: 2.75, knock: 3.5, speed: 17, gravity: 0.16, range: 1400,
     ammo: 12, maxAmmo: 24, sound: 'bow', silent: true,
     look: { type: 'bow', length: 16, color: '#7a5230' },
     bot: { near: 150, far: 900, score: 7, value: 4, lob: true },
@@ -142,7 +142,7 @@ export const WEAPONS = {
   // ---- 5: Precision --------------------------------------------------------------
   SR: {
     name: 'Sniper Rifle', short: 'Sniper', slot: 4, kind: 'rail',
-    rof: 60, damage: 50, headMultiplier: 2.5, knock: 3, spread: 0, range: 2200,
+    rof: 60, damage: 50, headMultiplier: 3, knock: 3, spread: 0, range: 2200,
     ammo: 10, maxAmmo: 20, sound: 'sniper', laser: true, zoom: true,
     look: { type: 'sniper', length: 24, color: '#333' },
     bot: { near: 300, far: 2200, score: 9, value: 4 },
