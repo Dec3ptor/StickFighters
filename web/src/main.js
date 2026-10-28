@@ -89,9 +89,8 @@ const DEFAULTS = {
   lives: 3, gunKills: 1, crates: 'normal', destruction: 'on', maxPlayers: 8, visibility: 'public', gameName: '', tab: 'online', mapSource: 'originals',
   // Objective modes: the goal chosen for each (points, captures, tickets), and which team you're on.
   goals: {}, side: 1,
-  // Experimental: what bots notice ('classic' | 'sight') and fog of war ('off' | 'on'); how many
-  // times as fast bullets fly, and the time between shots (percent of the original).
-  botVision: 'classic', fog: 'off', bulletSpeed: 3, fireDelay: 75,
+  // Experimental: what bots notice ('classic' | 'sight') and fog of war ('off' | 'on').
+  botVision: 'classic', fog: 'off',
   // Kill streak rewards, in the modes that have them ('on' | 'off').
   streaks: 'on',
   // Classes ('on' | 'off'), as last chosen for each mode (conquest and rush start on).
@@ -118,17 +117,9 @@ function loadSettings() {
   if (!s.graphicsPicked) s.graphics = 'canvas';
   return s;
 }
-/** The bullet speed (times the original) and time between shots (percent) saved in settings, kept in range. */
-const bulletSpeedOf = s => Math.min(6, Math.max(1, +s.bulletSpeed || 1));
-const fireDelayOf = s => Math.min(100, Math.max(20, +s.fireDelay || 100));
-
-/** Show the sliders' values (the game setup's and the Settings screen's). */
-function showShotSliders() {
-  const speed = +$('bulletSpeed').value, delay = +$('fireDelay').value;
-  for (const id of ['bulletSpeedOut', 'setBulletSpeedOut']) $(id).textContent = `${speed}×`;
-  for (const id of ['fireDelayOut', 'setFireDelayOut']) $(id).textContent = `${delay}%`;
-  for (const id of ['setBulletSpeed', 'setFireDelay']) { const from = $(id.slice(3, 4).toLowerCase() + id.slice(4)); if ($(id).value !== from.value) $(id).value = from.value; }
-}
+// Guns' bullets fly this many times as fast as the original's, and every weapon's wait between
+// shots is this share of the original's. (Fixed: there's no setting for them.)
+const BULLET_SPEED = 3, FIRE_DELAY = 0.5;
 
 function saveSettings(s) {
   try { localStorage.setItem('stick-soldiers', JSON.stringify(s)); } catch { /* private mode */ }
@@ -177,13 +168,6 @@ function buildMenu(settings) {
   $('side').value = String(settings.side === 2 ? 2 : 1);
   $('botVision').value = settings.botVision === 'sight' ? 'sight' : 'classic';
   $('fog').value = settings.fog === 'on' ? 'on' : 'off';
-  $('bulletSpeed').value = String(bulletSpeedOf(settings));
-  $('fireDelay').value = String(fireDelayOf(settings));
-  showShotSliders();
-  for (const id of ['bulletSpeed', 'fireDelay']) {
-    $(id).addEventListener('input', showShotSliders);
-    $(id).addEventListener('change', rememberMenu);
-  }
   $('playClass').innerHTML = CLASS_IDS.map(c => `<option value="${c}">${CLASSES[c].name}</option>`).join('');
   $('playClass').value = profile.cls;
   $('playClass').addEventListener('change', () => { profile.cls = $('playClass').value; saveKit(profile); });
@@ -453,8 +437,6 @@ function readMenu() {
     side: +$('side').value === 2 ? 2 : 1,
     botVision: $('botVision').value,
     fog: $('fog').value,
-    bulletSpeed: +$('bulletSpeed').value,
-    fireDelay: +$('fireDelay').value,
     classes: classesOffered && $('classes').value === 'on' ? 'on' : 'off',
     classesByMode,
     lives: +$('lives').value,
@@ -521,7 +503,7 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const options = {
     lives: settings.lives, gunGameKills: settings.gunKills, crates: settings.crates,
     botVision: settings.botVision === 'sight' ? 'sight' : 'classic', fog: settings.fog === 'on',
-    bulletSpeed: bulletSpeedOf(settings), fireDelay: fireDelayOf(settings) / 100,
+    bulletSpeed: BULLET_SPEED, fireDelay: FIRE_DELAY,
     destruction: settings.destruction !== 'off',
     streaks: settings.streaks !== 'off',
     classes: CLASSES_ON && settings.classes === 'on' && MODES[settings.mode]?.classes !== false,
@@ -896,9 +878,6 @@ function openSettings() {
   // Experimental: the same choices as the game setup's.
   $('setBotVision').value = $('botVision').value;
   $('setFog').value = $('fog').value;
-  $('setBulletSpeed').value = $('bulletSpeed').value;
-  $('setFireDelay').value = $('fireDelay').value;
-  showShotSliders();
   $('graphics').value = prefs.graphics;
   $('quality').value = prefs.quality;
   $('sprintMode').value = prefs.sprint === 'toggle' ? 'toggle' : 'hold';
@@ -1638,11 +1617,6 @@ function wire() {
   // Experimental (the same choices as the game setup's, for the next game started or hosted).
   $('setBotVision').addEventListener('change', () => { $('botVision').value = $('setBotVision').value; rememberMenu(); });
   $('setFog').addEventListener('change', () => { $('fog').value = $('setFog').value; rememberMenu(); });
-  for (const id of ['BulletSpeed', 'FireDelay']) {
-    const from = $('set' + id), to = $(id[0].toLowerCase() + id.slice(1));
-    from.addEventListener('input', () => { to.value = from.value; showShotSliders(); });
-    from.addEventListener('change', rememberMenu);
-  }
   $('mute').addEventListener('change', () => {
     audio.setMuted($('mute').checked);
     if (state.settings) { state.settings.muted = $('mute').checked; saveSettings({ ...loadSettings(), muted: $('mute').checked }); }
