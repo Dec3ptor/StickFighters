@@ -61,16 +61,15 @@ test('a swing at a destructible block chips at it; a few break through', () => {
   const game = arena([FLOOR, { left: 22, top: -70, right: 46, bottom: 0 }], { destruction: true });
   const a = put(game, 'A', 0, -12, swinging(0));
   sledge(a);
-  run(game, 2);
   assert.ok(!clearAhead(game, a), 'a wall in front');
-  const carves = game.carves.length;
-  run(game, 60);
-  assert.ok(game.carves.length > carves, 'a chunk comes out (and goes to online players)');
+  // (A swing on the first update, then one every 60.)
+  run(game, 2);
+  assert.ok(game.carves.length > 0, 'a chunk comes out (and goes to online players)');
   assert.ok(!clearAhead(game, a), 'one swing isn\'t enough');
-  let swings = 2;
+  let swings = 1;
   while (!clearAhead(game, a) && swings < 10) { run(game, 60); swings++; }
   assert.ok(clearAhead(game, a), 'broken through');
-  assert.ok(swings >= 3 && swings <= 6, `broken through in ${swings} swings`);
+  assert.ok(swings >= 2 && swings <= 5, `broken through in ${swings} swings`);
 });
 
 test('built blocks break on any map; the map\'s own and hard blocks don\'t', () => {

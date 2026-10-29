@@ -393,7 +393,7 @@ export const WEAPONS = {
   // the block it lands on: built blocks, and on destructible maps the map's (combat.js).
   Sledgehammer: {
     name: 'Sledgehammer', short: 'Sledge', slot: 10, kind: 'melee',
-    rof: 34, reach: 30, arc: 0.1, damage: 25, knock: 6.5, lift: 2.5, chip: 5, ammo: Infinity, sound: 'sledge',
+    rof: 34, reach: 30, arc: 0.1, damage: 25, knock: 6.5, lift: 2.5, chip: 6, ammo: Infinity, sound: 'sledge',
     look: { type: 'sledge', length: 15, color: '#8a6a3a' },
     bot: { near: 0, far: 30, score: 3, value: 0 },
   },

@@ -11,7 +11,7 @@ import { inZone } from './objectives.js';
 import { botWantsGadget } from './gadgets.js';
 import { botReward, canOpen, REWARD_WEAPONS } from './streaks.js';
 import { shotSpeed, smokeBetween } from './combat.js';
-import { buildTool, blocksLeft, flyFuel, canGetPast, toolFor, exitSpot, launchSpot, fly, climb, coverSpot } from './botescape.js';
+import { buildTool, blocksLeft, flyFuel, canGetPast, toolFor, exitSpot, launchSpot, fly, climb, coverSpot, digTool, digSpot, dig } from './botescape.js';
 
 const SIGHT = 1300;  // how far bots look for enemies
 const LOOKS = 6;     // in big games, sight lines a bot checks each time it looks around
@@ -311,10 +311,11 @@ export class BotController {
     this.bounces = 0;
     this.throwing = null;
     this.lookAway = null;
-    this.escape = null;        // flying out of a pit, or building a way on (botescape.js)
+    this.escape = null;        // flying out of a pit, building a way on, or digging through (botescape.js)
     this.escapeFails = 0;
     this.trappedSince = -1;    // (since when it's been stuck with nothing to do and nowhere to go)
     this.towardAt = -1e9;      // (when it last tried to get somewhere it couldn't by building or flying)
+    this.digMemo = null;       // (the last wall it looked for to dig through: digWay)
     this.cover = null;         // a wall for cover being put up
     this.coverAt = -1e9;
     this.ignore = this.ignore || new WeakMap(); // (items given up on: forgotten once they're gone)
@@ -776,10 +777,13 @@ export class BotController {
       );
       kind = 'weapon';
     }
-    // Cut off, with no way of its own past it (no blocks to build with, no jetpack that can
-    // fly that high): a jetpack or a hammer it can get to, first, even a long way off, if
+    // Cut off, with no way of its own over or up to it (no blocks to build with, no jetpack
+    // that can fly that high): a wall it can dig through with the sledgehammer (below);
+    // failing that, a jetpack or a hammer it can get to, first, even a long way off, if
     // that would get it there (from a spot with room to fly or build from).
-    if (!goal && cutOff && this.escapeFails < 3 && !canGetPast(s, cutOff)) {
+    const digTo = cutOff && this.escapeFails < 3 && game.tick - this.towardAt > 600 && !canGetPast(s, cutOff)
+      ? this.digWay(game, s, search, start, cutOff, inPit, ok) : null;
+    if (!goal && cutOff && !digTo && this.escapeFails < 3 && !canGetPast(s, cutOff)) {
       const from = inPit ? s : launchSpot(game, this.nav, search, cutOff, ok);
       if (from) goal = best(it => toolFor(s, it, cutOff, from), () => TOOL_VALUE, Infinity);
       kind = 'tool';
@@ -855,17 +859,47 @@ export class BotController {
       const from = launchSpot(game, this.nav, search, cutOff, ok);
       if (from) { goal = from; kind = 'toward'; toward = { to: cutOff, want }; }
     }
+    // Or through a wall: over to it, and once there, dig (out of a pit too, with nobody to fight).
+    if (digTo && (inPit ? !this.target && !this.goalItem : want && GO_KINDS.has(kind))) {
+      goal = digTo.n; kind = 'toward'; toward = { to: cutOff, want, dig: digTo };
+    }
     this.goalKind = kind;
     this.goalItem = ITEM_GOALS.has(kind) ? goalItem : null;
     // In a pit, nobody to fight and nothing to pick up: fly or build a way out (with no
     // way of its own, after a few seconds, self-destruct: lastResort).
     if (inPit && !this.target && !this.goalItem && this.startEscape(game, s, exitSpot(this.nav, s))) return;
-    this.lastResort(game, s, inPit, !this.goalItem);
+    // (A wall to dig through is a way out: not stuck.)
+    this.lastResort(game, s, inPit && !toward?.dig, !this.goalItem);
     this.path = this.nav.pathTo(search, goal) || [];
     this.li = 0;
     this.start = start;
     // At the spot to go on from: off we go (a jetpack low on fuel: once it's filled up).
-    if (toward && goal === start && this.startEscape(game, s, toward.to, toward.want)) this.towardAt = game.tick;
+    if (toward && goal === start && (toward.dig ? this.startDig(game, s, toward.dig) : this.startEscape(game, s, toward.to, toward.want))) this.towardAt = game.tick;
+  }
+
+  /**
+   * A wall to dig through with the sledgehammer to get to `to` (a spot it can't get to),
+   * or out of the pit it's in: where to dig from (botescape.js digSpot), or null. (Worked
+   * out again only when something's changed: the map, where it is, or where it's going.)
+   */
+  digWay(game, s, search, start, to, inPit, ok) {
+    if (!digTool(s)) return null;
+    const m = this.digMemo;
+    if (m && m.version === game.map.version && m.start === start && m.to === to && m.inPit === inPit) return m.result;
+    const nav = this.nav, trapped = inPit && nav.trapped(), reach = !inPit && nav.reachers(to);
+    const good = inPit ? n => !trapped[n.id] : n => reach[n.id] === 1;
+    const result = digSpot(game, nav, search, good, s, ok);
+    this.digMemo = { version: game.map.version, start, to, inPit, result };
+    return result;
+  }
+
+  /** At the wall: start digging through it (botescape.js dig). Returns true if it started. */
+  startDig(game, s, d) {
+    if (this.escapeFails >= 3 || !digTool(s)) return false;
+    this.escape = { kind: 'dig', dir: d.dir, end: d.end, start: game.tick, still: 0 };
+    this.path = [];
+    this.exec = null;
+    return true;
   }
 
   /**
@@ -938,10 +972,12 @@ export class BotController {
   /** Carry on flying or building (botescape.js); hand back to the route once there's a way on. */
   runEscape(game, s, inp) {
     const e = this.escape;
-    // Someone to fight right here: that first (not mid-air: carry on).
+    // Someone to fight right here: that first (not mid-air: carry on). (Digging: only if
+    // there's a clear shot at them; it may well be them it's digging through to.)
     if (this.target && s.body.onGround && e.kind === 'build' && e.phase === 'place') return;
-    const r = e.kind === 'fly' ? fly(game, s, e, inp) : climb(game, s, e, inp, this.nav);
-    if (r === 'flying' || r === 'building') return;
+    if (this.target && e.kind === 'dig' && game.map.clearLine(s.shoulderX, s.shoulderY, this.target.x, this.target.y - 8)) return;
+    const r = e.kind === 'fly' ? fly(game, s, e, inp) : e.kind === 'dig' ? dig(game, s, e, inp) : climb(game, s, e, inp, this.nav);
+    if (r === 'flying' || r === 'building' || r === 'digging') return;
     this.escape = null;
     this.thinkIn = 0;
     if (r === 'failed') { this.escapeFails++; return; }

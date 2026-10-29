@@ -4,6 +4,9 @@
 //     up to a ledge, one at a time (put one up, jump onto it, look again; in a shaft too
 //     narrow for a step beside us, jump and put one under our feet at the top of the
 //     jump), or planks across a gap, walked onto as they go;
+//   - the sledgehammer digs through a wall in the way (a built one anywhere; on destructible
+//     maps the map's own, if it isn't hard): a chunk a swing, from head height down, then
+//     on through the hole;
 // and, in a fight at range, a wall for cover. The route map doesn't know about new
 // blocks for a moment, so a bot checks from where it stands (nav.escape: walks, jumps
 // and drops tried with the real physics) whether it can get on from there.
@@ -12,6 +15,7 @@ import { buildPlan } from './building.js';
 import { BODY, PHYS } from './config.js';
 import { angleDiff } from './util.js';
 import { hypot } from './map.js';
+import { WEAPONS } from './weapons.js';
 
 const STEP = { up: 78, low: 60, out: 42 };   // a step's top above our feet, and its middle across from us
 const HAMMER_CLIMB = 8 * 70;                   // about how high a hammer's blocks make steps
@@ -46,6 +50,115 @@ export function canGetPast(s, to) {
 export function toolFor(s, it, to, from = s) {
   if (it.type === 'jetpack') return !s.body.hasJetpack && flyFuel(from, to) <= 100;
   return it.type === 'weapon' && it.weapon === 'Hammer' && blocksLeft(s) < 2 && from.y - to.y < HAMMER_CLIMB;
+}
+
+// Digging: how far from a spot the wall can start, how thick a wall's worth digging
+// through, and what a px of wall costs next to a px of walking (a swing a chunk: slow).
+const DIG = { near: 48, thick: 96, cost: 8 };
+
+/** The weapon a soldier can dig with (the sledgehammer: a melee weapon with `chip`), or null. */
+export function digTool(s) {
+  if (s.jugger > 0) return null; // (a Juggernaut keeps its minigun in hand)
+  for (const id in s.weapons) if (WEAPONS[id]?.chip && s.has(id)) return id;
+  return null;
+}
+
+/** True if block b breaks (as game.carve has it): built ones anywhere, the map's own on destructible maps, never hard ones. */
+export const breakable = (game, b) => !b.hard && (b.built || !!game.options.destruction);
+
+/**
+ * The wall a soldier standing at spot n would dig through going `dir` (-1 or 1): where the
+ * blocks in the way of their body start and end ({ start, end, thick }), if there's one
+ * within DIG.near of them, no thicker than DIG.thick, and all of it breaks. Else null.
+ */
+function tunnel(game, n, dir) {
+  const map = game.map, top = n.y + BODY.top - 2, bottom = n.y + BODY.bottom - 2;
+  let start = null;
+  for (let k = BODY.halfW; k < BODY.halfW + DIG.near + DIG.thick; k += 4) {
+    const x = n.x + dir * k, l = Math.min(x, x + dir * 4), r = Math.max(x, x + dir * 4);
+    let blocked = false, hard = false;
+    map.query(l, top, r, bottom, b => {
+      if (b.l < r && b.r > l && b.t < bottom && b.b > top) { blocked = true; if (!breakable(game, b)) hard = true; }
+      return false;
+    });
+    if (hard) return null;
+    if (blocked) start ??= x;
+    else if (start != null) return { start, end: x, thick: Math.abs(x - start) };
+    else if (k > BODY.halfW + DIG.near) return null;
+  }
+  return null;
+}
+
+/**
+ * Where to dig from to get somewhere good (`good(spot)`: where we're going, or out of the
+ * pit): a spot we can get to (`search`, and `ok`) by a wall we can dig through, with a spot
+ * on its far side that's good, about level with us. The cheapest, counting the walk there
+ * and the wall's thickness: { n, dir, end, beyond, thick }, or null.
+ */
+export function digSpot(game, nav, search, good, from, ok, reach = 1200) {
+  let best = null, bv = Infinity;
+  for (const n of nav.nodesNear(from.x, from.y, reach, 400)) {
+    const c = search.cost[n.id];
+    if (c === Infinity || !ok(n) || c + DIG.cost * 4 >= bv) continue;
+    for (const dir of [-1, 1]) {
+      // (Quick look first: a wall there at all, at chest height.)
+      const hit = game.map.raycast(n.x, n.y - 6, n.x + dir * (BODY.halfW + DIG.near), n.y - 6);
+      if (!hit || !breakable(game, hit.solid)) continue;
+      const t = tunnel(game, n, dir);
+      if (!t) continue;
+      const m = nav.nearest(t.end + dir * (BODY.halfW + 10), n.y, 50);
+      if (!m || (m.x - t.end) * dir < 0 || m.y < n.y - 40 || !good(m)) continue;
+      const v = c + t.thick * DIG.cost;
+      if (v < bv) { bv = v; best = { n, dir, end: t.end, beyond: m, thick: t.thick }; }
+    }
+  }
+  return best;
+}
+
+/**
+ * Digging through a wall with the sledgehammer, `d.dir` from here. d: { dir, end (where the
+ * wall ends), start, still }. The nearest block in the way of our body (from just over
+ * our head down to our feet) gets swung at, at the middle of the part that's in the way;
+ * out of reach, on toward it; nothing in the way, on through. Returns 'digging', 'out'
+ * (through to the far side), or 'failed' (something that doesn't break, no sledgehammer,
+ * or it's taking far too long).
+ */
+export function dig(game, s, d, inp) {
+  const b = s.body, dir = d.dir;
+  if (game.tick - d.start > 60 * 30) return 'failed';
+  if ((s.x - d.end) * dir > BODY.halfW + 2 && b.onGround) return 'out';
+  const tool = digTool(s);
+  if (!tool) return 'failed';
+  if (s.current !== tool) { inp.switchTo = tool; return 'digging'; }
+  inp.switchTo = undefined;   // (not back to a gun just now)
+  const reach = WEAPONS[tool].reach + 10, top = s.y + BODY.top - 2, bottom = s.y + BODY.bottom - 1;
+  const x0 = s.x, x1 = s.x + dir * (BODY.halfW + reach);
+  let near = null, nd = Infinity;
+  game.map.query(Math.min(x0, x1), top, Math.max(x0, x1), bottom, q => {
+    if (q.t >= bottom || q.b <= top || q.r <= Math.min(x0, x1) || q.l >= Math.max(x0, x1)) return false;
+    const dist = dir > 0 ? q.l - s.x : s.x - q.r;
+    if (dist < nd) { nd = dist; near = q; }
+    return false;
+  });
+  if (near) {
+    if (!breakable(game, near)) return 'failed';
+    // (Just inside its near side, halfway down the part of it in our way: a swing there can't miss it.)
+    const x = (dir > 0 ? near.l : near.r) + dir * 3;
+    const y = (Math.max(near.t, top) + Math.min(near.b, bottom)) / 2;
+    if (hypot(x - s.shoulderX, y - s.shoulderY) <= reach) {
+      inp.move = 0;
+      aimAt(s, inp, x, y);
+      // (Once the aim's there: a swing, clicks rather than a held button.)
+      if (Math.abs(angleDiff(s.aim, inp.aim)) < 0.08 && s.cooldown <= 0) inp.fire = game.tick % 2 === 0;
+      d.still = 0;
+      return 'digging';
+    }
+  }
+  inp.move = dir;
+  aimAt(s, inp, s.x + dir * 40, s.shoulderY);
+  // (Walking into something, and no swing to take at it, for a couple of seconds: give up.)
+  if (Math.abs(b.vx) < 0.2 && b.onGround) { if (++d.still > 120) return 'failed'; } else d.still = 0;
+  return 'digging';
 }
 
 /** What a click with a building tool, aimed at (x, y), would put up (a plank, or a wall). Leaves the soldier as it was. */

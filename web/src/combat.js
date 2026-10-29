@@ -463,8 +463,9 @@ function meleeBlock(game, def, sx, sy, dx, dy) {
   const hit = game.map.raycast(sx, sy, sx + dx * reach, sy + dy * reach);
   if (!hit) return false;
   const x = hit.x, y = hit.y, nx = hit.nx, ny = hit.ny;
-  // (Centred a little into the block: each swing digs in further.)
-  game.carve(x + dx * def.chip * 0.5, y + dy * def.chip * 0.5, def.chip);
+  // (Centred into the block, the hole reaching back to where it landed: each swing digs in
+  // further, and one goes right through a built wall's thickness.)
+  game.carve(x + dx * def.chip * 0.8, y + dy * def.chip * 0.8, def.chip);
   game.sound('chip', x, y);
   game.fx?.sparks(x, y, nx, ny);
   return true;
