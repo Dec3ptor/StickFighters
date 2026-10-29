@@ -1,6 +1,6 @@
 // The Settings screen: switching graphics mid-match (WebGL and back), the frame
 // rate cap, the frame rate readout, the volume (here and in the game's menu), the
-// dropdowns left alone while it's open, the crosshair's look and the zoom while firing,
+// dropdowns left alone while it's open, the crosshair's look, aiming down the sights,
 // and everything being remembered next visit.
 // Usage: node tests/browser/settings.mjs [outDir]
 import { chromium } from 'playwright';
@@ -66,9 +66,9 @@ await page.selectOption('#sprintMode', 'hold');
 // The panel is taller than the window: it scrolls, and its top isn't cut off.
 const top = await page.evaluate(() => { const s = document.getElementById('settings'); s.scrollTop = 0; return s.querySelector('.panel').getBoundingClientRect().top; });
 expect(top >= 0, `the top of settings shows (${top})`);
-// Zoom while firing: slight to start with.
-expect(await page.inputValue('#fireZoom') === 'slight', 'zoom while firing: slight by default');
-await page.selectOption('#fireZoom', 'more');
+// Aiming down the sights (right click): slight to start with.
+expect(await page.inputValue('#aimZoom') === 'slight', 'aim down sights: slight by default');
+await page.selectOption('#aimZoom', 'more');
 // The crosshair: its picture, on a light and a dark background, follows the settings.
 const pixel = (x, y) => page.evaluate(([x, y]) => [...document.getElementById('xhPreview').getContext('2d').getImageData(x, y, 1, 1).data], [x, y]);
 expect(await page.inputValue('#xhStyle') === 'crossDot' && await page.inputValue('#xhColor') === 'default', 'the crosshair starts as it was');
@@ -125,7 +125,14 @@ await page.mouse.up();
 await page.keyboard.up('KeyD');
 const x1 = await page.evaluate(() => window.stickSoldiers.state.me.x);
 expect(Math.abs(x1 - x0) > 20, `still moves after switching (${x0} -> ${x1})`);
-expect(zoomIdle === 1 && Math.abs(zoomFiring - 1.2) < 0.02, `holding fire zooms in a little ("More": ${zoomIdle} -> ${zoomFiring})`);
+expect(zoomIdle === 1 && zoomFiring === 1, `firing doesn't zoom (${zoomIdle} -> ${zoomFiring})`);
+// Aiming down the sights: hold right click with a gun (the pistol here).
+await page.evaluate(() => { const me = window.stickSoldiers.state.me; me.current = 'Platinum'; });
+await page.mouse.down({ button: 'right' });
+await page.waitForTimeout(800);
+const zoomSights = await page.evaluate(() => [window.stickSoldiers.renderer.cam.zoom, window.stickSoldiers.state.me.current]);
+await page.mouse.up({ button: 'right' });
+expect(Math.abs(zoomSights[0] - 1.2) < 0.02, `right click aims down the sights ("More": ${zoomSights})`);
 await page.waitForTimeout(800);
 expect(await page.evaluate(() => window.stickSoldiers.renderer.cam.zoom) === 1, 'and back out when you let go');
 await page.screenshot({ path: `${outDir}/settings-webgl-match.png` });
@@ -182,13 +189,13 @@ const saved = await page.evaluate(() => ({ kind: window.stickSoldiers.renderer.k
 expect(saved.kind === 'webgl' && saved.prefs.graphics === 'webgl', `graphics remembered (${saved.kind})`);
 expect(saved.prefs.showFps === true && saved.prefs.showPing === false && saved.prefs.fpsCap === 'auto' && saved.prefs.volume === 30, `other settings remembered (${JSON.stringify(saved.prefs)})`);
 expect(Math.abs(await page.evaluate(() => window.stickSoldiers.audio.level) - 0.3) < 1e-9, 'the volume remembered');
-expect(saved.prefs.fireZoom === 'more' && saved.prefs.crosshair?.style === 'circle' && saved.prefs.crosshair?.custom === '#ff00ff', `zoom and crosshair remembered (${JSON.stringify(saved.prefs.crosshair)})`);
+expect(saved.prefs.aimZoom === 'more' && saved.prefs.crosshair?.style === 'circle' && saved.prefs.crosshair?.custom === '#ff00ff', `zoom and crosshair remembered (${JSON.stringify(saved.prefs.crosshair)})`);
 await page.click('#openSettings');
 expect(await page.inputValue('#xhStyle') === 'circle' && await page.inputValue('#xhSize') === '12', 'and shown in settings');
 await page.click('#xhReset');
 expect(await page.evaluate(() => window.stickSoldiers.prefs.crosshair.style) === 'crossDot', 'Reset puts the crosshair back');
 
-console.log(JSON.stringify({ autoLabel, rewrites, vol0, vol1, capped, full, hz, readout, saved, zoomIdle, zoomFiring, errors }, null, 2));
+console.log(JSON.stringify({ autoLabel, rewrites, vol0, vol1, capped, full, hz, readout, saved, zoomIdle, zoomFiring, zoomSights, errors }, null, 2));
 await browser.close();
 server.close();
 await relay.close();

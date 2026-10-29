@@ -122,20 +122,21 @@ export class Renderer {
   snapCamera(x, y) { this.cam.x = x; this.cam.y = y; }
 
   /**
-   * Follow a point, looking a little toward the mouse; zoomed out while sniping, and
-   * `zoomIn` times closer otherwise (a little, while firing: see main.js).
+   * Follow a point, looking a little toward the mouse; zoomed out and looking far ahead
+   * while sniping. `sights` above 1: aiming down a gun's sights, that much closer and
+   * looking further toward the mouse (see main.js).
    * dt: milliseconds since the last frame (the camera moves the same at any frame rate).
    */
-  updateCamera(game, fx, fy, mouse, sniping, dt = 1000 / 60, zoomIn = 1) {
+  updateCamera(game, fx, fy, mouse, sniping, dt = 1000 / 60, sights = 1) {
     const f = dt / (1000 / 60);
     const ease = k => 1 - Math.pow(1 - k, f);
-    const zoomTarget = sniping ? 0.72 : zoomIn;
+    const zoomTarget = sniping ? 0.72 : sights;
     this.cam.zoom = lerp(this.cam.zoom, zoomTarget, ease(0.12));
     // (Settled: exactly there, so the map's tiles can be made for it.)
     if (Math.abs(this.cam.zoom - zoomTarget) < 0.001) this.cam.zoom = zoomTarget;
     let tx = fx, ty = fy - 20;
     if (mouse) {
-      const look = sniping ? 0.55 : 0.22;
+      const look = sniping ? 0.55 : sights > 1 ? 0.4 : 0.22;
       tx += clamp((mouse.x - this.w / 2) / this.scale, -400, 400) * look;
       ty += clamp((mouse.y - this.h / 2) / this.scale, -300, 300) * look;
     }

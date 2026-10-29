@@ -47,12 +47,16 @@ test('the camera follows at the same speed at 60, 144 and 240 frames a second', 
   }
 });
 
-test('holding fire closes the camera in a little; sniping zooms out instead', () => {
+test('aiming down the sights: the camera comes in a little, further toward the mouse; sniping zooms out instead', () => {
   const { game } = botMatch('ssdm1.json', { bots: 0 });
   const r = new Renderer(fakeCanvas(), {});
+  const mouse = { x: r.w / 2 + 300, y: r.h / 2 };
   r.snapCamera(0, 0);
-  for (let i = 0; i < 60; i++) r.updateCamera(game, 0, 0, null, false, 1000 / 60, 1.1);
+  for (let i = 0; i < 60; i++) r.updateCamera(game, 0, 0, mouse, false, 1000 / 60);
+  const hip = r.cam.x;
+  for (let i = 0; i < 60; i++) r.updateCamera(game, 0, 0, mouse, false, 1000 / 60, 1.1);
   assert.equal(r.cam.zoom, 1.1);
+  assert.ok(r.cam.x > hip + 20, `looks further toward the mouse (${hip.toFixed(0)} -> ${r.cam.x.toFixed(0)})`);
   for (let i = 0; i < 60; i++) r.updateCamera(game, 0, 0, null, true, 1000 / 60, 1.1);
   assert.equal(r.cam.zoom, 0.72, 'sniping wins');
   for (let i = 0; i < 60; i++) r.updateCamera(game, 0, 0, null, false, 1000 / 60);

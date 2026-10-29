@@ -73,7 +73,7 @@ const CLASSES_ON = params.has('classes');
 // (?tiles=on: the canvas keeps the map in tiles, maptiles.js. Off by default: slower with a graphics card.)
 if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
-const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', lockMouse: true, fullscreen: false, volume: 60, fireZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS } };
+const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', lockMouse: true, fullscreen: false, volume: 60, aimZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS } };
 // Locking the mouse to the game: ?lock=on / ?lock=off in the address. (Browsers driven by tests
 // move the mouse oddly while it's locked, so it's off for them unless the address asks.)
 const LOCK_PARAM = params.get('lock');
@@ -104,7 +104,7 @@ const DEFAULTS = {
   lockMouse: true,  // lock the mouse to the game while playing (Esc frees it)
   fullscreen: false, // play in full screen (with the keyboard's browser shortcuts kept for the game, where browsers allow it)
   volume: 60,       // sound volume, percent (100: as loud as it goes; it was a bit much, so 60 to start with)
-  fireZoom: 'slight', // the camera closes in while you hold fire: 'off', 'slight' or 'more' (FIRE_ZOOM)
+  aimZoom: 'slight', // aiming down the sights (hold right click with a gun): 'off', 'slight' or 'more' (AIM_ZOOM)
   crosshair: { ...CROSSHAIR_DEFAULTS }, // how the crosshair looks (crosshair.js)
   edition: null,   // the game last picked
 };
@@ -118,6 +118,7 @@ function loadSettings() {
   // Draw with the canvas unless WebGL or Auto was picked in Settings (earlier visits
   // saved the old default, Auto, without anyone choosing it).
   if (!s.graphicsPicked) s.graphics = 'canvas';
+  delete s.fireZoom; // (the zoom while firing, replaced by aiming down the sights)
   return s;
 }
 
@@ -131,8 +132,10 @@ function rememberMenu() {
 
 // Guns with at least this many updates between shots (about half a second) show the reload ring between them.
 const SLOW_GUN = 35;
-// How much closer the camera gets while you hold fire (Settings: Zoom while firing). Sniping zooms out instead.
-const FIRE_ZOOM = { off: 1, slight: 1.1, more: 1.2 };
+// Aiming down the sights (Settings): holding right click with a gun, the camera comes this much
+// closer, and further toward where you aim. The sniper rifle's scope zooms out instead.
+const AIM_ZOOM = { off: 1, slight: 1.1, more: 1.2 };
+const SIGHTED = new Set(['bullet', 'arrow', 'rocket', 'seeker', 'flame']); // (the weapons with sights: guns)
 
 // The player's controls follow the Settings screen (read each update, so changes apply mid-match).
 const playerOptions = { sprintMode: () => prefs.sprint };
@@ -887,7 +890,7 @@ function openSettings() {
   $('showPing').checked = prefs.showPing;
   $('lockMouse').checked = prefs.lockMouse;
   $('fullscreenPref').checked = prefs.fullscreen;
-  $('fireZoom').value = FIRE_ZOOM[prefs.fireZoom] ? prefs.fireZoom : 'slight';
+  $('aimZoom').value = AIM_ZOOM[prefs.aimZoom] ? prefs.aimZoom : 'slight';
   showCrosshair();
   settingsNotes();
   show('settings', true);
@@ -1367,12 +1370,12 @@ function frame(now) {
   if (state.mode !== 'offline' && now < state.hitStopUntil && state.drawnOnce) { pacer.drawn(now, 0); return; }
 
   const sniping = me.alive && me.current === 'SR' && input.mouse.right && !state.menuOpen && !state.chatOpen;
-  // Holding the fire button: the camera closes in a little (Settings: Zoom while firing).
-  const firing = !sniping && me.alive && input.mouse.left && !watchMode && !g.over &&
+  // Aiming down the sights: right click held with a gun (Settings).
+  const sights = !sniping && me.alive && input.mouse.right && SIGHTED.has(weaponFor(me, me.current)?.kind) && !watchMode && !g.over &&
     !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open;
   const ax = free ? free.x : lerp(view.prevX ?? view.x, view.x, alpha) + (view.drawDX || 0);
   const ay = free ? free.y : lerp(view.prevY ?? view.y, view.y, alpha) + (view.drawDY || 0);
-  renderer.updateCamera(g, ax, ay, state.menuOpen || watchMode ? null : input.mouse, sniping, dt, firing ? FIRE_ZOOM[prefs.fireZoom] ?? 1 : 1);
+  renderer.updateCamera(g, ax, ay, state.menuOpen || watchMode ? null : input.mouse, sniping, dt, sights ? AIM_ZOOM[prefs.aimZoom] ?? 1 : 1);
   const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
   renderer.fogFrom = view;
@@ -1642,7 +1645,7 @@ function wire() {
   $('sprintMode').addEventListener('change', () => { prefs.sprint = $('sprintMode').value === 'toggle' ? 'toggle' : 'hold'; savePrefs(); });
   $('lockMouse').addEventListener('change', () => { prefs.lockMouse = $('lockMouse').checked; savePrefs(); if (!prefs.lockMouse) input.unlock(); });
   $('fullscreenPref').addEventListener('change', () => { prefs.fullscreen = $('fullscreenPref').checked; savePrefs(); if (!prefs.fullscreen) leaveFullscreen(true); });
-  $('fireZoom').addEventListener('change', () => { prefs.fireZoom = FIRE_ZOOM[$('fireZoom').value] ? $('fireZoom').value : 'slight'; savePrefs(); });
+  $('aimZoom').addEventListener('change', () => { prefs.aimZoom = AIM_ZOOM[$('aimZoom').value] ? $('aimZoom').value : 'slight'; savePrefs(); });
   // The crosshair.
   for (const [id, label] of CROSSHAIR_STYLES) $('xhStyle').add(new Option(label, id));
   for (const [id, label] of CROSSHAIR_COLORS) $('xhColor').add(new Option(label, id));

@@ -40,7 +40,7 @@ Two games on one site: the **Original**, drawn as it was, and **Stick Soldiers R
   - **Volume**: 60% to start with (100% is as loud as the game used to be). Also on the pause menu (`Esc`), next to **Mute sound** (`M`).
   - **Graphics**: Canvas (the default), WebGL or Auto. Switches straight away, even mid-match.
   - **Crosshair**: its style (cross and dot, cross, dot, circle, circle and dot, T or X), colour (the game's own, a few bright ones, or any colour you pick), size, thickness, gap, opacity, and an edge in the opposite shade so it shows on any background. A picture shows it on a light and a dark background as you change it; **Reset** puts it back.
-  - **Zoom while firing**: holding the fire button closes the camera in a little (Slight, to start with, More or Off). Sniping still zooms out.
+  - **Aim down sights**: holding right click with a gun brings the camera in a little and further toward where you aim, like looking down the sights (Slight, to start with, More or Off). The sniper rifle's scope still zooms out.
   - **Experimental**: the same bot vision and fog of war choices as the game setup, for the next game you start or host.
   - **Frame rate**: Auto, half the screen rate, or a cap from 30 to 240 fps. Auto draws at your screen's refresh rate; if your computer can't keep up, it first draws lighter (Remastered's auto quality), then drops to an even fraction of the rate (144 → 72) so frames stay evenly spaced, and tries the full rate again later (a few tries, so it doesn't keep flicking between rates). Half the screen rate is a steady every-other-refresh. A cap close to an even fraction of your screen's rate is drawn at that fraction (60 on a 165 Hz screen: 55, every third refresh); Settings says when a cap can't be even on your screen. Moving the window to a screen with a different refresh rate is noticed after a few seconds.
   - **Show frame rate** and **show ping in online games**.
@@ -178,8 +178,8 @@ Bots pick hammers up too, and use them for what they're for: steps out of a pit,
 | Sprint | `Shift`: about 40% faster, using up stamina (the thin bar over the weapon bar). It lasts about 4 seconds and refills in about 7; run it out and you're winded until it's back to 30%. Hold it, or set it to toggle in Settings |
 | Jetpack | hold jump in the air |
 | Crouch | `S` or `Ctrl`; your shots spread half as much while crouched (a shotgun's a quarter less) |
-| Aim / fire | mouse / left click (the camera closes in a little while you hold it: see Settings) |
-| Sniper zoom | right click |
+| Aim / fire | mouse / left click |
+| Aim down sights | hold right click with a gun: the camera comes in a little, further toward where you aim (see Settings). With the sniper rifle it's the scope, which zooms out to see further |
 | Switch weapon | `1`–`0`, melee `F` (press again to cycle), `Q` / `E`, or mouse wheel |
 | Ninja rope | click to fire, `W` / `S` to climb, `A` / `D` to swing, click again to let go |
 | Kill streak rewards | `X` uses the one picked, `Z` picks another (see [Kill streaks](#kill-streaks)) |
