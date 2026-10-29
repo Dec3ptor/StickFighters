@@ -234,7 +234,7 @@ function weaponBarScale(W) {
 }
 
 // The status bars' texts (made again only when what's in them changes).
-const healthLabel = textOf(h => `Health ${h}%`);
+const healthLabel = textOf((h, max) => `Health ${h} / ${max}`);
 // (mag -1: reloading.)
 const magLabel = textOf((def, mag, ammo) => {
   const spare = ammo === Infinity ? '' : `  ·  ${ammo}`;
@@ -259,7 +259,7 @@ function drawStatus(ctx, game, me, W, H, opts) {
   }
   // The main row: health on the left, the weapon in hand on the right.
   let y = -11 - h;
-  bar(ctx, -half - gap / 2, y, half, h, me.health / me.maxHealth, 'health', healthLabel(Math.max(0, Math.ceil(me.health))), true);
+  bar(ctx, -half - gap / 2, y, half, h, me.health / me.maxHealth, 'health', healthLabel(Math.max(0, Math.ceil(me.health)), me.maxHealth), true);
   // (With the soldier's upgrade: Extended mag holds more.)
   const def = weaponFor(me, me.current), inv = me.weapons[me.current];
   if (def && inv) {

@@ -129,8 +129,8 @@ function weaponScore(id, d, s, game, target) {
   const def = WEAPONS[id];
   const b = def?.bot;
   if (!b) return 0;
-  // The prod does no damage: only worth it to push someone off a ledge.
-  if (id === 'Prod') return d <= b.far + 10 && game && nearLedge(game, s, target) ? 9 : 0.1;
+  // The sledgehammer's best use: knocking someone off a ledge.
+  if (id === 'Sledgehammer' && d <= b.far + 10 && game && nearLedge(game, s, target)) return 9;
   if (b.lastResort) return s && s.health < s.maxHealth * 0.3 && d < b.far ? 12 : 0;
   if (!b.score) return 0;
   if (def.kind === 'melee') return d <= b.far + 10 ? b.score : 0.2;

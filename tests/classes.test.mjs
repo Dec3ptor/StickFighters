@@ -52,7 +52,7 @@ test('classes off (the default): the classic game, with the usual loadout and th
   assert.equal(game.options.classes, false);
   assert.equal(game.classesOn, false);
   const s = put(game, 'A');
-  assert.deepEqual(Object.keys(s.weapons).sort(), ['Platinum', 'Prod']);
+  assert.deepEqual(Object.keys(s.weapons).sort(), ['Platinum', 'Sledgehammer']);
   assert.equal(s.cls, undefined, 'no class');
   assert.ok(game.pickups.items.some(it => it.type === 'weapon'), 'weapons on the map');
   assert.equal(weaponFor(s, 'M4'), WEAPONS.M4, 'no upgrades');
@@ -70,7 +70,7 @@ test('classes on: every class spawns with its kit, holding its main gun', () => 
     const s = put(game, cls, { cls, x: -300 + i * 100 });
     const { hold, ...ammo } = expect[cls];
     assert.equal(s.cls, cls);
-    assert.deepEqual(Object.keys(s.weapons).sort(), [...Object.keys(ammo), 'Platinum', 'Prod'].sort(), `${cls} kit`);
+    assert.deepEqual(Object.keys(s.weapons).sort(), [...Object.keys(ammo), 'Platinum', 'Sledgehammer'].sort(), `${cls} kit`);
     for (const [id, n] of Object.entries(ammo)) assert.equal(s.weapons[id].ammo, n, `${cls}: ${id} ammo`);
     assert.equal(s.weapons.Platinum.mag, WEAPONS.Platinum.mag, 'a full pistol');
     assert.equal(s.current, hold, `${cls} holds the ${hold}`);
@@ -120,7 +120,7 @@ test('loadouts sent by a player are checked: unknown weapons, classes and misfit
   assert.deepEqual(Object.keys(lo).sort(), [...CLASS_IDS].sort());
   assert.deepEqual(upgradesFor('SR'), ['extmag', 'hollow', 'quick'], 'no steady grip for a rifle with no spread');
   assert.deepEqual(upgradesFor('Bazooka'), ['charge', 'extra']);
-  assert.deepEqual(upgradesFor('Prod'), []);
+  assert.deepEqual(upgradesFor('Sledgehammer'), []);
 });
 
 test('upgrades: steady grip narrows the spread, the weapon itself unchanged', () => {

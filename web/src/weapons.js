@@ -387,11 +387,15 @@ export const WEAPONS = {
   },
 
   // ---- F: Melee -------------------------------------------------------------------
-  Prod: {
-    name: 'Prod', short: 'Prod', slot: 10, kind: 'melee',
-    rof: 28, reach: 22, damage: 0, knock: 6, lift: 2.5, ammo: Infinity, sound: 'prod', silent: true,
-    look: { type: 'prod', length: 14, color: '#8a6a3a' },
-    bot: { near: 0, far: 22, score: 3, value: 0 },
+  // Everyone's melee weapon: a heavy swing that reaches a little further and wider than the
+  // others (arc: how far round from where you aim it hits) and knocks people back (off a
+  // ledge, the frag's yours). A swing that hits nobody knocks a chunk (radius `chip`) out of
+  // the block it lands on: built blocks, and on destructible maps the map's (combat.js).
+  Sledgehammer: {
+    name: 'Sledgehammer', short: 'Sledge', slot: 10, kind: 'melee',
+    rof: 34, reach: 30, arc: 0.1, damage: 25, knock: 6.5, lift: 2.5, chip: 5, ammo: Infinity, sound: 'sledge',
+    look: { type: 'sledge', length: 15, color: '#8a6a3a' },
+    bot: { near: 0, far: 30, score: 3, value: 0 },
   },
   // The Defuse mode's knife (everyone has one there): a stab in the back does triple damage.
   Knife: {
@@ -479,13 +483,13 @@ for (const id in WEAPONS) WEAPONS[id].id = id;
 export const WEAPON_ORDER = Object.keys(WEAPONS).filter(id => !WEAPONS[id].hidden).sort((a, b) => WEAPONS[a].slot - WEAPONS[b].slot);
 
 /** Weapons that can be placed on maps, given out at spawn, or found in crates (not the Defuse mode's shop-only ones). */
-export const PICKUP_WEAPONS = WEAPON_ORDER.filter(id => id !== 'Platinum' && id !== 'Prod' && !WEAPONS[id].shop);
+export const PICKUP_WEAPONS = WEAPON_ORDER.filter(id => id !== 'Platinum' && id !== 'Sledgehammer' && !WEAPONS[id].shop);
 
 /** Everyone spawns with these. */
-export const STARTING_WEAPONS = ['Platinum', 'Prod'];
+export const STARTING_WEAPONS = ['Platinum', 'Sledgehammer'];
 
 /** Weapons that don't take over your hands when you pick them up (tools you choose to use). */
-export const NO_AUTO_SWITCH = new Set(['Teleport', 'NinjaRope', 'Kamikaze', 'Dynamite', 'Mine', 'Earthquake', 'Prod', 'BattleAxe', 'BaseballBat', 'FirePunch', 'Builder', 'Hammer',
+export const NO_AUTO_SWITCH = new Set(['Teleport', 'NinjaRope', 'Kamikaze', 'Dynamite', 'Mine', 'Earthquake', 'Sledgehammer', 'BattleAxe', 'BaseballBat', 'FirePunch', 'Builder', 'Hammer',
   'Knife', 'HEGrenade', 'Flashbang', 'SmokeGrenade', 'C4']);
 
 /** Headshots with bullets and shotgun pellets do double damage (the sniper rifle and bow have their own). */

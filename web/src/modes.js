@@ -95,7 +95,7 @@ const gungame = {
 
   spawnLoadout(game, s) {
     s.weapons = {};
-    giveWeapon(s, 'Prod');
+    giveWeapon(s, 'Sledgehammer');
     const id = GUN_GAME_LADDER[Math.min(s.level || 0, GUN_GAME_LADDER.length - 1)];
     giveWeapon(s, id);
     s.current = id;
@@ -108,7 +108,7 @@ const gungame = {
       if (victim.level > 0) { victim.level--; victim.levelKills = 0; game.notify(victim, `Back to the ${WEAPONS[GUN_GAME_LADDER[victim.level]].name}`); }
       return;
     }
-    if (weapon === 'Prod' && victim.level > 0) {
+    if (weapon === 'Sledgehammer' && victim.level > 0) {
       victim.level--;
       victim.levelKills = 0;
       game.notify(victim, `Humiliated! Back to the ${WEAPONS[GUN_GAME_LADDER[victim.level]].name}`);
@@ -121,7 +121,7 @@ const gungame = {
     const id = GUN_GAME_LADDER[killer.level];
     if (killer.alive) {
       killer.weapons = {};
-      giveWeapon(killer, 'Prod');
+      giveWeapon(killer, 'Sledgehammer');
       giveWeapon(killer, id);
       killer.current = id;
       killer.cooldown = Math.max(killer.cooldown, 10);
@@ -164,7 +164,7 @@ const oitc = {
 
   damage(game, amount, attacker, target, weapon) {
     const def = WEAPONS[weapon];
-    if (def && def.kind === 'melee' && weapon !== 'Prod' && attacker && attacker !== target) return 1000;
+    if (def && def.kind === 'melee' && weapon !== 'Sledgehammer' && attacker && attacker !== target) return 1000;
     return amount;
   },
 

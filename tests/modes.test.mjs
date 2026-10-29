@@ -35,7 +35,7 @@ test('every mode has the hooks the game calls', () => {
 test('map loadouts: everyone spawns with the map\'s weapons, armour and jetpack in deathmatch', () => {
   const game = arena({ loadout: { weapons: ['Uzi', 'Sheep'], armour: 50, jetpack: true } });
   const s = put(game, 'A', 0);
-  assert.ok(s.weapons.Uzi && s.weapons.Sheep && s.weapons.Platinum && s.weapons.Prod);
+  assert.ok(s.weapons.Uzi && s.weapons.Sheep && s.weapons.Platinum && s.weapons.Sledgehammer);
   assert.equal(s.armour, 50);
   assert.ok(s.body.hasJetpack);
   assert.equal(s.current, 'Uzi', 'holding the best gun');
@@ -53,20 +53,20 @@ test('gun game and one in the chamber have no pickups or crates', () => {
   assert.equal(arena({ items: [{ type: 'health', x: 0, y: -20 }] }).pickups.items.length, 1);
 });
 
-test('gun game: each kill moves you to the next weapon; a prod kill sends the victim back', () => {
+test('gun game: each kill moves you to the next weapon; a sledgehammer kill sends the victim back', () => {
   const game = arena({ mode: 'gungame' });
   const a = put(game, 'A', 0, () => ({ move: 0 }));
   const b = put(game, 'B', 100);
   assert.equal(a.current, 'Platinum');
-  assert.deepEqual(Object.keys(a.weapons).sort(), ['Platinum', 'Prod']);
+  assert.deepEqual(Object.keys(a.weapons).sort(), ['Platinum', 'Sledgehammer']);
   game.kill(b, a, 'Platinum');
   assert.equal(a.level, 1);
   assert.equal(a.current, GUN_GAME_LADDER[1]);
   assert.ok(!a.weapons.Platinum, 'old weapon taken away');
-  // B comes back and gets a level, then A prods B off the map.
+  // B comes back and gets a level, then A knocks B off the map with the sledgehammer.
   game.respawn(b);
   b.level = 3;
-  game.kill(b, a, 'Prod');
+  game.kill(b, a, 'Sledgehammer');
   assert.equal(b.level, 2, 'humiliated');
   assert.equal(a.level, 2);
   // A suicide sends you back one.
@@ -122,7 +122,7 @@ test('bots finish a gun game', () => {
   run(game, () => {
     for (const s of game.soldiers) {
       if (!s.alive) continue;
-      const held = Object.keys(s.weapons).filter(id => id !== 'Prod');
+      const held = Object.keys(s.weapons).filter(id => id !== 'Sledgehammer');
       if (held.length !== 1 || held[0] !== GUN_GAME_LADDER[Math.min(s.level, GUN_GAME_LADDER.length - 1)]) bad = `${s.name} holds ${held}`;
     }
     return game.over || bad;

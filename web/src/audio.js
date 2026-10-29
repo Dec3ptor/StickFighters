@@ -329,7 +329,9 @@ const SOUNDS = {
   teleport: (a, o, t) => { a.tone(o, t, { dur: 0.3, from: 300, to: 1800, gain: 0.13 }); a.tone(o, t + 0.12, { dur: 0.3, from: 1800, to: 400, gain: 0.1 }); return 0.45; },
   banzai: (a, o, t) => { a.tone(o, t, { dur: 0.6, from: 480, to: 720, type: 'sawtooth', gain: 0.07, attack: 0.05 }); return 0.6; },
   rope: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.12, freq: 2400, sweepTo: 600, q: 2, gain: 0.3 }); return 0.13; },
-  prod: (a, o, t) => { a.tone(o, t, { dur: 0.09, from: 520, to: 260, type: 'square', gain: 0.07 }); return 0.1; },
+  // The sledgehammer: a heavy thud on someone; a crunch of stone on a block.
+  sledge: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.1, freq: 600, type: 'lowpass', gain: 1.2 }); a.tone(o, t, { dur: 0.16, from: 140, to: 50, gain: 0.7 }); return 0.17; },
+  chip: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.09, freq: 1800, q: 0.8, gain: 0.8 }); a.noiseBurst(o, t + 0.04, { dur: 0.16, freq: 500, type: 'lowpass', gain: 0.7 }); a.tone(o, t, { dur: 0.08, from: 260, to: 120, gain: 0.3 }); return 0.2; },
   bat: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.08, freq: 1400, type: 'lowpass', gain: 1.1 }); a.tone(o, t, { dur: 0.14, from: 950, to: 620, type: 'triangle', gain: 0.25 }); return 0.15; },
   axe: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.12, freq: 3200, q: 1.5, gain: 0.6 }); a.tone(o, t, { dur: 0.12, from: 220, to: 80, gain: 0.5 }); return 0.13; },
   punch: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.12, freq: 700, type: 'lowpass', gain: 1 }); a.tone(o, t, { dur: 0.15, from: 170, to: 55, gain: 0.6 }); a.noiseBurst(o, t + 0.05, { dur: 0.3, freq: 900, sweepTo: 2500, q: 0.6, gain: 0.25 }); return 0.35; },

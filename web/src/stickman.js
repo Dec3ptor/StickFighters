@@ -12,7 +12,7 @@ const ANIM = { stance: 0, run: 1, crouch: 2, flip: 3, land: 4, crouchWalk: 5, ai
 const UPPER_ARM = 7.5;
 const FOREARM = 7;
 const HEAD_R = 4.2;
-const TWO_HANDED = new Set(['smg', 'rifle', 'shotgun', 'sniper', 'launcher', 'tube', 'flamer', 'minigun', 'bat', 'axe', 'prod']);
+const TWO_HANDED = new Set(['smg', 'rifle', 'shotgun', 'sniper', 'launcher', 'tube', 'flamer', 'minigun', 'bat', 'axe', 'sledge']);
 
 /**
  * Math.hypot(x, y), worked out just as V8 does it (each larger one scaled to 1, then the

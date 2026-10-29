@@ -29,7 +29,7 @@ const NAME_FONT = '8px Arial, sans-serif', NAME_FONT_ME = 'bold 8px Arial, sans-
 const STREAK_FONT = 'bold 6px Arial, sans-serif', STREAK_FONT_BIG = 'bold 7px Arial, sans-serif';
 
 // Weapons drawn with fills only (no lines, so the line ends set don't matter to them).
-const FILLED_WEAPONS = new Set(['pistol', 'smg', 'rifle', 'ak', 'knife', 'shotgun', 'sniper', 'launcher', 'tube', 'flamer', 'minigun', 'wand', 'prod']);
+const FILLED_WEAPONS = new Set(['pistol', 'smg', 'rifle', 'ak', 'knife', 'shotgun', 'sniper', 'launcher', 'tube', 'flamer', 'minigun', 'wand', 'sledge']);
 
 // Particles small enough to skip when they're off screen (the view's margin is far
 // bigger than any of them, wherever they are between two updates).

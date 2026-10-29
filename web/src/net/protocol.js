@@ -10,7 +10,7 @@ import { WEAPONS } from '../weapons.js';
 import { CLASS_IDS, UPGRADE_IDS } from '../classes.js';
 import { REWARD_IDS } from '../streaks.js';
 
-export const PROTOCOL = 14;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 15;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);

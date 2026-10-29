@@ -15,7 +15,7 @@ const ALERT_MS = 1300; // how long an alert shows
 // Sounds that give someone away (not pickups, menu clicks and the like).
 const HEARD = new Set([
   'pistol', 'rifle', 'uzi', 'shotgun', 'sniper', 'minigun', 'magnum', 'thump', 'rocket', 'flame', 'explosion', 'explosionSmall',
-  'jet', 'land', 'bow', 'throw', 'bat', 'axe', 'punch', 'swing', 'prod', 'spin', 'rope', 'teleport', 'banzai', 'baa', 'moo',
+  'jet', 'land', 'bow', 'throw', 'bat', 'axe', 'punch', 'swing', 'sledge', 'chip', 'spin', 'rope', 'teleport', 'banzai', 'baa', 'moo',
   'mumble', 'heehaw', 'beep', 'gas', 'death', 'gib', 'hit', 'headshot', 'reload', 'smash', 'rumble', 'plane',
 ]);
 const LOUD = new Set(['explosion', 'explosionSmall', 'sniper', 'rocket', 'thump', 'rumble', 'plane', 'minigun', 'shotgun']);

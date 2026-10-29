@@ -46,7 +46,7 @@ export const CLASSES = {
 export const CLASS_IDS = Object.keys(CLASSES);
 
 // Everyone carries these too.
-const SIDEARMS = [{ id: 'Platinum' }, { id: 'Prod' }];
+const SIDEARMS = [{ id: 'Platinum' }, { id: 'Sledgehammer' }];
 
 /** Bots' favourite class, by personality (bot.js BOT_PROFILES); they spread out over the team if too many like the same. */
 const BOT_CLASS = {
@@ -286,7 +286,7 @@ export function applyKit(game, s) {
 /** What a class's kit holds, in words ("M4 Carbine, Grenade Launcher ×2, Pistol"). (The gadget is shown on its own.) */
 export function kitText(cls, main) {
   return kitWeapons(cls, main)
-    .filter(w => w.id !== 'Prod' && !WEAPONS[w.id].tool)
+    .filter(w => w.id !== 'Sledgehammer' && !WEAPONS[w.id].tool)
     .map(w => (w.ammo && w.ammo <= 4 ? `${WEAPONS[w.id].name} ×${w.ammo}` : WEAPONS[w.id].id === 'Platinum' ? 'Pistol' : WEAPONS[w.id].name))
     .join(', ');
 }

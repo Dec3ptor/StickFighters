@@ -408,7 +408,7 @@ function meleeHit(game, s, def, id) {
   const dx = Math.cos(s.aim), dy = Math.sin(s.aim);
   const sx = s.shoulderX, sy = s.shoulderY;
   let best = null, bd = Infinity;
-  const reach = def.reach + 12;
+  const reach = def.reach + 12, arc = def.arc ?? 0.3;
   const near = NEAR_MELEE, n = game.nearInto(sx - reach, sy - reach, sx + reach, sy + reach, near);
   for (let i = 0; i < n; i++) {
     const o = near[i];
@@ -416,12 +416,12 @@ function meleeHit(game, s, def, id) {
     const cx = o.body.x, cy = o.body.y - 6;
     const rx = cx - sx, ry = cy - sy, d = hypot(rx, ry);
     if (d > def.reach + 12) continue;
-    if (d > 8 && (rx * dx + ry * dy) / d < 0.3) continue; // behind you
+    if (d > 8 && (rx * dx + ry * dy) / d < arc) continue; // behind you, or too far round
     if (!game.map.clearLine(sx, sy, cx, cy)) continue;
     if (d < bd) { bd = d; best = o; }
   }
   if (!best) {
-    if (!meleeBeacon(game, s, def) && !meleeSentry(game, s, def)) game.sound('swing', sx, sy);
+    if (!meleeBeacon(game, s, def) && !meleeSentry(game, s, def) && !meleeBlock(game, def, sx, sy, dx, dy)) game.sound('swing', sx, sy);
     return;
   }
   const o = best;
@@ -449,6 +449,25 @@ function meleeHit(game, s, def, id) {
   // A stab in the back (they're facing away from you) does more.
   if (def.backstab && Math.sign(o.x - s.x || s.facing) === o.facing) amount *= def.backstab;
   if (amount > 0) damage(game, o, amount, s, id, { dirX: dx, dirY: dy, knock: 0, melee: true });
+}
+
+/**
+ * A swing that hit nobody, with a weapon that breaks things (def.chip, the sledgehammer):
+ * the block it lands on loses a chunk, radius def.chip, if it's one that breaks (built
+ * blocks, and on destructible maps any that aren't hard: game.carve, which online players
+ * are sent). A few swings break through. True if it landed on a block.
+ */
+function meleeBlock(game, def, sx, sy, dx, dy) {
+  if (!def.chip) return false;
+  const reach = def.reach + 12;
+  const hit = game.map.raycast(sx, sy, sx + dx * reach, sy + dy * reach);
+  if (!hit) return false;
+  const x = hit.x, y = hit.y, nx = hit.nx, ny = hit.ny;
+  // (Centred a little into the block: each swing digs in further.)
+  game.carve(x + dx * def.chip * 0.5, y + dy * def.chip * 0.5, def.chip);
+  game.sound('chip', x, y);
+  game.fx?.sparks(x, y, nx, ny);
+  return true;
 }
 
 function railShot(game, s, x0, y0, dx, dy, def, id) {

@@ -123,7 +123,7 @@ function oldPose(s) {
   const head = { x: neck[0] + ux * 4.2, y: neck[1] + uy * 4.2, r: 4.2 };
   const sx = neck[0] - ux * 2, sy = neck[1] - uy * 2, def = WEAPONS[s.current] || WEAPONS.Platinum;
   const dx = Math.cos(s.aim), dy = Math.sin(s.aim), kick = s.anim.recoil;
-  const two = ['smg', 'rifle', 'shotgun', 'sniper', 'launcher', 'tube', 'flamer', 'minigun', 'bat', 'axe', 'prod'].includes(def.look.type);
+  const two = ['smg', 'rifle', 'shotgun', 'sniper', 'launcher', 'tube', 'flamer', 'minigun', 'bat', 'axe', 'sledge'].includes(def.look.type);
   const backDist = two ? 5 - kick : 11 - kick, frontDist = two ? 12 - kick : 12.5 - kick, bx = -s.facing * 0.6;
   const back = reach(sx, sy, sx + dx * backDist, sy + dy * backDist + (two ? 1.5 : 0), bx, 1), front = reach(sx, sy, sx + dx * frontDist, sy + dy * frontDist, bx, 1);
   lines.push([sx, sy, ...back[0]], [...back[0], ...back[1]], [sx, sy, ...front[0]], [...front[0], ...front[1]]);

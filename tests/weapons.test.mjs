@@ -253,8 +253,8 @@ test('Ninja rope: grab the ceiling, swing, let go', () => {
   assert.equal(a.body.rope, null, 'let go');
 });
 
-test('Melee: prod and bat knock people off ledges (your frag); the axe halves health; fire punch launches', () => {
-  for (const id of ['Prod', 'BaseballBat']) {
+test('Melee: the sledgehammer and bat knock people off ledges (your frag); the axe halves health; fire punch launches', () => {
+  for (const id of ['Sledgehammer', 'BaseballBat']) {
     const game = arena({ platforms: [{ left: -300, top: 0, right: 40, bottom: 40 }] });
     const a = put(game, 'A', 0, -12, (g, s, t) => ({ move: 0, aim: 0, fire: t % 30 === 0, firePressed: t % 30 === 0 }));
     arm(a, id, Infinity);

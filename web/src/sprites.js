@@ -142,10 +142,13 @@ export function drawWeapon(ctx, def, lying) {
       ctx.fillStyle = '#e8d24a';
       ctx.beginPath(); ctx.arc(L, 0, 1.8, 0, Math.PI * 2); ctx.fill();
       break;
-    case 'prod':
-      ctx.fillRect(0, -0.7, L, 1.4);
-      ctx.fillStyle = '#c33';
-      ctx.fillRect(L - 1, -1.4, 2.5, 2.8);
+    case 'sledge':
+      // A wooden handle with a heavy steel head across its end.
+      ctx.fillRect(0, -0.8, L, 1.6);
+      ctx.fillStyle = '#5d6168';
+      ctx.fillRect(L - 2, -4.6, 5, 9.2);
+      ctx.fillStyle = '#80868e';
+      ctx.fillRect(L - 2, -4.6, 1.4, 9.2);
       break;
     case 'bat':
       ctx.beginPath();
