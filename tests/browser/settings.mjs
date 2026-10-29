@@ -98,7 +98,8 @@ expect(!(await visible('#settings')), 'Esc closes settings');
 // 2. Mid-match, from the pause menu: switch to WebGL, and keep playing.
 await page.evaluate(() => {
   const s = window.stickSoldiers.readMenu();
-  window.stickSoldiers.startMatch({ ...s, map: 'ssdm1.json', mode: 'ffa', bots: 3 });
+  // (No bots: nothing here needs them, and one killing the player mid-check makes it fail.)
+  window.stickSoldiers.startMatch({ ...s, map: 'ssdm1.json', mode: 'ffa', bots: 0 });
 });
 await page.waitForFunction(() => window.stickSoldiers.state.me?.alive && window.stickSoldiers.state.game.tick > 60, null, { timeout: 20000 });
 const shotOptions = await page.evaluate(() => { const o = window.stickSoldiers.state.game.options; return [o.bulletSpeed, o.fireDelay]; });
