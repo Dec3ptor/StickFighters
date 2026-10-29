@@ -40,6 +40,29 @@ const SETS_ALPHA = new Set(['sparkle', 'puff', 'smoke', 'fire', 'gib', 'head']);
 // Each soldier's animation part way between updates: kept per soldier and filled in each frame.
 const views = new WeakMap();
 
+// ---- How the camera moves (Settings: Camera), for every renderer ----------------------
+// follow: how long the view takes to catch up with your soldier, in ms (95% of the way; 0: fixed on them).
+// look: how far it leans toward the mouse, in percent of the usual (100: 22% of the way to the
+//   pointer, 40% down the sights, 55% down a scope; 0: not at all).
+// glide: how long it takes to catch up with the mouse, in ms (0: it moves with the mouse and
+//   stops the moment the mouse stops; 330: how it used to be, going on sliding after it stopped).
+export const CAMERA_DEFAULTS = Object.freeze({ follow: 330, look: 100, glide: 0 });
+export const CAMERA_LIMITS = { follow: [0, 1000], look: [0, 200], glide: [0, 1000] };
+const feel = { ...CAMERA_DEFAULTS };
+
+/** Use these camera settings (anything missing or out of range is left at its default). */
+export function setCamera(opts = {}) {
+  const o = opts && typeof opts === 'object' ? opts : {};
+  for (const k of Object.keys(CAMERA_LIMITS)) {
+    const [lo, hi] = CAMERA_LIMITS[k], n = o[k];
+    feel[k] = typeof n === 'number' && Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : CAMERA_DEFAULTS[k];
+  }
+  return { ...feel };
+}
+
+/** How much of the way to go in a frame of dt ms, to be 95% of the way there after `ms` (0: all of it). */
+const catchUp = (ms, dt) => ms > 0 ? 1 - Math.pow(0.05, dt / ms) : 1;
+
 /** Draws with the browser's 2D canvas. (glrender.js draws the same things with WebGL.) */
 export class Renderer {
   // Keep the map in tiles (maptiles.js): off unless ?tiles=on is in the address. With the
@@ -130,14 +153,15 @@ export class Renderer {
    * while sniping. `sights` above 1: aiming down a gun's sights, that much closer and
    * looking further toward the mouse (see main.js).
    * dt: milliseconds since the last frame (the camera moves the same at any frame rate).
+   * follow: how long following the point takes (ms; the replay keeps its own).
    *
-   * Following the point eases (smooth over jumps and landings), but looking toward the mouse
-   * doesn't: the view moves with the mouse and stops when it stops. (Eased, the world went on
-   * sliding under the crosshair for a third of a second after the hand stopped, which felt like
-   * lag.) Only how far it looks eases: further down a scope or the sights, not at all with the
-   * menu open.
+   * Following the point eases (smooth over jumps and landings); looking toward the mouse eases
+   * as set in Settings (Camera: CAMERA_DEFAULTS), not at all to start with: the view moves with
+   * the mouse and stops when it stops. (Eased, the world goes on sliding under the crosshair
+   * after the hand stops.) How far it looks eases too: further down a scope or the sights, not
+   * at all with the menu open.
    */
-  updateCamera(game, fx, fy, mouse, sniping, dt = 1000 / 60, sights = 1) {
+  updateCamera(game, fx, fy, mouse, sniping, dt = 1000 / 60, sights = 1, follow = feel.follow) {
     const f = dt / (1000 / 60);
     const ease = k => 1 - Math.pow(1 - k, f);
     const c = this.cam;
@@ -148,13 +172,15 @@ export class Renderer {
     // (The point followed, and the mouse's offset from the middle of the screen, in the map's units:
     // kept with the camera, so a new renderer (Settings) carries on from them.)
     if (c.fx == null) { c.fx = c.x; c.fy = c.y; c.lx = c.ly = 0; }
-    c.fx = lerp(c.fx, fx, ease(0.14));
-    c.fy = lerp(c.fy, fy - 20, ease(0.14));
+    const k = catchUp(follow, dt);
+    c.fx = lerp(c.fx, fx, k);
+    c.fy = lerp(c.fy, fy - 20, k);
     if (mouse) {
-      c.lx = clamp((mouse.x - this.w / 2) / this.scale, -400, 400);
-      c.ly = clamp((mouse.y - this.h / 2) / this.scale, -300, 300);
+      const g = catchUp(feel.glide, dt);
+      c.lx = lerp(c.lx, clamp((mouse.x - this.w / 2) / this.scale, -400, 400), g);
+      c.ly = lerp(c.ly, clamp((mouse.y - this.h / 2) / this.scale, -300, 300), g);
     }
-    const look = mouse ? (sniping ? 0.55 : sights > 1 ? 0.4 : 0.22) : 0;
+    const look = mouse ? (sniping ? 0.55 : sights > 1 ? 0.4 : 0.22) * feel.look / 100 : 0;
     c.look = c.look == null ? look : lerp(c.look, look, ease(0.12));
     let tx = c.fx + c.lx * c.look, ty = c.fy + c.ly * c.look;
     // Keep the camera over the map.

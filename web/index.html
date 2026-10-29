@@ -319,6 +319,16 @@
           <button type="button" class="small" id="xhReset">Reset</button>
         </div>
       </div>
+      <h3 class="exp-head">Camera</h3>
+      <div class="cam">
+        <label class="field">Look toward the mouse <output id="camLookOut"></output><input type="range" id="camLook" min="0" max="200" step="5"></label>
+        <p class="muted-note">How far the view leans toward the pointer (further down the sights or a scope). 0: it stays on you.</p>
+        <label class="field">Look smoothing <output id="camGlideOut"></output><input type="range" id="camGlide" min="0" max="1000" step="10"></label>
+        <p class="muted-note">How long the view goes on moving after the mouse stops. Off: it stops with the mouse (it used to be 330 ms).</p>
+        <label class="field">Follow smoothing <output id="camFollowOut"></output><input type="range" id="camFollow" min="0" max="1000" step="10"></label>
+        <p class="muted-note">How long the view takes to catch up with you as you move. Off: fixed on you.</p>
+        <div class="field-row"><button type="button" class="small" id="camReset">Reset</button></div>
+      </div>
       <h3 class="exp-head">Experimental</h3>
       <div class="field-pair">
         <label class="field">Bot vision

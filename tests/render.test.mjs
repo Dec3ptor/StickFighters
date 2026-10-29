@@ -2,7 +2,7 @@
 // (60, 120, 144 a second...) draw everything part way between two updates.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { between, Renderer } from '../web/src/render.js';
+import { between, Renderer, setCamera, CAMERA_DEFAULTS } from '../web/src/render.js';
 import { Effects } from '../web/src/effects.js';
 import { botMatch } from './helpers.mjs';
 import fs from 'node:fs';
@@ -60,6 +60,86 @@ test('the view moves with the mouse and stops the moment it stops (no sliding on
   assert.ok(moved > still + 20, `the view moves at once (${still.toFixed(1)} -> ${moved.toFixed(1)})`);
   for (let i = 0; i < 30; i++) r.updateCamera(game, 400, 320, { x: r.w / 2 + 200, y: r.h / 2 }, false);
   assert.ok(Math.abs(r.cam.x - moved) < 0.01, `and stays put once the mouse stops (${moved.toFixed(2)} -> ${r.cam.x.toFixed(2)})`);
+});
+
+// ---- The camera's settings (Settings: Camera) ----------------------------------------------
+
+/** A renderer settled on a soldier standing in the middle of ssdm1 (clear of its edges), the mouse in the middle of the screen. */
+function settled(fps = 60) {
+  const { game } = botMatch('ssdm1.json', { bots: 0 });
+  const r = new Renderer(fakeCanvas(), {});
+  r.snapCamera(0, -20);
+  for (let i = 0; i < fps * 2; i++) r.updateCamera(game, 0, 0, { x: r.w / 2, y: r.h / 2 }, false, 1000 / fps);
+  return { game, r };
+}
+
+test('camera settings: kept in range, and anything missing is its default', () => {
+  try {
+    assert.deepEqual(setCamera(), CAMERA_DEFAULTS);
+    assert.deepEqual(CAMERA_DEFAULTS, { follow: 330, look: 100, glide: 0 });
+    assert.deepEqual(setCamera({ look: 500, glide: -5, follow: 'soon' }), { follow: 330, look: 200, glide: 0 });
+    assert.deepEqual(setCamera({ glide: 120 }), { follow: 330, look: 100, glide: 120 });
+  } finally { setCamera(CAMERA_DEFAULTS); }
+});
+
+test('look smoothing: the view glides after the mouse, for as long as set, at any frame rate', () => {
+  try {
+    setCamera({ glide: 300 });
+    const ends = [60, 144].map(fps => {
+      const { game, r } = settled(fps);
+      const still = r.cam.x;
+      // The mouse jumps 200 px right and stops: the view sets off after it...
+      const mouse = { x: r.w / 2 + 200, y: r.h / 2 };
+      r.updateCamera(game, 0, 0, mouse, false, 1000 / fps);
+      const first = r.cam.x - still;
+      // ...and goes on moving after it's stopped, about there by 300 ms.
+      const at = [];
+      for (let i = 1; i <= fps; i++) {
+        r.updateCamera(game, 0, 0, mouse, false, 1000 / fps);
+        if (i === Math.round(fps * 0.15) || i === Math.round(fps * 0.3)) at.push(r.cam.x - still);
+      }
+      const end = r.cam.x - still;
+      assert.ok(end > 20, `it leans toward the mouse (${end.toFixed(1)})`);
+      assert.ok(first > 0 && first < end * 0.3, `not all at once (${first.toFixed(1)} of ${end.toFixed(1)})`);
+      assert.ok(at[0] > end * 0.6 && at[0] < end * 0.9, `on its way at 150 ms (${at[0].toFixed(1)} of ${end.toFixed(1)})`);
+      assert.ok(at[1] > end * 0.93 && at[1] < end, `nearly there at 300 ms (${at[1].toFixed(1)} of ${end.toFixed(1)})`);
+      return at[0];
+    });
+    assert.ok(Math.abs(ends[0] - ends[1]) < 1.5, `the same at 60 and 144 fps (${ends.map(e => e.toFixed(1))})`);
+  } finally { setCamera(CAMERA_DEFAULTS); }
+});
+
+test('look toward the mouse: 0 keeps the view on you, 200 leans twice as far as usual', () => {
+  const lean = look => {
+    setCamera({ look });
+    const { game, r } = settled();
+    const still = r.cam.x;
+    r.updateCamera(game, 0, 0, { x: r.w / 2 + 200, y: r.h / 2 }, false);
+    return r.cam.x - still;
+  };
+  try {
+    const usual = lean(100);
+    assert.ok(usual > 20, `leans toward the mouse as usual (${usual.toFixed(1)})`);
+    assert.ok(Math.abs(lean(0)) < 1e-9, 'set to 0: stays on you');
+    assert.ok(Math.abs(lean(200) - usual * 2) < 0.5, `set to 200: twice as far (${lean(200).toFixed(1)} vs ${usual.toFixed(1)})`);
+  } finally { setCamera(CAMERA_DEFAULTS); }
+});
+
+test('follow smoothing: Off keeps the view fixed on you; longer takes longer to catch up', () => {
+  const catchUp = (follow, ms) => {
+    setCamera({ follow });
+    const { game, r } = settled();
+    const start = r.cam.x;
+    // The soldier moves 100 px right in an instant (the mouse in the middle: no leaning).
+    for (let i = 0; i < Math.round(ms / (1000 / 60)); i++) r.updateCamera(game, 100, 0, { x: r.w / 2, y: r.h / 2 }, false);
+    return (r.cam.x - start) / 100;
+  };
+  try {
+    assert.ok(Math.abs(catchUp(0, 17) - 1) < 1e-9, 'Off: there at once');
+    const usual = catchUp(330, 330);
+    assert.ok(usual > 0.93 && usual < 0.97, `as usual: 95% of the way in 330 ms (${usual.toFixed(3)})`);
+    assert.ok(catchUp(1000, 330) < 0.7, 'set to 1000 ms: slower');
+  } finally { setCamera(CAMERA_DEFAULTS); }
 });
 
 test('aiming down the sights: the camera comes in a little, further toward the mouse; sniping zooms out instead', () => {

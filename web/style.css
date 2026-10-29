@@ -308,8 +308,12 @@ button.big { font-size: 18px; padding: 13px 24px; letter-spacing: 0.04em; }
 .field-pair .field { margin-top: 8px; }
 /* Settings: the crosshair, with a picture of it on a light and a dark background. */
 .xhair canvas { display: block; width: 100%; max-width: 240px; height: auto; aspect-ratio: 240 / 72; border: 1.5px solid var(--line); margin: 2px auto 0; }
-.xhair input[type="range"] { width: 100%; }
-.xhair .field output { font-weight: normal; color: var(--muted); }
+.xhair input[type="range"], .cam input[type="range"] { width: 100%; }
+.xhair .field output, .cam .field output { font-weight: normal; color: var(--muted); }
+/* Settings: the camera's sliders, each with a note on what it does, and Reset under them. */
+.cam .field { margin-bottom: 2px; }
+.cam .muted-note { margin-top: 2px; }
+.cam .field-row { justify-content: flex-end; }
 .xhair input[type="color"] { width: 100%; height: 30px; padding: 0 2px; }
 .xhair .field-row .check { margin-top: 8px; }
 /* (Taller than the window: it scrolls, from its top.) */

@@ -1,7 +1,7 @@
 // The Settings screen: switching graphics mid-match (WebGL and back), the frame
 // rate cap, the frame rate readout, the volume (here and in the game's menu), the
 // dropdowns left alone while it's open, the crosshair's look, aiming down the sights,
-// and everything being remembered next visit.
+// the camera, and everything being remembered next visit.
 // Usage: node tests/browser/settings.mjs [outDir]
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -94,6 +94,12 @@ expect(ring[0] > 150 && ring[2] > 150 && !(middle[0] > 150 && middle[1] < 80), `
 const xh = await page.evaluate(() => ({ ...window.stickSoldiers.prefs.crosshair }));
 expect(xh.style === 'circle' && xh.color === 'custom' && xh.custom === '#ff00ff' && xh.size === 12 && xh.thickness === 3 && xh.gap === 2 && xh.opacity === 80, `crosshair settings kept (${JSON.stringify(xh)})`);
 await page.screenshot({ path: `${outDir}/settings-crosshair.png` });
+// The camera: how far the view leans toward the mouse, how long it glides after the mouse, how
+// long it takes to catch up with you. As it was to start with.
+const cam0 = await page.evaluate(() => ['camLook', 'camGlide', 'camFollow'].map(id => [document.getElementById(id).value, document.getElementById(`${id}Out`).textContent]));
+expect(JSON.stringify(cam0) === JSON.stringify([['100', '100%'], ['0', 'Off'], ['330', '330 ms']]), `the camera starts as it was (${JSON.stringify(cam0)})`);
+await slide('#camGlide', 120);
+expect(await page.textContent('#camGlideOut') === '120 ms' && await page.evaluate(() => window.stickSoldiers.prefs.camera.glide) === 120, 'look smoothing set');
 await page.keyboard.press('Escape');
 expect(!(await visible('#settings')), 'Esc closes settings');
 
@@ -109,14 +115,21 @@ const shotOptions = await page.evaluate(() => { const o = window.stickSoldiers.s
 const ptrA = await page.evaluate(() => window.stickSoldiers.renderer.canvas.style.cursor);
 expect(/url\(/.test(ptrA) && ptrA.endsWith('crosshair'), `the system's pointer is the crosshair (${ptrA.slice(0, 40)})`);
 expect(shotOptions[0] === 1 && shotOptions[1] === 1, `bullets and time between shots as in the original (${shotOptions})`);
+// The view leans toward the mouse (Settings: Camera)...
+const camAt = async x => { await page.mouse.move(x, 350); await page.waitForTimeout(400); return page.evaluate(() => window.stickSoldiers.renderer.cam.x); };
+const lean = (await camAt(1050)) - (await camAt(50));
 await page.keyboard.press('Escape');
 await page.click('#pauseSettings');
 await page.selectOption('#graphics', 'webgl');
 await page.waitForFunction(() => window.stickSoldiers.renderer.kind === 'webgl', null, { timeout: 15000 });
+// (...and with Look toward the mouse at 0, it doesn't: below.)
+await slide('#camLook', 0);
 expect(await page.evaluate(() => document.querySelectorAll('canvas#game').length === 1 && document.querySelector('canvas#game') === window.stickSoldiers.renderer.canvas), 'one game canvas, the new one');
 await page.click('#settingsDone');
 await page.keyboard.press('Escape'); // resume
 await page.waitForFunction(() => !window.stickSoldiers.state.menuOpen);
+const leanOff = (await camAt(1050)) - (await camAt(50));
+expect(lean > 20 && Math.abs(leanOff) < 1, `the view leans toward the mouse, and not at all with it set to 0, straight away (${lean.toFixed(1)}, ${leanOff.toFixed(1)})`);
 // The mouse still aims (it's listening to the new canvas), and the keys still move.
 const aimAt = async x => { await page.mouse.move(x, 350); await page.waitForTimeout(150); return page.evaluate(() => Math.cos(window.stickSoldiers.state.me.aim)); };
 const right = await aimAt(1050), left = await aimAt(50);
@@ -200,8 +213,14 @@ await page.click('#openSettings');
 expect(await page.inputValue('#xhStyle') === 'circle' && await page.inputValue('#xhSize') === '12', 'and shown in settings');
 await page.click('#xhReset');
 expect(await page.evaluate(() => window.stickSoldiers.prefs.crosshair.style) === 'crossDot', 'Reset puts the crosshair back');
+const cam1 = saved.prefs.camera;
+expect(cam1?.look === 0 && cam1?.glide === 120 && cam1?.follow === 330, `the camera remembered (${JSON.stringify(cam1)})`);
+expect(await page.inputValue('#camLook') === '0' && await page.inputValue('#camGlide') === '120', 'and shown in settings');
+await page.click('#camReset');
+const cam2 = await page.evaluate(() => ({ ...window.stickSoldiers.prefs.camera, out: document.getElementById('camGlideOut').textContent }));
+expect(cam2.look === 100 && cam2.glide === 0 && cam2.follow === 330 && cam2.out === 'Off', `Reset puts the camera back (${JSON.stringify(cam2)})`);
 
-console.log(JSON.stringify({ autoLabel, rewrites, vol0, vol1, capped, full, hz, readout, saved, zoomIdle, zoomFiring, zoomSights, errors }, null, 2));
+console.log(JSON.stringify({ autoLabel, rewrites, vol0, vol1, capped, full, hz, readout, saved, zoomIdle, zoomFiring, zoomSights, lean, leanOff, errors }, null, 2));
 await browser.close();
 server.close();
 await relay.close();

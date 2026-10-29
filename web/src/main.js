@@ -6,7 +6,7 @@ import { NavGraph } from './nav.js';
 import { BotController, BOT_PROFILES } from './bot.js';
 import { Input, PlayerController } from './input.js';
 import { createRenderer, autoGraphics } from './glrender.js';
-import { Renderer } from './render.js';
+import { Renderer, setCamera, CAMERA_DEFAULTS } from './render.js';
 import { RemasteredRenderer, drawRemasteredPreview } from './rm/renderer.js';
 import { FramePacer, isEven } from './framerate.js';
 import { drawHud, drawReplay } from './hud.js';
@@ -73,7 +73,7 @@ const CLASSES_ON = params.has('classes');
 // (?tiles=on: the canvas keeps the map in tiles, maptiles.js. Off by default: slower with a graphics card.)
 if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
-const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', pointer: 'system', fullscreen: false, volume: 60, aimZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS } };
+const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', pointer: 'system', fullscreen: false, volume: 60, aimZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS }, camera: { ...CAMERA_DEFAULTS } };
 // Locking the mouse to the game (Settings: Mouse pointer, "Locked to the game"): ?lock=on /
 // ?lock=off in the address. (Browsers driven by tests move the mouse oddly while it's locked,
 // so it's off for them unless the address asks.)
@@ -109,6 +109,7 @@ const DEFAULTS = {
   volume: 60,       // sound volume, percent (100: as loud as it goes; it was a bit much, so 60 to start with)
   aimZoom: 'slight', // aiming down the sights (hold right click with a gun): 'off', 'slight' or 'more' (AIM_ZOOM)
   crosshair: { ...CROSSHAIR_DEFAULTS }, // how the crosshair looks (crosshair.js)
+  camera: { ...CAMERA_DEFAULTS }, // how the camera moves: following you, and toward the mouse (render.js)
   edition: null,   // the game last picked
 };
 
@@ -897,6 +898,7 @@ function openSettings() {
   $('fullscreenPref').checked = prefs.fullscreen;
   $('aimZoom').value = AIM_ZOOM[prefs.aimZoom] ? prefs.aimZoom : 'slight';
   showCrosshair();
+  showCamera();
   settingsNotes();
   show('settings', true);
   $('settingsDone').focus();
@@ -937,6 +939,28 @@ function changeCrosshair(change) {
   prefs.crosshair = setCrosshair({ ...prefs.crosshair, ...change });
   savePrefs();
   showCrosshair();
+}
+
+// The camera's settings: its sliders, and how each shows its value.
+const CAM_RANGES = {
+  camLook: ['look', v => `${v}%`],
+  camGlide: ['glide', v => v ? `${v} ms` : 'Off'],
+  camFollow: ['follow', v => v ? `${v} ms` : 'Off'],
+};
+
+/** Put the camera's settings in the sliders. */
+function showCamera() {
+  for (const [id, [k, label]] of Object.entries(CAM_RANGES)) {
+    if ($(id).value !== String(prefs.camera[k])) $(id).value = String(prefs.camera[k]);
+    setText($(`${id}Out`), label(prefs.camera[k]));
+  }
+}
+
+/** A camera setting changed: use it (straight away, mid-match too), save it and show it. */
+function changeCamera(change) {
+  prefs.camera = setCamera({ ...prefs.camera, ...change });
+  savePrefs();
+  showCamera();
 }
 
 /** Set an element's text, only if it's different (no needless changes to the page). */
@@ -1577,7 +1601,8 @@ function replayFrame(now, dt, workStart) {
   renderer.fogFrom = null;
   audio.playQueue(v.sounds, f.x, f.y, me?.id, me?.team);
   v.sounds.length = 0;
-  renderer.updateCamera(v, f.x, f.y, null, false, dt);
+  // (Its own smooth glide, whatever Settings says about following.)
+  renderer.updateCamera(v, f.x, f.y, null, false, dt, 1, CAMERA_DEFAULTS.follow);
   renderer.cam.zoom = rp.zoom();
   renderer.render(v, 1, null);
   const k = rp.killer, victim = rp.victim, kill = rp.kill;
@@ -1681,6 +1706,9 @@ function wire() {
   for (const [id, [k]] of Object.entries(XH_RANGES)) $(id).addEventListener('input', () => changeCrosshair({ [k]: Number($(id).value) }));
   $('xhOutline').addEventListener('change', () => changeCrosshair({ outline: $('xhOutline').checked }));
   $('xhReset').addEventListener('click', () => changeCrosshair({ ...CROSSHAIR_DEFAULTS }));
+  // The camera.
+  for (const [id, [k]] of Object.entries(CAM_RANGES)) $(id).addEventListener('input', () => changeCamera({ [k]: Number($(id).value) }));
+  $('camReset').addEventListener('click', () => changeCamera({ ...CAMERA_DEFAULTS }));
   $('fullscreen').addEventListener('click', () => {
     // (From the menu: full screen now, and for the matches after this one.)
     prefs.fullscreen = !document.fullscreenElement;
@@ -1827,6 +1855,7 @@ async function boot() {
   for (const k in prefs) prefs[k] = settings[k];
   setVolume(prefs.volume, false);
   prefs.crosshair = setCrosshair(prefs.crosshair);
+  prefs.camera = setCamera(prefs.camera);
   pacer.setMode(prefs.fpsCap);
   perf.on ||= prefs.showFps;
   const [index, legs, r] = await Promise.all([
