@@ -83,8 +83,17 @@ const remote = h1.soldiers.find(s => s.name === 'Joiner');
 expect(remote, 'host has the joiner\'s soldier');
 expect(j1.soldiers.length === h1.soldiers.length, `same soldiers on both screens (${j1.soldiers.length} vs ${h1.soldiers.length})`);
 expect(remote && Math.abs(remote.x - j1.me.x) < 60, `joiner is where the host thinks (${remote?.x} vs ${j1.me?.x})`);
-const hostOnJoiner = j1.soldiers.find(s => s.name === 'Hosty');
-expect(hostOnJoiner && Math.abs(hostOnJoiner.x - h1.me.x) < 60, `host is where the joiner sees them (${hostOnJoiner?.x} vs ${h1.me.x})`);
+// (The host stands still, but bots can knock them about, or kill them and they respawn,
+// between one screen being read and the other: both read at once, a few times.)
+let hostOnJoiner = null, hostX = h1.me.x;
+for (let i = 0; i < 6; i++) {
+  const [h, j] = await Promise.all([S(host), S(joiner)]);
+  hostOnJoiner = j.soldiers.find(s => s.name === 'Hosty');
+  hostX = h.me.x;
+  if (hostOnJoiner && Math.abs(hostOnJoiner.x - hostX) < 60) break;
+  await host.waitForTimeout(300);
+}
+expect(hostOnJoiner && Math.abs(hostOnJoiner.x - hostX) < 60, `host is where the joiner sees them (${hostOnJoiner?.x} vs ${hostX})`);
 expect(h1.soldiers.filter(s => s.bot).length === 2, 'bots kept at 2 (room for players)');
 
 // 4. Chat.
