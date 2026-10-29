@@ -66,6 +66,8 @@ await page.selectOption('#sprintMode', 'hold');
 // The panel is taller than the window: it scrolls, and its top isn't cut off.
 const top = await page.evaluate(() => { const s = document.getElementById('settings'); s.scrollTop = 0; return s.querySelector('.panel').getBoundingClientRect().top; });
 expect(top >= 0, `the top of settings shows (${top})`);
+// The mouse: the system's own pointer as the crosshair, to start with.
+expect(await page.inputValue('#pointerMode') === 'system', 'the mouse pointer: the system\'s, as the crosshair, to start with');
 // Aiming down the sights (right click): slight to start with.
 expect(await page.inputValue('#aimZoom') === 'slight', 'aim down sights: slight by default');
 await page.selectOption('#aimZoom', 'more');
@@ -103,6 +105,9 @@ await page.evaluate(() => {
 });
 await page.waitForFunction(() => window.stickSoldiers.state.me?.alive && window.stickSoldiers.state.game.tick > 60, null, { timeout: 20000 });
 const shotOptions = await page.evaluate(() => { const o = window.stickSoldiers.state.game.options; return [o.bulletSpeed, o.fireDelay]; });
+// The system's pointer is the crosshair (as set up above: the picture changes with the settings).
+const ptrA = await page.evaluate(() => window.stickSoldiers.renderer.canvas.style.cursor);
+expect(/url\(/.test(ptrA) && ptrA.endsWith('crosshair'), `the system's pointer is the crosshair (${ptrA.slice(0, 40)})`);
 expect(shotOptions[0] === 1 && shotOptions[1] === 1, `bullets and time between shots as in the original (${shotOptions})`);
 await page.keyboard.press('Escape');
 await page.click('#pauseSettings');

@@ -119,34 +119,51 @@ export class Renderer {
   }
 
   /** Jump straight to a point (used at match start). */
-  snapCamera(x, y) { this.cam.x = x; this.cam.y = y; }
+  snapCamera(x, y) {
+    const c = this.cam;
+    c.x = c.fx = x; c.y = c.fy = y;
+    c.lx = c.ly = 0;
+  }
 
   /**
    * Follow a point, looking a little toward the mouse; zoomed out and looking far ahead
    * while sniping. `sights` above 1: aiming down a gun's sights, that much closer and
    * looking further toward the mouse (see main.js).
    * dt: milliseconds since the last frame (the camera moves the same at any frame rate).
+   *
+   * Following the point eases (smooth over jumps and landings), but looking toward the mouse
+   * doesn't: the view moves with the mouse and stops when it stops. (Eased, the world went on
+   * sliding under the crosshair for a third of a second after the hand stopped, which felt like
+   * lag.) Only how far it looks eases: further down a scope or the sights, not at all with the
+   * menu open.
    */
   updateCamera(game, fx, fy, mouse, sniping, dt = 1000 / 60, sights = 1) {
     const f = dt / (1000 / 60);
     const ease = k => 1 - Math.pow(1 - k, f);
+    const c = this.cam;
     const zoomTarget = sniping ? 0.72 : sights;
-    this.cam.zoom = lerp(this.cam.zoom, zoomTarget, ease(0.12));
+    c.zoom = lerp(c.zoom, zoomTarget, ease(0.12));
     // (Settled: exactly there, so the map's tiles can be made for it.)
-    if (Math.abs(this.cam.zoom - zoomTarget) < 0.001) this.cam.zoom = zoomTarget;
-    let tx = fx, ty = fy - 20;
+    if (Math.abs(c.zoom - zoomTarget) < 0.001) c.zoom = zoomTarget;
+    // (The point followed, and the mouse's offset from the middle of the screen, in the map's units:
+    // kept with the camera, so a new renderer (Settings) carries on from them.)
+    if (c.fx == null) { c.fx = c.x; c.fy = c.y; c.lx = c.ly = 0; }
+    c.fx = lerp(c.fx, fx, ease(0.14));
+    c.fy = lerp(c.fy, fy - 20, ease(0.14));
     if (mouse) {
-      const look = sniping ? 0.55 : sights > 1 ? 0.4 : 0.22;
-      tx += clamp((mouse.x - this.w / 2) / this.scale, -400, 400) * look;
-      ty += clamp((mouse.y - this.h / 2) / this.scale, -300, 300) * look;
+      c.lx = clamp((mouse.x - this.w / 2) / this.scale, -400, 400);
+      c.ly = clamp((mouse.y - this.h / 2) / this.scale, -300, 300);
     }
+    const look = mouse ? (sniping ? 0.55 : sights > 1 ? 0.4 : 0.22) : 0;
+    c.look = c.look == null ? look : lerp(c.look, look, ease(0.12));
+    let tx = c.fx + c.lx * c.look, ty = c.fy + c.ly * c.look;
     // Keep the camera over the map.
     const b = game.map.bounds, hw = this.w / 2 / this.scale, hh = this.h / 2 / this.scale;
     const pad = 60;
     tx = b.right - b.left + pad * 2 < hw * 2 ? (b.left + b.right) / 2 : clamp(tx, b.left - pad + hw, b.right + pad - hw);
     ty = b.bottom - b.top + pad * 2 < hh * 2 ? (b.top + b.bottom) / 2 : clamp(ty, b.top - pad + hh, b.bottom + pad - hh);
-    this.cam.x = lerp(this.cam.x, tx, ease(0.14));
-    this.cam.y = lerp(this.cam.y, ty, ease(0.14));
+    c.x = tx;
+    c.y = ty;
     for (const s of game.shakes) {
       const d = s.x == null ? 0 : Math.hypot(s.x - fx, s.y - fy);
       this.shake = Math.max(this.shake, s.amount * Math.max(0, 1 - d / 700));
@@ -903,11 +920,15 @@ export class Renderer {
     }
   }
 
-  /** The crosshair at the mouse, as set up in Settings (crosshair.js). reload: how far through a reload (0-1), drawn as a ring filling up. */
-  drawCrosshair(mx, my, red, reload = null) {
+  /**
+   * The crosshair at the mouse, as set up in Settings (crosshair.js). reload: how far through a
+   * reload (0-1), drawn as a ring filling up. ringOnly: the system's pointer is the crosshair (it
+   * isn't locked to the game), so just the ring round it.
+   */
+  drawCrosshair(mx, my, red, reload = null, ringOnly = false) {
     const d = this.dpr;
     this.ctx.setTransform(d, 0, 0, d, 0, 0);
-    drawCrosshairAt(this.ctx, mx, my, { edition: this.kind === 'remastered' ? 'remastered' : 'classic', red, reload });
+    drawCrosshairAt(this.ctx, mx, my, { edition: this.kind === 'remastered' ? 'remastered' : 'classic', red, reload, ringOnly });
   }
 }
 

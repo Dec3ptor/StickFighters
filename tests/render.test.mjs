@@ -47,6 +47,21 @@ test('the camera follows at the same speed at 60, 144 and 240 frames a second', 
   }
 });
 
+test('the view moves with the mouse and stops the moment it stops (no sliding on under the crosshair)', () => {
+  const { game } = botMatch('ssdm1.json', { bots: 0 });
+  const r = new Renderer(fakeCanvas(), {});
+  r.snapCamera(400, 300);
+  // (Standing still at (400, 320): the camera's settled on them.)
+  for (let i = 0; i < 120; i++) r.updateCamera(game, 400, 320, { x: r.w / 2, y: r.h / 2 }, false);
+  const still = r.cam.x;
+  // The mouse moves right, then stops: the view moves with it, and not a pixel more after.
+  r.updateCamera(game, 400, 320, { x: r.w / 2 + 200, y: r.h / 2 }, false);
+  const moved = r.cam.x;
+  assert.ok(moved > still + 20, `the view moves at once (${still.toFixed(1)} -> ${moved.toFixed(1)})`);
+  for (let i = 0; i < 30; i++) r.updateCamera(game, 400, 320, { x: r.w / 2 + 200, y: r.h / 2 }, false);
+  assert.ok(Math.abs(r.cam.x - moved) < 0.01, `and stays put once the mouse stops (${moved.toFixed(2)} -> ${r.cam.x.toFixed(2)})`);
+});
+
 test('aiming down the sights: the camera comes in a little, further toward the mouse; sniping zooms out instead', () => {
   const { game } = botMatch('ssdm1.json', { bots: 0 });
   const r = new Renderer(fakeCanvas(), {});

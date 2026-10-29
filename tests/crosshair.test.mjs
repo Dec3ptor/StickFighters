@@ -78,6 +78,18 @@ test('every crosshair style draws, in the colour, thickness and opacity set', ()
   setCrosshair({});
 });
 
+test('with the system pointer as the crosshair, the game draws just the reload ring round it', () => {
+  setCrosshair({ style: 'crossDot' });
+  const none = recorder();
+  drawCrosshair(none, 0, 0, { ringOnly: true });
+  assert.equal(none.ops.length, 0, 'no ring, nothing');
+  const ring = recorder();
+  drawCrosshair(ring, 0, 0, { ringOnly: true, reload: 0.5 });
+  assert.ok(ring.ops.length >= 1 && ring.ops.every(o => o.op === 'stroke' && o.path.every(p => p[0] === 'A')), 'only the ring\'s arcs');
+  assert.equal(ring.globalAlpha, 1, 'opacity put back');
+  setCrosshair({});
+});
+
 test('the reload ring sits outside a big crosshair', () => {
   setCrosshair({ style: 'cross', size: 20, gap: 12 });
   const ctx = recorder();

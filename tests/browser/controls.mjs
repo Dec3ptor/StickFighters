@@ -1,8 +1,9 @@
 // Keeping the controls in the game: while a match is played, the browser's own reactions
-// to the mouse (with Shift or Ctrl held too) are blocked, a click locks the mouse to the
-// game (the crosshair then moves by how far the mouse moves, kept on the screen), Esc or
-// the browser freeing the mouse opens the menu (once), menus let go of the mouse, the
-// setting turns locking off, and the menu's Full screen button works.
+// to the mouse (with Shift or Ctrl held too) are blocked. To start with, the system's own
+// pointer is the crosshair (a click doesn't lock the mouse). With "Locked to the game"
+// chosen, a click locks the mouse to the game (the crosshair, drawn by the game, then moves
+// by how far the mouse moves, kept on the screen), Esc or the browser freeing the mouse
+// opens the menu (once), and menus let go of the mouse. And the menu's Full screen button works.
 // Usage: node tests/browser/controls.mjs [outDir]
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -29,6 +30,7 @@ await page.evaluate(() => {
   window.stickSoldiers.startMatch({ ...s, map: 'ssdm1.json', mode: 'ffa', bots: 2 });
 });
 await page.waitForFunction(() => window.stickSoldiers.state.game && window.stickSoldiers.state.me.alive, null, { timeout: 15000 });
+let st, pt;
 const S = () => page.evaluate(() => {
   const { state, input } = window.stickSoldiers;
   return { menu: state.menuOpen, locked: input.locked, element: document.pointerLockElement?.id ?? null, x: input.mouse.x, y: input.mouse.y, left: input.mouse.left, playing: document.body.classList.contains('playing') };
@@ -60,12 +62,42 @@ for (const [what, ok] of Object.entries(blocked)) check(ok, `while playing, bloc
 // (Let go of the mouse buttons pressed above.)
 await page.mouse.up();
 
+// 1b. To start with, the system's pointer is the crosshair: a click doesn't lock the mouse,
+// the game's canvas shows a picture of the crosshair as its pointer, and the game draws just
+// the reload ring round it, not a crosshair of its own.
+const rings = () => page.evaluate(() => {
+  const r = window.stickSoldiers.renderer, d = r.drawCrosshair.bind(r);
+  window.ringOnly = [];
+  r.drawCrosshair = (...a) => { window.ringOnly.push(!!a[4]); return d(...a); };
+});
+const pointer = () => page.evaluate(() => ({ css: window.stickSoldiers.renderer.canvas.style.cursor, ringOnly: [...new Set(window.ringOnly || [])] }));
+await page.mouse.move(640, 360);
+await page.mouse.down(); await page.mouse.up();
+await rings();
+await page.waitForTimeout(300);
+st = await S();
+pt = await pointer();
+check(!st.locked && !st.menu, `to start with, a click doesn't lock the mouse: ${JSON.stringify(st)}`);
+check(/^(-webkit-)?(image-set\(|url\()/.test(pt.css) && pt.css.endsWith('crosshair'), `the system's pointer is the crosshair (${pt.css.slice(0, 40)})`);
+check(pt.ringOnly.length === 1 && pt.ringOnly[0] === true, `the game draws no crosshair of its own (${pt.ringOnly})`);
+// Choose "Locked to the game" in Settings.
+await page.keyboard.press('Escape');
+await page.click('#pauseSettings');
+check(await page.inputValue('#pointerMode') === 'system', 'the setting starts on the system pointer');
+await page.selectOption('#pointerMode', 'locked');
+await page.click('#settingsDone');
+await page.click('#resume');
+
 // 2. A click locks the mouse to the game; the crosshair moves by how far the mouse moves.
 await page.mouse.move(640, 360);
 await page.mouse.down(); await page.mouse.up();
 await page.waitForFunction(() => window.stickSoldiers.input.locked, null, { timeout: 5000 }).catch(() => {});
-let st = await S();
+st = await S();
 check(st.locked && st.element === 'game', `a click locks the mouse to the game: ${JSON.stringify(st)}`);
+await rings();
+await page.waitForTimeout(200);
+pt = await pointer();
+check(pt.css === '' && pt.ringOnly.length === 1 && pt.ringOnly[0] === false, `locked, the game draws the crosshair (${JSON.stringify(pt)})`);
 await page.waitForTimeout(150);
 const moved = await page.evaluate(() => {
   const { input } = window.stickSoldiers;
@@ -118,11 +150,11 @@ if (fsOk) {
   check(!off.full && off.label === 'Full screen', `and Leave full screen: ${JSON.stringify(off)}`);
 }
 
-// 6. Settings: with "Lock the mouse" off, a click doesn't lock it (the guards still work).
+// 6. Settings: back to the system's pointer, a click doesn't lock it (the guards still work).
 await page.click('#pauseSettings');
 await page.waitForTimeout(100);
-check(await page.isChecked('#lockMouse'), 'the setting is on to start with');
-await page.uncheck('#lockMouse');
+check(await page.inputValue('#pointerMode') === 'locked', 'the setting kept "Locked"');
+await page.selectOption('#pointerMode', 'system');
 await page.click('#settingsDone');
 await page.click('#resume');
 await page.waitForTimeout(150);
@@ -130,13 +162,9 @@ await page.mouse.move(640, 360);
 await page.mouse.down(); await page.mouse.up();
 await page.waitForTimeout(300);
 st = await S();
-check(!st.locked && !st.menu, `lock off: a click doesn't lock the mouse: ${JSON.stringify(st)}`);
-check(await page.evaluate(() => { const ev = new WheelEvent('wheel', { ctrlKey: true, bubbles: true, cancelable: true }); document.body.dispatchEvent(ev); return ev.defaultPrevented; }), 'lock off: Ctrl + wheel still doesn\'t zoom');
-// (Back on, for the next visit.)
+check(!st.locked && !st.menu, `system pointer: a click doesn't lock the mouse: ${JSON.stringify(st)}`);
+check(await page.evaluate(() => { const ev = new WheelEvent('wheel', { ctrlKey: true, bubbles: true, cancelable: true }); document.body.dispatchEvent(ev); return ev.defaultPrevented; }), 'system pointer: Ctrl + wheel still doesn\'t zoom');
 await page.keyboard.press('Escape');
-await page.click('#pauseSettings');
-await page.check('#lockMouse');
-await page.click('#settingsDone');
 
 // 7. Out of the match, nothing's blocked: the menus work as normal.
 await page.click('#quit');

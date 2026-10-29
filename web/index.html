@@ -292,9 +292,14 @@
           <option value="more">More</option>
         </select>
       </label>
-      <label class="check"><input type="checkbox" id="lockMouse"> Lock the mouse to the game while playing</label>
+      <label class="field">Mouse pointer
+        <select id="pointerMode">
+          <option value="system">Your system's pointer, as the crosshair</option>
+          <option value="locked">Locked to the game</option>
+        </select>
+      </label>
       <label class="check"><input type="checkbox" id="fullscreenPref"> Full screen while playing</label>
-      <p class="muted-note">With the mouse locked, only the game gets it: no browser menus, zooming or text selection, whatever keys you hold. <kbd>Esc</kbd> frees it and opens the menu. In full screen, Chrome and Edge also keep their own shortcuts (like <kbd>Ctrl</kbd>+<kbd>W</kbd>) for the game: hold <kbd>Esc</kbd> to leave it.</p>
+      <p class="muted-note">Your system's pointer, drawn as the crosshair, moves exactly as your mouse does everywhere else, with no delay (the system moves it, not the game). In a window it can leave the game: full screen keeps it on the screen. Locked to the game, the pointer can't leave, but the browser hides it, so the game draws the crosshair, a frame or so behind. Either way, while you play the browser keeps out of it: no menus, zooming or text selection, whatever keys you hold. <kbd>Esc</kbd> opens the menu (and frees a locked mouse). In full screen, Chrome and Edge also keep their own shortcuts (like <kbd>Ctrl</kbd>+<kbd>W</kbd>) for the game: hold <kbd>Esc</kbd> to leave it.</p>
       <h3 class="exp-head">Crosshair</h3>
       <div class="xhair" id="xhair">
         <canvas id="xhPreview" width="480" height="144" aria-label="How the crosshair looks, on a light and a dark background"></canvas>

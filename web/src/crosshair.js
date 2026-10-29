@@ -2,6 +2,11 @@
 // shape, colour, size, thickness, gap and opacity, and an edge in the opposite shade
 // (light round a dark crosshair, dark round a light one) so it shows on any background.
 // The "Default" colour is each game's own: near-black in the original, white in Remastered.
+//
+// Usually it's the system's own mouse pointer, drawn as the crosshair (crosshairCursor):
+// the operating system moves that itself, straight away, as smoothly as the mouse moves
+// anywhere else. Locked to the game (Settings), the browser hides the pointer, and the
+// game draws the crosshair with everything else (drawCrosshair), a frame or so behind.
 
 export const CROSSHAIR_STYLES = [
   ['crossDot', 'Cross and dot'], ['cross', 'Cross'], ['dot', 'Dot'], ['circle', 'Circle'],
@@ -19,6 +24,7 @@ export const CROSSHAIR_LIMITS = { size: [2, 20], thickness: [1, 5], gap: [0, 12]
 
 const xh = { ...CROSSHAIR_DEFAULTS };
 const HEX = /^#[0-9a-f]{6}$/i;
+let version = 0; // (goes up with every change of settings: pointer pictures are made again)
 
 /** Use these crosshair settings (anything missing or out of range is left at its default). */
 export function setCrosshair(opts = {}) {
@@ -31,6 +37,7 @@ export function setCrosshair(opts = {}) {
     xh[k] = Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : CROSSHAIR_DEFAULTS[k];
   }
   xh.outline = typeof o.outline === 'boolean' ? o.outline : CROSSHAIR_DEFAULTS.outline;
+  version++;
   return { ...xh };
 }
 
@@ -90,7 +97,7 @@ function dot(ctx, x, y, r) {
  * Draw the crosshair at (x, y) in the canvas's current units (screen pixels).
  * `reload`: how far through a reload (0-1), drawn as a ring filling up round it.
  */
-export function drawCrosshair(ctx, x, y, { edition = 'classic', red = false, reload = null } = {}) {
+export function drawCrosshair(ctx, x, y, { edition = 'classic', red = false, reload = null, ringOnly = false } = {}) {
   const color = crosshairColor(edition, red), edge = edgeColor(color);
   const t = xh.thickness, dotR = xh.style === 'dot' ? Math.max(1.5, t) : Math.max(1, t * 0.8);
   const alpha = ctx.globalAlpha;
@@ -105,6 +112,8 @@ export function drawCrosshair(ctx, x, y, { edition = 'classic', red = false, rel
     ctx.strokeStyle = color;
     ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(1, reload))); ctx.stroke();
   }
+  // (The system pointer is the crosshair: just the ring round it.)
+  if (ringOnly) { ctx.globalAlpha = alpha; return; }
   if (xh.outline) {
     ctx.strokeStyle = ctx.fillStyle = edge;
     ctx.lineWidth = t + 2;
@@ -116,4 +125,60 @@ export function drawCrosshair(ctx, x, y, { edition = 'classic', red = false, rel
   if (linesPath(ctx, x, y, 0)) ctx.stroke();
   if (hasDot()) dot(ctx, x, y, dotR);
   ctx.globalAlpha = alpha;
+}
+
+// The pointer's pictures, made once for each look (settings, game, red down a scope, screen sharpness).
+const cursors = new Map();
+let cursorForm = null; // how this browser takes a sharp picture: 'image-set', '-webkit-image-set' or 'plain'
+// (The last one asked for, every frame: given back as it was, with nothing worked out or made.)
+const last = { version: -1, edition: '', red: false, dpr: 0, css: '' };
+
+/**
+ * The CSS cursor that makes the system's mouse pointer the crosshair, as set up: a picture of
+ * it, its middle on the pointer's hot spot, sharp on screens with more pixels (dpr). Falls
+ * back to the browser's own crosshair pointer. `edition`: 'classic' or 'remastered'; `red`:
+ * down a sniper scope.
+ */
+export function crosshairCursor(edition = 'classic', red = false, dpr = 1) {
+  if (last.version === version && last.edition === edition && last.red === red && last.dpr === dpr) return last.css;
+  const css = pointerFor(edition, red, dpr);
+  Object.assign(last, { version, edition, red, dpr, css });
+  return css;
+}
+
+function pointerFor(edition, red, dpr) {
+  // (As big as it reaches, its edge included; browsers ignore pointers over 128 pixels.)
+  const R = Math.ceil(reach() + xh.thickness + 3), size = R * 2 + 1;
+  const scale = Math.max(1, Math.min(Math.round(dpr * 2) / 2, Math.floor((128 / size) * 2) / 2));
+  const key = `${version}|${edition}|${red ? 1 : 0}|${scale}`;
+  let css = cursors.get(key);
+  if (css) return css;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = Math.ceil(size * scale);
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  // (Its middle on the middle of a pixel, the hot spot's.)
+  drawCrosshair(ctx, R + 0.5, R + 0.5, { edition, red });
+  const url = `url(${cv.toDataURL('image/png')})`;
+  cursorForm ??= sharpForm();
+  css = scale === 1 || cursorForm === 'plain' ? null : `${cursorForm}(${url} ${scale}x) ${R} ${R}, crosshair`;
+  // (No sharp form here: the picture at its size in pixels.)
+  if (!css) {
+    if (scale !== 1) return pointerFor(edition, red, 1);
+    css = `${url} ${R} ${R}, crosshair`;
+  }
+  if (cursors.size > 24) cursors.clear();
+  cursors.set(key, css);
+  return css;
+}
+
+/** Which way of giving a pointer a sharper picture this browser takes (it ignores the ones it doesn't). */
+function sharpForm() {
+  const el = document.createElement('div'), tiny = 'url(data:image/png;base64,iVBORw0KGgo=)';
+  for (const form of ['image-set', '-webkit-image-set']) {
+    el.style.cursor = '';
+    el.style.cursor = `${form}(${tiny} 2x) 0 0, auto`;
+    if (el.style.cursor) return form;
+  }
+  return 'plain';
 }

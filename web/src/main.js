@@ -32,7 +32,7 @@ import { loadKit, saveKit, KIT_KEY } from './kitchoice.js';
 import { BuyMenu } from './buymenu.js';
 import { canShop } from './defuse.js';
 import { renderLoadout, renderPicker } from './loadout.js';
-import { CROSSHAIR_STYLES, CROSSHAIR_COLORS, CROSSHAIR_DEFAULTS, setCrosshair, drawCrosshair } from './crosshair.js';
+import { CROSSHAIR_STYLES, CROSSHAIR_COLORS, CROSSHAIR_DEFAULTS, setCrosshair, drawCrosshair, crosshairCursor } from './crosshair.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -73,11 +73,12 @@ const CLASSES_ON = params.has('classes');
 // (?tiles=on: the canvas keeps the map in tiles, maptiles.js. Off by default: slower with a graphics card.)
 if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
-const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', lockMouse: true, fullscreen: false, volume: 60, aimZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS } };
-// Locking the mouse to the game: ?lock=on / ?lock=off in the address. (Browsers driven by tests
-// move the mouse oddly while it's locked, so it's off for them unless the address asks.)
+const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', pointer: 'system', fullscreen: false, volume: 60, aimZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS } };
+// Locking the mouse to the game (Settings: Mouse pointer, "Locked to the game"): ?lock=on /
+// ?lock=off in the address. (Browsers driven by tests move the mouse oddly while it's locked,
+// so it's off for them unless the address asks.)
 const LOCK_PARAM = params.get('lock');
-const lockAllowed = () => prefs.lockMouse && (LOCK_PARAM === 'on' || (LOCK_PARAM !== 'off' && !navigator.webdriver));
+const lockAllowed = () => prefs.pointer === 'locked' && (LOCK_PARAM === 'on' || (LOCK_PARAM !== 'off' && !navigator.webdriver));
 let community = null;
 let watcher = null;
 // Classes on: the class and loadouts we play with (saved apart from the settings: kitchoice.js).
@@ -101,7 +102,9 @@ const DEFAULTS = {
   graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true,
   sprint: 'hold', // Shift: 'hold' to sprint, or 'toggle' it on and off
   quality: 'auto', // Remastered's graphics: 'auto', 'high', 'medium' or 'low'
-  lockMouse: true,  // lock the mouse to the game while playing (Esc frees it)
+  // The mouse while playing: 'system' (its own pointer is the crosshair: moved by the system, as
+  // smoothly as anywhere else) or 'locked' (locked to the game, which draws the crosshair; Esc frees it).
+  pointer: 'system',
   fullscreen: false, // play in full screen (with the keyboard's browser shortcuts kept for the game, where browsers allow it)
   volume: 60,       // sound volume, percent (100: as loud as it goes; it was a bit much, so 60 to start with)
   aimZoom: 'slight', // aiming down the sights (hold right click with a gun): 'off', 'slight' or 'more' (AIM_ZOOM)
@@ -119,6 +122,8 @@ function loadSettings() {
   // saved the old default, Auto, without anyone choosing it).
   if (!s.graphicsPicked) s.graphics = 'canvas';
   delete s.fireZoom; // (the zoom while firing, replaced by aiming down the sights)
+  if (s.pointer !== 'locked') s.pointer = 'system';
+  delete s.lockMouse; // (the old on/off lock, on to start with: the system's pointer is the crosshair now, unless Locked is chosen)
   return s;
 }
 
@@ -888,7 +893,7 @@ function openSettings() {
   $('fpsCap').value = String(prefs.fpsCap);
   $('showFps').checked = prefs.showFps;
   $('showPing').checked = prefs.showPing;
-  $('lockMouse').checked = prefs.lockMouse;
+  $('pointerMode').value = prefs.pointer === 'locked' ? 'locked' : 'system';
   $('fullscreenPref').checked = prefs.fullscreen;
   $('aimZoom').value = AIM_ZOOM[prefs.aimZoom] ? prefs.aimZoom : 'slight';
   showCrosshair();
@@ -1335,6 +1340,7 @@ function frame(now) {
   if (!$('settings').classList.contains('hidden') && now - (state.notesAt || 0) > 500) { state.notesAt = now; settingsNotes(); }
   const g = state.game;
   if (!g) {
+    showPointer('');
     // Nothing playing: keep the canvas blank behind the menus (Remastered: its scenery,
     // except under the map maker and the picker, which cover it).
     if ($('editor').classList.contains('hidden') && $('gamePicker').classList.contains('hidden')) renderer.clear();
@@ -1342,7 +1348,7 @@ function frame(now) {
     return;
   }
   // The replay of the winning kill, once the match is over.
-  if (state.replay) { replayFrame(now, dt, workStart); return; }
+  if (state.replay) { showPointer(''); replayFrame(now, dt, workStart); return; }
   const client = state.mode === 'client' ? state.net?.client : null;
   if (client) client.updateView(now);
   const alpha = state.paused ? 1 : Math.min(1, state.acc / state.step);
@@ -1415,7 +1421,13 @@ function frame(now) {
       if (gun.mag && me.reloadTimer > 0) reload = 1 - me.reloadTimer / gun.reload;
       else if (shotDelay(g, gun) >= SLOW_GUN && me.cooldown > 0) reload = 1 - me.cooldown / shotDelay(g, gun);
     }
-    renderer.drawCrosshair(input.mouse.x, input.mouse.y, sniping, reload);
+    // (The system's own pointer is the crosshair, unless the mouse is locked to the game: the
+    // browser hides it then, and the game draws it.)
+    const pointer = !input.locked;
+    showPointer(pointer ? crosshairCursor(edition === 'remastered' ? 'remastered' : 'classic', sniping, window.devicePixelRatio || 1) : '');
+    renderer.drawCrosshair(input.mouse.x, input.mouse.y, sniping, reload, pointer);
+  } else {
+    showPointer('');
   }
   renderer.present();
   state.drawnOnce = true;
@@ -1431,6 +1443,20 @@ function frame(now) {
  * aiming feels instant at any frame rate. (Only for drawing: shots use the aim
  * from the last update.) Returns the real aim and facing, to put back.
  */
+/**
+ * The game's mouse pointer (on its canvas): `css`, a CSS cursor (the crosshair, as the system's
+ * own pointer), or '' for the page's (none while playing). Set only when it changes.
+ */
+let pointerOn = null, pointerCss = '';
+function showPointer(css) {
+  const el = renderer.canvas;
+  if (el === pointerOn && css === pointerCss) return;
+  // (A new canvas, after a graphics change: the old one's let go of.)
+  if (pointerOn && pointerOn !== el) pointerOn.style.cursor = '';
+  el.style.cursor = css;
+  pointerOn = el; pointerCss = css;
+}
+
 function liveAim(me, x, y) {
   if (!me.alive || me.kamikaze || !input.enabled || state.paused || state.game.over) return null;
   const saved = { aim: me.aim, facing: me.facing };
@@ -1643,7 +1669,7 @@ function wire() {
   $('showFps').addEventListener('change', () => { prefs.showFps = $('showFps').checked; perf.on = prefs.showFps || params.has('fps'); savePrefs(); });
   $('showPing').addEventListener('change', () => { prefs.showPing = $('showPing').checked; savePrefs(); });
   $('sprintMode').addEventListener('change', () => { prefs.sprint = $('sprintMode').value === 'toggle' ? 'toggle' : 'hold'; savePrefs(); });
-  $('lockMouse').addEventListener('change', () => { prefs.lockMouse = $('lockMouse').checked; savePrefs(); if (!prefs.lockMouse) input.unlock(); });
+  $('pointerMode').addEventListener('change', () => { prefs.pointer = $('pointerMode').value === 'locked' ? 'locked' : 'system'; savePrefs(); if (prefs.pointer !== 'locked') input.unlock(); });
   $('fullscreenPref').addEventListener('change', () => { prefs.fullscreen = $('fullscreenPref').checked; savePrefs(); if (!prefs.fullscreen) leaveFullscreen(true); });
   $('aimZoom').addEventListener('change', () => { prefs.aimZoom = AIM_ZOOM[$('aimZoom').value] ? $('aimZoom').value : 'slight'; savePrefs(); });
   // The crosshair.
