@@ -219,11 +219,18 @@ export const SHADES = { front: 1, lit: 0.88, side: 0.7, under: 0.48, top: 1.06 }
 
 /**
  * The materials for a theme, as patterns for ctx: { main: { front, lit, side, under },
- * top: {...}, built: {...}, base: [r,g,b], topBase }. Made once per theme.
+ * top: {...}, built: {...}, base: [r,g,b], topBase }, and each shade's plain colour
+ * (frontColor, litColor...). Made once per theme. patterns: false makes just the colours
+ * (no pictures: for drawing that can't repeat one, like WebGL's).
  */
-export function makeMaterials(ctx, theme) {
+export function makeMaterials(ctx, theme, { patterns = true } = {}) {
   const rng = makeRng(7);
   const make = (name, base) => {
+    if (!patterns) {
+      const out = { base: rgb(base) };
+      for (const [face, k] of Object.entries(SHADES)) out[face + 'Color'] = css(shade(base, k));
+      return out;
+    }
     const src = canvas(TEX_PX);
     MATERIALS[name](src.getContext('2d'), rng, base);
     const out = { base: rgb(base) };

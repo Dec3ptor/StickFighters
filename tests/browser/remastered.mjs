@@ -138,6 +138,31 @@ await page.screenshot({ path: `${outDir}/rm-pause.png` });
 await page.keyboard.press('Escape');
 await play('foundry.json', 'conquest', 11, 'foundry');
 
+// A map half in the original's look (the map maker's Look tool): those blocks on paper, the rest solid.
+await page.evaluate(() => {
+  const ss = window.stickSoldiers;
+  const rec = ss.editor.createRecord({
+    name: 'Half and half', theme: 'dusk', spawns: [{ x: -500, y: 176, team: 1 }, { x: 500, y: 176, team: 2 }], items: [],
+    platforms: [{ left: -900, top: 200, right: -100, bottom: 260, look: 'classic' }, { left: -100, top: 200, right: 900, bottom: 260 }, { left: -600, top: 60, right: -380, bottom: 80, look: 'classic' }],
+  });
+  ss.startMatch({ ...ss.readMenu(), map: `custom:${rec.id}`, mode: 'ffa', bots: 1, fragLimit: 99 });
+});
+await page.waitForFunction(() => window.stickSoldiers.state.game?.map.name === 'Half and half' && window.stickSoldiers.state.me.alive, null, { timeout: 30000 });
+await page.evaluate(() => { const me = window.stickSoldiers.state.me; me.body.x = me.prevX = -100; me.body.y = me.prevY = 199; me.spawnProtect = 1e6; });
+await page.waitForTimeout(1200);
+const halves = await page.evaluate(() => {
+  const r = window.stickSoldiers.renderer, ctx = document.querySelector('#game').getContext('2d');
+  // (A few pixels in a row on each side of where the two floors meet: there may be hatching on the paper.)
+  const at = (x, y) => [...ctx.getImageData(Math.round(x * r.s + r.tx), Math.round(y * r.s + r.ty), 1, 1).data.slice(0, 3)];
+  const row = x0 => Array.from({ length: 9 }, (_, i) => at(x0 + i * 2, 236));
+  return { paper: row(-150), solid: row(-84), looks: window.stickSoldiers.state.game.map.looks };
+});
+const whiteish = c => Math.min(...c) > 232 && Math.max(...c) - Math.min(...c) < 12;
+expect(halves.looks.classic && !halves.looks.remastered, `the map has blocks in the original's look: ${JSON.stringify(halves.looks)}`);
+expect(halves.paper.some(whiteish) && !halves.solid.some(whiteish), `those on paper, the rest solid: ${JSON.stringify(halves)}`);
+await page.screenshot({ path: `${outDir}/rm-half-and-half.png` });
+results.halves = halves;
+
 // 5. Low quality: flat colours, no lights or weather; still everything works.
 await page.evaluate(() => { window.stickSoldiers.prefs.quality = 'low'; window.stickSoldiers.renderer.setQuality('low'); });
 await page.waitForTimeout(800);

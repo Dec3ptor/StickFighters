@@ -8,6 +8,15 @@ const CELL = 64;
 const MIN_PIECE = 4;
 const MAX_SOLIDS = 6000;
 
+/**
+ * Looks a block can have of its own, whichever game is played (the map maker's Look tool):
+ * 'classic' (the original's paper and ink, even in Remastered) or 'remastered' (Remastered's
+ * solid 2.5D blocks, even in the original). Without one, a block looks like the game played.
+ * (Jump pads always have their own look.)
+ */
+export const LOOKS = ['classic', 'remastered'];
+export const lookOf = p => (!p.bounce && LOOKS.includes(p.look) ? p.look : null);
+
 export class GameMap {
   constructor(data) {
     this.name = data.name;
@@ -15,8 +24,10 @@ export class GameMap {
     this.bounds = { ...data.bounds };
     // hard: can't be destroyed (marked in the map, or jump pads).
     this.solids = data.platforms.map((p, i) => ({
-      id: i, l: p.left, t: p.top, r: p.right, b: p.bottom, bounce: p.bounce || 0, hard: !!(p.hard || p.bounce),
+      id: i, l: p.left, t: p.top, r: p.right, b: p.bottom, bounce: p.bounce || 0, hard: !!(p.hard || p.bounce), look: lookOf(p),
     }));
+    // Which looks of their own its blocks have (pieces broken off keep theirs).
+    this.looks = { classic: this.solids.some(s => s.look === 'classic'), remastered: this.solids.some(s => s.look === 'remastered') };
     this.nextId = this.solids.length;
     this.version = 0; // goes up whenever blocks change (destruction, building)
     // The map as it was (what the Engineer's Builder can repair), and whether any of it is gone.
@@ -117,7 +128,7 @@ export class GameMap {
       for (const p of pieces) {
         // (Bits left too small to matter are swept away; snapHole keeps them small.)
         if (p.r - p.l < MIN_PIECE || p.b - p.t < MIN_PIECE) continue;
-        this._add({ id: this.nextId++, l: p.l, t: p.t, r: p.r, b: p.b, bounce: 0, hard: false, built: !!s.built });
+        this._add({ id: this.nextId++, l: p.l, t: p.t, r: p.r, b: p.b, bounce: 0, hard: false, built: !!s.built, look: s.look });
         if (s.built) this.builtCount++;
       }
       area = area ? { l: Math.min(area.l, s.l), t: Math.min(area.t, s.t), r: Math.max(area.r, s.r), b: Math.max(area.b, s.b) }
@@ -137,7 +148,8 @@ export class GameMap {
    */
   add(l, t, r, b, built = false) {
     if (!(r > l && b > t) || this.solids.length > MAX_SOLIDS) return null;
-    this._add({ id: this.nextId++, l, t, r, b, bounce: 0, hard: false, built: !!built });
+    // (Built and repaired blocks look like the game played.)
+    this._add({ id: this.nextId++, l, t, r, b, bounce: 0, hard: false, built: !!built, look: null });
     if (built) this.builtCount++;
     this.version++;
     this._edited({ l, t, r, b });
@@ -150,18 +162,23 @@ export class GameMap {
     if (this.edits.length > 64) this.edits.shift();
   }
 
-  /** Where blocks just meet (see seamsOf), worked out again when they change. */
-  getSeams() {
-    if (this.seams && this.seamsVersion === this.version) return this.seams;
-    const out = [];
+  /**
+   * Where blocks drawn in the original's look just meet (see seamsOf), worked out again when
+   * they change. own: the look of blocks without one of their own (the game's: 'classic' in
+   * the original, 'remastered' in Remastered).
+   */
+  getSeams(own = 'classic') {
+    const kept = (this.seams ||= {})[own];
+    if (kept && kept.version === this.version) return kept.list;
+    const out = [], paper = s => (s.look || own) === 'classic';
     for (const a of this.solids) {
+      if (!paper(a)) continue;
       this.query(a.l - 0.1, a.t - 0.1, a.r + 0.1, a.b + 0.1, c => {
-        if (c.id > a.id) seamBetween(a, c, out);
+        if (c.id > a.id && paper(c)) seamBetween(a, c, out);
         return false;
       });
     }
-    this.seams = out;
-    this.seamsVersion = this.version;
+    this.seams[own] = { list: out, version: this.version };
     return out;
   }
 

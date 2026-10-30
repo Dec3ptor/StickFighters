@@ -34,7 +34,8 @@ export class Blocks {
     this.shown = [];
     this.faces = [];
     this.pool = [];
-    this.collect = s => { this.shown.push(s); return false; };
+    this.pick = null; // (while drawing: which blocks to draw, if not all of them)
+    this.collect = s => { if (!this.pick || this.pick(s)) this.shown.push(s); return false; };
   }
 
   /** A face to draw (an object reused from earlier frames). */
@@ -83,8 +84,12 @@ export class Blocks {
    * Draw the blocks in view for renderer r (world transform set): the sides first,
    * furthest from the vanishing point first, then the fronts with their edges.
    * mats: from textures.js; theme: for the light's direction and the edge colours.
+   * o: { quality, flat } (r's own to start with: see RemasteredRenderer), and own:
+   * the look of blocks without one of their own (the map maker's Look tool), 'remastered'
+   * in Remastered and 'classic' in the original (which draws just the blocks given
+   * Remastered's look this way).
    */
-  draw(r, map, mats, theme, destruction) {
+  draw(r, map, mats, theme, destruction, { quality = r.quality, flat = r.flat, own = 'remastered' } = {}) {
     this.catchUp(map);
     const ctx = r.ctx, v = r.view;
     const vx = r.cam.x, vy = r.cam.y - VP_LIFT, k = DEPTH;
@@ -93,7 +98,11 @@ export class Blocks {
     const margin = Math.max(v.r - v.l, v.b - v.t) * (1 - k) * 0.6 + 10;
     const shown = this.shown;
     shown.length = 0;
+    // (Blocks of another look are left out, if the map has any. Their edges still close
+    // these blocks' sides: the front's where the play is, and they're drawn on top.)
+    this.pick = own === 'remastered' ? (map.looks?.classic ? notClassic : null) : isRemastered;
     map.query(v.l - margin, v.t - margin, v.r + margin, v.b + margin, this.collect);
+    this.pick = null;
     const faces = this.faces;
     faces.length = 0;
     for (const s of shown) {
@@ -117,11 +126,11 @@ export class Blocks {
       else {
         const shadeOf = f.kind === 'top' ? 'top' : f.kind === 'under' ? 'under' : (f.kind === 'left') === lightLeft ? 'lit' : 'side';
         // (Patterned on high quality; plain colours otherwise, quicker to fill.)
-        ctx.fillStyle = r.quality === 'high' ? f.mat[shadeOf] : f.mat[shadeOf + 'Color'];
+        ctx.fillStyle = quality === 'high' ? f.mat[shadeOf] : f.mat[shadeOf + 'Color'];
       }
       ctx.fill();
       // Darker further back (high quality only).
-      if (r.quality === 'high' && f.kind !== 'top') {
+      if (quality === 'high' && f.kind !== 'top') {
         const h = f.kind === 'under';
         const g = h ? ctx.createLinearGradient(0, f.at, 0, by(f.at)) : ctx.createLinearGradient(f.at, 0, bx(f.at), 0);
         g.addColorStop(0, 'rgba(0,0,0,0)');
@@ -134,7 +143,7 @@ export class Blocks {
     for (const s of shown) {
       if (s.bounce) continue;
       const m = s.built ? mats.built : mats.main;
-      ctx.fillStyle = r.flat ? m.frontColor : m.front;
+      ctx.fillStyle = flat ? m.frontColor : m.front;
       ctx.fillRect(s.l, s.t, s.r - s.l, s.b - s.t);
     }
     // Indestructible blocks (destructible maps): a light hatching, as in the original.
@@ -145,15 +154,15 @@ export class Blocks {
       for (const s of shown) if (s.hard && !s.bounce) hatch(s.l, s.t, s.r, s.b, 10, (x0, y0, x1, y1) => { ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); });
       ctx.stroke();
     }
-    this.drawEdges(r, map, shown, mats, theme);
+    this.drawEdges(r, map, shown, mats, theme, flat);
   }
 
   /** The open edges of the fronts: a lip of the top material, a lit rim on top, dark undersides. */
-  drawEdges(r, map, shown, mats, theme) {
+  drawEdges(r, map, shown, mats, theme, flat) {
     const ctx = r.ctx, lip = theme.top === theme.material ? 0 : 3.2;
     // A lip of the top material (grass, snow, sand...) along the top edges.
     if (lip) {
-      ctx.fillStyle = r.flat ? mats.top.frontColor : mats.top.front;
+      ctx.fillStyle = flat ? mats.top.frontColor : mats.top.front;
       for (const s of shown) {
         if (s.bounce || s.built) continue;
         for (const [a, b] of this.edges(map, s).top) ctx.fillRect(a, s.t, b - a, Math.min(lip, s.b - s.t));
@@ -179,6 +188,8 @@ export class Blocks {
 
 // Furthest first.
 const byDistance = (p, q) => q.d - p.d;
+const notClassic = s => s.look !== 'classic';
+const isRemastered = s => s.look === 'remastered';
 
 // The lit rim's colour for each theme.
 const rims = new WeakMap();

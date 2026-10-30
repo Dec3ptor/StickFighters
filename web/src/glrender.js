@@ -163,14 +163,18 @@ export class GLRenderer extends Renderer {
     fog?.drawAlerts(ctx);
   }
 
-  /** Build the map's shapes once (again when blocks are destroyed, or the outline width changes with the zoom). */
+  /**
+   * Build the map's shapes once (again when blocks are destroyed, or the outline width changes
+   * with the zoom). Blocks given Remastered's look (the map maker's Look tool) are drawn
+   * each frame, underneath: their sides shift as the camera moves.
+   */
   drawMap(game) {
-    const e = Math.round(this.lineW * 20) / 20;
+    const e = Math.round(this.lineW * 20) / 20, mixed = game.map.looks?.remastered;
     if (this.mapFor !== game.map || this.mapEdge !== e || this.mapVersion !== game.map.version) {
       this.mapFor = game.map;
       this.mapEdge = e;
       this.mapVersion = game.map.version;
-      const g = this.mapGfx, solids = game.map.solids;
+      const g = this.mapGfx, solids = mixed ? game.map.solids.filter(p => p.look !== 'remastered') : game.map.solids;
       g.clear();
       for (const p of solids) g.rect(p.l - e, p.t - e, p.r - p.l + 2 * e, p.b - p.t + 2 * e);
       g.fill(INK);
@@ -197,6 +201,7 @@ export class GLRenderer extends Renderer {
         g.stroke({ width: 1, color: HATCH });
       }
     }
+    if (mixed) this.drawRemasteredBlocks(game);
     this.ctx.insert(this.mapLayer);
     this.drawPads(game, false);
   }

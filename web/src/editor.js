@@ -9,13 +9,15 @@ import { drawWeapon, drawHealth, drawArmour, drawJetpack, HATCH, HATCH_GAP } fro
 import { RULES } from './config.js';
 import { MODES } from './modes.js';
 import { platformSeams, fillSeams, hatch } from './map.js';
-import { THEMES } from './rm/themes.js';
+import { THEMES, themeFor } from './rm/themes.js';
+import { makeMaterials } from './rm/textures.js';
 
 const TOOLS = [
   { id: 'select', label: 'Select', key: 'KeyV', short: 'V', hint: 'Click to select. Drag to move, drag the corner squares to resize. Drag empty space to move the view.' },
-  { id: 'platform', label: 'Platform', key: 'KeyP', short: 'P', hint: "Drag to draw a platform. Tick Indestructible on the right to draw ones explosions can't break." },
+  { id: 'platform', label: 'Platform', key: 'KeyP', short: 'P', hint: "Drag to draw a platform. On the right: tick Indestructible to draw ones explosions can't break, and pick the look they keep in either game." },
   { id: 'pad', label: 'Jump pad', key: 'KeyJ', short: 'J', hint: 'Drag to draw a jump pad. Set how strong it is on the right.' },
   { id: 'hard', label: 'Indestructible', key: 'KeyI', short: 'I', hint: "Click a platform to make it indestructible, and again to undo that. Drag a box to mark every platform inside it (hold Shift to unmark them). With Destruction on, explosions can't break them." },
+  { id: 'look', label: 'Look', key: 'KeyO', short: 'O', hint: "Click a platform to give it a look of its own, kept whichever game is played: the original's (paper and ink) or Remastered's (solid blocks). Pick which on the right. Drag a box to change every platform inside it (hold Shift to put them back to the game's own look)." },
   { id: 'spawn', label: 'Spawn', key: 'KeyS', short: 'S', hint: 'Click to place a spawn point. Pick blue or red team on the right.' },
   { id: 'weapon', label: 'Weapon', key: 'KeyW', short: 'W', hint: 'Click to place a weapon. Pick which one on the right.' },
   { id: 'health', label: 'Health', key: 'KeyH', short: 'H', hint: 'Click to place a health pack.' },
@@ -40,6 +42,12 @@ const TEAM_COLORS = { 1: '#2f6fdb', 2: '#d33b2f' };
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
 const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+// A platform's look of its own (the Look tool): '' is the game's own.
+const LOOK_NAMES = { '': "the game's own look", classic: "the original's look", remastered: "Remastered's look" };
+const lookOptions = sel => [['', "The game's own"], ['classic', "Always the original's"], ['remastered', "Always Remastered's"]]
+  .map(([v, t]) => `<option value="${v}"${(sel || '') === v ? ' selected' : ''}>${t}</option>`).join('');
+// How platforms with the original's look show in the map maker (those with Remastered's take its colours).
+const PAPER = '#f6eed6';
 
 /** A starting map with a floor and two spawn points, so test play works straight away. */
 export function blankMap() {
@@ -72,6 +80,8 @@ export class Editor {
     this.grid = 8;
     this.sitOnFloor = true;
     this.hardNew = false;   // new platforms are indestructible
+    this.lookNew = '';      // ...and the look they have ('' the game's own; see LOOK_NAMES)
+    this.lookPaint = 'remastered'; // the look the Look tool gives
     this.sel = null;
     this.hover = null;
     this.drag = null;
@@ -455,7 +465,10 @@ export class Editor {
       } else o.x = this.mirror.x;
       return;
     }
-    list[twin] = { ...this.mirrored(kind, o), ...(LETTERED.has(o.type) ? { label: list[twin].label } : {}) };
+    const keep = list[twin];
+    list[twin] = { ...this.mirrored(kind, o), ...(LETTERED.has(o.type) ? { label: keep.label } : {}) };
+    // (Looks aren't mirrored: one side can look old and the other new.)
+    if (kind === 'platform') { delete list[twin].look; if (keep.look && !list[twin].bounce) list[twin].look = keep.look; }
   }
 
   /** Put the mirror line in the middle of the map (on the grid). */
@@ -564,8 +577,8 @@ export class Editor {
           this.select(null);
           this.drag = { mode: 'pan', sx, sy, vx: this.view.x, vy: this.view.y };
         }
-      } else if (this.tool === 'hard') {
-        this.drag = { mode: 'mark', sx, sy, ex: sx, ey: sy, x0: wx, y0: wy, x1: wx, y1: wy, unmark: e.shiftKey };
+      } else if (this.tool === 'hard' || this.tool === 'look') {
+        this.drag = { mode: 'mark', tool: this.tool, sx, sy, ex: sx, ey: sy, x0: wx, y0: wy, x1: wx, y1: wy, unmark: e.shiftKey };
       } else if (this.tool === 'platform' || this.tool === 'pad' || AREA_TOOLS.has(this.tool)) {
         if (AREA_TOOLS.has(this.tool) && this.map.objectives.length >= LIMITS.maxObjectives) return this.setStatus(`At most ${LIMITS.maxObjectives} objectives`, true);
         if (!AREA_TOOLS.has(this.tool) && this.map.platforms.length >= LIMITS.maxPlatforms) return this.setStatus(`At most ${LIMITS.maxPlatforms} platforms`, true);
@@ -582,7 +595,7 @@ export class Editor {
       Object.assign(this.mouse, { x: sx, y: sy, wx, wy, inside: sx >= 0 && sy >= 0 && sx <= this.w && sy <= this.h });
       const d = this.drag;
       if (!d) {
-        const plat = this.tool === 'hard' ? this.platformAt(wx, wy, false) : -1;
+        const plat = this.tool === 'hard' || this.tool === 'look' ? this.platformAt(wx, wy, false) : -1;
         this.hover = this.tool === 'select' ? this.objectAt(wx, wy) : plat >= 0 ? { kind: 'platform', i: plat } : null;
         const h = this.tool === 'select' && this.handleAt(sx, sy);
         cv.style.cursor = this.spaceDown ? 'grab' : h ? (h === 'n' || h === 's' ? 'ns-resize' : h === 'e' || h === 'w' ? 'ew-resize' : h === 'nw' || h === 'se' ? 'nwse-resize' : 'nesw-resize')
@@ -629,7 +642,10 @@ export class Editor {
         this.remember();
         const p = { left: l, top: t, right: r, bottom: b };
         if (this.tool === 'pad') p.bounce = -(this.padStrength || BOUNCE.standard);
-        else if (this.hardNew) p.hard = true;
+        else {
+          if (this.hardNew) p.hard = true;
+          if (this.lookNew) p.look = this.lookNew;
+        }
         const m = this.mirror.x;
         if (this.mirror.on && l < m && r > m) {
           // Drawn across the mirror line: make it symmetric.
@@ -640,7 +656,8 @@ export class Editor {
         if (this.mirror.on && !(p.left < m && p.right > m) && !(p.left === this.mx(p.right))) this.map.platforms.push(this.mirrored('platform', p));
         this.changed();
       } else if (d.mode === 'mark') {
-        this.mark(d);
+        if (d.tool === 'look') this.markLook(d);
+        else this.mark(d);
       } else if (d.mode === 'move' || d.mode === 'resize') {
         // Nothing actually moved: forget the undo step.
         if (JSON.stringify(this.map) === d.before) this.undoStack.pop();
@@ -706,7 +723,7 @@ export class Editor {
     });
     this.$('#edExport').addEventListener('click', () => this.download(`${this.fileName()}.json`, 'application/json', JSON.stringify(normalizeMap(this.map), null, 2)));
     this.$('#edExportSSM').addEventListener('click', () => {
-      if ((this.map.objectives?.length || this.map.platforms.some(p => p.hard)) && !confirm("The original game's .ssm format can't hold hills, flags, capture points, M-COMs, Rush sectors, bomb sites or indestructible platforms, so those won't be in the file. Export anyway?")) return;
+      if ((this.map.objectives?.length || this.map.platforms.some(p => p.hard || p.look)) && !confirm("The original game's .ssm format can't hold hills, flags, capture points, M-COMs, Rush sectors, bomb sites, indestructible platforms or platforms' looks, so those won't be in the file. Export anyway?")) return;
       this.download(`${this.fileName()}.ssm`, 'application/octet-stream', encodeSSM(this.map));
     });
     this.$('#edImport').addEventListener('click', () => this.$('#edFile').click());
@@ -737,8 +754,8 @@ export class Editor {
 
   setTool(id) {
     this.tool = id;
-    // (The Indestructible tool doesn't select anything: its options take the panel.)
-    if (id === 'hard') this.sel = this.hover = null;
+    // (The Indestructible and Look tools don't select anything: their options take the panel.)
+    if (id === 'hard' || id === 'look') this.sel = this.hover = null;
     for (const b of this.root.querySelectorAll('[data-tool]')) b.setAttribute('aria-pressed', String(b.dataset.tool === id));
     this.$('#edHint').textContent = TOOLS.find(t => t.id === id).hint;
     this.refreshPanel();
@@ -795,6 +812,57 @@ export class Editor {
     this.setStatus(`${count(list.length, 'platform')} made ${hard ? 'indestructible' : 'breakable'}`);
   }
 
+  // ---- Looks: platforms drawn the original's way, or Remastered's, whichever game is played ----
+
+  /**
+   * What the Look tool's drag d would do: { list: indexes of the platforms it changes, look:
+   * what they get ('' the game's own), box: it's a box (not a click), pad: it's a click on a
+   * jump pad }. Not their twins with mirror editing on: one side can look old, the other new.
+   */
+  lookPlan(d) {
+    const pl = this.map.platforms, box = !this.isClick(d);
+    let look = d.unmark ? '' : this.lookPaint;
+    const picked = [];
+    if (!box) {
+      const i = this.platformAt(d.x0, d.y0, false);
+      if (i < 0) return { list: [], look, box, pad: this.platformAt(d.x0, d.y0) >= 0 };
+      picked.push(i);
+      // (Clicking one that has it already puts it back to the game's own.)
+      if ((pl[i].look || '') === look) look = '';
+    } else {
+      const l = Math.min(d.x0, d.x1), r = Math.max(d.x0, d.x1), t = Math.min(d.y0, d.y1), b = Math.max(d.y0, d.y1);
+      pl.forEach((p, i) => { if (!p.bounce && p.left >= l && p.right <= r && p.top >= t && p.bottom <= b) picked.push(i); });
+    }
+    return { list: picked.filter(i => (pl[i].look || '') !== look), look, box, pad: false };
+  }
+
+  markLook(d) {
+    const plan = this.lookPlan(d);
+    if (plan.list.length) this.setLook(plan.list, plan.look);
+    else if (plan.pad) this.setStatus('Jump pads keep their own look');
+    else if (plan.box) this.setStatus(`No platforms wholly inside the box without ${LOOK_NAMES[plan.look]}`);
+    else if (this.platformAt(d.x0, d.y0, false) >= 0) this.setStatus(`That platform already has ${LOOK_NAMES[plan.look]}`);
+  }
+
+  /** Give the platforms at these indexes a look of their own ('classic' or 'remastered'), or the game's own (''). */
+  setLook(list, look) {
+    if (!list.length) return;
+    this.remember();
+    for (const i of list) { const p = this.map.platforms[i]; if (look) p.look = look; else delete p.look; }
+    this.changed();
+    this.setStatus(`${count(list.length, 'platform')} given ${LOOK_NAMES[look]}`);
+  }
+
+  /** Colours for platforms with Remastered's look: its materials for the map's theme (kept while that's the same). */
+  lookColors() {
+    const theme = themeFor(this.map);
+    if (this.lookMats?.id !== theme.id) {
+      const mats = makeMaterials(null, theme, { patterns: false });
+      this.lookMats = { id: theme.id, front: mats.main.frontColor, top: theme.top === theme.material ? null : mats.top.frontColor };
+    }
+    return this.lookMats;
+  }
+
   // ---- Side panel ----------------------------------------------------------------
 
   refreshPanel() {
@@ -816,7 +884,8 @@ export class Editor {
       html += `<h3>${pad ? 'Jump pad' : 'Platform'}</h3>
         <div class="ed-grid">${num('pX', 'X', o.left)}${num('pY', 'Y', o.top)}${num('pW', 'Width', o.right - o.left)}${num('pH', 'Height', o.bottom - o.top)}</div>
         <label class="check"><input type="checkbox" id="pPad"${pad ? ' checked' : ''}> Jump pad</label>
-        ${pad ? '' : `<label class="check" title="With Destruction on, explosions can't blow holes in it (floors with spawn points or objectives on them are always safe)"><input type="checkbox" id="pHard"${o.hard ? ' checked' : ''}> Indestructible</label>`}
+        ${pad ? '' : `<label class="check" title="With Destruction on, explosions can't blow holes in it (floors with spawn points or objectives on them are always safe)"><input type="checkbox" id="pHard"${o.hard ? ' checked' : ''}> Indestructible</label>
+        <label class="ed-field" title="Drawn this way whichever game is played">Look<select id="pLook">${lookOptions(o.look)}</select></label>`}
         ${pad ? `<label class="ed-range">Strength <output>${-o.bounce}</output><input type="range" id="pBounce" min="${BOUNCE.min}" max="${BOUNCE.max}" step="0.5" value="${-o.bounce}"></label>` : ''}`;
     } else if (o && this.sel.kind === 'spawn') {
       html += `<h3>Spawn point</h3>${teamButtons('sTeam', o.team)}<div class="ed-grid">${num('sX', 'X', o.x)}${num('sY', 'Y', o.y)}</div>
@@ -848,12 +917,21 @@ export class Editor {
     if (this.tool === 'platform') {
       hardTool = `<h3>Drawing platforms</h3>
         <label class="check" title="With Destruction on, explosions can't blow holes in them"><input type="checkbox" id="toolHard"${this.hardNew ? ' checked' : ''}> Indestructible</label>
-        <p class="ed-note">${this.hardNew ? "New platforms can't be broken by explosions (they're hatched)." : 'Tick it to draw platforms explosions can\'t break.'}</p>`;
+        <p class="ed-note">${this.hardNew ? "New platforms can't be broken by explosions (they're hatched)." : 'Tick it to draw platforms explosions can\'t break.'}</p>
+        <label class="ed-field" title="Drawn this way whichever game is played (the Look tool changes platforms already drawn)">Look<select id="toolLookNew">${lookOptions(this.lookNew)}</select></label>`;
     } else if (this.tool === 'hard') {
       hardTool = `<h3>Indestructible platforms</h3>
         <p class="ed-stats">${hardCount} of ${count(solid.length, 'platform')}</p>
         <div class="ed-row"><button type="button" id="hardAll">All indestructible</button><button type="button" id="hardNone">All breakable</button></div>
         <p class="ed-note">Click platforms, or drag a box around them (Shift: unmark). With Destruction on, explosions can't break them. Floors with spawn points or objectives on them, and jump pads, never break.</p>`;
+    } else if (this.tool === 'look') {
+      const n = look => solid.filter(p => (p.look || '') === look).length;
+      const radio = (v, text) => `<label><input type="radio" name="toolLook" value="${v}"${this.lookPaint === v ? ' checked' : ''}> ${text}</label>`;
+      hardTool = `<h3>Looks</h3>
+        <p class="ed-stats">${n('classic')} in the original's look &middot; ${n('remastered')} in Remastered's &middot; ${n('')} with the game's own</p>
+        <div class="seg ed-looks">${radio('classic', "The original's")}${radio('remastered', "Remastered's")}${radio('', "The game's own")}</div>
+        <div class="ed-row"><button type="button" id="lookAll">Every platform</button><button type="button" id="lookNone">Clear every look</button></div>
+        <p class="ed-note">A platform with a look of its own keeps it in both games: give half a map the 2003 original's paper and ink and the other half Remastered's solid blocks (in the map's Remastered theme, below). Here they're <span class="ed-swatch" style="background:${PAPER}"></span> the original's and <span class="ed-swatch" style="background:${this.lookColors().front}"></span> Remastered's. Click platforms, or drag a box around them (Shift: back to the game's own). Jump pads keep their own look; mirror editing doesn't copy looks.</p>`;
     }
     if (o) {
       html += `<div class="ed-row"><button type="button" id="selDup">Duplicate</button><button type="button" id="selDel">Delete</button></div>
@@ -875,7 +953,7 @@ export class Editor {
       html += `<h3>Map</h3><p class="ed-stats">${count(m.platforms.length, 'platform')}${hardCount ? ` (${hardCount} indestructible)` : ''} &middot; ${count(m.spawns.length, 'spawn')} (${blue} blue, ${m.spawns.length - blue} red) &middot; ${count(m.items.length, 'pickup')}<br>${Math.round(b.right - b.left)} &times; ${Math.round(b.bottom - b.top)} px</p>
         <p class="ed-stats">Objectives: ${count(ob('hill'), 'hill')} &middot; ${count(ob('flag'), 'flag')} &middot; ${count(ob('point'), 'capture point')} &middot; ${count(ob('mcom'), 'M-COM')}${sectors ? ` in ${count(sectors, 'sector')}` : ''} &middot; ${count(ob('site'), 'bomb site')}</p>
         <p class="ed-note">Modes whose objectives you leave out get some worked out from the layout.</p>`;
-      html += `<label class="ed-field">Look in Remastered<select id="mapTheme"><option value="">Picked from the map's name</option>${Object.entries(THEMES).map(([id, t]) => `<option value="${id}"${m.theme === id ? ' selected' : ''}>${t.name}</option>`).join('')}</select></label>`;
+      html += `<label class="ed-field" title="Remastered's scenery, materials and weather for this map (and the materials of platforms given Remastered's look, in either game)">Remastered theme<select id="mapTheme"><option value="">Picked from the map's name</option>${Object.entries(THEMES).map(([id, t]) => `<option value="${id}"${m.theme === id ? ' selected' : ''}>${t.name}</option>`).join('')}</select></label>`;
       html += this.loadoutPanel();
     }
     const mir = this.mirror;
@@ -931,12 +1009,17 @@ export class Editor {
     on('pY', 'change', edit(el => { const h = o.bottom - o.top; o.top = +el.value || 0; o.bottom = o.top + h; }));
     on('pW', 'change', edit(el => { o.right = o.left + Math.max(8, +el.value || 8); }));
     on('pH', 'change', edit(el => { o.bottom = o.top + Math.max(8, +el.value || 8); }));
-    on('pPad', 'change', edit(el => { if (el.checked) { o.bounce = -(this.padStrength || BOUNCE.standard); delete o.hard; } else delete o.bounce; }));
+    on('pPad', 'change', edit(el => { if (el.checked) { o.bounce = -(this.padStrength || BOUNCE.standard); delete o.hard; delete o.look; } else delete o.bounce; }));
     on('pHard', 'change', edit(el => { if (el.checked) o.hard = true; else delete o.hard; }));
     on('toolHard', 'change', el => { this.hardNew = el.checked; this.refreshPanel(); });
+    on('toolLookNew', 'change', el => { this.lookNew = el.value; });
+    on('pLook', 'change', edit(el => { if (el.value) o.look = el.value; else delete o.look; }));
+    for (const r of this.root.querySelectorAll('input[name=toolLook]')) r.addEventListener('change', () => { this.lookPaint = r.value; });
     const platformsWhere = test => this.map.platforms.flatMap((p, i) => (!p.bounce && test(p) ? [i] : []));
     on('hardAll', 'click', () => this.setHard(platformsWhere(p => !p.hard), true));
     on('hardNone', 'click', () => this.setHard(platformsWhere(p => p.hard), false));
+    on('lookAll', 'click', () => this.setLook(platformsWhere(p => (p.look || '') !== this.lookPaint), this.lookPaint));
+    on('lookNone', 'click', () => this.setLook(platformsWhere(p => p.look), ''));
     on('pBounce', 'input', el => { el.previousElementSibling.textContent = el.value; });
     on('pBounce', 'change', edit(el => { o.bounce = -(+el.value); this.padStrength = +el.value; }));
     on('sX', 'change', edit(el => { o.x = +el.value || 0; }));
@@ -1174,6 +1257,20 @@ export class Editor {
     fillSeams(platformSeams(m.platforms), e, (x, y, w, h) => ctx.fillRect(x, y, w, h));
     ctx.fillStyle = '#eef3e2';
     for (const p of m.platforms) if (p.bounce) ctx.fillRect(p.left, p.top, p.right - p.left, p.bottom - p.top);
+    // Platforms with a look of their own (the Look tool): the original's in paper, Remastered's in
+    // its colours for the map's theme (with its top's lip: grass, snow...).
+    if (m.platforms.some(p => p.look)) {
+      const c = this.lookColors();
+      for (const p of m.platforms) {
+        if (!p.look || p.bounce) continue;
+        ctx.fillStyle = p.look === 'classic' ? PAPER : c.front;
+        ctx.fillRect(p.left, p.top, p.right - p.left, p.bottom - p.top);
+        if (p.look === 'remastered' && c.top) {
+          ctx.fillStyle = c.top;
+          ctx.fillRect(p.left, p.top, p.right - p.left, Math.min(3.2, p.bottom - p.top));
+        }
+      }
+    }
     // Indestructible platforms (destructible maps) are hatched, as in the game.
     ctx.strokeStyle = HATCH;
     ctx.lineWidth = Math.max(1, px);
@@ -1267,7 +1364,7 @@ export class Editor {
       ctx.setLineDash([]);
     }
 
-    // The Indestructible tool: its box, and the platforms it would change.
+    // The Indestructible and Look tools: the box, and the platforms it would change.
     if (dr?.mode === 'mark') {
       const color = dr.unmark ? '#d33b2f' : '#2f6fdb';
       if (!this.isClick(dr)) {
@@ -1282,7 +1379,7 @@ export class Editor {
       }
       ctx.strokeStyle = color;
       ctx.lineWidth = 2 * px;
-      for (const i of this.markPlan(dr).list) {
+      for (const i of (dr.tool === 'look' ? this.lookPlan(dr) : this.markPlan(dr)).list) {
         const p = m.platforms[i];
         ctx.strokeRect(p.left - 2 * px, p.top - 2 * px, p.right - p.left + 4 * px, p.bottom - p.top + 4 * px);
       }

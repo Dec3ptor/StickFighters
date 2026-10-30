@@ -20,6 +20,7 @@ import { Lights, Weather, LIGHT, glowSprite, fireballSprite, smokeSprite, cloudS
 import { styledContext } from './hudstyle.js';
 import { css } from './color.js';
 import { GameMap } from '../map.js';
+import { paintMap } from '../maptiles.js';
 
 export // After a quality or map change, how long (ms) before the frame rate says anything about the quality.
 const SETTLE = 2500;
@@ -168,6 +169,9 @@ export class RemasteredRenderer extends Renderer {
     this.fogNow = game.options?.fog && !this.noFog && (this.fogFrom || viewer) ? (this.fog ||= new Fog()).update(game, this.fogFrom || viewer, alpha) : null;
 
     look.blocks.draw(this, game.map, look.mats, theme, !!game.options?.destruction);
+    // Blocks given the original's look (the map maker's Look tool): paper and ink, as the
+    // original draws them, in front of the solid blocks' sides.
+    if (game.map.looks?.classic) paintMap(ctx, game.map, this.lineW, this.view, !!game.options?.destruction, 'remastered');
     this.drawPads(game);
     this.drawStains(game);
     drawObjectives(this, game);

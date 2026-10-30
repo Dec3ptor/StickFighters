@@ -120,6 +120,51 @@ const marking = { drawnHard, clickedHard, clickedBack, boxHard, unmarked, allHar
 expect(clickedHard === 'false,true,false,false' && clickedBack === 'false,false,false,false', `click to mark and unmark: ${JSON.stringify(marking)}`);
 expect(boxHard === 'false,true,true,false' && unmarked === 'false,false,true,false', `box to mark, Shift-box to unmark: ${JSON.stringify(marking)}`);
 expect(allHard === 'true,true,true,false' && hardUndone === unmarked, `all indestructible (not the jump pad), then undo: ${JSON.stringify(marking)}`);
+
+// Looks of their own (kept whichever game is played): the Look tool (O) gives a clicked platform
+// the look picked (click again: back to the game's own), or every platform in a box (Shift: back
+// to the game's own). A selected platform has a Look box, and the Platform tool draws with one.
+const looks = () => page.evaluate(() => window.stickSoldiers.editor.map.platforms.map(p => p.look || '-').join());
+await page.keyboard.press('KeyO');
+await clickAt(...ledge);
+const clickedLook = await looks();
+await clickAt(...ledge);
+const clickedLookBack = await looks();
+await page.click('#edProps label:has(input[name=toolLook][value="classic"])');
+await drag([-450, 20], [450, 250]);
+const boxLook = await looks();
+await page.keyboard.down('Shift');
+await drag([-290, 20], [-40, 130]);
+await page.keyboard.up('Shift');
+const clearedLook = await looks();
+await clickAt(0, 192);
+const padLook = await page.textContent('#edStatus');
+await page.click('#lookAll');
+const allLook = await looks();
+await page.keyboard.press('Control+KeyZ');
+const lookUndone = await looks();
+await page.click('#edProps label:has(input[name=toolLook][value="remastered"])');
+await clickAt(175, 70);
+const mixedLook = await looks();
+await page.keyboard.press('KeyV');
+await clickAt(-300, 220);
+await page.selectOption('#pLook', 'remastered');
+const selectedLook = await looks();
+await page.keyboard.press('Control+KeyZ');
+await page.keyboard.press('KeyP');
+await page.selectOption('#toolLookNew', 'classic');
+await drag([-56, 104], [56, 120]);
+const drawnLook = await looks();
+await page.selectOption('#toolLookNew', '');
+await page.click('#selDel');
+const lookMarking = { clickedLook, clickedLookBack, boxLook, clearedLook, padLook, allLook, lookUndone, mixedLook, selectedLook, drawnLook, final: await looks() };
+expect(clickedLook === '-,remastered,-,-' && clickedLookBack === '-,-,-,-', `click to give a look and take it back: ${JSON.stringify(lookMarking)}`);
+expect(boxLook === 'classic,classic,classic,-' && clearedLook === 'classic,-,classic,-', `box to give a look (not the jump pad), Shift-box to take it back: ${JSON.stringify(lookMarking)}`);
+expect(/jump pads/i.test(padLook), `a jump pad keeps its own look: ${padLook}`);
+expect(allLook === 'classic,classic,classic,-' && lookUndone === clearedLook, `every platform, then undo: ${JSON.stringify(lookMarking)}`);
+expect(mixedLook === 'classic,-,remastered,-' && selectedLook === 'remastered,-,remastered,-', `Remastered's look; a selected platform's Look box: ${JSON.stringify(lookMarking)}`);
+expect(drawnLook === 'classic,-,remastered,-,classic' && lookMarking.final === mixedLook, `the Platform tool's look: ${JSON.stringify(lookMarking)}`);
+await page.screenshot({ path: `${outDir}/editor-looks.png` });
 await page.keyboard.press('KeyV');
 
 // The map's look in Remastered (in the map's own settings, with nothing selected).
@@ -140,11 +185,13 @@ await page.waitForFunction(() => window.stickSoldiers.state.game && window.stick
 await page.waitForTimeout(2500);
 const playing = await page.evaluate(() => {
   const g = window.stickSoldiers.state.game;
-  return { map: g.map.name, tick: g.tick, destruction: !!g.options.destruction, saved: window.stickSoldiers.editor.record.data.platforms.map(p => !!p.hard).join(), theme: g.map.theme };
+  return { map: g.map.name, tick: g.tick, destruction: !!g.options.destruction, saved: window.stickSoldiers.editor.record.data.platforms.map(p => !!p.hard).join(), theme: g.map.theme,
+    looks: g.map.solids.filter(s => s.id < 4).map(s => s.look || '-').join() };
 });
 expect(playing.map === 'Playwright Arena' && playing.tick > 60, `test play: ${JSON.stringify(playing)}`);
 expect(playing.theme === 'arctic', `the map's look goes with it (${playing.theme})`);
 expect(playing.destruction && playing.saved === 'false,false,true,false', `played with Destruction on, the indestructible ledge saved: ${JSON.stringify(playing)}`);
+expect(playing.looks === 'classic,-,remastered,-', `played with the platforms' looks: ${JSON.stringify(playing)}`);
 await page.screenshot({ path: `${outDir}/editor-testplay.png` });
 await page.keyboard.press('Escape');
 await page.waitForTimeout(200);
@@ -175,6 +222,8 @@ expect(shared.selected === 'Playwright Arena', `share link should select the map
 expect(shared.hash === '', 'the share code should be removed from the address bar');
 const sharedTheme = await friend.evaluate(async () => (await import('./src/mapstore.js')).listMaps().find(m => m.name === 'Playwright Arena')?.data.theme);
 expect(sharedTheme === 'arctic', `the share link keeps the map's look (${sharedTheme})`);
+const sharedLooks = await friend.evaluate(async () => (await import('./src/mapstore.js')).listMaps().find(m => m.name === 'Playwright Arena')?.data.platforms.map(p => p.look || '-').join());
+expect(sharedLooks === 'classic,-,remastered,-', `...and its platforms' looks (${sharedLooks})`);
 await friend.screenshot({ path: `${outDir}/menu-shared.png` });
 
 // ...pasting a link into a tab that's already open works too, and the same link twice doesn't duplicate it.
@@ -277,7 +326,7 @@ const communityCards = await page.$$eval('.map-card span', els => els.map(e => e
 expect(communityCards.includes('Mirror Test Arena'), `community tab lists the upload (${communityCards})`);
 await page.screenshot({ path: `${outDir}/menu-community.png` });
 
-console.log(JSON.stringify({ marking, objectives, ctf, uploadStatus, communityCards, mirrored, loadout, built, moves: { before, moved, undone, redone }, report, playing, shared, again, broken, errors }, null, 2));
+console.log(JSON.stringify({ marking, lookMarking, objectives, ctf, uploadStatus, communityCards, mirrored, loadout, built, moves: { before, moved, undone, redone }, report, playing, shared, again, broken, errors }, null, 2));
 await browser.close();
 server.close();
 await relay.close();

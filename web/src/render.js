@@ -14,6 +14,9 @@ import { Fog } from './fog.js';
 import { drawCrosshair as drawCrosshairAt } from './crosshair.js';
 import { skinFor, drawSkinHead, drawVest, SKIN_ACCENT } from './skins.js';
 import { drawSoldier as drawSoldierRm } from './rm/soldiers.js';
+import { Blocks } from './rm/blocks.js';
+import { makeMaterials } from './rm/textures.js';
+import { themeFor } from './rm/themes.js';
 
 export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate };
 
@@ -266,6 +269,7 @@ export class Renderer {
    */
   /** The match is over and gone: let go of its soldiers (the lists below are kept for the next). */
   forgetMatch() {
+    this.rmLook = null;
     const out = this.shown;
     if (!out) return;
     out.soldiers.length = 0;
@@ -294,14 +298,33 @@ export class Renderer {
   /**
    * The map: drawn directly (only what's on screen), or with ?tiles=on, copied from
    * tiles drawn before (maptiles.js). Then the jump pads' moving chevrons.
+   * Blocks given Remastered's look (the map maker's Look tool) go first: their sides
+   * shift as the camera moves (so there are no tiles for maps with them).
    */
   drawMap(game) {
+    const mixed = game.map.looks?.remastered;
     this.tiled ??= Renderer.tiles === 'on';
-    if (!this.tiled || !(this.mapTiles ||= new MapTiles()).draw(this, game, !this.cleared)) {
+    if (mixed || !this.tiled || !(this.mapTiles ||= new MapTiles()).draw(this, game, !this.cleared)) {
       if (!this.cleared) this.clearWhite();
+      if (mixed) this.drawRemasteredBlocks(game);
       paintMap(this.ctx, game.map, this.lineW, this.view, !!game.options?.destruction);
     }
     this.drawPads(game, false);
+  }
+
+  /**
+   * Blocks given Remastered's look, in the original: solid, with depth, in the map's
+   * Remastered materials, their sides in plain colours (as Remastered's medium quality
+   * draws them). With WebGL, which can't repeat a picture, the fronts are plain too.
+   */
+  drawRemasteredBlocks(game) {
+    const map = game.map;
+    let rm = this.rmLook;
+    if (rm?.map !== map) {
+      const theme = themeFor(map), pictures = this.kind !== 'webgl' && typeof this.ctx.createPattern === 'function';
+      rm = this.rmLook = { map, theme, pictures, mats: makeMaterials(this.ctx, theme, { patterns: pictures }), blocks: new Blocks() };
+    }
+    rm.blocks.draw(this, map, rm.mats, rm.theme, !!game.options?.destruction, { quality: 'medium', flat: !rm.pictures, own: 'classic' });
   }
 
   /** The whole canvas white (then back to the world transform). */

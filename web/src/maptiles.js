@@ -30,15 +30,25 @@ export const BUILT = '#efe5cf', BUILT_LINE = '#c4ae86', BUILT_ROW = 6;
  * where blocks meet, built blocks as sandbags, hatching on blocks that can't be
  * destroyed (destructible maps), and jump pads' fill. Returns the box around
  * everything it drew (world), or null if there was nothing there.
+ *
+ * Only blocks in the original's look: own is the look of blocks without one of their
+ * own (the map maker's Look tool), 'classic' in the original and 'remastered' in
+ * Remastered (which draws just the blocks given the original's look this way).
  */
-export function paintMap(ctx, map, e, rect, destruction) {
+export function paintMap(ctx, map, e, rect, destruction, own = 'classic') {
   let list = map.solids;
-  if (rect) {
+  // (Blocks of another look are left out, if the map has any.)
+  const pick = own === 'classic' ? (map.looks?.remastered ? notRemastered : null) : isClassic;
+  if (rect || pick) {
     list = Q.list;
     list.length = 0;
-    Q.rect = rect; Q.e = e;
-    map.query(rect.l - e - 1, rect.t - e - 1, rect.r + e + 1, rect.b + e + 1, near);
-    Q.rect = null;
+    Q.pick = pick;
+    if (rect) {
+      Q.rect = rect; Q.e = e;
+      map.query(rect.l - e - 1, rect.t - e - 1, rect.r + e + 1, rect.b + e + 1, near);
+      Q.rect = null;
+    } else for (const s of map.solids) if (pick(s)) list.push(s);
+    Q.pick = null;
     if (!list.length) return null;
   }
   // (Indexed loops: drawn every frame, these must make no garbage.)
@@ -48,7 +58,7 @@ export function paintMap(ctx, map, e, rect, destruction) {
   ctx.fillStyle = '#fff';
   for (let i = 0; i < n; i++) { const p = list[i]; ctx.fillRect(p.l, p.t, p.r - p.l, p.b - p.t); }
   // No hairlines where blocks just meet.
-  let seams = map.getSeams();
+  let seams = map.getSeams(own);
   if (rect) {
     const all = seams;
     seams = Q.seams;
@@ -103,12 +113,14 @@ export function paintMap(ctx, map, e, rect, destruction) {
 // paintMap's working state, used again on every call (no new lists or functions each
 // frame): the blocks and seams near the area, the area, the outline width, the canvas,
 // and the box it returns (read it straight away: the next call fills it in again).
-const Q = { list: [], seams: [], rect: null, e: 0, ctx: null, box: { l: 0, t: 0, r: 0, b: 0 } };
+const Q = { list: [], seams: [], rect: null, e: 0, pick: null, ctx: null, box: { l: 0, t: 0, r: 0, b: 0 } };
 const near = s => {
   const rect = Q.rect, e = Q.e;
-  if (s.r + e >= rect.l && s.l - e <= rect.r && s.b + e >= rect.t && s.t - e <= rect.b) Q.list.push(s);
+  if (s.r + e >= rect.l && s.l - e <= rect.r && s.b + e >= rect.t && s.t - e <= rect.b && (!Q.pick || Q.pick(s))) Q.list.push(s);
   return false;
 };
+const notRemastered = s => s.look !== 'remastered';
+const isClassic = s => s.look === 'classic';
 const fillTo = (x, y, w, h) => Q.ctx.fillRect(x, y, w, h);
 const lineTo = (x0, y0, x1, y1) => { Q.ctx.moveTo(x0, y0); Q.ctx.lineTo(x1, y1); };
 const isBuilt = p => p.built;

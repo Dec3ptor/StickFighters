@@ -4,7 +4,9 @@
 //
 // Map format (same as the decoded originals in web/data/maps/):
 //   { name, bounds: {left, top, right, bottom},
-//     platforms: [{ left, top, right, bottom, bounce?, hard? }],   bounce < 0 makes a jump pad; hard: explosions can't destroy it
+//     platforms: [{ left, top, right, bottom, bounce?, hard?, look? }],   bounce < 0 makes a jump pad; hard: explosions can't destroy it;
+//                                                            look: 'classic' or 'remastered', drawn that way whichever game is
+//                                                            played (the map maker's Look tool; jump pads have none)
 //     spawns: [{ x, y, team, sector? }],                     team 1 = blue, 2 = red; sector: Rush (see below)
 //     items: [{ type: 'health'|'armour'|'jetpack'|'weapon', x, y, weapon? }],
 //     loadout?: { weapons: [ids], armour: 0-100, jetpack: bool },      what everyone spawns with
@@ -20,7 +22,7 @@
 //                                                            the bomb; blue's spawns are the attackers' (T), red's
 //                                                            the defenders' (CT), whichever team is playing them
 
-import { GameMap } from './map.js';
+import { GameMap, LOOKS } from './map.js';
 import { NavGraph } from './nav.js';
 import { makeBody, stepBody } from './physics.js';
 import { BODY, RULES, DEFAULT_SPEED } from './config.js';
@@ -74,7 +76,10 @@ export function normalizeMap(raw) {
     const out = { left: l, top: t, right: r, bottom: b };
     const bounce = Number(p.bounce) || 0;
     if (bounce) out.bounce = -Math.min(BOUNCE.max, Math.max(BOUNCE.min, Math.abs(round(bounce))));
-    else if (p.hard) out.hard = true;
+    else {
+      if (p.hard) out.hard = true;
+      if (LOOKS.includes(p.look)) out.look = p.look;
+    }
     platforms.push(out);
   }
   const spawns = (Array.isArray(raw.spawns) ? raw.spawns : []).slice(0, LIMITS.maxSpawns).map((s, i) => {
@@ -151,7 +156,7 @@ function pack(map) {
   return {
     v: 1,
     n: map.name,
-    p: map.platforms.map(p => (p.hard ? [p.left, p.top, p.right, p.bottom, 0, 1] : p.bounce ? [p.left, p.top, p.right, p.bottom, p.bounce] : [p.left, p.top, p.right, p.bottom])),
+    p: map.platforms.map(packPlatform),
     s: map.spawns.map(s => (s.sector ? [s.x, s.y, s.team, s.sector] : [s.x, s.y, s.team])),
     ...(map.objectives ? { o: map.objectives.map(o => (o.type === 'flag' ? ['f', o.x, o.y, o.team] : o.type === 'mcom' ? ['m', o.x, o.y, o.sector]
       : [o.type === 'hill' ? 'h' : o.type === 'site' ? 's' : 'p', o.left, o.top, o.right, o.bottom, ...(o.label ? [o.label] : [])])) } : {}),
@@ -161,11 +166,22 @@ function pack(map) {
   };
 }
 
+// A platform: [left, top, right, bottom], then its bounce (jump pads), or 0 and 1 if it's
+// indestructible, then its look of its own (1: the original's, 2: Remastered's).
+const LOOK_CODES = { classic: 1, remastered: 2 };
+function packPlatform(p) {
+  const a = [p.left, p.top, p.right, p.bottom], look = LOOK_CODES[p.look];
+  if (p.bounce) a.push(p.bounce);
+  else if (p.hard || look) a.push(0, p.hard ? 1 : 0);
+  if (look && !p.bounce) a.push(look);
+  return a;
+}
+
 function unpack(o) {
   if (!o || o.v !== 1) throw new Error("That link isn't a map from this game");
   return normalizeMap({
     name: o.n,
-    platforms: (o.p || []).map(([left, top, right, bottom, bounce, hard]) => ({ left, top, right, bottom, bounce, hard: !!hard })),
+    platforms: (o.p || []).map(([left, top, right, bottom, bounce, hard, look]) => ({ left, top, right, bottom, bounce, hard: !!hard, look: LOOKS[look - 1] })),
     spawns: (o.s || []).map(([x, y, team, sector]) => ({ x, y, team, sector })),
     objectives: (o.o || []).map(([k, ...a]) => (k === 'f' ? { type: 'flag', x: a[0], y: a[1], team: a[2] } : k === 'm' ? { type: 'mcom', x: a[0], y: a[1], sector: a[2] }
       : { type: k === 'h' ? 'hill' : k === 's' ? 'site' : 'point', left: a[0], top: a[1], right: a[2], bottom: a[3], label: a[4] })),
