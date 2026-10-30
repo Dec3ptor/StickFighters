@@ -5,7 +5,7 @@
 // kinds are described at the top of weapons.js.
 
 import { BODY, RULES, MOTION } from './config.js';
-import { WEAPONS, HEADSHOT_MULTIPLIER } from './weapons.js';
+import { WEAPONS } from './weapons.js';
 import { segmentT, SEG, hypot } from './map.js';
 import { weaponFor } from './classes.js';
 import { projectileBeacon, shotBeacon, blastGadgets, meleeBeacon } from './gadgets.js';
@@ -659,7 +659,7 @@ const STEP = {
       const hy = p.y + p.vy * hit.t;
       const head = hy < hit.box.t + HEAD_ZONE;
       const sp = hypot(p.vx, p.vy);
-      damage(game, hit.soldier, p.damage * (head ? HEADSHOT_MULTIPLIER : 1), p.owner, p.weapon, { dirX: p.vx / sp, dirY: p.vy / sp, knock: p.knock, headshot: head });
+      damage(game, hit.soldier, p.damage * (head ? RULES.headshotMultiplier : 1), p.owner, p.weapon, { dirX: p.vx / sp, dirY: p.vy / sp, knock: p.knock, headshot: head });
       p.x += p.vx * hit.t; p.y = hy;
       return false;
     }

@@ -35,6 +35,8 @@ import { renderLoadout, renderPicker } from './loadout.js';
 import { CROSSHAIR_STYLES, CROSSHAIR_COLORS, CROSSHAIR_DEFAULTS, setCrosshair, drawCrosshair, crosshairCursor } from './crosshair.js';
 import { setKeys, savedKeys, resetKeys, isKey, keysFor, keyOf, mouseKey, keyName, keyLabel, keyText, useLayout } from './keys.js';
 import { KeybindList } from './keysui.js';
+import { loadTuning, tuningToShare, useOwnTuning, tuningVersion } from './tuning.js';
+import { DevMenu } from './devmenu.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -514,6 +516,8 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const map = await mapDataFor(settings.map);
   // Let the loading message paint before building the bots' route map.
   await new Promise(r => setTimeout(r, 30));
+  // Our own numbers (Settings, Developer) for a game of ours: someone else's game had theirs.
+  useOwnTuning();
   const options = {
     lives: settings.lives, gunGameKills: settings.gunKills, crates: settings.crates,
     botVision: settings.botVision === 'sight' ? 'sight' : 'classic', fog: settings.fog === 'on',
@@ -529,7 +533,8 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   // Route maps depend on the map version and the speed's move timings. (Built on a
   // fresh copy of the map: when the map can change (holes, building), the match works
   // on a copy of the route map, and its own map changes.)
-  const navKey = `${map.navKey}@${settings.speed}`;
+  // (And on the developer menu's numbers: jumps and runs are worked out with them.)
+  const navKey = `${map.navKey}@${settings.speed}@${tuningVersion()}`;
   if (!maps.nav.has(navKey)) maps.nav.set(navKey, new NavGraph(new GameMap(map.data)));
   const nav = game.useNav(maps.nav.get(navKey));
   const rng = makeRng((Math.random() * 2 ** 31) | 0);
@@ -905,6 +910,7 @@ function openSettings() {
   showCrosshair();
   showCamera();
   keybinds.render();
+  devMenu.render();
   settingsNotes();
   showSettingsPage(state.settingsPage);
   show('settings', true);
@@ -985,6 +991,9 @@ const keybinds = new KeybindList($('keybinds'), {
   onChange: () => { prefs.keys = savedKeys(); savePrefs(); showKeys(); },
   classes: () => CLASSES_ON,
 });
+
+// The developer menu (Settings: Developer): the game's numbers (tuning.js).
+const devMenu = new DevMenu($('devMenu'));
 
 /** The keys named on the page (the menu's Controls) as they're set: <span data-keys="action"> (data-first: just the first). */
 function showKeys() {
@@ -1199,6 +1208,8 @@ async function hostMatch(game, settings, map, nav, rng) {
     mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, mapName: map.name,
     options: game.options,
     map: map.builtin ? { builtin: map.builtin } : { code: await encodeShare(map.data) },
+    // (Our developer menu's numbers, if we've changed any: everyone here plays by them.)
+    tuning: tuningToShare(),
   };
   net.addBot = g => addBot(g, nav, settings, rng);
   if (!net.host) {
@@ -1306,6 +1317,8 @@ function startClient(link) {
 function leaveOnline() {
   const net = state.net;
   state.net = null;
+  // (Someone else's game had its own numbers: ours again.)
+  useOwnTuning();
   if (!net) return;
   if (net.role === 'host') { net.handle?.close(); net.host?.close(); }
   if (net.role === 'client') net.client?.leave();
@@ -1910,6 +1923,8 @@ async function boot() {
   prefs.camera = setCamera(prefs.camera);
   prefs.keys = setKeys(prefs.keys);
   showKeys();
+  // The developer menu's numbers, as changed in this browser.
+  loadTuning();
   // (Keyboards other than QWERTY: name keys as they're printed, where the browser can say.)
   navigator.keyboard?.getLayoutMap?.().then(m => { useLayout(m); keybinds.render(); showKeys(); }).catch(() => {});
   pacer.setMode(prefs.fpsCap);

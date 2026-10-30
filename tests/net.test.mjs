@@ -8,7 +8,8 @@ import { NetHost } from '../web/src/net/host.js';
 import { NetClient } from '../web/src/net/client.js';
 import { memoryLinks } from '../web/src/net/peer.js';
 import { encodeInputs, decodeInputs, encodeWorld, encodeSnapshot, decodeSnapshot, SNAPSHOT_EVERY } from '../web/src/net/protocol.js';
-import { DEFAULT_SPEED } from '../web/src/config.js';
+import { DEFAULT_SPEED, PHYS } from '../web/src/config.js';
+import { useOwnTuning, usingHostTuning } from '../web/src/tuning.js';
 import { makeRng } from '../web/src/util.js';
 import { WEAPONS } from '../web/src/weapons.js';
 import { spawn } from '../web/src/combat.js';
@@ -72,7 +73,7 @@ test('snapshots carry every soldier, projectile and pickup', () => {
 });
 
 /** A host with bots, and `players` remote players joined over in-memory links on a simulated clock. */
-async function onlineMatch({ players = 1, latency = 0, loss = 0, mode = 'ffa', file = 'ssdm1.json', controllers = [], options = {}, before } = {}) {
+async function onlineMatch({ players = 1, latency = 0, loss = 0, mode = 'ffa', file = 'ssdm1.json', controllers = [], options = {}, before, tuning = null } = {}) {
   const first = botGame(file, mode, 5, options);
   const { mapData, addBot } = first;
   let game = first.game;
@@ -81,7 +82,7 @@ async function onlineMatch({ players = 1, latency = 0, loss = 0, mode = 'ffa', f
   const schedule = (fn, ms) => queue.push({ at: now + ms, fn });
   const host = new NetHost({
     maxPlayers: 8, botCount: 3,
-    matchInfo: () => ({ mode, fragLimit: 999, options: game.options, speed: DEFAULT_SPEED, map: { builtin: file }, mapName: 'test' }),
+    matchInfo: () => ({ mode, fragLimit: 999, options: game.options, speed: DEFAULT_SPEED, map: { builtin: file }, mapName: 'test', tuning }),
     addBot,
   });
   game.addSoldier({ name: 'Host', isBot: false }, { input: () => ({ move: 0 }) });
@@ -242,6 +243,19 @@ test('in team modes, chat says which team each message is from (its name is show
   assert.equal(got.find(m => m.text === 'push left')?.team, team);
   assert.equal(got.find(m => m.text === 'on it')?.team, 2);
   assert.equal(got.find(m => m.text === 'no team')?.team, 0);
+});
+
+test('players use the host\'s numbers (its developer menu), and their own again after', async () => {
+  const m = await onlineMatch({ tuning: { PHYS: { runSpeed: 5 }, WEAPONS: { M4: { damage: 30 } } } });
+  try {
+    assert.ok(m.clients[0].game, 'joined');
+    assert.ok(usingHostTuning(), 'the host\'s numbers in use');
+    assert.ok(Math.abs(PHYS.runSpeed - 5 * DEFAULT_SPEED) < 1e-9, `run speed ${PHYS.runSpeed}`);
+    assert.equal(WEAPONS.M4.damage, 30);
+  } finally { useOwnTuning(); }
+  assert.ok(!usingHostTuning());
+  assert.ok(Math.abs(PHYS.runSpeed - 3.4 * DEFAULT_SPEED) < 1e-9, 'our own (the game\'s) again');
+  assert.equal(WEAPONS.M4.damage, 12);
 });
 
 test('a player leaving removes their soldier and a bot takes the slot back', async () => {

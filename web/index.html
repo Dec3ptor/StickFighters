@@ -256,6 +256,7 @@
           <button type="button" class="set-tab" role="tab" id="setTabCrosshair" data-page="crosshair" aria-selected="false">Mouse &amp; crosshair</button>
           <button type="button" class="set-tab" role="tab" id="setTabCamera" data-page="camera" aria-selected="false">Camera</button>
           <button type="button" class="set-tab" role="tab" id="setTabGame" data-page="game" aria-selected="false">Gameplay</button>
+          <button type="button" class="set-tab dev-tab" role="tab" id="setTabDev" data-page="dev" aria-selected="false">Developer</button>
         </nav>
         <div class="set-pages">
           <div class="set-page" data-page="video" role="tabpanel" aria-labelledby="setTabVideo">
@@ -442,6 +443,10 @@
                 <select id="setFog"><option value="off">Off</option><option value="on">On</option></select>
               </div>
             </div>
+          </div>
+          <div class="set-page hidden" data-page="dev" role="tabpanel" aria-labelledby="setTabDev">
+            <h3 class="set-title">Developer</h3>
+            <div id="devMenu" class="dev"></div>
           </div>
         </div>
       </div>

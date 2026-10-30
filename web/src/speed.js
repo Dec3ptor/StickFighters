@@ -10,6 +10,11 @@ import { WEAPONS } from './weapons.js';
 
 const BASE = JSON.parse(JSON.stringify({ PHYS, MOTION, RULES, WEAPONS }, (k, v) => (v === Infinity ? 'Infinity' : v)),
   (k, v) => (v === 'Infinity' ? Infinity : v));
+/**
+ * The numbers at full speed, which setGameSpeed scales into the ones the game reads. The
+ * developer menu (tuning.js) changes these, then calls rescale().
+ */
+export const BASE_VALUES = BASE;
 
 const SPEEDS = ['runSpeed', 'crouchSpeed', 'jumpSpeed', 'jumpCut', 'bounceScale', 'jetMaxUp', 'maxFall', 'jetDrain', 'jetRegen', 'ropeClimb', 'sprintDrain', 'sprintRegen'];
 const ACCELS = ['gravity', 'groundAccel', 'airAccel', 'jetAccel'];
@@ -40,6 +45,9 @@ function scaleWeapon(out, base, s) {
 export function setGameSpeed(s = 1) {
   current = s;
   const v = s, a = s * s, t = 1 / s;
+  // (Numbers the speed doesn't change are copied as they are: BASE_VALUES holds them all.)
+  for (const k in BASE.PHYS) if (typeof BASE.PHYS[k] === 'number') PHYS[k] = BASE.PHYS[k];
+  for (const k in BASE.RULES) if (typeof BASE.RULES[k] === 'number') RULES[k] = BASE.RULES[k];
   for (const k of SPEEDS) if (k in BASE.PHYS) PHYS[k] = BASE.PHYS[k] * v;
   for (const k of ACCELS) PHYS[k] = BASE.PHYS[k] * a;
 
@@ -61,3 +69,6 @@ export function setGameSpeed(s = 1) {
 
   for (const id in WEAPONS) scaleWeapon(WEAPONS[id], BASE.WEAPONS[id], s);
 }
+
+/** Scale again at the speed in use (after a change to BASE_VALUES). */
+export function rescale() { setGameSpeed(current); }

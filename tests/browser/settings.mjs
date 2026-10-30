@@ -1,7 +1,7 @@
 // The Settings screen: switching graphics mid-match (WebGL and back), the frame
 // rate cap, the frame rate readout, the volume (here and in the game's menu), the
 // dropdowns left alone while it's open, the crosshair's look, aiming down the sights,
-// the camera, and everything being remembered next visit.
+// the camera, the developer menu's numbers, and everything being remembered next visit.
 // Usage: node tests/browser/settings.mjs [outDir]
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -234,7 +234,61 @@ await page.click('#camReset');
 const cam2 = await page.evaluate(() => ({ ...window.stickSoldiers.prefs.camera, out: document.getElementById('camGlideOut').textContent }));
 expect(cam2.look === 100 && cam2.glide === 0 && cam2.follow === 330 && cam2.out === 'Off', `Reset puts the camera back (${JSON.stringify(cam2)})`);
 
-console.log(JSON.stringify({ autoLabel, rewrites, vol0, vol1, capped, full, hz, readout, saved, zoomIdle, zoomFiring, zoomSights, lean, leanOff, errors }, null, 2));
+// 7. Developer: the game's numbers. Run speed up to 5 (at full speed): saved, copied out, used
+// in a match (at 75%: 3.75 a frame), and still there next visit.
+await tab('dev');
+const devRow = key => `#devMenu .dev-row[data-key="${key}"]`;
+expect(await page.inputValue(`${devRow('PHYS.runSpeed')} input`) === '3.4', 'run speed starts at 3.4');
+await page.fill(`${devRow('PHYS.runSpeed')} input`, '5');
+await page.press(`${devRow('PHYS.runSpeed')} input`, 'Enter');
+expect(await page.getAttribute(devRow('PHYS.runSpeed'), 'class').then(c => c.includes('changed')), 'the changed number is marked');
+const exported = JSON.parse(await page.inputValue('#devMenu .dev-export'));
+expect(exported.PHYS?.runSpeed === 5, `copied out (${JSON.stringify(exported)})`);
+// Weapons: one gun at a time.
+await page.click('#devMenu .dev-section[data-section="weapons"]');
+await page.selectOption('#devMenu .dev-weapon-pick', 'M4');
+await page.fill(`${devRow('WEAPONS.M4.damage')} input`, '30');
+await page.press(`${devRow('WEAPONS.M4.damage')} input`, 'Enter');
+expect(/M4 Carbine \(1 changed\)/.test(await page.textContent('#devMenu .dev-weapon-pick option[value="M4"]')), 'the gun is marked as changed');
+// Search across everything.
+await page.fill('#devMenu .dev-find', 'jetpack thrust');
+const found = await page.$$eval('#devMenu .dev-row', rows => rows.map(r => r.dataset.key));
+expect(found.length === 1 && found[0] === 'PHYS.jetAccel', `search finds it (${found})`);
+await page.fill('#devMenu .dev-find', '');
+// Paste numbers in.
+await page.fill('#devMenu .dev-import', '{"RULES": {"respawnTicks": 60}, "NOPE": {"x": 1}}');
+await page.click('#devMenu [data-import]');
+expect(/Imported 1 number \(1 skipped/.test(await page.textContent('#devMenu .dev-msg')), `imported (${await page.textContent('#devMenu .dev-msg')})`);
+await page.screenshot({ path: `${outDir}/settings-developer.png` });
+await page.reload();
+await page.waitForFunction(() => window.stickSoldiers);
+await page.click('#openSettings');
+await tab('dev');
+expect(await page.inputValue(`${devRow('PHYS.runSpeed')} input`) === '5', 'remembered next visit');
+await page.keyboard.press('Escape');
+await page.evaluate(() => {
+  const s = window.stickSoldiers.readMenu();
+  window.stickSoldiers.startMatch({ ...s, map: 'ssdm1.json', mode: 'ffa', bots: 0 });
+});
+await page.waitForFunction(() => window.stickSoldiers.state.me?.alive && window.stickSoldiers.state.game.tick > 60, null, { timeout: 20000 });
+await page.keyboard.down('KeyD');
+const fastest = await page.evaluate(() => new Promise(res => {
+  let top = 0; const t0 = performance.now();
+  const tick = () => { top = Math.max(top, Math.abs(window.stickSoldiers.state.me.body.vx)); if (performance.now() - t0 > 900) res(top); else requestAnimationFrame(tick); };
+  tick();
+}));
+await page.keyboard.up('KeyD');
+expect(Math.abs(fastest - 3.75) < 0.05, `the match runs at the new speed (${fastest.toFixed(3)}; 3.75 expected)`);
+// Reset everything (after asking).
+await page.keyboard.press('Escape');
+await page.click('#pauseSettings');
+await tab('dev');
+page.once('dialog', d => d.accept());
+await page.click('#devMenu [data-reset-all]');
+await page.waitForFunction(() => document.querySelector('#devMenu .dev-row[data-key="PHYS.runSpeed"] input')?.value === '3.4');
+expect(await page.evaluate(() => localStorage.getItem('stick-soldiers-dev')) === null, 'nothing left to remember');
+
+console.log(JSON.stringify({ autoLabel, rewrites, vol0, vol1, capped, full, hz, readout, saved, zoomIdle, zoomFiring, zoomSights, lean, leanOff, fastest, errors }, null, 2));
 await browser.close();
 server.close();
 await relay.close();

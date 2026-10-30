@@ -492,8 +492,7 @@ export const STARTING_WEAPONS = ['Platinum', 'Sledgehammer'];
 export const NO_AUTO_SWITCH = new Set(['Teleport', 'NinjaRope', 'Kamikaze', 'Dynamite', 'Mine', 'Earthquake', 'Sledgehammer', 'BattleAxe', 'BaseballBat', 'FirePunch', 'Builder', 'Hammer',
   'Knife', 'HEGrenade', 'Flashbang', 'SmokeGrenade', 'C4']);
 
-/** Headshots with bullets and shotgun pellets do double damage (the sniper rifle and bow have their own). */
-export const HEADSHOT_MULTIPLIER = 2;
+// (Headshots with bullets and shotgun pellets: RULES.headshotMultiplier, in config.js; the sniper rifle and bow have their own.)
 
 /** Weapon ids in a slot (0-10), in order. */
 export const slotWeapons = slot => WEAPON_ORDER.filter(id => WEAPONS[id].slot === slot);

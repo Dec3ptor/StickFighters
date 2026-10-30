@@ -13,18 +13,19 @@ import { botReward, canOpen, REWARD_WEAPONS } from './streaks.js';
 import { shotSpeed, smokeBetween } from './combat.js';
 import { buildTool, blocksLeft, flyFuel, canGetPast, toolFor, exitSpot, launchSpot, fly, climb, coverSpot, digTool, digSpot, dig } from './botescape.js';
 
-const SIGHT = 1300;  // how far bots look for enemies
+// What bots see (the developer menu can change these: tuning.js). sight: how far they look for
+// enemies; fire, scope: below.
+export const BOT_VIEW = { sight: 1300, fire: { hw: 560, hh: 340 }, scope: { hw: 900, hh: 520 } };
 const LOOKS = 6;     // in big games, sight lines a bot checks each time it looks around
 // Bot vision 'sight': what a bot can see is what would be on its screen (a 16:10 view
 // around it, like a player's), in front of it, in a clear line. Right next to it, it can
 // feel someone; behind it, only hear them.
 const VIEW = { hw: 520, hh: 330, behind: 30, touch: 26 };
 // Bots only shoot at someone who'd be on their screen if they were a player (about what
-// the game shows around you on a wide window; zoomed out with a sniper rifle's scope),
-// so nobody gets shot by a bot they couldn't have seen.
-const FIRE_VIEW = { hw: 560, hh: 340 }, SCOPE_VIEW = { hw: 900, hh: 520 };
+// the game shows around you on a wide window, BOT_VIEW.fire; zoomed out with a sniper
+// rifle's scope, BOT_VIEW.scope), so nobody gets shot by a bot they couldn't have seen.
 const onScreen = (def, dx, dy, k = 1) => {
-  const v = def.kind === 'rail' ? SCOPE_VIEW : FIRE_VIEW;
+  const v = def.kind === 'rail' ? BOT_VIEW.scope : BOT_VIEW.fire;
   return Math.abs(dx) <= v.hw * k && Math.abs(dy) <= v.hh * k;
 };
 
@@ -42,9 +43,9 @@ function foeWithin(game, s, teams, target, threat, bestD) {
     const dx = o.body.x - sx, dy = o.body.y - sy;
     // (Never nearer than the larger of |dx| and |dy|: see lookAround.)
     const m = Math.max(Math.abs(dx), Math.abs(dy));
-    if (m > SIGHT || m >= bestD) continue;
+    if (m > BOT_VIEW.sight || m >= bestD) continue;
     const d = hypot(dx, dy);
-    if (!(d > SIGHT || d >= bestD)) return true;
+    if (!(d > BOT_VIEW.sight || d >= bestD)) return true;
   }
   return false;
 }
@@ -522,7 +523,7 @@ export class BotController {
     for (const o of game.soldiers) {
       if (o === s || !o.alive || (teams && o.team === s.team) || o.spawnProtect > 30) continue;
       const d = hypot(o.body.x - sx, o.body.y - sy);
-      if (d > SIGHT || !this.inView(game, s, o) || !this.canSee(game, s, o)) continue;
+      if (d > BOT_VIEW.sight || !this.inView(game, s, o) || !this.canSee(game, s, o)) continue;
       const score = d * (o === this.target ? 0.6 : 1) * (o === this.threat ? 0.7 : 1);
       if (score < bestD) { bestD = score; best = o; }
     }
@@ -538,7 +539,7 @@ export class BotController {
     for (const p of game.sentries) {
       if (p.dead || p.owner === s || (game.rules.teams && p.team === s.team)) continue;
       const d = hypot(p.x - s.x, p.y - s.y);
-      if (d > SIGHT * 0.8 || d >= bestD) continue;
+      if (d > BOT_VIEW.sight * 0.8 || d >= bestD) continue;
       const t = (p.mark ||= new SentryMark(p));
       t.body.x = p.x; t.body.y = p.y - 4;
       if (!this.inView(game, s, t) || !this.canSee(game, s, t)) continue;
@@ -560,7 +561,7 @@ export class BotController {
       const o = i === 0 ? target : threat;
       if (!o || !foe(o, s, teams)) continue;
       const d = hypot(o.body.x - sx, o.body.y - sy);
-      if (d > SIGHT || !this.inView(game, s, o) || !this.canSee(game, s, o)) continue;
+      if (d > BOT_VIEW.sight || !this.inView(game, s, o) || !this.canSee(game, s, o)) continue;
       const score = d * (o === target ? 0.6 : 1) * (o === threat ? 0.7 : 1);
       if (score < bestD) { bestD = score; best = o; }
     }
@@ -571,13 +572,13 @@ export class BotController {
     // than one already in view, checking everyone is quicker than looking through the hundreds
     // of cells in the rings to find that out. (The same answer: the rings only hold soldiers
     // from game.soldiers, and would add none of them.)
-    const across = 2 * Math.floor(Math.min(SIGHT, bestD) / CELL) + 3; // (cells across the rings)
+    const across = 2 * Math.floor(Math.min(BOT_VIEW.sight, bestD) / CELL) + 3; // (cells across the rings)
     if (game.soldiers.length * 4 < across * across && !foeWithin(game, s, teams, target, threat, bestD)) return best;
     // (Each ring's soldiers go on the end of RING: it's emptied once in a while, not every ring.)
     const ring = RING, nearD = NEAR_D, nearO = NEAR_O;
     if (ring.length > RING_KEEP) ring.length = 0;
     let looks = 0;
-    for (let k = 0; (k - 1) * CELL <= Math.min(SIGHT, bestD); k++) {
+    for (let k = 0; (k - 1) * CELL <= Math.min(BOT_VIEW.sight, bestD); k++) {
       const from = ring.length;
       grid.ring(cx, cy, k, ring);
       // The nearest few in this ring, nearest first (kept sorted as we go).
@@ -592,9 +593,9 @@ export class BotController {
         // far, so is the distance, and it needn't be worked out. NaN gets past this, as it does
         // the checks below.)
         const m = Math.max(Math.abs(dx), Math.abs(dy));
-        if (m > SIGHT || m >= bestD || (n === LOOKS && m >= nearD[LOOKS - 1])) continue;
+        if (m > BOT_VIEW.sight || m >= bestD || (n === LOOKS && m >= nearD[LOOKS - 1])) continue;
         const d = hypot(dx, dy);
-        if (d > SIGHT || d >= bestD || (n === LOOKS && d >= nearD[LOOKS - 1])) continue;
+        if (d > BOT_VIEW.sight || d >= bestD || (n === LOOKS && d >= nearD[LOOKS - 1])) continue;
         let i = n < LOOKS ? n++ : LOOKS - 1;
         while (i > 0 && nearD[i - 1] > d) { nearD[i] = nearD[i - 1]; nearO[i] = nearO[i - 1]; i--; }
         nearD[i] = d; nearO[i] = o;

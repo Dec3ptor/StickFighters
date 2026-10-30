@@ -71,6 +71,7 @@ export const RULES = {
   burnTicks: 150,
   burnDamage: 0.22,
   juggerDamage: 0.3,        // a Juggernaut (kill streak reward) takes this share of any damage
+  headshotMultiplier: 2,    // headshots with bullets (the sniper rifle and longbow have their own)
 };
 
 export const ITEM_RESPAWN = { weapon: 600, health: 1200, armour: 1500, jetpack: 1800 };

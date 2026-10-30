@@ -13,6 +13,7 @@ import { encodeInputs, decodeSnapshot, messageType, PROTOCOL, SNAPSHOT_EVERY } f
 import { FX_METHODS } from './host.js';
 import { beaconKey } from '../gadgets.js';
 import { Tape } from '../replay.js';
+import { useHostTuning } from '../tuning.js';
 
 const NONE = [];
 const INPUT_REPEAT = 4;     // each input packet carries the last few inputs, in case some are lost
@@ -135,6 +136,8 @@ export class NetClient {
     const m = w.match, mine = ++this.welcomes;
     const mapData = await this.opts.loadMap(m);
     if (mine !== this.welcomes) return; // (a newer welcome came while this map loaded: that one's the match)
+    // The host's numbers (its developer menu: none changed means the game's own), for everyone here.
+    useHostTuning(m.tuning || null);
     const game = new Game({ mapData, mode: m.mode, fragLimit: m.fragLimit, options: m.options, speed: m.speed, effects: true, seed: 1 });
     game.online = true;
     this.game = game;
