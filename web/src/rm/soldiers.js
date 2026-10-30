@@ -8,7 +8,7 @@ import { buildPose } from '../stickman.js';
 import { lerp } from '../util.js';
 import { drawWeapon, drawStreakFlame } from '../sprites.js';
 import { css, mix, shade, rgb } from './color.js';
-import { drawSkinHead, drawVest } from '../skins.js';
+import { drawSkinHead, drawHeadHalo, drawVest } from '../skins.js';
 
 export const TEAM_COLORS = { 1: '#3d7ff0', 2: '#e8483a' };
 
@@ -242,15 +242,14 @@ export function drawLineSoldier(r, game, s, alpha, theme, skin) {
   ctx.lineJoin = 'round';
   const jugger = s.jugger > 0;
   if (jugger) drawJuggerGlow(ctx, L, h, game.tick);
-  // The soft outline (bigger round the head, for a hat or a plume).
+  // The soft outline: round the limbs, and close round the head's own shape.
   const halo = jugger ? JUGGER_HALO : c.halo;
   ctx.strokeStyle = halo;
   ctx.lineWidth = LINE_W + 2.2;
   ctx.beginPath();
   for (const l of L) line(ctx, l);
   ctx.stroke();
-  ctx.fillStyle = halo;
-  ctx.beginPath(); ctx.arc(h.x, h.y - (skin === 'classic' ? 0 : 1.2), h.r + (skin === 'classic' ? 1.6 : 3), 0, Math.PI * 2); ctx.fill();
+  drawHeadHalo(ctx, h, skin, halo, 1.6);
   // A jetpack on the back.
   if (s.body.hasJetpack) {
     const bx = L[0][0] - facing * 3.4, ny = L[0][1];

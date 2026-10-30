@@ -131,6 +131,21 @@ export function drawSkinHead(ctx, h, skin, facing, o) {
   ctx.lineJoin = 'round';
 }
 
+/**
+ * The soft outline under a stick figure's head (Remastered draws one round each figure, so it
+ * reads against any background): close round the head's own shape, `grow` out from it, in
+ * `color`. (Not round a hat, a plume or a headband: that read as a glow.)
+ */
+export function drawHeadHalo(ctx, h, skin, color, grow) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  if (skin === 'robot') {
+    const s = h.r + 0.3 + grow;
+    ctx.rect(h.x - s, h.y - s, s * 2, s * 2);
+  } else ctx.arc(h.x, h.y, h.r + (skin === 'knight' ? 0.2 : 0) + grow, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 /** Armour on a stick figure with a skin of its own (no room for the classic look's little helmet): a vest. */
 export function drawVest(ctx, torso, color, width) {
   const [x0, y0, x1, y1] = torso;
