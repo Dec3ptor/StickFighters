@@ -4,6 +4,8 @@
 // chosen, a click locks the mouse to the game (the crosshair, drawn by the game, then moves
 // by how far the mouse moves, kept on the screen), Esc or the browser freeing the mouse
 // opens the menu (once), and menus let go of the mouse. And the menu's Full screen button works.
+// And the keys (Settings, Controls): any action can be given another key or mouse button,
+// which then does it (and the old one doesn't), and the menu's list of controls follows.
 // Usage: node tests/browser/controls.mjs [outDir]
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -83,6 +85,7 @@ check(pt.ringOnly.length === 1 && pt.ringOnly[0] === true, `the game draws no cr
 // Choose "Locked to the game" in Settings.
 await page.keyboard.press('Escape');
 await page.click('#pauseSettings');
+await page.click('#settings .set-tab[data-page="crosshair"]');
 check(await page.inputValue('#pointerMode') === 'system', 'the setting starts on the system pointer');
 await page.selectOption('#pointerMode', 'locked');
 await page.click('#settingsDone');
@@ -153,6 +156,7 @@ if (fsOk) {
 // 6. Settings: back to the system's pointer, a click doesn't lock it (the guards still work).
 await page.click('#pauseSettings');
 await page.waitForTimeout(100);
+await page.click('#settings .set-tab[data-page="crosshair"]');
 check(await page.inputValue('#pointerMode') === 'locked', 'the setting kept "Locked"');
 await page.selectOption('#pointerMode', 'system');
 await page.click('#settingsDone');
@@ -164,6 +168,74 @@ await page.waitForTimeout(300);
 st = await S();
 check(!st.locked && !st.menu, `system pointer: a click doesn't lock the mouse: ${JSON.stringify(st)}`);
 check(await page.evaluate(() => { const ev = new WheelEvent('wheel', { ctrlKey: true, bubbles: true, cancelable: true }); document.body.dispatchEvent(ev); return ev.defaultPrevented; }), 'system pointer: Ctrl + wheel still doesn\'t zoom');
+
+// 7. Keys (Settings, Controls): jump on J, fire on L, the sledgehammer on the middle button.
+await page.keyboard.press('Escape');
+await page.click('#pauseSettings');
+await page.click('#settings .set-tab[data-page="controls"]');
+const keyButton = (id, at = 0) => `#keybinds .kb-row[data-action="${id}"] .kb-key[data-at="${at}"]`;
+const saved = () => page.evaluate(() => JSON.parse(JSON.stringify(window.stickSoldiers.prefs.keys)));
+check(await page.textContent(keyButton('jump')) === 'W', `jump starts on W (${await page.textContent(keyButton('jump'))})`);
+// Esc while it waits for a key: the key stays as it was, and Settings stays open.
+await page.click(keyButton('jump'));
+check(/Press a key/.test(await page.textContent(keyButton('jump'))), 'clicking a key waits for the new one');
+await page.keyboard.press('Escape');
+check(await page.textContent(keyButton('jump')) === 'W' && await page.isVisible('#settings'), 'Esc keeps the key, and Settings open');
+await page.click(keyButton('jump'));
+await page.keyboard.press('KeyJ');
+await page.click(keyButton('fire'));
+await page.keyboard.press('KeyL');
+await page.click(keyButton('melee'));
+await page.mouse.down({ button: 'middle' }); await page.mouse.up({ button: 'middle' });
+// A key taken from another action leaves it (and says so).
+await page.click(keyButton('reload'));
+await page.keyboard.press('KeyT');
+const note = await page.textContent('#keybinds .kb-note');
+const keys1 = await saved();
+check(JSON.stringify(keys1.jump) === '["KeyJ","Space","ArrowUp"]' && JSON.stringify(keys1.fire) === '["KeyL"]' && JSON.stringify(keys1.melee) === '["Mouse1"]',
+  `keys set and saved (${JSON.stringify(keys1)})`);
+check(JSON.stringify(keys1.reload) === '["KeyT"]' && JSON.stringify(keys1.chat) === '["Enter"]' && /taken from Chat/.test(note), `T taken from chat (${note})`);
+await page.screenshot({ path: `${outDir}/controls-keys.png` });
+await page.click('#settingsDone');
+await page.click('#resume');
+await page.waitForFunction(() => !window.stickSoldiers.state.menuOpen);
+// (Alive, and left alone by the bots while the keys are tried: spawn protection.)
+await page.waitForFunction(() => window.stickSoldiers.state.me.alive, null, { timeout: 10000 });
+await page.evaluate(() => { window.stickSoldiers.state.me.spawnProtect = 1e6; });
+await page.waitForTimeout(300);
+const me = () => page.evaluate(() => { const m = window.stickSoldiers.state.me; return { y: m.y, ground: m.body.onGround, cooldown: m.cooldown, current: m.current, alive: m.alive }; });
+// W doesn't jump any more; J does. (The fastest the soldier goes up while the key's held: a
+// jump takes off at several pixels an update, whatever's overhead.)
+const upWhile = async (key, ms) => {
+  await page.keyboard.down(key);
+  const up = await page.evaluate(ms => new Promise(res => {
+    const t0 = performance.now(); let up = 0;
+    const tick = () => { up = Math.max(up, -window.stickSoldiers.state.me.body.vy); if (performance.now() - t0 > ms) res(up); else requestAnimationFrame(tick); };
+    tick();
+  }), ms);
+  await page.keyboard.up(key);
+  await page.waitForTimeout(1200);
+  return up;
+};
+const upW = await upWhile('KeyW', 500), upJ = await upWhile('KeyJ', 500);
+check(upW < 1, `W no longer jumps (up at ${upW.toFixed(2)})`);
+check(upJ > 4, `J jumps (up at ${upJ.toFixed(2)})`);
+await page.waitForTimeout(800);
+// A click doesn't fire any more; L does.
+const firedWithin = ms => page.evaluate(ms => new Promise(res => {
+  const t0 = performance.now();
+  const tick = () => { if (window.stickSoldiers.state.me.cooldown > 0) res(true); else if (performance.now() - t0 > ms) res(false); else requestAnimationFrame(tick); };
+  tick();
+}), ms);
+await page.mouse.move(900, 330);
+await page.mouse.down(); const clickFired = await firedWithin(300); await page.mouse.up();
+await page.waitForTimeout(300);
+await page.keyboard.down('KeyL'); const keyFired = await firedWithin(500); await page.keyboard.up('KeyL');
+check(!clickFired && keyFired, `fire moved from the left click to L (click ${clickFired}, L ${keyFired})`);
+// The middle button takes out the sledgehammer.
+await page.mouse.down({ button: 'middle' }); await page.mouse.up({ button: 'middle' });
+await page.waitForTimeout(250);
+check((await me()).current === 'Sledgehammer', `the middle button takes out the sledgehammer (${(await me()).current})`);
 await page.keyboard.press('Escape');
 
 // 7. Out of the match, nothing's blocked: the menus work as normal.
@@ -177,6 +249,15 @@ const free = await page.evaluate(() => {
   return { zoom: !ev.defaultPrevented, menu: !menuEv.defaultPrevented, selecting: getComputedStyle(document.body).userSelect !== 'none' };
 });
 for (const [what, ok] of Object.entries(free)) check(ok, `in the menus, the browser's own ${what} works`);
+// The menu's list of controls shows the keys as they're set; Reset puts them all back.
+const shown = await page.evaluate(() => ({ jump: document.querySelector('.controls [data-keys="jump"]').textContent, fire: document.querySelector('.controls [data-keys="fire"]').textContent }));
+check(shown.jump === 'J or Space or ↑' && shown.fire === 'L', `the menu's controls follow the keys (${JSON.stringify(shown)})`);
+await page.click('#openSettings');
+await page.click('#settings .set-tab[data-page="controls"]');
+await page.click('#keysReset');
+const keys2 = await saved();
+check(Object.keys(keys2).length === 0 && await page.textContent(keyButton('jump')) === 'W', `Reset all keys (${JSON.stringify(keys2)})`);
+await page.keyboard.press('Escape');
 
 console.log(JSON.stringify({ blocked, moved, errors }, null, 2));
 await browser.close();

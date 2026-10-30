@@ -7,6 +7,7 @@ import { objectivesOf, mcomZone } from './objectives.js';
 import { lerp } from './util.js';
 import { drawSprite } from './sprites.js';
 import { sideOf, moneyOf, useHere, gearOf, canShop, SIDE_NAME, DEFUSE } from './defuse.js';
+import { keyLabel, keyShort, slotAction } from './keys.js';
 
 const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
 const TEAM_NAME = { 1: 'Blue', 2: 'Red' };
@@ -512,14 +513,14 @@ function drawDefuseHud(ctx, game, me, W, H, marks) {
   const here = useHere(game, me);
   if (b?.s === 'carried' && b.by === me.id) {
     if (b.plant > 0) progress(ctx, W, H, 'Planting the bomb…', b.plant, T_COLOR, H - 140);
-    else if (here === 'plant') hint(ctx, W, H, 'Hold E to plant the bomb', T_COLOR);
+    else if (here === 'plant') hint(ctx, W, H, `Hold ${keyLabel('use')} to plant the bomb`, T_COLOR);
     else if (st.phase === 'freeze' || (st.phase === 'live' && st.timer > DEFUSE.roundTime - 8 * 60)) hint(ctx, W, H, 'You have the bomb: take it to site A or B', T_COLOR, 0.75);
   } else if (planted && b.defuser === me.id) {
     progress(ctx, W, H, gearOf(game, me).kit ? 'Defusing (kit)…' : 'Defusing…', b.defuse, CT_COLOR, H - 140);
   } else if (here === 'defuse') {
-    hint(ctx, W, H, gearOf(game, me).kit ? 'Hold E to defuse (5 s with your kit)' : 'Hold E to defuse (10 s)', CT_COLOR);
+    hint(ctx, W, H, `Hold ${keyLabel('use')} to defuse (${gearOf(game, me).kit ? '5 s with your kit' : '10 s'})`, CT_COLOR);
   } else if (st.phase === 'freeze' && canShop(game, me)) {
-    hint(ctx, W, H, `Buy your weapons: press B  (${SIDE_NAME[mySide]})`, SIDE_COLOR[mySide], 0.85);
+    hint(ctx, W, H, `Buy your weapons: press ${keyLabel('buy')}  (${SIDE_NAME[mySide]})`, SIDE_COLOR[mySide], 0.85);
   }
 }
 
@@ -726,13 +727,13 @@ export function drawDeploy(ctx, game, me, W, y) {
   const st = game.modeState, pts = objectivesOf(game.map, 'point');
   // (Wider boxes for longer names: spawn beacons.)
   ctx.font = `bold 12px ${FONT}`;
-  const w = Math.max(58, ...opts.map((o, i) => ctx.measureText(`${i + 1}  ${o.label}`).width + 14));
+  const w = Math.max(58, ...opts.map((o, i) => ctx.measureText(`${keyShort(slotAction(i))}  ${o.label}`).width + 14));
   const gap = 8, total = opts.length * w + (opts.length - 1) * gap;
   ctx.font = `12px ${FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#555';
-  ctx.fillText('Spawn at (press a number):', W / 2, y);
+  ctx.fillText('Spawn at (press its key):', W / 2, y);
   opts.forEach((o, i) => {
     const x = W / 2 - total / 2 + i * (w + gap), by = y + 12;
     const on = o.key === chosen;
@@ -743,7 +744,7 @@ export function drawDeploy(ctx, game, me, W, y) {
     ctx.strokeRect(x, by, w, 26);
     ctx.fillStyle = on ? '#fff' : '#333';
     ctx.font = `bold 12px ${FONT}`;
-    ctx.fillText(`${i + 1}  ${o.label}`, x + w / 2, by + 13);
+    ctx.fillText(`${keyShort(slotAction(i))}  ${o.label}`, x + w / 2, by + 13);
     // A point under attack: say so.
     const k = pts.findIndex(z => z.label === o.key);
     if (k >= 0 && st?.points?.[k]?.c?.[other(me.team) - 1]) {

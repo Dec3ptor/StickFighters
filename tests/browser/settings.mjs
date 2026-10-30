@@ -29,10 +29,16 @@ await page.goto(url);
 await page.waitForFunction(() => window.stickSoldiers);
 const kind = () => page.evaluate(() => window.stickSoldiers.renderer.kind);
 const visible = sel => page.isVisible(sel);
+// Settings has sections down the side: show one.
+const tab = name => page.click(`#settings .set-tab[data-page="${name}"]`);
 
 // 1. From the main menu.
 await page.click('#openSettings');
 expect(await visible('#settings'), 'settings open from the menu');
+// A proper screen on a computer, not a narrow column: wide, with its sections down the side.
+const panelSize = await page.evaluate(() => { const b = document.querySelector('#settings .panel').getBoundingClientRect(); return [b.width, b.height]; });
+expect(panelSize[0] > 900 && panelSize[1] > 600, `settings fill the screen (${panelSize})`);
+expect(await visible('#graphics') && !(await visible('#setFog')), 'one section at a time: Video first');
 const autoLabel = await page.$eval('#graphics option[value=auto]', o => o.textContent);
 expect(autoLabel === 'Auto (Canvas)', `auto says what it picks (${autoLabel})`);
 expect(/canvas/i.test(await page.textContent('#graphicsNote')), 'note says it draws with the canvas');
@@ -52,13 +58,15 @@ expect(vol0.slider === '60' && vol0.out === '60%' && Math.abs(vol0.level - 0.6) 
 expect(await page.inputValue('#graphics') === 'canvas', 'draws with the canvas by default');
 expect(await kind() === 'canvas', 'the canvas is in use');
 // Experimental options: the same as the game setup's.
-expect(await visible('#setBotVision') && await visible('#setFog'), 'experimental options in settings');
+await tab('game');
+expect(await visible('#setBotVision') && await visible('#setFog') && !(await visible('#graphics')), 'experimental options in settings, under Gameplay');
 await page.selectOption('#setFog', 'on');
 expect(await page.inputValue('#fog') === 'on', 'fog of war chosen in settings shows in the game setup');
 await page.selectOption('#setFog', 'off');
 // Bullet speed and time between shots are the original's: no sliders for them anywhere.
 expect(await page.evaluate(() => ['bulletSpeed', 'fireDelay', 'setBulletSpeed', 'setFireDelay'].every(id => !document.getElementById(id))), 'no bullet speed or between-shots sliders');
 // Sprint: hold (the default) or toggle.
+await tab('controls');
 expect(await page.inputValue('#sprintMode') === 'hold', 'sprint is hold-to-sprint by default');
 await page.selectOption('#sprintMode', 'toggle');
 expect(await page.evaluate(() => window.stickSoldiers.prefs.sprint) === 'toggle', 'sprint toggle chosen');
@@ -72,6 +80,7 @@ expect(await page.inputValue('#pointerMode') === 'system', 'the mouse pointer: t
 expect(await page.inputValue('#aimZoom') === 'slight', 'aim down sights: slight by default');
 await page.selectOption('#aimZoom', 'more');
 // The crosshair: its picture, on a light and a dark background, follows the settings.
+await tab('crosshair');
 const pixel = (x, y) => page.evaluate(([x, y]) => [...document.getElementById('xhPreview').getContext('2d').getImageData(x, y, 1, 1).data], [x, y]);
 expect(await page.inputValue('#xhStyle') === 'crossDot' && await page.inputValue('#xhColor') === 'default', 'the crosshair starts as it was');
 const dot0 = await pixel(120, 72);
@@ -120,6 +129,7 @@ const camAt = async x => { await page.mouse.move(x, 350); await page.waitForTime
 const lean = (await camAt(1050)) - (await camAt(50));
 await page.keyboard.press('Escape');
 await page.click('#pauseSettings');
+await tab('video');
 await page.selectOption('#graphics', 'webgl');
 await page.waitForFunction(() => window.stickSoldiers.renderer.kind === 'webgl', null, { timeout: 15000 });
 // (...and with Look toward the mouse at 0, it doesn't: below.)
@@ -168,6 +178,7 @@ const drawsIn = async ms => page.evaluate(async ms => {
 }, ms);
 await page.keyboard.press('Escape');
 await page.click('#pauseSettings');
+await tab('video');
 await page.selectOption('#graphics', 'canvas');
 await page.waitForFunction(() => window.stickSoldiers.renderer.kind === 'canvas', null, { timeout: 15000 });
 await page.selectOption('#fpsCap', '30');
@@ -201,6 +212,7 @@ await page.screenshot({ path: `${outDir}/settings-pause-volume.png` });
 await page.click('#pauseSettings');
 await page.selectOption('#graphics', 'webgl');
 await page.waitForFunction(() => window.stickSoldiers.renderer.kind === 'webgl', null, { timeout: 15000 });
+await tab('game');
 await page.uncheck('#showPing');
 await page.reload();
 await page.waitForFunction(() => window.stickSoldiers);
@@ -211,11 +223,13 @@ expect(Math.abs(await page.evaluate(() => window.stickSoldiers.audio.level) - 0.
 expect(saved.prefs.aimZoom === 'more' && saved.prefs.crosshair?.style === 'circle' && saved.prefs.crosshair?.custom === '#ff00ff', `zoom and crosshair remembered (${JSON.stringify(saved.prefs.crosshair)})`);
 await page.click('#openSettings');
 expect(await page.inputValue('#xhStyle') === 'circle' && await page.inputValue('#xhSize') === '12', 'and shown in settings');
+await tab('crosshair');
 await page.click('#xhReset');
 expect(await page.evaluate(() => window.stickSoldiers.prefs.crosshair.style) === 'crossDot', 'Reset puts the crosshair back');
 const cam1 = saved.prefs.camera;
 expect(cam1?.look === 0 && cam1?.glide === 120 && cam1?.follow === 330, `the camera remembered (${JSON.stringify(cam1)})`);
 expect(await page.inputValue('#camLook') === '0' && await page.inputValue('#camGlide') === '120', 'and shown in settings');
+await tab('camera');
 await page.click('#camReset');
 const cam2 = await page.evaluate(() => ({ ...window.stickSoldiers.prefs.camera, out: document.getElementById('camGlideOut').textContent }));
 expect(cam2.look === 100 && cam2.glide === 0 && cam2.follow === 330 && cam2.out === 'Off', `Reset puts the camera back (${JSON.stringify(cam2)})`);

@@ -306,19 +306,79 @@ button.big { font-size: 18px; padding: 13px 24px; letter-spacing: 0.04em; }
 .seg-small label { padding: 3px 9px; font-size: 12px; white-space: nowrap; }
 .field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; align-items: end; }
 .field-pair .field { margin-top: 8px; }
-/* Settings: the crosshair, with a picture of it on a light and a dark background. */
-.xhair canvas { display: block; width: 100%; max-width: 240px; height: auto; aspect-ratio: 240 / 72; border: 1.5px solid var(--line); margin: 2px auto 0; }
-.xhair input[type="range"], .cam input[type="range"] { width: 100%; }
-.xhair .field output, .cam .field output { font-weight: normal; color: var(--muted); }
-/* Settings: the camera's sliders, each with a note on what it does, and Reset under them. */
-.cam .field { margin-bottom: 2px; }
-.cam .muted-note { margin-top: 2px; }
-.cam .field-row { justify-content: flex-end; }
-.xhair input[type="color"] { width: 100%; height: 30px; padding: 0 2px; }
-.xhair .field-row .check { margin-top: 8px; }
-/* (Taller than the window: it scrolls, from its top.) */
-#settings .panel { margin: auto 0; }
-#settings { align-items: flex-start; }
+/* ---- Settings: a full screen with sections down the side, like a game's ---- */
+#settings .panel.set-panel {
+  width: min(1120px, 100%); height: min(800px, 100%); max-height: none; padding: 0; overflow: hidden;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.set-head { display: flex; align-items: baseline; gap: 18px; padding: 18px 28px 14px; border-bottom: 2px solid var(--line); }
+.set-head h2 { margin: 0; font-size: 28px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+.set-head .muted-note { margin: 0; }
+.set-body { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: 0; }
+.set-tabs { display: flex; flex-direction: column; gap: 4px; padding: 16px 12px; border-right: 2px solid var(--line); overflow-y: auto; }
+.set-tab { text-align: left; border: 2px solid transparent; padding: 11px 14px; font-size: 16px; background: transparent; }
+.set-tab:hover { background: var(--soft); }
+.set-tab[aria-selected="true"] { background: var(--ink); color: var(--paper); }
+.set-pages { overflow-y: auto; min-height: 0; padding: 6px 30px 28px; }
+.set-title { margin: 20px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.set-subhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; }
+.set-subhead .set-title { margin: 0; }
+.set-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 360px); gap: 6px 28px; align-items: center;
+  padding: 13px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+.set-label b { display: block; font-size: 16px; }
+.set-label small { display: block; color: var(--muted); font-size: 13px; line-height: 1.4; margin-top: 3px; }
+.set-control select, .set-control input[type="color"] { width: 100%; }
+.set-control input[type="color"] { height: 34px; padding: 0 2px; border: 1.5px solid var(--line); background: var(--paper); }
+.set-range { display: flex; align-items: center; gap: 12px; }
+.set-range input[type="range"] { flex: 1; }
+.set-range output { min-width: 62px; text-align: right; font-variant-numeric: tabular-nums; font-weight: bold; }
+.set-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 12px 28px; border-top: 2px solid var(--line); font-size: 14px; }
+.set-foot .muted-note { margin: 0; }
+.set-foot button { min-width: 140px; }
+/* (Rows for one of the games only: still rows.) */
+html[data-game="remastered"] .set-row.rm-only { display: grid !important; }
+/* Switches (checkboxes). */
+input.switch {
+  appearance: none; -webkit-appearance: none; margin: 0; width: 50px; height: 28px; border-radius: 99px; cursor: pointer;
+  border: 2px solid var(--line); background: var(--soft); position: relative; transition: background 0.12s ease;
+}
+input.switch::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--ink); transition: transform 0.12s ease;
+}
+input.switch:checked { background: var(--ink); }
+input.switch:checked::after { transform: translateX(22px); background: var(--paper); }
+input.switch:focus-visible { outline: 2px dashed var(--ink); outline-offset: 2px; }
+/* The crosshair: a picture of it on a light and a dark background, its settings beside it. */
+.xhair { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 4px 28px; align-items: start; }
+.xhair canvas { display: block; width: 100%; height: auto; aspect-ratio: 240 / 72; border: 1.5px solid var(--line); margin-top: 16px; }
+.xhair .set-row { grid-template-columns: minmax(0, 1fr) minmax(200px, 300px); }
+/* Controls: every action and its keys. */
+.kb-group { margin: 18px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.kb-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 18px; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.08); }
+.kb-name { font-size: 15px; }
+.kb-keys { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
+button.kb-key, button.kb-add {
+  min-width: 46px; padding: 5px 12px; font-size: 14px; font-weight: bold; border-width: 1.5px;
+  border-bottom-width: 3px; background: var(--soft); font-variant-numeric: tabular-nums;
+}
+button.kb-add { min-width: 34px; padding: 5px 9px; color: var(--muted); border-style: dashed; border-bottom-width: 1.5px; background: transparent; }
+button.kb-key.listening { background: var(--ink); color: var(--paper); animation: kb-pulse 1s ease-in-out infinite alternate; }
+@keyframes kb-pulse { from { opacity: 1; } to { opacity: 0.65; } }
+.kb-none { color: #b3261e; font-size: 13px; margin-right: 4px; }
+.kb-note { min-height: 1.4em; }
+@media (max-width: 760px) {
+  .set-head { padding: 14px 16px 10px; }
+  .set-body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .set-tabs { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 2px solid var(--line); padding: 8px; }
+  .set-tab { white-space: nowrap; padding: 8px 12px; font-size: 14px; }
+  .set-pages { padding: 4px 16px 20px; }
+  .set-row, .xhair .set-row { grid-template-columns: 1fr; }
+  .xhair { grid-template-columns: 1fr; }
+  .set-foot { padding: 10px 16px; }
+}
 .map-card small.by { display: block; }
 .map-card .save { position: absolute; top: 5px; right: 5px; font-size: 11px; padding: 2px 7px; border-width: 1.5px; }
 .over-note { align-self: center; background: var(--paper); border: 1.5px solid var(--line); padding: 8px 12px; font-weight: bold; }
@@ -513,3 +573,22 @@ html[data-game="remastered"] footer { border-top-color: var(--line); }
 html[data-game="remastered"] #loading { background: rgba(5, 8, 14, 0.75); color: #eef2f7; }
 html[data-game="remastered"] .toast { background: linear-gradient(90deg, #3d7ff0, #7a5cff); color: #fff; border-radius: 10px; }
 html[data-game="remastered"] .note { color: #ff7a6a; }
+html[data-game="remastered"] .set-head, html[data-game="remastered"] .set-foot { border-color: var(--line); }
+html[data-game="remastered"] .set-head h2 { background: linear-gradient(90deg, #6aa2ff, #a07bff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+html[data-game="remastered"] .set-tabs { border-right: 1px solid var(--line); }
+html[data-game="remastered"] .screen .set-tab { border: 1px solid transparent; border-radius: 10px; background: transparent; }
+html[data-game="remastered"] .screen .set-tab:hover { background: rgba(255, 255, 255, 0.08); }
+html[data-game="remastered"] .screen .set-tab[aria-selected="true"] { background: linear-gradient(90deg, rgba(74, 139, 255, 0.45), rgba(122, 92, 255, 0.25)); color: #fff; border-color: rgba(122, 140, 255, 0.4); }
+html[data-game="remastered"] .set-row { border-bottom-color: rgba(255, 255, 255, 0.08); }
+html[data-game="remastered"] .set-control input[type="color"] { border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.06); }
+html[data-game="remastered"] input.switch { border: 1px solid var(--line); background: rgba(255, 255, 255, 0.1); }
+html[data-game="remastered"] input.switch::after { background: #c9d2e0; }
+html[data-game="remastered"] input.switch:checked { background: linear-gradient(90deg, #3d7ff0, #7a5cff); border-color: transparent; }
+html[data-game="remastered"] input.switch:checked::after { background: #fff; }
+html[data-game="remastered"] .xhair canvas { border: 1px solid var(--line); border-radius: 10px; }
+html[data-game="remastered"] .kb-row { border-bottom-color: rgba(255, 255, 255, 0.07); }
+html[data-game="remastered"] .screen button.kb-key { border-radius: 8px; border-bottom-width: 3px; border-bottom-color: rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.08); }
+html[data-game="remastered"] .screen button.kb-add { border-radius: 8px; border-style: dashed; background: transparent; }
+html[data-game="remastered"] .screen button.kb-key.listening { background: linear-gradient(90deg, #3d7ff0, #7a5cff); color: #fff; }
+html[data-game="remastered"] .kb-none { color: #ff7a6a; }
+@media (max-width: 760px) { html[data-game="remastered"] .set-tabs { border-right: none; border-bottom: 1px solid var(--line); } }

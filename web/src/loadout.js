@@ -4,6 +4,7 @@
 import { WEAPONS } from './weapons.js';
 import { CLASSES, CLASS_IDS, UPGRADES, upgradesFor, kitWeapons, kitText } from './classes.js';
 import { GADGETS } from './gadgets.js';
+import { keyLabel, keyText } from './keys.js';
 
 /**
  * The Loadout screen: for each class its gadget, main weapon and an upgrade for
@@ -12,7 +13,7 @@ import { GADGETS } from './gadgets.js';
  */
 export function renderLoadout(root, kit, { onChange }) {
   let html = `<div class="lo-top">
-    <p class="muted-note">Your choices for matches with <b>Classes</b> on. Each class has its own weapons and gadget (<kbd>G</kbd>); pick a main weapon and an upgrade for each weapon.</p>
+    <p class="muted-note">Your choices for matches with <b>Classes</b> on. Each class has its own weapons and gadget (<kbd>${keyLabel('gadget')}</kbd>); pick a main weapon and an upgrade for each weapon.</p>
   </div><div class="lo-classes">`;
   for (const cls of CLASS_IDS) html += classCard(kit, cls);
   html += '</div>';
@@ -46,7 +47,7 @@ function classCard(kit, cls) {
   let html = `<section class="lo-class" data-cls="${cls}">
     <header><h3>${c.name}</h3><label class="lo-pick"><input type="radio" name="loClass" value="${cls}"${kit.cls === cls ? ' checked' : ''}> Play as</label></header>
     <small>${c.blurb}</small>
-    <p class="lo-gadget"><b>${g.name}:</b> ${g.blurb}</p>
+    <p class="lo-gadget"><b>${g.name}:</b> ${keyText(g.blurb)}</p>
     <label class="lo-row"><span>${c.mainLabel}</span><select data-main="${cls}">`;
   for (const m of c.mains) html += `<option value="${m.id}"${m.id === lo.main ? ' selected' : ''}>${WEAPONS[m.id].name}</option>`;
   html += '</select></label>';
@@ -74,7 +75,7 @@ export function renderPicker(root, kit, { current, next }) {
     return `<button type="button" class="class-card" data-cls="${cls}" aria-pressed="${cls === next}">
       <kbd>${i + 1}</kbd> <b>${c.name}</b>${tag}
       <span>${kitText(cls, kit.loadouts[cls].main)}</span>
-      <small>${GADGETS[c.gadget].name} (G)</small>
+      <small>${GADGETS[c.gadget].name} (${keyLabel('gadget')})</small>
     </button>`;
   }).join('');
 }

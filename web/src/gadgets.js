@@ -16,13 +16,13 @@ import { segmentBox } from './map.js';
 
 /** Recharge times are in updates at full speed, like weapon numbers (game speed stretches them: 900 is 20 s at 75%). */
 export const GADGETS = {
-  medkit: { name: 'Medkit', item: 'medkit', recharge: 900, blurb: 'G drops a medkit: 90 health for you or a teammate.' },
+  medkit: { name: 'Medkit', item: 'medkit', recharge: 900, blurb: '{key:gadget} drops a medkit: 90 health for you or a teammate.' },
   builder: {
     name: 'Builder', tool: 'Builder', recharge: 0,
-    blurb: 'G takes out the Builder: click to put up a wall (right click turns it into a plank) or, where explosions broke the map, repair it. A block comes back every few seconds.',
+    blurb: '{key:gadget} takes out the Builder: click to put up a wall ({key:aim} turns it into a plank) or, where explosions broke the map, repair it. A block comes back every few seconds.',
   },
-  ammo: { name: 'Ammo box', item: 'ammo', recharge: 900, blurb: 'G drops an ammo box: refills you or a teammate.' },
-  beacon: { name: 'Spawn beacon', recharge: 450, blurb: 'G places a spawn beacon: you and your team can spawn on it until an enemy destroys it.' },
+  ammo: { name: 'Ammo box', item: 'ammo', recharge: 900, blurb: '{key:gadget} drops an ammo box: refills you or a teammate.' },
+  beacon: { name: 'Spawn beacon', recharge: 450, blurb: '{key:gadget} places a spawn beacon: you and your team can spawn on it until an enemy destroys it.' },
 };
 
 export const MEDKIT_HEAL = 90;

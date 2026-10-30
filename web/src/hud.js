@@ -8,6 +8,7 @@ import { moneyOf } from './defuse.js';
 import { CLASSES, weaponFor } from './classes.js';
 import { GADGETS, rechargeTicks } from './gadgets.js';
 import { REWARDS, JUGGER_TICKS, nextReward } from './streaks.js';
+import { keyLabel, keyShort, keyText, slotAction } from './keys.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
@@ -134,7 +135,7 @@ export function drawHud(r, game, me, opts = {}) {
     ctx.globalAlpha = Math.min(1, (150 - age) / 30);
     ctx.font = FONT_14;
     ctx.fillStyle = '#222';
-    ctx.fillText(n.text, W / 2, notesY + i * 20);
+    ctx.fillText(keyText(n.text), W / 2, notesY + i * 20);
   }
   NOTE_FOR.me = null;
   ctx.globalAlpha = 1;
@@ -179,7 +180,7 @@ export function drawHud(r, game, me, opts = {}) {
         ctx.fillText(`Watching ${opts.watching.name}`, W / 2, H / 2 - 46);
         ctx.font = `12px ${FONT}`;
         ctx.fillStyle = '#777';
-        ctx.fillText('A / D or click: watch someone else', W / 2, H / 2 - 26);
+        ctx.fillText(`${keyLabel('left')} / ${keyLabel('right')} or click: watch someone else`, W / 2, H / 2 - 26);
       }
     }
   }
@@ -318,13 +319,13 @@ function gadgetBar(game, me) {
   if (g.tool) {
     // The Builder: blocks left, and (in hand) what a click puts up.
     const n = me.weapons[g.tool]?.ammo || 0, full = me.kitAmmo?.[g.tool] || WEAPONS[g.tool].maxAmmo || 1;
-    const text = me.current === g.tool ? `${me.buildPlank ? 'Plank · right click: wall' : 'Wall · right click: plank'}` : `${c.name} · ${g.name} (G)`;
+    const text = me.current === g.tool ? `${me.buildPlank ? 'Plank' : 'Wall'} · ${keyLabel('aim')}: ${me.buildPlank ? 'wall' : 'plank'}` : `${c.name} · ${g.name} (${keyLabel('gadget')})`;
     return [n / full, n > 0 ? 'gadgetReady' : 'gadget', text];
   }
   const total = rechargeTicks(game, g), left = Math.max(0, me.gadgetCharge || 0);
   if (left > 0) return [1 - left / total, 'gadget', `${c.name} · ${g.name} ${Math.floor(100 * (1 - left / total))}%`];
   const up = c.gadget === 'beacon' && game.beacons?.some(b => b.owner === me.id);
-  return [1, 'gadgetReady', `${c.name} · ${up ? 'Move beacon' : g.name} (G)`];
+  return [1, 'gadgetReady', `${c.name} · ${up ? 'Move beacon' : g.name} (${keyLabel('gadget')})`];
 }
 
 /**
@@ -336,7 +337,7 @@ function streakBars(me, pick) {
   const bank = me.bank || [];
   if (bank.length) {
     const id = bank.includes(pick) ? pick : bank[bank.length - 1];
-    out.push([1, 'rewardReady', `${REWARDS[id]?.name || id} (X)${bank.length > 1 ? ' · Z: next' : ''}`]);
+    out.push([1, 'rewardReady', `${REWARDS[id]?.name || id} (${keyLabel('streak')})${bank.length > 1 ? ` · ${keyLabel('streakPick')}: next` : ''}`]);
   } else {
     const next = nextReward(me);
     const streak = me.streak || 0;
@@ -352,7 +353,7 @@ function drawClassChoice(ctx, me, W, y) {
   const now = CLASSES[me.cls]?.name, next = CLASSES[me.pickCls]?.name;
   const text = next && next !== now ? `Next life: ${next}` : `Class: ${now || next || '?'}`;
   ctx.font = `bold 13px ${FONT}`;
-  const label = `${text}   ·   C to change`;
+  const label = `${text}   ·   ${keyLabel('changeClass')} to change`;
   const w = ctx.measureText(label).width + 28, h = 26, x = W / 2 - w / 2;
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
   ctx.fillRect(x, y, w, h);
@@ -386,8 +387,8 @@ function drawSpectating(ctx, game, sp, W, H) {
   ctx.font = `12px ${FONT}`;
   ctx.fillStyle = '#777';
   ctx.fillText(sp.free
-    ? 'WASD or arrows: move (Shift: faster)  ·  Space or click: follow a player  ·  Esc: join game'
-    : 'A / D or click: switch player  ·  Space: free camera  ·  Esc: join game', W / 2, H - 28);
+    ? `${keyLabel('left')} ${keyLabel('right')} ${keyLabel('jump')} ${keyLabel('crouch')}: move (${keyLabel('sprint')}: faster)  ·  ${keyLabel('freeCam')} or click: follow a player  ·  Esc: join game`
+    : `${keyLabel('left')} / ${keyLabel('right')} or click: switch player  ·  ${keyLabel('freeCam')}: free camera  ·  Esc: join game`, W / 2, H - 28);
 }
 
 /**
@@ -407,7 +408,7 @@ function drawCallouts(ctx, game, me, W, H) {
   news.forEach((c, i) => {
     const age = ageOf(c), y = newsY + i * 21;
     ctx.globalAlpha = Math.min(1, (age + 1) / 8, (NEWS_LIFE - age) / 40);
-    const w = ctx.measureText(c.text).width + 34, x = Math.round(W / 2 - w / 2);
+    const w = ctx.measureText(keyText(c.text)).width + 34, x = Math.round(W / 2 - w / 2);
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.fillRect(x, y - 9, w, 18);
     ctx.fillStyle = CALLOUT[c.kind] || '#555';
@@ -416,7 +417,7 @@ function drawCallouts(ctx, game, me, W, H) {
     ctx.arc(x + 14, y, 3.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#222';
-    ctx.fillText(c.text, x + 24, y + 1);
+    ctx.fillText(keyText(c.text), x + 24, y + 1);
   });
   ctx.globalAlpha = 1;
 
@@ -431,15 +432,15 @@ function drawCallouts(ctx, game, me, W, H) {
   const fade = Math.min(1, (CALLOUT_LIFE - age) / 40);
   // Pop in: big for a moment, then settling. (In steps: the WebGL renderer keeps each text size as a picture.)
   const size = age < 3 ? 40 : age < 6 ? 34 : 30;
-  const head = c.text.toUpperCase();
+  const head = keyText(c.text).toUpperCase();
   ctx.font = `bold ${size}px ${FONT}`;
   const hw = ctx.measureText(head).width;
   ctx.font = `13px ${FONT}`;
-  const sw = c.sub ? ctx.measureText(c.sub).width : 0;
-  const half = (c.sub ? 32 : 24) * (age < 3 ? 1.15 : age < 6 ? 1.06 : 1);
+  const sw = keyText(c.sub) ? ctx.measureText(keyText(c.sub)).width : 0;
+  const half = (keyText(c.sub) ? 32 : 24) * (age < 3 ? 1.15 : age < 6 ? 1.06 : 1);
   const bw = Math.min(W, Math.max(hw, sw) + 120);
   band(ctx, W / 2 - bw / 2, cy - half, bw, half * 2, color, fade * Math.min(1, (age + 1) / 3));
-  const hy = c.sub ? cy - 7 : cy + 1;
+  const hy = keyText(c.sub) ? cy - 7 : cy + 1;
   ctx.textAlign = 'center';
   ctx.font = `bold ${size}px ${FONT}`;
   // (A soft dark copy just below: the headline stands off the strip.)
@@ -449,10 +450,10 @@ function drawCallouts(ctx, game, me, W, H) {
   ctx.globalAlpha = fade;
   ctx.fillStyle = color;
   ctx.fillText(head, W / 2, hy);
-  if (c.sub) {
+  if (keyText(c.sub)) {
     ctx.font = `13px ${FONT}`;
     ctx.fillStyle = '#444';
-    ctx.fillText(c.sub, W / 2, cy + 18);
+    ctx.fillText(keyText(c.sub), W / 2, cy + 18);
   }
   let bottom = cy + half;
   for (const o of mine.slice(1)) {
@@ -579,7 +580,7 @@ function drawWeaponBar(ctx, me, W, H) {
     ctx.textAlign = 'left';
     ctx.font = FONT_BOLD_10;
     ctx.fillStyle = current ? '#fff' : count ? '#333' : 'rgba(0,0,0,0.25)';
-    ctx.fillText(slot.key, x + 4, 9);
+    ctx.fillText(keyShort(slotAction(i)), x + 4, 9);
     if (count > 1) {
       ctx.textAlign = 'right';
       ctx.font = FONT_9;

@@ -195,7 +195,7 @@ function giveWeapon(game, s, id, ammo, it, crate) {
     // (A supply drop's big gun comes out straight away, unless you're a Juggernaut.)
     const basic = s.current === 'Platinum' || !s.has(s.current) || WEAPONS[s.current]?.kind === 'melee' || (!!it.streak && !(s.jugger > 0));
     const switched = basic && !NO_SWITCH_KINDS.has(def.kind) && s.select(id);
-    game.notify(s, `${crate ? 'Crate: ' : 'You got the '}${def.name}${switched ? '' : ` (key ${KEY[def.slot]})`}`);
+    game.notify(s, `${crate ? 'Crate: ' : 'You got the '}${def.name}${switched ? '' : ` (key {key:${KEY[def.slot]}})`}`);
   } else {
     if (inv.ammo >= (def.maxAmmo ?? def.ammo ?? 1) && !crate) return false;
     inv.ammo = Math.min(def.maxAmmo ?? Infinity, inv.ammo + amount);
@@ -206,4 +206,5 @@ function giveWeapon(game, s, id, ammo, it, crate) {
 }
 
 const NO_SWITCH_KINDS = new Set(['teleport', 'rope', 'kamikaze', 'placed', 'quake', 'build']);
-const KEY = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'F'];
+// (Each weapon slot's action: Settings, Controls. The note names its key as each player has it: keys.js.)
+const KEY = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6', 'slot7', 'slot8', 'slot9', 'slot10', 'melee'];

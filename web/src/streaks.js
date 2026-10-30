@@ -130,7 +130,7 @@ export function bank(game, s, id) {
   if (s.bank.includes(id)) return false;
   s.bank.push(id);
   s.bankedAt = game.tick;
-  game.callout(s, `${REWARDS[id].name} ready`, `Press X to use it: ${REWARDS[id].blurb}`, 'reward');
+  game.callout(s, `${REWARDS[id].name} ready`, `Press {key:streak} to use it: ${REWARDS[id].blurb}`, 'reward');
   return true;
 }
 

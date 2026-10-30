@@ -181,25 +181,27 @@
             <details class="controls">
               <summary>Controls</summary>
               <table>
-                <tr><td>Move</td><td><kbd>A</kbd> <kbd>D</kbd></td></tr>
-                <tr><td>Jump (hold for higher)</td><td><kbd>W</kbd> or <kbd>Space</kbd></td></tr>
-                <tr><td>Sprint (uses stamina)</td><td><kbd>Shift</kbd> (hold, or press to toggle: see Settings)</td></tr>
+                <tr><td>Move</td><td><span data-keys="left"></span> / <span data-keys="right"></span></td></tr>
+                <tr><td>Jump (hold for higher)</td><td><span data-keys="jump"></span></td></tr>
+                <tr><td>Sprint (uses stamina)</td><td><span data-keys="sprint"></span> (hold, or press to toggle: see Settings)</td></tr>
                 <tr><td>Jetpack</td><td>hold jump in the air</td></tr>
-                <tr><td>Crouch (steadier aim)</td><td><kbd>S</kbd> or <kbd>Ctrl</kbd></td></tr>
-                <tr><td>Aim / fire</td><td>mouse / left click (mouse distance sets throw strength)</td></tr>
-                <tr><td>Sniper zoom</td><td>right click</td></tr>
-                <tr><td>Weapons</td><td><kbd>1</kbd>&ndash;<kbd>0</kbd>, melee <kbd>F</kbd>; press again to cycle; <kbd>Q</kbd> <kbd>E</kbd>, wheel</td></tr>
-                <tr><td>Sheep, rope</td><td>click again to explode / let go</td></tr>
-                <tr class="classes-only"><td>Gadget (classes on)</td><td><kbd>G</kbd>: medkit, ammo box, spawn beacon, or the Engineer's Builder</td></tr>
-                <tr class="classes-only"><td>Builder (Engineer)</td><td>click to build a wall or repair broken map; right click turns it into a plank</td></tr>
-                <tr class="classes-only"><td>Change class</td><td><kbd>C</kbd> while waiting to respawn, or from the menu (<kbd>Esc</kbd>)</td></tr>
-                <tr><td>Defuse</td><td><kbd>B</kbd> buy menu (at the start of a round, in your spawn); hold <kbd>E</kbd> to plant the bomb at a site or defuse it; <kbd>G</kbd> drop your gun or the bomb; <kbd>R</kbd> reload</td></tr>
-                <tr><td>Kill streak rewards</td><td><kbd>X</kbd> use one (earned by kills in a row: 3 Supply Drop, 5 Sentry Sheep, 7 Sheep Stampede, 10 Juggernaut); <kbd>Z</kbd> pick which, with more than one</td></tr>
-                <tr><td>Self-destruct</td><td>hold <kbd>K</kbd> (to get out of a pit you can't climb out of)</td></tr>
-                <tr><td>Spectate</td><td><kbd>Esc</kbd> then <b>Spectate</b>: <kbd>A</kbd> <kbd>D</kbd> or click to switch player, <kbd>Space</kbd> for a free camera; <b>Join game</b> to play again</td></tr>
-                <tr><td>Chat (online)</td><td><kbd>Enter</kbd> or <kbd>T</kbd></td></tr>
-                <tr><td>Scores / pause / mute</td><td><kbd>Tab</kbd> / <kbd>Esc</kbd> / <kbd>M</kbd></td></tr>
+                <tr><td>Crouch (steadier aim)</td><td><span data-keys="crouch"></span></td></tr>
+                <tr><td>Aim / fire</td><td>mouse / <span data-keys="fire"></span> (mouse distance sets throw strength)</td></tr>
+                <tr><td>Aim down sights, sniper zoom</td><td><span data-keys="aim"></span> (held)</td></tr>
+                <tr><td>Weapons</td><td><span data-keys="slot1" data-first></span>&ndash;<span data-keys="slot10" data-first></span>, sledgehammer <span data-keys="melee"></span>; press again to cycle; <span data-keys="prev"></span> / <span data-keys="next"></span></td></tr>
+                <tr><td>Reload</td><td><span data-keys="reload"></span></td></tr>
+                <tr><td>Sheep, rope</td><td>fire again to explode / let go</td></tr>
+                <tr class="classes-only"><td>Gadget (classes on)</td><td><span data-keys="gadget"></span>: medkit, ammo box, spawn beacon, or the Engineer's Builder</td></tr>
+                <tr class="classes-only"><td>Builder (Engineer)</td><td>fire to build a wall or repair broken map; <span data-keys="aim"></span> turns it into a plank</td></tr>
+                <tr class="classes-only"><td>Change class</td><td><span data-keys="changeClass"></span> while waiting to respawn, or from the menu (<kbd>Esc</kbd>)</td></tr>
+                <tr><td>Defuse</td><td><span data-keys="buy"></span> buy menu (at the start of a round, in your spawn); hold <span data-keys="use"></span> to plant the bomb at a site or defuse it; <span data-keys="gadget"></span> drop your gun or the bomb</td></tr>
+                <tr><td>Kill streak rewards</td><td><span data-keys="streak"></span> use one (earned by kills in a row: 3 Supply Drop, 5 Sentry Sheep, 7 Sheep Stampede, 10 Juggernaut); <span data-keys="streakPick"></span> pick which, with more than one</td></tr>
+                <tr><td>Self-destruct</td><td>hold <span data-keys="selfDestruct"></span> (to get out of a pit you can't climb out of)</td></tr>
+                <tr><td>Spectate</td><td><kbd>Esc</kbd> then <b>Spectate</b>: <span data-keys="left" data-first></span> / <span data-keys="right" data-first></span> or click to switch player, <span data-keys="freeCam"></span> for a free camera; <b>Join game</b> to play again</td></tr>
+                <tr><td>Chat (online)</td><td><span data-keys="chat"></span></td></tr>
+                <tr><td>Scores / pause / mute</td><td><span data-keys="scores"></span> / <kbd>Esc</kbd> / <span data-keys="mute"></span></td></tr>
               </table>
+              <p class="muted-note">Change any of these in <b>Settings &rarr; Controls</b>.</p>
             </details>
           </div>
         </div>
@@ -241,108 +243,212 @@
     </div>
   </section>
   <section id="settings" class="screen hidden" aria-label="Settings">
-    <div class="panel small">
-      <h2>Settings</h2>
-      <label class="field og-only">Graphics
-        <select id="graphics">
-          <option value="auto">Auto</option>
-          <option value="webgl">WebGL (uses the graphics card)</option>
-          <option value="canvas">Canvas (the default)</option>
-        </select>
-      </label>
-      <p id="graphicsNote" class="muted-note og-only"></p>
-      <label class="field rm-only">Quality
-        <select id="quality">
-          <option value="auto">Auto</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-      </label>
-      <p id="qualityNote" class="muted-note rm-only"></p>
-      <label class="field">Frame rate
-        <select id="fpsCap">
-          <option value="auto">Auto</option>
-          <option value="half">Half the screen rate</option>
-          <option value="30">30 fps</option>
-          <option value="60">60 fps</option>
-          <option value="90">90 fps</option>
-          <option value="120">120 fps</option>
-          <option value="144">144 fps</option>
-          <option value="165">165 fps</option>
-          <option value="240">240 fps</option>
-        </select>
-      </label>
-      <p id="fpsNote" class="muted-note"></p>
-      <label class="field volume">Volume: <output id="setVolumeOut">60%</output>
-        <input type="range" id="setVolume" min="0" max="100" step="5" value="60">
-      </label>
-      <label class="check"><input type="checkbox" id="showFps"> Show frame rate</label>
-      <label class="check"><input type="checkbox" id="showPing"> Show ping in online games</label>
-      <label class="field">Sprint (<kbd>Shift</kbd>)
-        <select id="sprintMode">
-          <option value="hold">Hold to sprint</option>
-          <option value="toggle">Press to start or stop</option>
-        </select>
-      </label>
-      <label class="field">Aim down sights (hold right click)
-        <select id="aimZoom">
-          <option value="off">Off</option>
-          <option value="slight">Slight</option>
-          <option value="more">More</option>
-        </select>
-      </label>
-      <label class="field">Mouse pointer
-        <select id="pointerMode">
-          <option value="system">Your system's pointer, as the crosshair</option>
-          <option value="locked">Locked to the game</option>
-        </select>
-      </label>
-      <label class="check"><input type="checkbox" id="fullscreenPref"> Full screen while playing</label>
-      <p class="muted-note">Your system's pointer, drawn as the crosshair, moves exactly as your mouse does everywhere else, with no delay (the system moves it, not the game). In a window it can leave the game: full screen keeps it on the screen. Locked to the game, the pointer can't leave, but the browser hides it, so the game draws the crosshair, a frame or so behind. Either way, while you play the browser keeps out of it: no menus, zooming or text selection, whatever keys you hold. <kbd>Esc</kbd> opens the menu (and frees a locked mouse). In full screen, Chrome and Edge also keep their own shortcuts (like <kbd>Ctrl</kbd>+<kbd>W</kbd>) for the game: hold <kbd>Esc</kbd> to leave it.</p>
-      <h3 class="exp-head">Crosshair</h3>
-      <div class="xhair" id="xhair">
-        <canvas id="xhPreview" width="480" height="144" aria-label="How the crosshair looks, on a light and a dark background"></canvas>
-        <div class="field-pair">
-          <label class="field">Style <select id="xhStyle"></select></label>
-          <label class="field">Colour <select id="xhColor"></select></label>
-        </div>
-        <label class="field xh-custom hidden" id="xhCustomField">Custom colour <input type="color" id="xhCustom" value="#3dff5a"></label>
-        <div class="field-pair">
-          <label class="field">Size <output id="xhSizeOut"></output><input type="range" id="xhSize" min="2" max="20" step="1"></label>
-          <label class="field">Thickness <output id="xhThicknessOut"></output><input type="range" id="xhThickness" min="1" max="5" step="0.5"></label>
-          <label class="field">Gap <output id="xhGapOut"></output><input type="range" id="xhGap" min="0" max="12" step="1"></label>
-          <label class="field">Opacity <output id="xhOpacityOut"></output><input type="range" id="xhOpacity" min="20" max="100" step="5"></label>
-        </div>
-        <div class="field-row">
-          <label class="check"><input type="checkbox" id="xhOutline"> Edge, to stand out</label>
-          <button type="button" class="small" id="xhReset">Reset</button>
+    <div class="panel set-panel">
+      <header class="set-head">
+        <h2>Settings</h2>
+        <span class="muted-note">Saved as you change them.</span>
+      </header>
+      <div class="set-body">
+        <nav class="set-tabs" role="tablist" aria-label="Settings sections">
+          <button type="button" class="set-tab" role="tab" id="setTabVideo" data-page="video" aria-selected="true">Video</button>
+          <button type="button" class="set-tab" role="tab" id="setTabAudio" data-page="audio" aria-selected="false">Audio</button>
+          <button type="button" class="set-tab" role="tab" id="setTabControls" data-page="controls" aria-selected="false">Controls</button>
+          <button type="button" class="set-tab" role="tab" id="setTabCrosshair" data-page="crosshair" aria-selected="false">Mouse &amp; crosshair</button>
+          <button type="button" class="set-tab" role="tab" id="setTabCamera" data-page="camera" aria-selected="false">Camera</button>
+          <button type="button" class="set-tab" role="tab" id="setTabGame" data-page="game" aria-selected="false">Gameplay</button>
+        </nav>
+        <div class="set-pages">
+          <div class="set-page" data-page="video" role="tabpanel" aria-labelledby="setTabVideo">
+            <h3 class="set-title">Video</h3>
+            <div class="set-row og-only">
+              <div class="set-label"><b>Graphics</b><small id="graphicsNote"></small></div>
+              <div class="set-control">
+                <select id="graphics">
+                  <option value="auto">Auto</option>
+                  <option value="webgl">WebGL (uses the graphics card)</option>
+                  <option value="canvas">Canvas (the default)</option>
+                </select>
+              </div>
+            </div>
+            <div class="set-row rm-only">
+              <div class="set-label"><b>Quality</b><small id="qualityNote"></small></div>
+              <div class="set-control">
+                <select id="quality">
+                  <option value="auto">Auto</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="set-label"><b>Frame rate</b><small id="fpsNote"></small></div>
+              <div class="set-control">
+                <select id="fpsCap">
+                  <option value="auto">Auto</option>
+                  <option value="half">Half the screen rate</option>
+                  <option value="30">30 fps</option>
+                  <option value="60">60 fps</option>
+                  <option value="90">90 fps</option>
+                  <option value="120">120 fps</option>
+                  <option value="144">144 fps</option>
+                  <option value="165">165 fps</option>
+                  <option value="240">240 fps</option>
+                </select>
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="set-label"><b>Show frame rate</b><small>In the corner while you play.</small></div>
+              <div class="set-control"><input type="checkbox" class="switch" id="showFps" aria-label="Show frame rate"></div>
+            </div>
+            <div class="set-row">
+              <div class="set-label"><b>Full screen while playing</b><small>In full screen, Chrome and Edge also keep their own shortcuts (like <kbd>Ctrl</kbd>+<kbd>W</kbd>) for the game: hold <kbd>Esc</kbd> to leave it.</small></div>
+              <div class="set-control"><input type="checkbox" class="switch" id="fullscreenPref" aria-label="Full screen while playing"></div>
+            </div>
+          </div>
+
+          <div class="set-page hidden" data-page="audio" role="tabpanel" aria-labelledby="setTabAudio">
+            <h3 class="set-title">Audio</h3>
+            <div class="set-row">
+              <div class="set-label"><b>Volume</b><small>Also in the menu while you play, next to <b>Mute sound</b>.</small></div>
+              <div class="set-control set-range"><input type="range" id="setVolume" min="0" max="100" step="5" value="60" aria-label="Volume"><output id="setVolumeOut">60%</output></div>
+            </div>
+          </div>
+
+          <div class="set-page hidden" data-page="controls" role="tabpanel" aria-labelledby="setTabControls">
+            <h3 class="set-title">Controls</h3>
+            <div class="set-row">
+              <div class="set-label"><b>Sprint</b><small>Sprinting uses stamina (the thin bar over the weapon bar).</small></div>
+              <div class="set-control">
+                <select id="sprintMode">
+                  <option value="hold">Hold to sprint</option>
+                  <option value="toggle">Press to start or stop</option>
+                </select>
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="set-label"><b>Aim down sights</b><small>Hold the aim button with a gun: the camera comes in a little, further toward where you aim. The sniper rifle's scope zooms out instead.</small></div>
+              <div class="set-control">
+                <select id="aimZoom">
+                  <option value="off">Off</option>
+                  <option value="slight">Slight</option>
+                  <option value="more">More</option>
+                </select>
+              </div>
+            </div>
+            <div class="set-subhead">
+              <h3 class="set-title">Keys</h3>
+              <button type="button" class="small" id="keysReset">Reset all keys</button>
+            </div>
+            <p class="muted-note">Click a key to change it, then press the new key or mouse button (<kbd>Esc</kbd> to keep it as it was, <kbd>Backspace</kbd> to clear it). A key taken from another action leaves that one.</p>
+            <div id="keybinds" class="keybinds"></div>
+          </div>
+
+          <div class="set-page hidden" data-page="crosshair" role="tabpanel" aria-labelledby="setTabCrosshair">
+            <h3 class="set-title">Mouse</h3>
+            <div class="set-row">
+              <div class="set-label"><b>Mouse pointer</b><small>Your system's pointer, drawn as the crosshair, moves exactly as your mouse does everywhere else, with no delay (the system moves it, not the game). In a window it can leave the game: full screen keeps it on the screen. Locked to the game, the pointer can't leave, but the browser hides it, so the game draws the crosshair, a frame or so behind. Either way, while you play the browser keeps out of it: no menus, zooming or text selection, whatever keys you hold. <kbd>Esc</kbd> opens the menu (and frees a locked mouse).</small></div>
+              <div class="set-control">
+                <select id="pointerMode">
+                  <option value="system">Your system's pointer, as the crosshair</option>
+                  <option value="locked">Locked to the game</option>
+                </select>
+              </div>
+            </div>
+            <div class="set-subhead">
+              <h3 class="set-title">Crosshair</h3>
+              <button type="button" class="small" id="xhReset">Reset</button>
+            </div>
+            <div class="xhair" id="xhair">
+              <canvas id="xhPreview" width="480" height="144" aria-label="How the crosshair looks, on a light and a dark background"></canvas>
+              <div class="xh-rows">
+                <div class="set-row">
+                  <div class="set-label"><b>Style</b></div>
+                  <div class="set-control"><select id="xhStyle"></select></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><b>Colour</b></div>
+                  <div class="set-control"><select id="xhColor"></select></div>
+                </div>
+                <div class="set-row hidden" id="xhCustomField">
+                  <div class="set-label"><b>Custom colour</b></div>
+                  <div class="set-control"><input type="color" id="xhCustom" value="#3dff5a" aria-label="Custom colour"></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><b>Size</b></div>
+                  <div class="set-control set-range"><input type="range" id="xhSize" min="2" max="20" step="1" aria-label="Size"><output id="xhSizeOut"></output></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><b>Thickness</b></div>
+                  <div class="set-control set-range"><input type="range" id="xhThickness" min="1" max="5" step="0.5" aria-label="Thickness"><output id="xhThicknessOut"></output></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><b>Gap</b></div>
+                  <div class="set-control set-range"><input type="range" id="xhGap" min="0" max="12" step="1" aria-label="Gap"><output id="xhGapOut"></output></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><b>Opacity</b></div>
+                  <div class="set-control set-range"><input type="range" id="xhOpacity" min="20" max="100" step="5" aria-label="Opacity"><output id="xhOpacityOut"></output></div>
+                </div>
+                <div class="set-row">
+                  <div class="set-label"><b>Edge, to stand out</b><small>An edge in the opposite shade, so it shows on any background.</small></div>
+                  <div class="set-control"><input type="checkbox" class="switch" id="xhOutline" aria-label="Edge, to stand out"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="set-page hidden" data-page="camera" role="tabpanel" aria-labelledby="setTabCamera">
+            <div class="set-subhead">
+              <h3 class="set-title">Camera</h3>
+              <button type="button" class="small" id="camReset">Reset</button>
+            </div>
+            <div class="cam">
+              <div class="set-row">
+                <div class="set-label"><b>Look toward the mouse</b><small>How far the view leans toward the pointer (further down the sights or a scope). 0: it stays on you.</small></div>
+                <div class="set-control set-range"><input type="range" id="camLook" min="0" max="200" step="5" aria-label="Look toward the mouse"><output id="camLookOut"></output></div>
+              </div>
+              <div class="set-row">
+                <div class="set-label"><b>Look smoothing</b><small>How long the view goes on moving after the mouse stops. Off: it stops with the mouse (it used to be 330 ms).</small></div>
+                <div class="set-control set-range"><input type="range" id="camGlide" min="0" max="1000" step="10" aria-label="Look smoothing"><output id="camGlideOut"></output></div>
+              </div>
+              <div class="set-row">
+                <div class="set-label"><b>Follow smoothing</b><small>How long the view takes to catch up with you as you move. Off: fixed on you.</small></div>
+                <div class="set-control set-range"><input type="range" id="camFollow" min="0" max="1000" step="10" aria-label="Follow smoothing"><output id="camFollowOut"></output></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="set-page hidden" data-page="game" role="tabpanel" aria-labelledby="setTabGame">
+            <h3 class="set-title">Gameplay</h3>
+            <div class="set-row">
+              <div class="set-label"><b>Show ping in online games</b><small>Your connection's delay, in the corner. The scoreboard (<kbd>Tab</kbd>) shows everyone's.</small></div>
+              <div class="set-control"><input type="checkbox" class="switch" id="showPing" aria-label="Show ping in online games"></div>
+            </div>
+            <h3 class="set-title">Experimental</h3>
+            <p class="muted-note">For the next game you start or host (a match already running keeps its own). The same choices are in the game setup.</p>
+            <div class="set-row">
+              <div class="set-label"><b>Bot vision</b><small>Only what they see or hear: bots spot you only on their screen, in front of them and in a clear line; behind them, they only hear you.</small></div>
+              <div class="set-control">
+                <select id="setBotVision">
+                  <option value="classic">See everyone nearby</option>
+                  <option value="sight">Only what they see or hear</option>
+                </select>
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="set-label"><b>Fog of war</b><small>You only see what your soldier can see.</small></div>
+              <div class="set-control">
+                <select id="setFog"><option value="off">Off</option><option value="on">On</option></select>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <h3 class="exp-head">Camera</h3>
-      <div class="cam">
-        <label class="field">Look toward the mouse <output id="camLookOut"></output><input type="range" id="camLook" min="0" max="200" step="5"></label>
-        <p class="muted-note">How far the view leans toward the pointer (further down the sights or a scope). 0: it stays on you.</p>
-        <label class="field">Look smoothing <output id="camGlideOut"></output><input type="range" id="camGlide" min="0" max="1000" step="10"></label>
-        <p class="muted-note">How long the view goes on moving after the mouse stops. Off: it stops with the mouse (it used to be 330 ms).</p>
-        <label class="field">Follow smoothing <output id="camFollowOut"></output><input type="range" id="camFollow" min="0" max="1000" step="10"></label>
-        <p class="muted-note">How long the view takes to catch up with you as you move. Off: fixed on you.</p>
-        <div class="field-row"><button type="button" class="small" id="camReset">Reset</button></div>
-      </div>
-      <h3 class="exp-head">Experimental</h3>
-      <div class="field-pair">
-        <label class="field">Bot vision
-          <select id="setBotVision">
-            <option value="classic">See everyone nearby</option>
-            <option value="sight">Only what they see or hear</option>
-          </select>
-        </label>
-        <label class="field">Fog of war
-          <select id="setFog"><option value="off">Off</option><option value="on">On</option></select>
-        </label>
-      </div>
-      <p class="muted-note">For the next game you start or host (a match already running keeps its own). The same choices are in the game setup.</p>
-      <button id="settingsDone" class="primary">Done</button>
+      <footer class="set-foot">
+        <span class="muted-note"><kbd>Esc</kbd> or Done to go back.</span>
+        <button id="settingsDone" class="primary">Done</button>
+      </footer>
     </div>
   </section>
   <section id="classPicker" class="screen hidden" aria-label="Choose a class">

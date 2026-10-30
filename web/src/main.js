@@ -33,6 +33,8 @@ import { BuyMenu } from './buymenu.js';
 import { canShop } from './defuse.js';
 import { renderLoadout, renderPicker } from './loadout.js';
 import { CROSSHAIR_STYLES, CROSSHAIR_COLORS, CROSSHAIR_DEFAULTS, setCrosshair, drawCrosshair, crosshairCursor } from './crosshair.js';
+import { setKeys, savedKeys, resetKeys, isKey, keysFor, keyOf, mouseKey, keyName, keyLabel, keyText, useLayout } from './keys.js';
+import { KeybindList } from './keysui.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -73,7 +75,7 @@ const CLASSES_ON = params.has('classes');
 // (?tiles=on: the canvas keeps the map in tiles, maptiles.js. Off by default: slower with a graphics card.)
 if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
-const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', pointer: 'system', fullscreen: false, volume: 60, aimZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS }, camera: { ...CAMERA_DEFAULTS } };
+const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', pointer: 'system', fullscreen: false, volume: 60, aimZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS }, camera: { ...CAMERA_DEFAULTS }, keys: {} };
 // Locking the mouse to the game (Settings: Mouse pointer, "Locked to the game"): ?lock=on /
 // ?lock=off in the address. (Browsers driven by tests move the mouse oddly while it's locked,
 // so it's off for them unless the address asks.)
@@ -110,6 +112,7 @@ const DEFAULTS = {
   aimZoom: 'slight', // aiming down the sights (hold right click with a gun): 'off', 'slight' or 'more' (AIM_ZOOM)
   crosshair: { ...CROSSHAIR_DEFAULTS }, // how the crosshair looks (crosshair.js)
   camera: { ...CAMERA_DEFAULTS }, // how the camera moves: following you, and toward the mouse (render.js)
+  keys: {},        // the keys changed in Settings (Controls): { action: [keys] } (keys.js)
   edition: null,   // the game last picked
 };
 
@@ -208,7 +211,7 @@ function buildMenu(settings) {
 /** Show the options that matter for the chosen mode. */
 function modeFields() {
   const mode = $('mode').value, m = MODES[mode];
-  $('modeBlurb').textContent = m.blurb;
+  $('modeBlurb').textContent = keyText(m.blurb);
   show('fragField', m.limit === 'frags');
   show('goalField', m.limit === 'goal');
   if (m.goal) {
@@ -699,13 +702,15 @@ function toggleFreeCam() {
   sp.y = renderer.cam.y + 20;
 }
 
-/** The free camera moves with WASD or the arrow keys (Shift: faster), and stays over the map. */
+/** The free camera moves with the movement keys (jump: up, crouch: down, sprint: faster), and stays over the map. */
 function moveFreeCam(g, dt) {
   const sp = state.spec;
   if (!state.menuOpen && !state.chatOpen) {
-    const speed = (input.down('ShiftLeft', 'ShiftRight') ? 1600 : 650) * dt / 1000;
-    sp.x += ((input.down('KeyD', 'ArrowRight') ? 1 : 0) - (input.down('KeyA', 'ArrowLeft') ? 1 : 0)) * speed;
-    sp.y += ((input.down('KeyS', 'ArrowDown') ? 1 : 0) - (input.down('KeyW', 'ArrowUp') ? 1 : 0)) * speed;
+    const speed = (input.held('sprint') ? 1600 : 650) * dt / 1000;
+    sp.x += ((input.held('right') ? 1 : 0) - (input.held('left') ? 1 : 0)) * speed;
+    // (Up: the jump keys, but not the one that's also the free camera's, Space to start with.)
+    const up = keysFor('jump').some(k => input.keys.has(k) && !isKey('freeCam', k));
+    sp.y += ((input.held('crouch') ? 1 : 0) - (up ? 1 : 0)) * speed;
   }
   const b = g.map.bounds;
   sp.x = Math.max(b.left, Math.min(b.right, sp.x));
@@ -899,12 +904,24 @@ function openSettings() {
   $('aimZoom').value = AIM_ZOOM[prefs.aimZoom] ? prefs.aimZoom : 'slight';
   showCrosshair();
   showCamera();
+  keybinds.render();
   settingsNotes();
+  showSettingsPage(state.settingsPage);
   show('settings', true);
   $('settingsDone').focus();
 }
 
+/** Show one section of Settings (the one last looked at, when it opens again). */
+function showSettingsPage(page) {
+  const pages = [...document.querySelectorAll('#settings .set-page')];
+  if (!pages.some(p => p.dataset.page === page)) page = pages[0].dataset.page;
+  for (const p of pages) p.classList.toggle('hidden', p.dataset.page !== page);
+  for (const t of document.querySelectorAll('#settings .set-tab')) t.setAttribute('aria-selected', String(t.dataset.page === page));
+  state.settingsPage = page;
+}
+
 function closeSettings() {
+  keybinds.cancel();
   show('settings', false);
 }
 
@@ -961,6 +978,22 @@ function changeCamera(change) {
   prefs.camera = setCamera({ ...prefs.camera, ...change });
   savePrefs();
   showCamera();
+}
+
+// The keys (Settings: Controls): the list of actions and their keys, saved as they change.
+const keybinds = new KeybindList($('keybinds'), {
+  onChange: () => { prefs.keys = savedKeys(); savePrefs(); showKeys(); },
+  classes: () => CLASSES_ON,
+});
+
+/** The keys named on the page (the menu's Controls) as they're set: <span data-keys="action"> (data-first: just the first). */
+function showKeys() {
+  for (const el of document.querySelectorAll('[data-keys]')) {
+    const keys = keysFor(el.dataset.keys), shown = el.hasAttribute('data-first') ? keys.slice(0, 1) : keys;
+    const kbds = shown.map(k => { const b = document.createElement('kbd'); b.textContent = keyName(k); return b; });
+    if (!kbds.length) { el.textContent = 'unbound'; continue; }
+    el.replaceChildren(...kbds.flatMap((b, i) => (i ? [' or ', b] : [b])));
+  }
 }
 
 /** Set an element's text, only if it's different (no needless changes to the page). */
@@ -1399,9 +1432,9 @@ function frame(now) {
   // (Online, the hit-stop holds the picture: the game itself can't stop.)
   if (state.mode !== 'offline' && now < state.hitStopUntil && state.drawnOnce) { pacer.drawn(now, 0); return; }
 
-  const sniping = me.alive && me.current === 'SR' && input.mouse.right && !state.menuOpen && !state.chatOpen;
+  const sniping = me.alive && me.current === 'SR' && input.held('aim') && !state.menuOpen && !state.chatOpen;
   // Aiming down the sights: right click held with a gun (Settings).
-  const sights = !sniping && me.alive && input.mouse.right && SIGHTED.has(weaponFor(me, me.current)?.kind) && !watchMode && !g.over &&
+  const sights = !sniping && me.alive && input.held('aim') && SIGHTED.has(weaponFor(me, me.current)?.kind) && !watchMode && !g.over &&
     !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open;
   const ax = free ? free.x : lerp(view.prevX ?? view.x, view.x, alpha) + (view.drawDX || 0);
   const ay = free ? free.y : lerp(view.prevY ?? view.y, view.y, alpha) + (view.drawDY || 0);
@@ -1412,7 +1445,7 @@ function frame(now) {
   renderer.render(g, alpha, me);
   if (client) me.ping = client.ping;
   // Holding K to self-destruct: shown as it counts down (it goes off after a second).
-  const holdingK = me.alive && input.down('KeyK') && !state.menuOpen && !state.chatOpen;
+  const holdingK = me.alive && input.held('selfDestruct') && !state.menuOpen && !state.chatOpen;
   state.destructSince = holdingK ? state.destructSince ?? now : null;
   const hudR = renderer.hud || renderer;
   const killK = (now - state.killAt) / KILL_MARK_MS;
@@ -1422,7 +1455,7 @@ function frame(now) {
     // (A moment on the final picture, without the HUD, before the replay of the winning kill.)
     replay: g.over && !!g.finalKill && !state.replayTried,
     killMark: killK >= 0 && killK < 1 && !state.menuOpen && !watchMode ? { x: input.mouse.x, y: input.mouse.y, k: killK } : null,
-    showScores: input.down('Tab') && !state.chatOpen, watching, chat: state.chat,
+    showScores: input.held('scores') && !state.chatOpen, watching, chat: state.chat,
     spectating: me.spectating ? { free: !!free, target: watching } : null,
     online: state.mode !== 'offline',
     hostId: state.mode === 'host' ? me.id : state.mode === 'client' ? g.soldiers.find(s => !s.isBot && !s.remote)?.id : null,
@@ -1565,6 +1598,29 @@ function confirmKill(now) {
   }
 }
 
+/**
+ * A press of one of the keys main.js reads itself (Settings, Controls: buy, change class, chat,
+ * mute), mid-match with no menu open. Returns whether it was one.
+ */
+function pressMenuKey(key) {
+  const g = state.game;
+  if (!g || state.menuOpen || state.chatOpen) return false;
+  if (isKey('buy', key) && g.rules.buyItem) { openBuy(); return true; }
+  if (isKey('changeClass', key) && g.classesOn && !g.over) {
+    if (!state.me.alive) openPicker();
+    else localNote(`Change class while waiting to respawn (${keyLabel('changeClass')}), or from the menu (Esc)`);
+    return true;
+  }
+  if (isKey('chat', key) && state.mode !== 'offline') { openChat(); return true; }
+  if (isKey('mute', key)) {
+    const m = !audio.muted;
+    audio.setMuted(m);
+    $('mute').checked = m;
+    return true;
+  }
+  return false;
+}
+
 /** The controller reading our keyboard and mouse (online, the client's). */
 function myController() {
   if (state.mode === 'client') return state.net?.client?.opts.controller || null;
@@ -1681,6 +1737,8 @@ function wire() {
   $('pickerCards').addEventListener('click', e => { const card = e.target.closest('[data-cls]'); if (card) pickClass(card.dataset.cls); });
   $('pauseSettings').addEventListener('click', openSettings);
   $('settingsDone').addEventListener('click', closeSettings);
+  for (const t of document.querySelectorAll('#settings .set-tab')) t.addEventListener('click', () => showSettingsPage(t.dataset.page));
+  $('keysReset').addEventListener('click', () => { keybinds.cancel(); prefs.keys = resetKeys(); savePrefs(); keybinds.render(); showKeys(); });
   $('graphics').addEventListener('change', () => { prefs.graphics = $('graphics').value; prefs.graphicsPicked = true; savePrefs(); setGraphics(prefs.graphics); });
   $('quality').addEventListener('change', () => { prefs.quality = $('quality').value; savePrefs(); renderer.setQuality?.(prefs.quality); pacer.restart(performance.now(), true); settingsNotes(); });
   // The game picker.
@@ -1734,7 +1792,8 @@ function wire() {
     audio.unlock();
     if (state.chatOpen) return;
     if (!$('settings').classList.contains('hidden')) {
-      if (e.code === 'Escape') { e.preventDefault(); closeSettings(); }
+      // (While a key's being set, Esc keeps it as it was: keysui.js has it first.)
+      if (e.code === 'Escape' && !keybinds.capturing) { e.preventDefault(); closeSettings(); }
       return;
     }
     if (!$('loadout').classList.contains('hidden')) {
@@ -1745,7 +1804,7 @@ function wire() {
       // The class picker takes the number keys while it's open (not conquest's spawn choice).
       const k = /^Digit([1-4])$/.exec(e.code);
       if (k) { e.preventDefault(); pickClass(CLASS_IDS[+k[1] - 1]); }
-      else if (e.code === 'Escape' || e.code === 'KeyC') { e.preventDefault(); closePicker(); }
+      else if (e.code === 'Escape' || isKey('changeClass', keyOf(e.code))) { e.preventDefault(); closePicker(); }
       return;
     }
     if (!state.game) {
@@ -1764,34 +1823,27 @@ function wire() {
       if (!e.repeat && buyMenu.key(e.code, state.game, state.me)) e.preventDefault();
       return;
     }
-    if (e.code === 'KeyB' && !e.repeat && state.game.rules.buyItem && !state.menuOpen) { e.preventDefault(); openBuy(); return; }
+    const key = keyOf(e.code);
+    if (!e.repeat && pressMenuKey(key)) { e.preventDefault(); return; }
     if (e.code === 'Escape') {
       e.preventDefault();
       // (Esc also frees a locked mouse, which opens the menu: one press, not two.)
       if (performance.now() - (state.freedAt || 0) > 400) setPaused(!state.menuOpen);
     }
-    // Watching (spectating, or out of lives): A/D (or the arrows) switch who you follow,
-    // and spectating, Space gives a free camera (where A/D move it instead).
+    // Watching (spectating, or out of lives): left and right switch who you follow, and
+    // spectating, jump gives a free camera (where the movement keys move it instead).
     const me = state.me;
     if (me && !e.repeat && !state.menuOpen && !state.game.over && (me.spectating || (!me.alive && !state.game.rules.canRespawn(state.game, me)))) {
-      const step = { KeyA: -1, ArrowLeft: -1, KeyD: 1, ArrowRight: 1 }[e.code];
+      const step = isKey('left', key) ? -1 : isKey('right', key) ? 1 : 0;
       if (step && !state.spec.free) { e.preventDefault(); cycleWatch(step); }
-      if (e.code === 'Space' && me.spectating) { e.preventDefault(); toggleFreeCam(); }
-    }
-    if (e.code === 'KeyC' && !e.repeat && !state.menuOpen && !state.chatOpen && state.game.classesOn && !state.game.over) {
-      if (!state.me.alive) openPicker();
-      else localNote('Change class while waiting to respawn (C), or from the menu (Esc)');
-    }
-    if ((e.code === 'Enter' || e.code === 'KeyT') && state.mode !== 'offline' && !state.menuOpen && !e.repeat) { e.preventDefault(); openChat(); return; }
-    if (e.code === 'KeyM' && !e.repeat && !state.menuOpen) {
-      const m = !audio.muted;
-      audio.setMuted(m);
-      $('mute').checked = m;
+      if (isKey('freeCam', key) && me.spectating) { e.preventDefault(); toggleFreeCam(); }
     }
   });
   window.addEventListener('mousedown', e => {
     audio.unlock();
     if (state.replay && e.target === canvas) { skipReplay(); return; }
+    // (Menu keys can be mouse buttons too: Settings, Controls.)
+    if (e.target === canvas && state.game && !state.chatOpen && pressMenuKey(mouseKey(e.button))) return;
     // Watching: a click follows the next player (right click: the one before).
     const g = state.game, me = state.me;
     if (g && me && e.target === canvas && !state.menuOpen && !state.pickerOpen && !g.over &&
@@ -1856,6 +1908,10 @@ async function boot() {
   setVolume(prefs.volume, false);
   prefs.crosshair = setCrosshair(prefs.crosshair);
   prefs.camera = setCamera(prefs.camera);
+  prefs.keys = setKeys(prefs.keys);
+  showKeys();
+  // (Keyboards other than QWERTY: name keys as they're printed, where the browser can say.)
+  navigator.keyboard?.getLayoutMap?.().then(m => { useLayout(m); keybinds.render(); showKeys(); }).catch(() => {});
   pacer.setMode(prefs.fpsCap);
   perf.on ||= prefs.showFps;
   const [index, legs, r] = await Promise.all([

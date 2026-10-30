@@ -9,6 +9,7 @@ import { Game } from '../web/src/game.js';
 import { WEAPONS } from '../web/src/weapons.js';
 import { BODY, PHYS, SPEEDS, DEFAULT_SPEED, SHOW_SPEED_MENU } from '../web/src/config.js';
 import { setGameSpeed } from '../web/src/speed.js';
+import { keyText } from '../web/src/keys.js';
 import fs from 'node:fs';
 
 const MAPS = mapIndex();
@@ -283,7 +284,8 @@ test("picking up a weapon only takes it out over the starting pistol, not over o
   for (let i = 0; i < 90; i++) game.update();
   assert.ok(s.weapons.SR, 'got the sniper rifle');
   assert.equal(s.current, 'M4', 'still holding the M4');
-  assert.ok(game.notes.some(n => /Sniper Rifle \(key \d\)/.test(n.text)), 'told which key takes it out');
+  // (The key as each player has it set: keys.js fills it in.)
+  assert.ok(game.notes.some(n => /Sniper Rifle \(key \{key:slot\d+\}\)/.test(n.text) && /\(key \d\)/.test(keyText(n.text))), 'told which key takes it out');
 });
 
 test('rocketing yourself costs a frag; falling off after a hit credits the attacker', () => {

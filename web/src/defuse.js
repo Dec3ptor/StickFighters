@@ -315,7 +315,7 @@ export function defuseMode(base) {
   return {
     ...base,
     name: 'Defuse',
-    blurb: 'Counter-Strike style. Attackers (T) plant the bomb at site A or B; defenders (CT) stop them or defuse it. No respawns in a round. Buy weapons and gear at the start of each round (B) with money from kills, wins and losses in a row. Teams swap sides at half time; first to the rounds wins.',
+    blurb: 'Counter-Strike style. Attackers (T) plant the bomb at site A or B; defenders (CT) stop them or defuse it. No respawns in a round. Buy weapons and gear at the start of each round ({key:buy}) with money from kills, wins and losses in a row. Teams swap sides at half time; first to the rounds wins.',
     teams: true,
     objective: true,
     killScore: false,
@@ -521,7 +521,7 @@ export function defuseMode(base) {
       const b = game.modeState.bomb;
       Object.assign(b, { s: 'carried', by: s.id, plant: 0 });
       s.weapons.C4 = { ammo: 1 };
-      game.notify(s, 'You have the bomb! Plant it at A or B: hold E there');
+      game.notify(s, 'You have the bomb! Plant it at A or B: hold {key:use} there');
       game.sound('pickup', s.x, s.y, s.id);
     },
 
@@ -535,7 +535,7 @@ export function defuseMode(base) {
       pay(game, s, DEFUSE.planterBonus);
       game.addFeed({ text: `The bomb has been planted at ${site.label}!`, tick: game.tick });
       game.sound('planted', null, null);
-      tellSide(game, 'CT', `The bomb has been planted at ${site.label}! Defuse it: hold E by it`);
+      tellSide(game, 'CT', `The bomb has been planted at ${site.label}! Defuse it: hold {key:use} by it`);
     },
 
     defused(game, s) {

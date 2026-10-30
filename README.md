@@ -36,7 +36,8 @@ Two games on one site: the **Original**, drawn as it was, and **Stick Soldiers R
 - **Headshots** do double damage (2.5× with the sniper rifle, 2× with the bow), and you hear a hitmarker tick when you land one.
 - **Smooth on high refresh rate screens**: the game draws a frame every time your screen refreshes (60, 120, 144, 240 Hz...). It still updates 60 times a second, and everything moving (soldiers, bullets, rockets, particles, falling crates, running legs) is drawn part way between updates, while your gun follows the mouse on every frame.
 - **Drawn with the plain 2D canvas** by default, or with **WebGL** (through [PixiJS](https://pixijs.com/)) if you pick it in Settings. Both draw exactly the same picture. **Auto** picks WebGL on computers with a graphics card and the canvas on ones without, where it's faster.
-- **Settings** (on the main menu and the pause menu):
+- **Settings** (on the main menu and the pause menu): a full screen with its sections down the side (**Video**, **Audio**, **Controls**, **Mouse & crosshair**, **Camera**, **Gameplay**), each setting on a row with what it does, saved as you change it. On a phone-sized window the sections run along the top.
+  - **Controls**: every action's keys, as many as four each, and they can be mouse buttons (middle, back, forward) or the wheel too. Click a key and press the new one (`Esc` keeps it as it was, `Backspace` clears it); **+** adds another. A key taken from another action leaves that one, and says so. **Reset all keys** puts them back. Everything in the game that names a key (the hints on the screen, the buy menu, the menu's list of controls, messages like "hold K to self-destruct", online too) names yours.
   - **Volume**: 60% to start with (100% is as loud as the game used to be). Also on the pause menu (`Esc`), next to **Mute sound** (`M`).
   - **Graphics**: Canvas (the default), WebGL or Auto. Switches straight away, even mid-match.
   - **Crosshair**: its style (cross and dot, cross, dot, circle, circle and dot, T or X), colour (the game's own, a few bright ones, or any colour you pick), size, thickness, gap, opacity, and an edge in the opposite shade so it shows on any background. A picture shows it on a light and a dark background as you change it; **Reset** puts it back.
@@ -171,6 +172,8 @@ Hammers and jetpacks lie around every map, placed so one is never more than a fe
 Bots pick hammers up too, and use them for what they're for: steps out of a pit, steps up to a ledge or a bridge across a gap to get to an objective or an enemy they can't otherwise reach, and a wall to hide behind when they're hurt in a fight at range.
 
 ## Controls
+
+These are the keys to start with: change any of them in **Settings → Controls**.
 
 | Action | Keys |
 |---|---|

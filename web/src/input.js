@@ -2,7 +2,10 @@
 
 import { WEAPONS } from './weapons.js';
 import { REWARDS, nextReward } from './streaks.js';
+import { keyOf, mouseKey, keysFor, pressKeys, boundKeys } from './keys.js';
 
+// Keys the browser keeps its hands off while a match is played (as well as every key bound to
+// something in Settings: keys.js).
 const GAME_KEYS = new Set([
   'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab',
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyF', 'KeyK', 'KeyG', 'KeyR', 'KeyX', 'KeyZ', 'ShiftLeft', 'ShiftRight',
@@ -12,20 +15,18 @@ const GAME_KEYS = new Set([
 // would miss the key being let go and keep moving.
 const MODIFIERS = new Set(['ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight']);
 
-// Number keys 1-9 and 0 pick weapon slots 0-9; F picks melee (slot 10).
-const SLOT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'KeyF'];
-// (G uses your class's gadget, or in Defuse drops your gun: one press, one use. R reloads.
-// X uses a banked kill streak reward, Z picks which.)
-const QUEUED = new Set([...SLOT_KEYS, 'KeyQ', 'KeyE', 'KeyG', 'KeyR', 'KeyX', 'KeyZ']);
-
-/** Kill streak rewards: the keys that use one, and pick which (shown on the HUD). */
-export const REWARD_KEYS = { use: 'X', pick: 'Z' };
+// The weapon slots' actions: Weapon 1-10 pick slots 0-9 (the number keys, to start with); the
+// sledgehammer is slot 10 (F).
+const SLOTS = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6', 'slot7', 'slot8', 'slot9', 'slot10', 'melee'];
 
 export class Input {
   constructor(canvas) {
     this.canvas = canvas;
-    this.keys = new Set();
-    this.queue = [];          // key presses waiting to be read by the game
+    this.keys = new Set();      // the keys and mouse buttons held (as keys.js names them: keyOf)
+    this.queue = [];          // presses of keys bound to one-press actions, waiting to be read by the game
+    // (Every key and button pressed since the game last looked: a click quicker than the time
+    // between two game updates still fires.)
+    this.tapped = new Set();
     // (clicked / rightClicked: a press not yet seen by the game, so a click quicker than
     // the time between two game updates still counts.)
     this.mouse = { x: 0, y: 0, left: false, right: false, moved: false, clicked: false, rightClicked: false };
@@ -42,13 +43,13 @@ export class Input {
 
     window.addEventListener('keydown', e => {
       if (!this.enabled) return;
-      if (GAME_KEYS.has(e.code) || MODIFIERS.has(e.code) || /^Digit\d$/.test(e.code)) e.preventDefault();
-      // Only weapon keys are read as one-off presses; everything else is read as held.
-      if (!e.repeat && QUEUED.has(e.code) && this.queue.length < 8) this.queue.push(e.code);
-      this.keys.add(e.code);
+      const key = keyOf(e.code);
+      if (GAME_KEYS.has(e.code) || MODIFIERS.has(e.code) || /^Digit\d$/.test(e.code) || boundKeys().has(key)) e.preventDefault();
+      if (!e.repeat) this.pressed(key);
+      this.keys.add(key);
     });
     window.addEventListener('keyup', e => {
-      this.keys.delete(e.code);
+      this.keys.delete(keyOf(e.code));
       // (Macs don't report keys let go while Cmd is down: forget them all when it's let go.)
       if (e.code === 'MetaLeft' || e.code === 'MetaRight') this.keys.clear();
     });
@@ -87,6 +88,7 @@ export class Input {
     window.addEventListener('mouseup', e => {
       if (e.button === 0) this.mouse.left = false;
       if (e.button === 2) this.mouse.right = false;
+      this.keys.delete(mouseKey(e.button));
     });
     this.onCanvas = {
       mousedown: e => {
@@ -95,9 +97,17 @@ export class Input {
         this.onPress?.();
         if (e.button === 0) this.mouse.left = this.mouse.clicked = true;
         if (e.button === 2) this.mouse.right = this.mouse.rightClicked = true;
+        if (!this.enabled) return;
+        const key = mouseKey(e.button);
+        this.keys.add(key);
+        this.pressed(key);
       },
       contextmenu: e => e.preventDefault(),
-      wheel: e => { e.preventDefault(); this.wheel += Math.sign(e.deltaY); },
+      wheel: e => {
+        e.preventDefault();
+        this.wheel += Math.sign(e.deltaY);
+        if (this.enabled && e.deltaY) this.pressed(e.deltaY > 0 ? 'WheelDown' : 'WheelUp');
+      },
     };
     this.canvas = null;
     this.attach(canvas);
@@ -152,25 +162,39 @@ export class Input {
     }, { passive: false });
   }
 
-  down(...codes) { return codes.some(c => this.keys.has(c)); }
+  /** A key or button pressed: noted for the game (one-press actions' keys queued). */
+  pressed(key) {
+    this.tapped.add(key);
+    if (pressKeys().has(key) && this.queue.length < 8) this.queue.push(key);
+  }
 
-  /** Take (and forget) any queued presses of these keys. */
-  took(...codes) {
-    const i = this.queue.findIndex(c => codes.includes(c));
-    if (i < 0) return false;
-    this.queue.splice(i, 1);
-    return true;
+  /** Whether any of these keys are held (as KeyboardEvent.code names them, or keys.js does). */
+  down(...codes) { return codes.some(c => this.keys.has(keyOf(c))); }
+
+  /** Whether an action's key (Settings: Controls) is held. */
+  held(id) { return keysFor(id).some(k => this.keys.has(k)); }
+
+  /** Whether an action's key was pressed since the game last looked (see tapped). */
+  tappedAction(id) { return keysFor(id).some(k => this.tapped.has(k)); }
+
+  /** Take (and forget) a queued press of one of an action's keys: the key, or null if none. */
+  took(id) {
+    const keys = keysFor(id);
+    const i = this.queue.findIndex(c => keys.includes(c));
+    if (i < 0) return null;
+    return this.queue.splice(i, 1)[0];
   }
 
   clear() {
     this.keys.clear();
+    this.tapped.clear();
     this.queue.length = 0;
     this.mouse.left = this.mouse.right = this.mouse.clicked = this.mouse.rightClicked = false;
     this.wheel = 0;
   }
 }
 
-/** Drives the player's soldier from the keyboard and mouse. */
+/** Drives the player's soldier from the keyboard and mouse, with the keys set in Settings (keys.js). */
 export class PlayerController {
   /**
    * view: the renderer, or a function returning the current one (it can change in Settings).
@@ -186,10 +210,10 @@ export class PlayerController {
     this.prevShift = false;
     this.sprintOn = false;
     this.jetting = false;
-    this.rewardPick = null; // the banked kill streak reward X uses (Z picks another)
+    this.rewardPick = null; // the banked kill streak reward the streak key uses (the pick key picks another)
   }
 
-  /** The banked reward X would use now: the one picked with Z, or the newest. */
+  /** The banked reward the streak key would use now: the one picked, or the newest. */
   pickedReward(s) {
     const bank = s.bank || [];
     return bank.includes(this.rewardPick) ? this.rewardPick : bank[bank.length - 1] || null;
@@ -197,28 +221,30 @@ export class PlayerController {
 
   input(game, s) {
     const k = this.in;
-    const jump = k.down('KeyW', 'Space', 'ArrowUp');
+    const jump = k.held('jump');
+    const firing = k.held('fire'), aiming = k.held('aim');
     const inp = {
-      move: (k.down('KeyD', 'ArrowRight') ? 1 : 0) - (k.down('KeyA', 'ArrowLeft') ? 1 : 0),
+      move: (k.held('right') ? 1 : 0) - (k.held('left') ? 1 : 0),
       jump,
       jumpPressed: jump && !this.prevJump,
-      crouch: k.down('KeyS', 'ArrowDown', 'ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight'),
-      // Hold K to self-destruct (to get out of a pit you can't climb out of).
-      selfDestruct: k.down('KeyK'),
-      fire: k.mouse.left || k.mouse.clicked,
-      firePressed: (k.mouse.left && !this.prevFire) || k.mouse.clicked,
-      alt: k.mouse.right || k.mouse.rightClicked,
+      crouch: k.held('crouch'),
+      // Hold to self-destruct (to get out of a pit you can't climb out of).
+      selfDestruct: k.held('selfDestruct'),
+      fire: firing || k.tappedAction('fire'),
+      firePressed: (firing && !this.prevFire) || k.tappedAction('fire'),
+      alt: aiming || k.tappedAction('aim'),
     };
     this.prevJump = jump;
-    this.prevFire = k.mouse.left;
-    // Building (the Hammer, the Builder): right click turns the block (a wall or a plank).
-    if (((k.mouse.right && !this.prevAlt) || k.mouse.rightClicked) && WEAPONS[s.current]?.kind === 'build' && s.alive) this.plank = !this.plank;
-    this.prevAlt = k.mouse.right;
+    this.prevFire = firing;
+    // Building (the Hammer, the Builder): the aim button turns the block (a wall or a plank).
+    if (((aiming && !this.prevAlt) || k.tappedAction('aim')) && WEAPONS[s.current]?.kind === 'build' && s.alive) this.plank = !this.plank;
+    this.prevAlt = aiming;
+    k.tapped.clear();
     k.mouse.clicked = k.mouse.rightClicked = false;
     inp.plank = !!this.plank;
 
-    // Sprint (Shift): while held, or toggled on and off.
-    const shift = k.down('ShiftLeft', 'ShiftRight');
+    // Sprint: while held, or toggled on and off.
+    const shift = k.held('sprint');
     const b = s.body;
     if (this.sprintMode() === 'toggle') {
       if (shift && !this.prevShift) this.sprintOn = !this.sprintOn;
@@ -240,20 +266,20 @@ export class PlayerController {
 
     const deploy = s.alive ? null : game.deployOptions(s);
     if (deploy) {
-      // Waiting to respawn (conquest's points, spawn beacons): number keys choose where.
+      // Waiting to respawn (conquest's points, spawn beacons): the weapon keys choose where.
       for (let i = 0; i < 9; i++) {
-        if (k.took(SLOT_KEYS[i])) { const opt = deploy[i]; if (opt) s.deployAt = opt.key; }
+        if (k.took(SLOTS[i])) { const opt = deploy[i]; if (opt) s.deployAt = opt.key; }
       }
     }
-    // G: your class's gadget, or (Defuse) drop the gun in your hands or the bomb.
-    if (k.took('KeyG')) { if (game.rules.drop) inp.drop = true; else inp.gadget = true; }
-    if (k.took('KeyR')) inp.reload = true;
-    // Kill streak rewards: Z picks one (of those banked), X uses it.
-    if (k.took('KeyZ')) {
+    // Your class's gadget, or (Defuse) drop the gun in your hands or the bomb.
+    if (k.took('gadget')) { if (game.rules.drop) inp.drop = true; else inp.gadget = true; }
+    if (k.took('reload')) inp.reload = true;
+    // Kill streak rewards: one key picks one (of those banked), the other uses it.
+    if (k.took('streakPick')) {
       const bank = s.bank || [];
       if (bank.length > 1) this.rewardPick = bank[(bank.indexOf(this.pickedReward(s)) + 1) % bank.length];
     }
-    if (k.took('KeyX') && s.alive) {
+    if (k.took('streak') && s.alive) {
       inp.streak = this.pickedReward(s);
       // (Nothing banked: say how to get something, on our own screen.)
       if (!inp.streak) {
@@ -263,15 +289,19 @@ export class PlayerController {
         game.notes.push({ text, tick: game.tick, to: s.id });
       }
     }
-    for (let i = 0; i < SLOT_KEYS.length; i++) {
-      if (k.took(SLOT_KEYS[i])) { const id = s.slotChoice(i); if (id) inp.switchTo = id; }
+    for (let i = 0; i < SLOTS.length; i++) {
+      if (k.took(SLOTS[i])) { const id = s.slotChoice(i); if (id) inp.switchTo = id; }
     }
-    // E: plant or defuse Defuse's bomb, held, where you can; otherwise it switches weapons, as Q does.
+    // Use (E): plant or defuse Defuse's bomb, held, where you can; otherwise (the same key as
+    // Next weapon, to start with) it switches weapons.
     const using = !!game.rules.useHere?.(game, s);
-    inp.use = k.down('KeyE') && !!game.rules.useHere;
-    if (k.took('KeyQ')) inp.cycle = -1;
-    else if (k.took('KeyE')) { if (!using) inp.cycle = 1; }
-    else if (k.wheel) { inp.cycle = Math.sign(k.wheel); k.wheel = 0; }
+    inp.use = k.held('use') && !!game.rules.useHere;
+    if (k.took('prev')) inp.cycle = -1;
+    else {
+      const next = k.took('next');
+      if (next && !(using && keysFor('use').includes(next))) inp.cycle = 1;
+    }
+    k.wheel = 0;
     return inp;
   }
 }

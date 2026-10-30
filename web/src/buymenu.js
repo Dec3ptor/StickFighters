@@ -6,6 +6,7 @@
 import { SHOP, GEAR, whyNot, moneyOf, sideOf, sideOnly, costOf, canShop, kindOf, SIDE_NAME } from './defuse.js';
 import { WEAPONS } from './weapons.js';
 import { drawWeapon } from './sprites.js';
+import { isKey, keyOf, keyLabel } from './keys.js';
 
 const money = n => `$${Math.round(n).toLocaleString('en-US')}`;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -30,7 +31,7 @@ export class BuyMenu {
         <h2>Buy menu</h2>
         <span class="buy-money" data-money></span>
         <span class="buy-time" data-time></span>
-        <button type="button" class="buy-close" data-close>Close <kbd>B</kbd></button>
+        <button type="button" class="buy-close" data-close>Close <kbd data-buy-key>B</kbd></button>
       </div>
       <div class="buy-cols">${SHOP.map((col, i) => `
         <section class="buy-col" data-col="${i}">
@@ -44,7 +45,7 @@ export class BuyMenu {
           }).join('')}
         </section>`).join('')}
       </div>
-      <p class="buy-foot">Number keys: a column, then an item &middot; buying a gun drops the one of that sort you had &middot; <kbd>B</kbd> or <kbd>Esc</kbd> to close</p>`;
+      <p class="buy-foot">Number keys: a column, then an item &middot; buying a gun drops the one of that sort you had &middot; <kbd data-buy-key>B</kbd> or <kbd>Esc</kbd> to close</p>`;
     for (const b of r.querySelectorAll('.buy-item')) {
       this.items.set(b.dataset.item, b);
       drawIcon(b.querySelector('canvas'), b.dataset.item);
@@ -57,6 +58,8 @@ export class BuyMenu {
 
   show(game, me) {
     this.col = null;
+    // (The key that closes it, as set in Settings.)
+    for (const k of this.root.querySelectorAll('[data-buy-key]')) k.textContent = keyLabel('buy');
     this.root.classList.remove('hidden');
     this.last = '';
     this.refresh(game, me);
@@ -93,7 +96,7 @@ export class BuyMenu {
 
   /** A key while the menu is open: true if it was the menu's. */
   key(code, game, me) {
-    if (code === 'Escape' || code === 'KeyB') { this.onClose(); return true; }
+    if (code === 'Escape' || isKey('buy', keyOf(code))) { this.onClose(); return true; }
     const n = /^(?:Digit|Numpad)([0-9])$/.exec(code);
     if (!n) return false;
     const k = +n[1] - 1;

@@ -511,7 +511,7 @@ export class Game {
     // Players who end up in a pit with no way out are told how to get out.
     if (!s.isBot && this.tick % 30 === s.id % 30) {
       const stuck = this.trapped(s) && this.respawnEscapes(s);
-      if (stuck && !s.toldTrapped) this.notify(s, "There's no way out of here: hold K to self-destruct");
+      if (stuck && !s.toldTrapped) this.notify(s, "There's no way out of here: hold {key:selfDestruct} to self-destruct");
       s.toldTrapped = stuck;
     }
   }
