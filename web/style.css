@@ -369,6 +369,14 @@ button.kb-key.listening { background: var(--ink); color: var(--paper); animation
 @keyframes kb-pulse { from { opacity: 1; } to { opacity: 0.65; } }
 .kb-none { color: #b3261e; font-size: 13px; margin-right: 4px; }
 .kb-note { min-height: 1.4em; }
+/* Character: the skins, each pictured, and yours big. */
+.skin-preview { display: block; width: 100%; height: auto; aspect-ratio: 960 / 300; border: 1.5px solid var(--line); margin: 10px 0 14px; }
+.skin-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+button.skin-card { display: flex; flex-direction: column; align-items: stretch; gap: 4px; text-align: left; padding: 8px 8px 10px; font-weight: normal; border-width: 1.5px; }
+.skin-card canvas { width: 100%; height: auto; aspect-ratio: 240 / 150; display: block; border: 1px solid rgba(0, 0, 0, 0.12); }
+.skin-card b { font-size: 15px; margin-top: 4px; }
+.skin-card small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.skin-card[aria-checked="true"] { box-shadow: inset 0 0 0 2.5px var(--ink); background: var(--soft); }
 /* Developer: the game's numbers. */
 .dev-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin: 10px 0; }
 .dev-sections { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -616,6 +624,10 @@ html[data-game="remastered"] .screen button.kb-key { border-radius: 8px; border-
 html[data-game="remastered"] .screen button.kb-add { border-radius: 8px; border-style: dashed; background: transparent; }
 html[data-game="remastered"] .screen button.kb-key.listening { background: linear-gradient(90deg, #3d7ff0, #7a5cff); color: #fff; }
 html[data-game="remastered"] .kb-none { color: #ff7a6a; }
+html[data-game="remastered"] .skin-preview { border: 1px solid var(--line); border-radius: 12px; }
+html[data-game="remastered"] .screen button.skin-card { border-radius: 12px; }
+html[data-game="remastered"] .skin-card canvas { border: none; border-radius: 8px; }
+html[data-game="remastered"] .screen button.skin-card[aria-checked="true"] { border-color: #6a8cff; box-shadow: 0 0 0 1px #6a8cff, 0 0 22px rgba(106, 140, 255, 0.35); background: rgba(74, 139, 255, 0.14); }
 html[data-game="remastered"] .screen button.dev-section[aria-selected="true"] { background: linear-gradient(90deg, #3d7ff0, #7a5cff); color: #fff; border-color: transparent; }
 html[data-game="remastered"] .dev-row { border-bottom-color: rgba(255, 255, 255, 0.07); }
 html[data-game="remastered"] .dev-row.changed b { color: #ffb648; }

@@ -258,6 +258,25 @@ test('players use the host\'s numbers (its developer menu), and their own again 
   assert.equal(WEAPONS.M4.damage, 12);
 });
 
+test('everyone sees each player\'s skin: the host\'s, and a player\'s chosen on joining or mid-match', async () => {
+  const m = await onlineMatch({ before: g => { g.soldiers.find(s => s.name === 'Host').skin = 'knight'; } });
+  const client = m.clients[0];
+  assert.equal(client.game.soldiers.find(s => s.name === 'Host').skin, 'knight', 'the host\'s skin, from the roster');
+  client.sendSkin('robot');
+  await m.step(3);
+  const theirs = m.game.soldiers.find(s => s.remote);
+  assert.equal(theirs.skin, 'robot', 'on the host');
+  assert.equal(client.game.soldiers.find(s => s.id === client.me.id).skin, 'robot', 'and back to them');
+  // Not a skin: ignored.
+  client.link.send({ t: 'skin', skin: 'constructor' }, true);
+  await m.step(2);
+  assert.equal(theirs.skin, 'robot');
+  // The next match: still theirs.
+  await m.newMatch();
+  await m.step(3);
+  assert.equal(m.game.soldiers.find(s => s.remote).skin, 'robot', 'kept into the next match');
+});
+
 test('a player leaving removes their soldier and a bot takes the slot back', async () => {
   const { game, host, clients, step } = await onlineMatch({ players: 2 });
   await step(60);

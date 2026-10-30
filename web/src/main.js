@@ -37,6 +37,8 @@ import { setKeys, savedKeys, resetKeys, isKey, keysFor, keyOf, mouseKey, keyName
 import { KeybindList } from './keysui.js';
 import { loadTuning, tuningToShare, useOwnTuning, tuningVersion } from './tuning.js';
 import { DevMenu } from './devmenu.js';
+import { SKINS, isSkin } from './skins.js';
+import { drawSkinPreview } from './skinpreview.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -77,7 +79,7 @@ const CLASSES_ON = params.has('classes');
 // (?tiles=on: the canvas keeps the map in tiles, maptiles.js. Off by default: slower with a graphics card.)
 if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
-const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', pointer: 'system', fullscreen: false, volume: 60, aimZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS }, camera: { ...CAMERA_DEFAULTS }, keys: {} };
+const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', pointer: 'system', fullscreen: false, volume: 60, aimZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS }, camera: { ...CAMERA_DEFAULTS }, keys: {}, skin: 'auto' };
 // Locking the mouse to the game (Settings: Mouse pointer, "Locked to the game"): ?lock=on /
 // ?lock=off in the address. (Browsers driven by tests move the mouse oddly while it's locked,
 // so it's off for them unless the address asks.)
@@ -115,6 +117,7 @@ const DEFAULTS = {
   crosshair: { ...CROSSHAIR_DEFAULTS }, // how the crosshair looks (crosshair.js)
   camera: { ...CAMERA_DEFAULTS }, // how the camera moves: following you, and toward the mouse (render.js)
   keys: {},        // the keys changed in Settings (Controls): { action: [keys] } (keys.js)
+  skin: 'auto',    // how your soldier looks (Settings, Character: skins.js); 'auto' is each game's own
   edition: null,   // the game last picked
 };
 
@@ -129,6 +132,7 @@ function loadSettings() {
   if (!s.graphicsPicked) s.graphics = 'canvas';
   delete s.fireZoom; // (the zoom while firing, replaced by aiming down the sights)
   if (s.pointer !== 'locked') s.pointer = 'system';
+  if (!isSkin(s.skin)) s.skin = 'auto';
   delete s.lockMouse; // (the old on/off lock, on to start with: the system's pointer is the crosshair now, unless Locked is chosen)
   return s;
 }
@@ -540,7 +544,7 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const rng = makeRng((Math.random() * 2 ** 31) | 0);
 
   const team = game.rules.teams ? (settings.side === 2 ? 2 : 1) : 0;
-  state.me = game.addSoldier({ name: settings.name, isBot: false, team }, new PlayerController(input, () => renderer, playerOptions));
+  state.me = game.addSoldier({ name: settings.name, isBot: false, team, skin: prefs.skin }, new PlayerController(input, () => renderer, playerOptions));
 
   if (online) {
     state.mode = 'host';
@@ -911,6 +915,7 @@ function openSettings() {
   showCamera();
   keybinds.render();
   devMenu.render();
+  showSkins();
   settingsNotes();
   showSettingsPage(state.settingsPage);
   show('settings', true);
@@ -991,6 +996,49 @@ const keybinds = new KeybindList($('keybinds'), {
   onChange: () => { prefs.keys = savedKeys(); savePrefs(); showKeys(); },
   classes: () => CLASSES_ON,
 });
+
+// ---- Settings, Character: how your soldier looks (skins.js) -------------------------------
+
+let skinsDrawnFor = null; // (the game the cards' pictures were drawn for)
+
+/** The skins to pick from (a picture of each, as this game draws it), and a big picture of yours. */
+function showSkins() {
+  const box = $('skinCards'), look = edition === 'remastered' ? 'remastered' : 'original';
+  if (!box.children.length) {
+    for (const k of SKINS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'skin-card';
+      b.dataset.skin = k.id;
+      b.setAttribute('role', 'radio');
+      b.innerHTML = '<canvas width="240" height="150" aria-hidden="true"></canvas><b></b><small></small>';
+      b.querySelector('b').textContent = k.name;
+      b.querySelector('small').textContent = k.blurb;
+      b.addEventListener('click', () => setSkin(k.id));
+      box.append(b);
+    }
+  }
+  for (const b of box.children) {
+    b.setAttribute('aria-checked', String(b.dataset.skin === prefs.skin));
+    if (skinsDrawnFor !== look) drawSkinPreview(b.querySelector('canvas'), b.dataset.skin, look, { pair: false });
+  }
+  skinsDrawnFor = look;
+  drawSkinPreview($('skinPreview'), prefs.skin, look);
+}
+
+/** Wear a skin: saved, and in a match, at once (online, everyone sees it). */
+function setSkin(id) {
+  if (!isSkin(id)) return;
+  prefs.skin = id;
+  savePrefs();
+  const me = state.me;
+  if (me && state.game) {
+    me.skin = id;
+    if (state.net?.role === 'host') state.net.host?.rosterChanged();
+    if (state.net?.role === 'client') state.net.client?.sendSkin(id);
+  }
+  showSkins();
+}
 
 // The developer menu (Settings: Developer): the game's numbers (tuning.js).
 const devMenu = new DevMenu($('devMenu'));
@@ -1298,6 +1346,9 @@ function startClient(link) {
     onStart: (game, me) => {
       state.mode = 'client';
       state.returnTo = 'menu';
+      // How we look (Settings, Character): the host tells everyone.
+      me.skin = prefs.skin;
+      net.client.sendSkin(prefs.skin);
       state.step = 1000 / game.tickRate;
       enterMatch(game, me);
     },

@@ -14,6 +14,7 @@ import { FX_METHODS } from './host.js';
 import { beaconKey } from '../gadgets.js';
 import { Tape } from '../replay.js';
 import { useHostTuning } from '../tuning.js';
+import { isSkin } from '../skins.js';
 
 const NONE = [];
 const INPUT_REPEAT = 4;     // each input packet carries the last few inputs, in case some are lost
@@ -174,6 +175,7 @@ export class NetClient {
       s.name = String(r.name).slice(0, 14);
       s.team = r.team;
       s.remote = !!r.remote;
+      s.skin = isSkin(r.skin) ? r.skin : 'auto';
       // (Our own: unless we've just asked to change it, and the host hasn't caught up yet.)
       if (s !== this.me || this.clock() - (this.spectateAt ?? -1e9) > 1500) s.spectating = !!r.spec;
     }
@@ -650,6 +652,9 @@ export class NetClient {
 
   /** Classes on: our class (for our next spawn) and loadouts; hold: we're choosing a class, so wait to respawn. */
   sendKit({ cls, loadouts, hold = false }) { this.link.send({ t: 'kit', cls, loadouts, hold }, true); }
+
+  /** Our skin (Settings, Character): the host tells everyone. */
+  sendSkin(skin) { if (isSkin(skin)) this.link.send({ t: 'skin', skin }, true); }
 
   /** Leave the game. */
   leave() {

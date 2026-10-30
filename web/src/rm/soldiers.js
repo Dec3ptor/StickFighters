@@ -8,6 +8,7 @@ import { buildPose } from '../stickman.js';
 import { lerp } from '../util.js';
 import { drawWeapon, drawStreakFlame } from '../sprites.js';
 import { css, mix, shade, rgb } from './color.js';
+import { drawSkinHead, drawVest } from '../skins.js';
 
 export const TEAM_COLORS = { 1: '#3d7ff0', 2: '#e8483a' };
 
@@ -55,6 +56,8 @@ function inks(theme) {
       hi: css(light ? '#ffffff' : shade(mix(ink, theme.rim || '#ffffff', 0.3), 1.6), 0.55),
       halo: css(theme.halo || '#ffffff', theme.haloAlpha ?? 0.3),
       shadow: 'rgba(0,0,0,0.32)',
+      // (A stick figure's round head: dark, with light ink; white, with dark.)
+      face: light ? css(shade(ink, 0.2)) : '#ffffff',
     };
     colorCache.set(theme, c);
   }
@@ -134,13 +137,7 @@ export function drawSoldier(r, game, s, alpha, theme) {
     ctx.fill();
     ctx.fillStyle = '#8a929c';
     ctx.fillRect(bx - 2.2, ny + 1.5, 4.4, 1.2);
-    if (s.body.jetting) {
-      const len = 5 + Math.random() * 5;
-      const g = ctx.createLinearGradient(bx, ny + 10, bx, ny + 10 + len);
-      g.addColorStop(0, '#fff3c0'); g.addColorStop(0.4, '#ffb030'); g.addColorStop(1, 'rgba(255,90,20,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.moveTo(bx - 2, ny + 10); ctx.lineTo(bx, ny + 10 + len); ctx.lineTo(bx + 2, ny + 10); ctx.fill();
-    }
+    if (s.body.jetting) jetFlame(ctx, bx, ny);
   } else {
     ctx.fillStyle = shades.pack;
     roundRect(ctx, bx - 1.9, ny + 1.5, 3.8, 6.5, 1.3);
@@ -207,6 +204,80 @@ export function drawSoldier(r, game, s, alpha, theme) {
 
 const JUGGER_HALO = 'rgba(255,200,110,0.9)';
 
+/** A jetpack's flame under it (bx, ny: the pack's middle and top). */
+function jetFlame(ctx, bx, ny) {
+  const len = 5 + Math.random() * 5;
+  // (A fading flame where the canvas can fade it: plain orange where it can't, as with WebGL.)
+  let g = '#ffb030';
+  if (ctx.createLinearGradient) {
+    g = ctx.createLinearGradient(bx, ny + 10, bx, ny + 10 + len);
+    g.addColorStop(0, '#fff3c0'); g.addColorStop(0.4, '#ffb030'); g.addColorStop(1, 'rgba(255,90,20,0)');
+  }
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(bx - 2, ny + 10); ctx.lineTo(bx, ny + 10 + len); ctx.lineTo(bx + 2, ny + 10); ctx.fill();
+}
+
+const LINE_W = 1.9; // a stick figure's lines, in Remastered
+
+/**
+ * A stick figure in Remastered: the classic look, or a skin with a hat or helmet (skins.js). In
+ * the theme's ink with the soft outline round it, the team's colour (or their own) on its head.
+ */
+export function drawLineSoldier(r, game, s, alpha, theme, skin) {
+  const ctx = r.ctx, c = inks(theme);
+  const x = lerp(s.prevX, s.x, alpha) + (s.drawDX || 0), y = lerp(s.prevY, s.y, alpha) + (s.drawDY || 0);
+  const v = r.animated(s);
+  const pose = buildPose(v);
+  const L = pose.lines, facing = s.facing, h = pose.head;
+  const team = soldierColor(game, s);
+  if (s.body.rope) {
+    ctx.strokeStyle = '#a4844f';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x + pose.shoulder[0], y + pose.shoulder[1]); ctx.lineTo(s.body.rope.x, s.body.rope.y); ctx.stroke();
+  }
+  ctx.save();
+  ctx.translate(x, y);
+  if (s.spawnProtect > 0) ctx.globalAlpha = 0.4 + 0.35 * Math.abs(Math.sin(game.tick * 0.25));
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const jugger = s.jugger > 0;
+  if (jugger) drawJuggerGlow(ctx, L, h, game.tick);
+  // The soft outline (bigger round the head, for a hat or a plume).
+  const halo = jugger ? JUGGER_HALO : c.halo;
+  ctx.strokeStyle = halo;
+  ctx.lineWidth = LINE_W + 2.2;
+  ctx.beginPath();
+  for (const l of L) line(ctx, l);
+  ctx.stroke();
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(h.x, h.y - (skin === 'classic' ? 0 : 1.2), h.r + (skin === 'classic' ? 1.6 : 3), 0, Math.PI * 2); ctx.fill();
+  // A jetpack on the back.
+  if (s.body.hasJetpack) {
+    const bx = L[0][0] - facing * 3.4, ny = L[0][1];
+    ctx.fillStyle = '#4b525c';
+    roundRect(ctx, bx - 2.2, ny + 1, 4.4, 9, 1.4);
+    ctx.fill();
+    if (s.body.jetting) jetFlame(ctx, bx, ny);
+  }
+  // The weapon, then the body over it.
+  ctx.save();
+  ctx.translate(pose.gun.x, pose.gun.y);
+  let angle = pose.gun.angle;
+  if ((pose.gun.def.kind === 'melee' || pose.gun.def.kind === 'build') && v.anim.swing > 0) angle -= Math.sin(v.anim.swing * Math.PI) * 1.7 * (Math.cos(angle) < 0 ? -1 : 1);
+  ctx.rotate(angle);
+  if (Math.cos(pose.gun.angle) < 0) ctx.scale(1, -1);
+  drawWeapon(ctx, pose.gun.def, false);
+  ctx.restore();
+  ctx.strokeStyle = c.ink;
+  ctx.lineWidth = LINE_W;
+  ctx.beginPath();
+  for (const l of L) line(ctx, l);
+  ctx.stroke();
+  if (s.armour > 0) drawVest(ctx, L[LINES.torso], shadesOf(team).vest, LINE_W + 1.6);
+  drawSkinHead(ctx, h, skin, facing, { ink: c.ink, lw: 1.2, fill: game.rules.teams ? team : c.face, accent: team, tick: game.tick });
+  ctx.restore();
+}
+
 /** A Juggernaut's glow: wide soft orange strokes round its limbs and head, added onto the picture, pulsing. */
 function drawJuggerGlow(ctx, L, head, tick) {
   const pulse = 0.5 + 0.5 * Math.sin(tick * 0.2), base = ctx.globalAlpha;
@@ -227,6 +298,8 @@ function drawJuggerGlow(ctx, L, head, tick) {
 
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
+  // (Square corners where the canvas can't round them: WebGL's stand-in canvas.)
+  if (typeof ctx.arcTo !== 'function') { ctx.rect(x, y, w, h); return; }
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
   ctx.arcTo(x + w, y + h, x, y + h, r);

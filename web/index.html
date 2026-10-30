@@ -255,6 +255,7 @@
           <button type="button" class="set-tab" role="tab" id="setTabControls" data-page="controls" aria-selected="false">Controls</button>
           <button type="button" class="set-tab" role="tab" id="setTabCrosshair" data-page="crosshair" aria-selected="false">Mouse &amp; crosshair</button>
           <button type="button" class="set-tab" role="tab" id="setTabCamera" data-page="camera" aria-selected="false">Camera</button>
+          <button type="button" class="set-tab" role="tab" id="setTabCharacter" data-page="character" aria-selected="false">Character</button>
           <button type="button" class="set-tab" role="tab" id="setTabGame" data-page="game" aria-selected="false">Gameplay</button>
           <button type="button" class="set-tab dev-tab" role="tab" id="setTabDev" data-page="dev" aria-selected="false">Developer</button>
         </nav>
@@ -420,6 +421,12 @@
             </div>
           </div>
 
+          <div class="set-page hidden" data-page="character" role="tabpanel" aria-labelledby="setTabCharacter">
+            <h3 class="set-title">Character</h3>
+            <p class="muted-note">How your soldier looks, to everyone (online too). In team games every skin wears its team's colour, so you can always tell who's on which side.</p>
+            <canvas id="skinPreview" class="skin-preview" width="960" height="300" aria-label="Your soldier, in each team's colour"></canvas>
+            <div id="skinCards" class="skin-cards" role="radiogroup" aria-label="Skin"></div>
+          </div>
           <div class="set-page hidden" data-page="game" role="tabpanel" aria-labelledby="setTabGame">
             <h3 class="set-title">Gameplay</h3>
             <div class="set-row">

@@ -21,10 +21,11 @@ function startingWeapons() {
 export const SHOULDER_Y = -12;
 
 export class Soldier {
-  constructor({ id, name, team = 0, isBot = false, profile = null, maxHealth = RULES.maxHealth }) {
+  constructor({ id, name, team = 0, isBot = false, profile = null, maxHealth = RULES.maxHealth, skin = 'auto' }) {
     this.id = id;
     this.name = name;
     this.team = team;
+    this.skin = skin;       // how they look (skins.js): 'auto' is each game's own
     this.isBot = isBot;
     this.profile = profile;
     this.frags = 0;

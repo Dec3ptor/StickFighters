@@ -1,7 +1,7 @@
 // The Settings screen: switching graphics mid-match (WebGL and back), the frame
 // rate cap, the frame rate readout, the volume (here and in the game's menu), the
 // dropdowns left alone while it's open, the crosshair's look, aiming down the sights,
-// the camera, the developer menu's numbers, and everything being remembered next visit.
+// the camera, the developer menu's numbers, the skins, and everything being remembered next visit.
 // Usage: node tests/browser/settings.mjs [outDir]
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -287,6 +287,25 @@ page.once('dialog', d => d.accept());
 await page.click('#devMenu [data-reset-all]');
 await page.waitForFunction(() => document.querySelector('#devMenu .dev-row[data-key="PHYS.runSpeed"] input')?.value === '3.4');
 expect(await page.evaluate(() => localStorage.getItem('stick-soldiers-dev')) === null, 'nothing left to remember');
+
+// 8. Character: the skins, each pictured. Picked mid-match, it's worn at once, and remembered.
+await tab('character');
+const cards = await page.$$eval('#skinCards .skin-card', bs => bs.map(b => [b.dataset.skin, b.getAttribute('aria-checked')]));
+expect(cards.length === 7 && cards.find(c => c[0] === 'auto')[1] === 'true', `the skins, the game's own picked to start with (${JSON.stringify(cards)})`);
+await page.click('#skinCards .skin-card[data-skin="ninja"]');
+const worn = await page.evaluate(() => ({ pref: window.stickSoldiers.prefs.skin, me: window.stickSoldiers.state.me.skin, checked: document.querySelector('#skinCards [data-skin="ninja"]').getAttribute('aria-checked') }));
+expect(worn.pref === 'ninja' && worn.me === 'ninja' && worn.checked === 'true', `the ninja, worn at once (${JSON.stringify(worn)})`);
+const inked = await page.evaluate(() => {
+  const c = document.getElementById('skinPreview'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+  let dark = 0;
+  for (let i = 0; i < d.length; i += 16) if (d[i] < 80 && d[i + 1] < 80 && d[i + 2] < 80) dark++;
+  return dark;
+});
+expect(inked > 200, `the big picture shows the soldiers (${inked} dark pixels)`);
+await page.screenshot({ path: `${outDir}/settings-character.png` });
+await page.reload();
+await page.waitForFunction(() => window.stickSoldiers);
+expect(await page.evaluate(() => window.stickSoldiers.prefs.skin) === 'ninja', 'the skin remembered');
 
 console.log(JSON.stringify({ autoLabel, rewrites, vol0, vol1, capped, full, hz, readout, saved, zoomIdle, zoomFiring, zoomSights, lean, leanOff, fastest, errors }, null, 2));
 await browser.close();

@@ -5,6 +5,7 @@
 import { encodeWorld, encodeSnapshot, decodeInputs, messageType, PROTOCOL, SNAPSHOT_EVERY } from './protocol.js';
 import { cleanClass, cleanLoadouts } from '../classes.js';
 import { holdSpawn } from '../gadgets.js';
+import { isSkin } from '../skins.js';
 
 // Effects every player draws for themselves from what they can see (rocket
 // smoke, jetpack flames, burning soldiers), so they aren't sent.
@@ -114,7 +115,7 @@ export class NetHost {
     }
     let name = p.name, k = 2;
     while (g.soldiers.some(s => s.name.toLowerCase() === name.toLowerCase())) name = `${p.name.slice(0, 12)}${k++}`;
-    const s = g.addSoldier({ name, isBot: false, team }, p.ctl);
+    const s = g.addSoldier({ name, isBot: false, team, skin: p.skin || 'auto' }, p.ctl);
     s.remote = true;
     s.respawnTimer = 20;
     // Classes on: their class and loadouts (sent by their browser). Until those arrive,
@@ -157,7 +158,7 @@ export class NetHost {
   }
 
   roster() {
-    return this.game.soldiers.map(s => ({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, remote: !!s.remote, spec: !!s.spectating }));
+    return this.game.soldiers.map(s => ({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, remote: !!s.remote, spec: !!s.spectating, skin: s.skin }));
   }
 
   /** Someone started or stopped spectating (called by the game): everyone's list of players changes. */
@@ -191,6 +192,13 @@ export class NetHost {
         if (Date.now() - (p.carvesAt || 0) > 1000) { p.carvesAt = Date.now(); p.link.send({ t: 'carves', from, list: this.game.carves.slice(from) }, true); }
         break;
       }
+      case 'skin':
+        // How they look (Settings, Character): everyone's told.
+        if (!isSkin(data.skin) || p.skin === data.skin) break;
+        p.skin = data.skin;
+        if (p.soldier) p.soldier.skin = p.skin;
+        this.rosterChanged();
+        break;
       case 'kit':
         // Their class (for their next spawn) and loadouts. (Unlocks are kept in the player's own
         // browser, so the host can only check the choices make sense, not that they're earned.)

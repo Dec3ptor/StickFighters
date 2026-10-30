@@ -229,7 +229,7 @@ export class ReplayPlayer {
     // and effects; everything else (the map, pickups, objectives) as the match ended.
     const view = Object.create(game);
     view.soldiers = game.soldiers.map(s => {
-      const c = new Soldier({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, maxHealth: s.maxHealth });
+      const c = new Soldier({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, maxHealth: s.maxHealth, skin: s.skin });
       c.cls = s.cls;
       c.alive = false;
       return c;

@@ -14,7 +14,8 @@ import { themeFor, THEMES } from './themes.js';
 import { Backdrop, dropScreenCopy } from './backdrop.js';
 import { Blocks } from './blocks.js';
 import { makeMaterials } from './textures.js';
-import { drawSoldier, drawShadows, drawName } from './soldiers.js';
+import { drawSoldier, drawLineSoldier, drawShadows, drawName } from './soldiers.js';
+import { skinFor } from '../skins.js';
 import { Lights, Weather, LIGHT, glowSprite, fireballSprite, smokeSprite, cloudSprite, drawVignette, drawnByCPU, dropVignetteCopies } from './fx.js';
 import { styledContext } from './hudstyle.js';
 import { css } from './color.js';
@@ -203,7 +204,10 @@ export class RemasteredRenderer extends Renderer {
   }
 
   drawSoldier(game, s, alpha) {
-    drawSoldier(this, game, s, alpha, this.look.theme);
+    // Remastered's own soldier, or a stick figure (the classic look, or a skin's: skins.js).
+    const skin = skinFor(s, 'soldier');
+    if (skin === 'soldier') drawSoldier(this, game, s, alpha, this.look.theme);
+    else drawLineSoldier(this, game, s, alpha, this.look.theme, skin);
     const x = lerp(s.prevX, s.x, alpha), y = lerp(s.prevY, s.y, alpha);
     if (s.body.jetting) this.lights.add(x - s.facing * 3, y - 2, 34, LIGHT.jet, 0.55);
     // A Juggernaut lights up everything round it, pulsing with its glow.
