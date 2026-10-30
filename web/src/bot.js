@@ -172,13 +172,27 @@ function wantsItem(game, s, it) {
 }
 
 /**
- * Steering to walk dx pixels and stop there, easing off early so momentum
- * doesn't carry the soldier past it (and off the ledge a jump starts from).
+ * Steering to walk dx pixels along the ground and stop there: as fast as it can go and still
+ * stop on the spot, braking in time so momentum doesn't carry the soldier past it (and off
+ * the ledge a jump starts from). A fraction of a full step goes that much slower, so the
+ * last bit is a step of just the distance left. (The soldier's speed now doesn't matter:
+ * a speed this one update can't reach, the physics gets as near to as it can.)
  */
-function approach(dx, vx) {
-  const stopping = (vx * vx) / (2 * PHYS.groundAccel);
-  if (Math.sign(vx) === Math.sign(dx) && Math.abs(dx) <= stopping + 0.5) return 0;
-  return Math.abs(dx) > 1 ? Math.sign(dx) : 0;
+function approach(dx) {
+  const d = Math.abs(dx);
+  return d < 1e-9 ? 0 : Math.sign(dx) * Math.min(1, stopSpeed(d, PHYS.groundAccel) / PHYS.runSpeed);
+}
+
+/**
+ * The fastest a soldier on the ground can go this update and still stop within d, slowing by
+ * a an update: going v, then braking (v - a, v - 2a...) covers n·v - a·n(n - 1)/2 in n updates.
+ */
+function stopSpeed(d, a) {
+  for (let n = 1; n < 100; n++) {
+    const v = (d + (a * n * (n - 1)) / 2) / n;
+    if (v <= n * a) return v;
+  }
+  return Infinity;
 }
 
 // Moves that keep going wrong in practice cost more to plan, so bots find another way.
@@ -294,6 +308,8 @@ export class BotController {
     this.path = null;
     this.li = 0;
     this.exec = null;
+    this.lining = null;        // (the jump or drop it's lining up to start, and for how long: steer)
+    this.lineUp = 0;
     this.target = null;
     this.seen = 0;
     this.lastSeen = null;
@@ -1066,32 +1082,34 @@ export class BotController {
     if (this.exec) {
       const e = this.exec, link = e.link;
       if (!b.onGround) e.airborne = true;
-      if (link.type === 'jump') {
-        inp.move = jumpSteer(link.move, e.t);
-        inp.jump = true;
-        inp.jumpPressed = e.t === 0;
-      } else {
-        if (e.airborne && e.fellAt < 0) e.fellAt = e.t;
-        inp.move = dropSteer(link.move, e.fellAt < 0 ? -1 : e.t - e.fellAt);
-      }
-      e.t++;
-      if (e.airborne && b.onGround) {
-        this.exec = null;
-        const n = this.nav.nodeAt(b.x, b.y, 10);
-        if (n === link.to) { this.li++; if (link.penalty) this.nav.penalize(link, link.penalty > 10 ? link.penalty * 0.6 : 0); }
-        else {
-          // Landed somewhere else. Unless something hit us on the way, remember this move is unreliable.
-          if (s.lastHurtTick === e.hurt) linkFailed(this.nav, link);
-          this.thinkIn = 0;
+      else if (e.airborne) e.landed = true;
+      // Landed where the move goes (or a spot beside it, as good: the route walks on from there):
+      // on along the route from here, straight away. Otherwise brake, as the route map did trying
+      // the move (it may still slide on to where it goes: off the end of a ledge, say), and see
+      // where it stops. (No more steering the jump's way once down: that carries it past.)
+      const n = e.landed && b.onGround ? this.nav.nodeAt(b.x, b.y, 10) : null;
+      if (n && this.nav.beside(n, link.to)) this.moveDone(s, e, true);
+      else if (e.landed && b.onGround && b.vx === 0) this.moveDone(s, e, false);
+      else {
+        if (e.landed) inp.move = 0;
+        else if (link.type === 'jump') {
+          inp.move = jumpSteer(link.move, e.t);
+          inp.jump = true;
+          inp.jumpPressed = e.t === 0;
+        } else {
+          if (e.airborne && e.fellAt < 0) e.fellAt = e.t;
+          inp.move = dropSteer(link.move, e.fellAt < 0 ? -1 : e.t - e.fellAt);
         }
-      } else if (e.t > (link.ticks ? link.ticks * 1.5 + 30 : 400 / MOTION.timeScale) || (!e.airborne && e.t > 30)) {
-        // Taking far longer than it should (bouncing on the edge of a jump pad, say): it failed.
-        if (e.airborne && s.lastHurtTick === e.hurt) linkFailed(this.nav, link);
-        this.exec = null;
-        this.thinkIn = 0;
-        this.path = null;
+        e.t++;
+        if (e.t > (link.ticks ? link.ticks * 1.5 + 30 : 400 / MOTION.timeScale) || (!e.airborne && e.t > 30)) {
+          // Taking far longer than it should (bouncing on the edge of a jump pad, say): it failed.
+          if (e.airborne && s.lastHurtTick === e.hurt) linkFailed(this.nav, link);
+          this.exec = null;
+          this.thinkIn = 0;
+          this.path = null;
+        }
+        return;
       }
-      return;
     }
     if (!b.onGround) {
       // Slipped off a ledge while following the route (not knocked off, not a jump pad): that step is unreliable.
@@ -1138,12 +1156,14 @@ export class BotController {
     }
     if (link.type === 'walk') {
       const dx = link.to.x - b.x;
-      // Keep running if the route carries on the same way; otherwise slow down to stop on the spot.
-      const next = this.path[this.li + 1];
-      const through = next && next.type === 'walk' && next.dir === link.dir;
-      // (There once level with it: a step up right by the spot isn't climbed yet.)
-      if ((Math.abs(dx) < 3 && Math.abs(b.y - link.to.y) < 3) || Math.sign(dx) !== link.dir) { this.li++; inp.move = through ? link.dir : 0; }
-      else inp.move = through || Math.abs(dx) < 3 ? link.dir : approach(dx, b.vx);
+      // Run on while the route carries on the same way, braking in time to stop right where it
+      // turns, jumps or drops (a jump goes wrong if it starts past its spot, or off the ledge).
+      let end = this.li;
+      while (end + 1 < this.path.length && this.path[end + 1].type === 'walk' && this.path[end + 1].dir === link.dir) end++;
+      const stop = approach(this.path[end].to.x - b.x);
+      // (There once level with it: a step up right by the spot isn't climbed yet, so push on up it.)
+      if ((Math.abs(dx) < 3 && Math.abs(b.y - link.to.y) < 3) || Math.sign(dx) !== link.dir) { this.li++; inp.move = stop; }
+      else inp.move = Math.abs(dx) < 3 ? link.dir : stop;
       // A long clear run ahead and nobody to fight: sprint (easing off before the route turns or jumps).
       if (!this.target && this.goalKind !== 'hold') {
         let run = 0;
@@ -1158,16 +1178,37 @@ export class BotController {
       const from = this.li === 0 ? this.start : this.path[this.li - 1].to;
       const dx = from.x - b.x;
       if (Math.abs(b.y - from.y) > 14) { this.thinkIn = 0; return; }
-      if (Math.abs(dx) > 6) inp.move = approach(dx, b.vx);
-      else if (Math.abs(dx) > 1.5) inp.move = Math.abs(b.vx) < 1 ? Math.sign(dx) : 0;
-      else if (Math.abs(b.vx) > 0.6) inp.move = 0;
+      // A jump or drop starts from its spot standing still, as the route map tried it: a pixel
+      // out, or still moving a little, and a jump up onto the corner of a ledge can miss it.
+      // (Should something keep it from getting there exactly, near enough does, after a while.)
+      const lined = Math.abs(dx) < 1e-6 && b.vx === 0;
+      if (this.lining !== link) { this.lining = link; this.lineUp = 0; }
+      this.lineUp++;
+      if (!lined && !(this.lineUp > 40 && Math.abs(dx) < 1.5 && Math.abs(b.vx) < 0.6)) inp.move = approach(dx);
       else {
+        this.lining = null;
         this.exec = { link, t: 0, airborne: false, fellAt: -1, hurt: s.lastHurtTick };
         this.steer(game, s, inp);
         return;
       }
     }
     this.watchStuck(game, s, inp);
+  }
+
+  /**
+   * A jump or drop over: it went where it goes (ok: on to the next step), or it didn't (plan
+   * again, and unless something hit it on the way, remember the move is unreliable).
+   */
+  moveDone(s, e, ok) {
+    const link = e.link;
+    this.exec = null;
+    if (ok) {
+      this.li++;
+      if (link.penalty) this.nav.penalize(link, link.penalty > 10 ? link.penalty * 0.6 : 0);
+    } else {
+      if (s.lastHurtTick === e.hurt) linkFailed(this.nav, link);
+      this.thinkIn = 0;
+    }
   }
 
   /**

@@ -12,6 +12,8 @@ const NODE_STEP = 12;
 // A remembered jump or drop is tried again when blocks change this close to where it went.
 const TRY_MARGIN = 10;
 const NODE_CELL = 64; // grid cells for finding the nearest node
+const PAD_EDGE = 0.01;  // spots beside a jump pad set into the floor stand this far off it
+const STILL = Object.freeze({ move: 0 }); // (standing still: braking to a stop)
 const MAX_SIM = 320;
 // What a jump costs on top of the time it takes (in updates at full speed). A jump
 // along a flat floor is about as quick as running, and bots jumping about for no
@@ -103,9 +105,13 @@ export class NavGraph {
     const y = s.t - BODY.bottom, hw = BODY.halfW;
     if (area && (y < area.t || y > area.b)) return;
     let room = [[s.l - hw + 1, s.r + hw - 1]];
-    this.map.query(s.l - hw, y + BODY.top, s.r + hw, y + BODY.bottom, o => {
+    const feet = y + BODY.bottom;
+    this.map.query(s.l - hw, y + BODY.top, s.r + hw, feet + 1, o => {
       // (The body overlaps block o anywhere strictly between o.l - hw and o.r + hw.)
-      if (o !== s && o.t < y + BODY.bottom && o.b > y + BODY.top) room = without(room, o.l - hw, o.r + hw);
+      if (o !== s && o.t < feet && o.b > y + BODY.top) room = without(room, o.l - hw, o.r + hw);
+      // A jump pad set into the floor launches anyone whose middle is over it (physics.js):
+      // nobody can stand there, so no spots on it, only up to its edges. (Onto it is a move.)
+      else if (o.bounce && o.t >= feet - 1e-6 && o.t <= feet + 0.5) room = without(room, o.l - PAD_EDGE, o.r + PAD_EDGE);
       return false;
     });
     for (const [a, b] of room) {
@@ -142,6 +148,15 @@ export class NavGraph {
     const all = this.nodes;
     this.nodes = [];
     for (const n of all) { n.id = this.nodes.length; this._addNode(n); }
+  }
+
+  /** Whether spot n is spot `to`, or right beside it on the same floor (a walk away, either way). */
+  beside(n, to) {
+    if (!n || !to) return false;
+    if (n === to) return true;
+    for (const l of n.links) if (l.to === to && l.type === 'walk') return true;
+    for (const l of to.links) if (l.to === n && l.type === 'walk') return true;
+    return false;
   }
 
   /** Nearest node to a standing position (same height, within `reach` px), or null. */
@@ -219,7 +234,20 @@ export class NavGraph {
       if (!body.onGround) airborne = true;
       else if (airborne) {
         const n = this.nodeAt(body.x, body.y, 7);
-        return n && n !== start ? { node: n, ticks: t + 1 } : null;
+        // Braking as it lands (as a bot does) carries it a little further: past the end of a
+        // ledge, say, down to the floor below, or onto a jump pad. Landing by a spot it stops
+        // beside, the move goes to that spot; otherwise, to where it comes to a stop.
+        let k = 0;
+        while ((body.vx !== 0 || !body.onGround) && k < this.maxSim) {
+          stepBody(body, STILL, this.map);
+          k++;
+          if (body.x < reach.l) reach.l = body.x; else if (body.x > reach.r) reach.r = body.x;
+          if (body.y < reach.t) reach.t = body.y; else if (body.y > reach.b) reach.b = body.y;
+          if (body.y > bottom) return null;
+        }
+        const rest = this.nodeAt(body.x, body.y, 7);
+        const to = n && rest && (rest === n || (Math.abs(rest.y - n.y) < 1 && Math.abs(rest.x - n.x) <= NODE_STEP + 4)) ? n : rest;
+        return to && to !== start ? { node: to, ticks: t + 1 + (to === n ? 0 : k) } : null;
       }
       if (body.y > bottom) return null;
       if (!airborne && t > 40 / this.timeScale) return null; // never left the ground
