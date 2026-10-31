@@ -356,21 +356,22 @@ export class ReplayPlayer {
     // (From the moment of the kill, the victim's down, whatever the last frame caught.)
     if (rt >= this.kill.tick) { const v = this.victim; if (v) v.alive = false; }
     const prev = new Map(a.projectiles.map(p => [p.id, p]));
-    this.view.projectiles = b.projectiles.map(pb => {
+    const shots = this.view.projectiles = [];
+    for (const pb of b.projectiles) {
       const pa = prev.get(pb.id);
+      // (New in this frame: back along its path, so it doesn't pop in ahead; not before it was
+      // fired, when that would put it behind the gun.)
+      const back = (1 - t) * (b.tick - a.tick);
+      if (!pa && !pb.delay && pb.age - back < 0) continue;
       const p = { ...pb };
       if (pa) {
         p.x = lerp(pa.x, pb.x, t); p.y = lerp(pa.y, pb.y, t);
         p.angle = lerpAngle(pa.angle, pb.angle, t);
         p.age = lerp(pa.age, pb.age, t);
-      } else {
-        // (New in this frame: back along its path, so it doesn't pop in ahead.)
-        const back = (1 - t) * (b.tick - a.tick);
-        p.x -= pb.vx * back; p.y -= pb.vy * back;
-      }
+      } else { p.x -= pb.vx * back; p.y -= pb.vy * back; }
       p.px = p.x; p.py = p.y;
-      return p;
-    });
+      shots.push(p);
+    }
   }
 
   /**

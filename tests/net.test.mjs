@@ -35,6 +35,9 @@ test('inputs survive the trip (and silly values are clamped)', () => {
   assert.ok(out[1].crouch && out[1].jet && !out[1].fire);
 });
 
+// The kinds of our own shots drawn from our gun (client.js).
+const OWN_SHOTS = new Set(['bullet', 'arrow', 'seeker', 'rocket', 'thrown', 'flame', 'flyer']);
+
 function botGame(file = 'ssdm1.json', mode = 'ffa', seed = 5, options = {}) {
   const mapData = loadMap(file);
   const game = new Game({ mapData, mode, fragLimit: 999, seed, effects: true, speed: DEFAULT_SPEED, options });
@@ -431,15 +434,20 @@ function oldView(snaps, rt, me) {
       flip: sb.anim.flip, land: sb.anim.land, recoil: sb.anim.recoil, swing: sb.anim.swing, idle: tick,
     });
   }
+  // Projectiles: new ones worked back along their path to where they were, but not before they
+  // were fired (that would put them behind the gun). (And each one's age at rt.)
   const prev = new Map(a.projectiles.map(p => [p.id, p]));
-  const projectiles = b.projectiles.map(pb => {
-    const pa = prev.get(pb.id), p = { ...pb };
+  const projectiles = [], ages = [];
+  for (const pb of b.projectiles) {
+    const pa = prev.get(pb.id), back = b.tick - rt, p = { ...pb };
+    if (!pa && !pb.delay && pb.age - back < 0) continue;
     if (pa && t <= 1) { p.x = lerp(pa.x, pb.x, t); p.y = lerp(pa.y, pb.y, t); p.angle = lerpAngle(pa.angle, pb.angle, t); }
-    else if (!pa) { const back = Math.max(0, 1 - t) * (b.tick - a.tick || 3); p.x -= pb.vx * back; p.y -= pb.vy * back; }
-    return p;
-  });
+    else if (!pa) { const k = Math.max(0, back); p.x -= pb.vx * k; p.y -= pb.vy * k; }
+    projectiles.push(p);
+    ages.push(pb.age - back);
+  }
   const loose = b.looseItems.map(it => ({ ...it, active: true, dropped: true, bob: 0 }));
-  return { tick, soldiers, projectiles, on: b.fixedItems, loose, beacons: b.beacons.map(x => ({ ...x })) };
+  return { tick, soldiers, projectiles, ages, on: b.fixedItems, loose, beacons: b.beacons.map(x => ({ ...x })) };
 }
 
 /** A soldier as the client shows it (the parts oldView works out). */
@@ -459,7 +467,7 @@ test('everyone else is shown between snapshots exactly as before, refilling the 
   const arm = g => { for (const s of g.soldiers) Object.assign(s.weapons, { Sheep: { ammo: 3 }, Bazooka: { ammo: 20 }, Grenade: { ammo: 10 } }); };
   const m = await onlineMatch({ players: 1, latency: 40, loss: 0.1, controllers: [busy], before: arm });
   const c = m.clients[0], rng = makeRng(3);
-  const seen = { projectiles: 0, dropped: 0, beacons: 0, kamikaze: 0, mine: 0 };
+  const seen = { projectiles: 0, dropped: 0, beacons: 0, kamikaze: 0, mine: 0, ours: 0 };
   let lists = null;
   for (let i = 0; i < 1500; i++) {
     const g = m.game;
@@ -479,7 +487,19 @@ test('everyone else is shown between snapshots exactly as before, refilling the 
     const view = c.game, old = oldView(c.snaps, c.viewTick, c.me);
     assert.equal(view.tick, old.tick);
     for (const s of view.soldiers) if (s !== c.me && old.soldiers.has(s.id)) assert.deepEqual(shown(s), old.soldiers.get(s.id), `${s.name} at tick ${view.tick}`);
-    assert.deepEqual(view.projectiles.map(p => ({ ...p })), old.projectiles);
+    // (Our own shots that fly come out of our gun as it's drawn: off their path by no more than
+    // we're drawn ahead of the host's copy of us, and on it a few updates after they're first shown.)
+    assert.equal(view.projectiles.length, old.projectiles.length);
+    view.projectiles.forEach((p, k) => {
+      const v = { ...p }, o = old.projectiles[k];
+      if (c.me && o.by === c.me.id && OWN_SHOTS.has(o.kind)) {
+        const off = Math.hypot(v.x - o.x, v.y - o.y);
+        assert.ok(off <= (old.ages[k] >= 10 ? 1e-9 : 400), `our shot ${o.id}, ${off.toFixed(1)} off its path at age ${old.ages[k]}`);
+        if (off > 0.5) seen.ours++;
+        v.x = o.x; v.y = o.y;
+      }
+      assert.deepEqual(v, o);
+    });
     assert.deepEqual(view.pickups.items.filter(it => it.dropped).map(it => ({ ...it })), old.loose);
     for (let k = 0; k < old.on.length && k < c.fixed.length; k++) assert.equal(c.fixed[k].active, old.on[k]);
     assert.deepEqual(view.beacons.map(x => ({ ...x })), old.beacons);
@@ -493,6 +513,54 @@ test('everyone else is shown between snapshots exactly as before, refilling the 
     lists = [view.projectiles, view.pickups.items, view.beacons];
   }
   for (const [what, n] of Object.entries(seen)) assert.ok(n > 0, `no ${what} seen`);
+});
+
+test('a player sees shots leave the gun: their own (drawn ahead of the host\'s copy of them) and everyone else\'s', async () => {
+  // The player runs back and forth and jumps, an M4 firing all the while; the bots fire at each other.
+  const ctl = { input: g => ({ move: Math.sin(g.tick / 40) > 0 ? 1 : -1, jump: g.tick % 50 < 10, jumpPressed: g.tick % 50 === 0, fire: true, firePressed: g.tick % 8 === 0, aim: Math.sin(g.tick / 90) * 0.6, aimDist: 200 }) };
+  const m = await onlineMatch({ players: 1, latency: 60, controllers: [ctl] });
+  const c = m.clients[0], seen = new Set(), shots = { own: [], others: [] }, flashes = { own: [], others: [] };
+  // Where a shot or flash is, against its shooter's shoulder as drawn: how far along the shot, and to the side.
+  const from = (s, x, y, dx, dy) => {
+    const own = s === c.me, rx = x - (s.shoulderX + (own ? s.drawDX || 0 : 0)), ry = y - (s.shoulderY + (own ? s.drawDY || 0 : 0));
+    return { along: rx * dx + ry * dy, side: Math.abs(rx * dy - ry * dx), far: Math.hypot(rx, ry) };
+  };
+  let wrapped = null;
+  for (let i = 0; i < 900; i++) {
+    const mine = m.game.soldiers.find(s => s.remote);
+    if (mine) { mine.weapons.M4 = { ammo: 9999 }; mine.current = 'M4'; }
+    await m.step(1);
+    const g = c.game;
+    if (!g || !c.me) continue;
+    if (g.fx && wrapped !== g.fx) {
+      wrapped = g.fx;
+      const muzzle = g.fx.muzzle.bind(g.fx);
+      g.fx.muzzle = (x, y, angle, big, by) => {
+        const s = g.soldiers.find(o => o.id === by);
+        if (s?.alive) flashes[s === c.me ? 'own' : 'others'].push(from(s, x, y, Math.cos(angle), Math.sin(angle)));
+        return muzzle(x, y, angle, big, by);
+      };
+    }
+    // Each shot the first time it's shown.
+    for (const p of g.projectiles) {
+      if (p.kind !== 'bullet' || seen.has(p.id)) continue;
+      seen.add(p.id);
+      const s = g.soldiers.find(o => o.id === p.by);
+      if (!s?.alive) continue;
+      const sp = Math.hypot(p.vx, p.vy) || 1;
+      shots[s === c.me ? 'own' : 'others'].push(from(s, p.x, p.y, p.vx / sp, p.vy / sp));
+    }
+  }
+  const list = l => l.map(x => `${x.along.toFixed(0)}/${x.side.toFixed(0)}`).slice(0, 8).join(' ');
+  for (const who of ['own', 'others']) {
+    const l = shots[who];
+    assert.ok(l.length >= 8, `enough ${who} shots seen (${l.length})`);
+    // In front of the shoulder (out of the gun, at most an update's flight on), and on its line.
+    assert.ok(l.every(x => x.along > 0 && x.along < 70 && x.side < 12), `${who} shots start at the gun (along/side: ${list(l.filter(x => !(x.along > 0 && x.along < 70 && x.side < 12)))})`);
+    const f = flashes[who];
+    assert.ok(f.length >= 8, `enough ${who} flashes seen (${f.length})`);
+    assert.ok(f.every(x => x.far < 40 && x.along > 0), `${who} guns flash at the gun (${list(f.filter(x => !(x.far < 40 && x.along > 0)))})`);
+  }
 });
 
 /**

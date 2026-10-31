@@ -160,7 +160,7 @@ export function fire(game, s, input = {}) {
   if (def.kind !== 'build' && (def.kind !== 'flame' || game.tick % 6 === 0)) game.sound(def.sound, muzzle.x, muzzle.y);
   // How far the shot is heard (by bots that only know what they see and hear).
   game.noise(s.x, s.y, def.kind === 'melee' ? 150 : def.kind === 'arrow' ? 260 : def.kind === 'thrown' || def.kind === 'placed' || def.kind === 'build' ? 320 : def.kind === 'flame' ? 450 : def.kind === 'rail' ? 1200 : 950, s);
-  if (GUN_KINDS.has(def.kind)) game.fx?.muzzle(muzzle.x, muzzle.y, s.aim, (def.pellets || 0) > 1 || def.kind === 'rocket');
+  if (GUN_KINDS.has(def.kind)) game.fx?.muzzle(muzzle.x, muzzle.y, s.aim, (def.pellets || 0) > 1 || def.kind === 'rocket', s.id);
   if (!def.mag && inv.ammo <= 0 && !s.body.rope) s.selectBest();
   return true;
 }
@@ -229,7 +229,7 @@ const LAUNCH = {
       // (Knock-back as at the usual speed: hits push the same however fast bullets fly.)
       spawn(game, { kind: 'bullet', sprite: def.damage >= 40 ? 'slug' : 'bullet', x: m.x, y: m.y, vx, vy, owner: s, weapon: id, life: def.range / speed, damage: def.damage, knock: def.knock });
     }
-    if (n === 1) game.fx?.shell(s.shoulderX + m.dx * 6, s.shoulderY + m.dy * 6, s.facing);
+    if (n === 1) game.fx?.shell(s.shoulderX + m.dx * 6, s.shoulderY + m.dy * 6, s.facing, s.id);
     return true;
   },
 
@@ -370,7 +370,7 @@ const LAUNCH = {
   rope(game, s, def, id, m) {
     const x1 = s.shoulderX + m.dx * def.range, y1 = s.shoulderY + m.dy * def.range;
     const hit = game.map.raycast(s.shoulderX, s.shoulderY, x1, y1);
-    if (!hit) { game.fx?.trail(s.shoulderX, s.shoulderY, x1, y1); return false; }
+    if (!hit) { game.fx?.trail(s.shoulderX, s.shoulderY, x1, y1, s.id); return false; }
     const len = hypot(hit.x - s.x, hit.y - (s.y - 6));
     s.body.rope = { x: hit.x, y: hit.y, len: Math.max(20, len) };
     s.body.onGround = false;
@@ -479,15 +479,15 @@ function railShot(game, s, x0, y0, dx, dy, def, id) {
   // (A spawn beacon in the way takes the shot.)
   const gad = shotBeacon(game, s, x0, y0, x1 - x0, y1 - y0, Math.min(wt, hit ? hit.t : 1), def.damage) ||
     shotSentry(game, s, x0, y0, x1 - x0, y1 - y0, Math.min(wt, hit ? hit.t : 1), def.damage);
-  if (gad) { game.fx?.trail(x0, y0, gad.x, gad.y); return; }
+  if (gad) { game.fx?.trail(x0, y0, gad.x, gad.y, s.id); return; }
   if (hit && hit.t < wt) {
     const hx = x0 + (x1 - x0) * hit.t, hy = y0 + (y1 - y0) * hit.t;
     const head = hy < hit.box.t + HEAD_ZONE;
     damage(game, hit.soldier, def.damage * (head ? def.headMultiplier : 1), s, id, { dirX: dx, dirY: dy, knock: def.knock, headshot: head });
-    game.fx?.trail(x0, y0, hx, hy);
+    game.fx?.trail(x0, y0, hx, hy, s.id);
   } else {
     const ex = wall ? wall.x : x1, ey = wall ? wall.y : y1;
-    game.fx?.trail(x0, y0, ex, ey);
+    game.fx?.trail(x0, y0, ex, ey, s.id);
     if (wall) game.fx?.sparks(ex, ey, wall.nx, wall.ny);
   }
 }

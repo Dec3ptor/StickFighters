@@ -66,7 +66,7 @@ export class NetHost {
     this.resetEvents();
   }
 
-  resetEvents() { this.events = { s: [], fx: [], k: [], n: [], sh: [], c: [] }; }
+  resetEvents() { this.events = { s: [], fx: [], ft: [], k: [], n: [], sh: [], c: [] }; }
 
   get humans() { return 1 + this.players.size; }
 
@@ -283,7 +283,13 @@ export class NetHost {
   feed(e) { this.events.k.push([e.text, e.weapon || null, e.killer?.id ?? null, e.victim?.id ?? null]); }
   // Kill streak callouts ('Double kill'): to one player (a soldier id), or everyone (null).
   callout(c) { if (this.events.c.length < 60) this.events.c.push([c.text, c.sub || '', c.kind || '', c.to, c.about]); }
-  fxCall(method, args) { if (!FX_SKIP.has(method) && this.events.fx.length < 300) this.events.fx.push([method, ...round(args)]); }
+  // (Each effect with the update it happened in: a batch goes out every few, and players show
+  // each at its own, so a gun's flash comes with its shot.)
+  fxCall(method, args) {
+    if (FX_SKIP.has(method) || this.events.fx.length >= 300) return;
+    this.events.fx.push([method, ...round(args)]);
+    this.events.ft.push(this.game?.tick ?? 0);
+  }
 
   /** Call after every game update: sends snapshots and events every few ticks. */
   afterTick() {
@@ -303,6 +309,7 @@ export class NetHost {
       const cv = g.carves.length > this.carvesSent ? { from: this.carvesSent, list: g.carves.slice(this.carvesSent) } : null;
       this.carvesSent = g.carves.length;
       const any = e.s.length || e.fx.length || e.k.length || e.n.length || e.sh.length || e.c.length || cv;
+      const ft = e.ft.map(t => g.tick - t); // (how many updates before this one each effect was)
       for (const p of ready) {
         p.link.send(encodeSnapshot(g, p.soldier, p.ctl.ackSeq, world), false);
         if (!any) continue;
@@ -312,7 +319,7 @@ export class NetHost {
           // (A sound to one player, or to a team: a negative number. Soldier 0 is a player,
           // not team 0: in free-for-all everyone's on team 0, and 0 === -0.)
           s: e.s.filter(x => x[3] == null || x[3] === id || (x[3] < 0 && -x[3] === p.soldier.team)).map(x => x.slice(0, 3)),
-          fx: e.fx, k: e.k, sh: e.sh, cv,
+          fx: e.fx, ft, k: e.k, sh: e.sh, cv,
           n: e.n.filter(x => x[1] === id).map(x => x[0]),
           // ([text, sub, kind, mine (1: to this player, 0: everyone), about])
           c: e.c.filter(x => x[3] == null || x[3] === id).map(x => [x[0], x[1], x[2], x[3] == null ? 0 : 1, x[4]]),

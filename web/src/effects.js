@@ -87,6 +87,8 @@ export class Effects {
     this.add(p);
   }
 
+  // (A gun's flash, shell and beam are called with one more: who fired, a soldier's id. Online,
+  // players draw their own from their gun as it's drawn: net/client.js. Not needed here.)
   muzzle(x, y, angle, big) {
     const p = this.make('flash', x, y);
     p.angle = angle; p.size = big ? 9 : 6; p.life = 3;

@@ -23,6 +23,15 @@ const MIN_DELAY = 5, MAX_DELAY = 10; // ...then as many as late snapshots need, 
 const CLOCK_SNAPS = 48;     // snapshots the host's clock is worked out from (about 2.4 seconds of them)
 const LATEST_SNAPS = 6;     // ...and where it's up to now, from the quickest of the last few
 const FAR_BEHIND = 12;      // ticks later than it should be past which the view jumps on rather than catch up (after a gap in snapshots)
+// Our own shots: we're drawn ahead of everyone else (straight away, as we play), and the host's
+// copy of a shot left from where it had us then, a moment behind us. Those that fly come from
+// our gun as it's drawn, and join their real path over this many updates (so they land where
+// the host has them land). Not when that's further off than this: a teleport. (Falling fast on a
+// slow connection puts us well ahead; a respawn is left out anyway, the host's copy of us dead.)
+const OWN_SHOTS = new Set(['bullet', 'arrow', 'seeker', 'rocket', 'thrown', 'flame', 'flyer']);
+const ANCHOR_TICKS = 8, ANCHOR_MAX = 400;
+// ...and a gun's flash, shell and beam (where in each effect's arguments it says whose it is).
+const OWN_FX = { muzzle: 4, shell: 3, trail: 4 };
 
 const lerp = (a, b, t) => a + (b - a) * t;
 function lerpAngle(a, b, t) {
@@ -115,9 +124,11 @@ export class NetClient {
         // Holes in the map change how everything moves: blown straight away, not when the effects show.
         if (data.cv) this.applyCarves(data.cv.from, data.cv.list);
         this.events.push(data);
+        this.queueFx(data);
         this.tape?.addEvents(data);
         // (In a background tab nothing is drawn, so don't let events pile up.)
         if (this.events.length > 300) this.events.splice(0, this.events.length - 300);
+        if (this.fxQueue.length > 900) this.fxQueue.splice(0, this.fxQueue.length - 900);
         break;
       case 'chat': this.addChat(data); break;
       // The host changed its numbers, camera or aiming zoom mid-match: everyone here goes by them now.
@@ -150,6 +161,7 @@ export class NetClient {
     this.matchNo = w.n & 255;
     this.snaps = [];
     this.events = [];
+    this.fxQueue = [];         // the host's effects, each with the update it happened in
     this.pending = [];
     this.recent = [];
     this.resetClock();
@@ -346,6 +358,8 @@ export class NetClient {
     this.pairA = this.pairB = null;
     this.smooth = new Uint8Array(64);
     this.indexed = null;
+    this.anchors = new Map();  // our own shots, by id: how far from their real path they came out of our gun
+    this.meOffX = this.meOffY = 0; // how far ahead we're drawn of where the host had us, at the moment shown
   }
 
   /** The game's soldiers by id (the first of any with the same id); worked out again when the list changes. */
@@ -467,8 +481,14 @@ export class NetClient {
     g.tick = Math.floor(rt);
     if (a !== this.pairA || b !== this.pairB) this.pair(a, b);
     this.showSoldiers(b, t);
-    this.showProjectiles(a, b, t);
+    this.showProjectiles(a, b, t, rt);
     this.showItems(b);
+    // Effects at the update they happened in (a shot's flash as it leaves the gun: a shot made in
+    // update n is first shown at n - 1, where it was made); the rest of each batch with it.
+    const fxq = this.fxQueue;
+    let due = 0;
+    while (due < fxq.length && fxq[due].tick <= rt + 1) this.applyFx(fxq[due++].f);
+    if (due) fxq.splice(0, due);
     while (this.events.length && this.events[0].tick <= rt + 0.5) this.applyEvents(this.events.shift());
     if (this.events.length > 200) this.events.splice(0, this.events.length - 200);
   }
@@ -476,6 +496,7 @@ export class NetClient {
   /** Two new snapshots to show between: the first's soldiers and projectiles by id, and who moves smoothly from one to the other. */
   pair(a, b) {
     this.pairA = a; this.pairB = b;
+    for (const [id, x] of this.anchors) if (b.tick - x.seen > 120) this.anchors.delete(id);
     this.soldiersBefore.fill(a.soldiers);
     this.shotsBefore.fill(a.projectiles);
     const list = b.soldiers;
@@ -491,6 +512,7 @@ export class NetClient {
 
   showSoldiers(b, t) {
     const g = this.game, list = b.soldiers, ours = this.soldiersById();
+    this.meOffX = this.meOffY = 0;
     for (let i = 0; i < list.length; i++) {
       const sb = list[i], s = ours.get(sb.id);
       if (!s) continue;
@@ -498,6 +520,11 @@ export class NetClient {
         // Firing animations come from the host.
         s.anim.swing = sb.anim.swing; s.anim.recoil = Math.max(s.anim.recoil, sb.anim.recoil);
         s.body.jetting = s.body.jetting || false;
+        // How far ahead of where the host had us at this moment we're drawn: our own shots and
+        // their flashes are moved by this, to come from our gun.
+        const sa = this.soldiersBefore.get(sb.id) || sb, k = this.smooth[i] === 1 ? t : 1;
+        const ox = s.body.x + (s.drawDX || 0) - lerp(sa.x, sb.x, k), oy = s.body.y + (s.drawDY || 0) - lerp(sa.y, sb.y, k);
+        if (s.alive && sb.alive && Math.hypot(ox, oy) < ANCHOR_MAX) { this.meOffX = ox; this.meOffY = oy; }
         continue;
       }
       const sa = this.soldiersBefore.get(sb.id) || sb;
@@ -529,10 +556,15 @@ export class NetClient {
     }
   }
 
-  showProjectiles(a, b, t) {
-    const list = b.projectiles, shown = this.shots, pool = this.shotPool, from = this.shotFrom;
+  showProjectiles(a, b, t, rt) {
+    const list = b.projectiles, shown = this.shots, pool = this.shotPool, from = this.shotFrom, me = this.me?.id ?? null;
+    let n = 0;
     for (let i = 0; i < list.length; i++) {
       const pb = list[i], pa = this.shotsBefore.get(pb.id);
+      // How many updates before snapshot b this is, and how old the shot was then: one not fired
+      // yet isn't shown (worked back along its path, it would be behind the gun).
+      const back = b.tick - rt, age = pb.age - back;
+      if (!pa && !pb.delay && age < 0) continue;
       // (A copy of the snapshot's, made again only when that changes: the snapshot's own are kept for the replay.)
       const p = pool[i] ||= {};
       if (from[i] !== pb) { Object.assign(p, pb); from[i] = pb; }
@@ -540,14 +572,47 @@ export class NetClient {
         p.x = lerp(pa.x, pb.x, t); p.y = lerp(pa.y, pb.y, t);
         p.angle = lerpAngle(pa.angle, pb.angle, t);
       } else if (!pa) {
-        // New this snapshot: work back along its path so it doesn't pop in ahead.
-        const back = Math.max(0, 1 - t) * (b.tick - a.tick || 3);
-        p.x = pb.x - pb.vx * back; p.y = pb.y - pb.vy * back; p.angle = pb.angle;
+        // New this snapshot: back along its path to where it was then (so it doesn't pop in ahead).
+        const k = Math.max(0, back);
+        p.x = pb.x - pb.vx * k; p.y = pb.y - pb.vy * k; p.angle = pb.angle;
       } else { p.x = pb.x; p.y = pb.y; p.angle = pb.angle; }
-      shown[i] = p;
+      if (me != null && pb.by === me && OWN_SHOTS.has(pb.kind)) this.fromOurGun(p, pb.id, age, rt);
+      shown[n++] = p;
     }
-    shown.length = list.length;
+    shown.length = n;
     this.game.projectiles = shown;
+  }
+
+  /**
+   * One of our own shots: out of our gun as it's drawn. The first time it's shown, it's moved by
+   * how far ahead of the host's copy of us we're drawn, and that's let go over its next few
+   * updates. (One first shown well into its flight, when we weren't watching, is left as it is.)
+   */
+  fromOurGun(p, id, age, rt) {
+    age = Math.max(0, age);
+    let a = this.anchors.get(id);
+    if (!a) {
+      const start = age <= 2;
+      this.anchors.set(id, a = { x: start ? this.meOffX : 0, y: start ? this.meOffY : 0, age, seen: rt });
+    }
+    a.seen = rt;
+    const w = 1 - (age - a.age) / ANCHOR_TICKS;
+    if (w > 0) { p.x += a.x * Math.min(1, w); p.y += a.y * Math.min(1, w); }
+  }
+
+  /** A batch's effects, each kept to show at the update it happened in (the batch says how many before its own). */
+  queueFx(e) {
+    const fx = Array.isArray(e.fx) ? e.fx : NONE, ft = Array.isArray(e.ft) ? e.ft : NONE, tick = Number(e.tick) || 0;
+    for (let i = 0; i < fx.length; i++) this.fxQueue.push({ tick: tick - (Number(ft[i]) || 0), f: fx[i] });
+  }
+
+  /** One of the host's effects. Our own gun's flash, shell or beam: from our gun as it's drawn. */
+  applyFx(f) {
+    const fx = this.game.fx;
+    if (!fx || !Array.isArray(f) || !FX_METHODS.has(f[0])) return;
+    const args = f.slice(1), by = OWN_FX[f[0]];
+    if (by != null && this.me && args[by] === this.me.id) { args[0] += this.meOffX; args[1] += this.meOffY; }
+    try { fx[f[0]](...args); } catch { /* bad args */ }
   }
 
   /** Pickups (the map's on or off, dropped ones as sent) and spawn beacons, as in snapshot b. */
@@ -585,12 +650,9 @@ export class NetClient {
   applyEvents(e) {
     const g = this.game, me = this.me;
     // (Sounds and effects by index: a batch can hold hundreds, and taking each apart made garbage.)
-    const sounds = Array.isArray(e.s) ? e.s : NONE, fx = g.fx && Array.isArray(e.fx) ? e.fx : NONE;
+    // (Its effects are shown each at its own update: showAt.)
+    const sounds = Array.isArray(e.s) ? e.s : NONE;
     for (let i = 0; i < sounds.length; i++) { const s = sounds[i]; g.sounds.push({ name: String(s[0]), x: s[1], y: s[2] }); }
-    for (let i = 0; i < fx.length; i++) {
-      const f = fx[i];
-      if (FX_METHODS.has(f[0])) { try { g.fx[f[0]](...f.slice(1)); } catch { /* bad args */ } }
-    }
     for (const [text, weapon] of e.k || []) g.feed.push({ text: String(text), weapon: weapon && String(weapon), tick: g.tick });
     if (g.feed.length > 6) g.feed.splice(0, g.feed.length - 6);
     for (const text of e.n || []) g.notes.push({ text: String(text), tick: g.tick, to: me?.id });

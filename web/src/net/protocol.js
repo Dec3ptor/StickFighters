@@ -11,7 +11,7 @@ import { WEAPONS } from '../weapons.js';
 import { CLASS_IDS, UPGRADE_IDS } from '../classes.js';
 import { REWARD_IDS } from '../streaks.js';
 
-export const PROTOCOL = 18;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 19;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -196,6 +196,9 @@ export function encodeWorld(game) {
       (p.team === 1 ? 64 : p.team === 2 ? 128 : 0));
     w.u16(clampU16(p.age || 0)); w.u16(clampU16(p.life || 0));
     w.u8(clampU8(p.r || 0));
+    // Who fired it (a soldier's id; 255: nobody's): a player draws their own from their gun (client.js).
+    const by = p.owner?.id;
+    w.u8(Number.isInteger(by) && by >= 0 && by < 255 ? by : 255);
   }
 
   const items = game.pickups.items;
@@ -348,6 +351,8 @@ export function decodeSnapshot(data) {
     p.dir = f & 1 ? -1 : 1; p.armed = f & 2 ? 0 : 1; p.stuck = !!(f & 4); p.delay = f & 8 ? 1 : 0; p.onGround = !!(f & 16); p.praying = !!(f & 32);
     p.team = f & 64 ? 1 : f & 128 ? 2 : 0;
     p.age = r.u16(); p.life = r.u16(); p.r = r.u8();
+    const by = r.u8();
+    p.by = by === 255 ? null : by;
     snap.projectiles.push(p);
   }
   const nf = r.u16();
