@@ -200,10 +200,13 @@ await page.waitForFunction(() => window.stickSoldiers?.renderer);
 st = await S();
 expect(st.edition === 'original' && st.kind !== 'remastered' && !(await visible('#gamePicker')), `a map link opens in the original: ${JSON.stringify(st)}`);
 
-// 8. /remastered/ goes straight to Remastered.
-await page.goto(`${origin}/remastered/`);
+// 8. /remastered/ goes straight to Remastered (keeping what else the address asks for: here, the
+// test's own relay, not the public ones).
+await page.goto(`${origin}/remastered/?${relayQ}`);
 await page.waitForFunction(() => window.stickSoldiers?.renderer?.kind === 'remastered', null, { timeout: 15000 });
 expect(!(await visible('#gamePicker')), '/remastered/ skips the picker');
+const params = new URL(page.url()).searchParams;
+expect(params.get('game') === 'remastered' && params.get('relay') === relay.url, `...keeping the rest of the address (${page.url()})`);
 
 // 9. Every module loaded once, by its stamped address (vendor libraries aside).
 for (const [file, queries] of modules) {

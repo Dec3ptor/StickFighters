@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Stick Soldiers Remastered</title>
-  <!-- A short address for Remastered: the game itself is one page up, with ?game=remastered. -->
-  <script>location.replace('../?game=remastered' + location.hash);</script>
+  <!-- A short address for Remastered: the game itself is one page up, with ?game=remastered
+       (and anything else the address asks for, ?relay= say). -->
+  <script>const q = new URLSearchParams(location.search); q.set('game', 'remastered'); location.replace('../?' + q + location.hash);</script>
   <noscript><meta http-equiv="refresh" content="0; url=../?game=remastered"></noscript>
 </head>
 <body>
