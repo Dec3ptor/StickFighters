@@ -258,8 +258,33 @@ await page.fill('#devMenu .dev-find', '');
 // Paste numbers in.
 await page.fill('#devMenu .dev-import', '{"RULES": {"respawnTicks": 60}, "NOPE": {"x": 1}}');
 await page.click('#devMenu [data-import]');
-expect(/Imported 1 number \(1 skipped/.test(await page.textContent('#devMenu .dev-msg')), `imported (${await page.textContent('#devMenu .dev-msg')})`);
+expect(/Imported 1 number and 0 choices \(1 skipped/.test(await page.textContent('#devMenu .dev-msg')), `imported (${await page.textContent('#devMenu .dev-msg')})`);
 await page.screenshot({ path: `${outDir}/settings-developer.png` });
+// Settings & setup: the choices players make, as chosen here (marked where they're not the
+// game's own), copied out with the numbers, pasted in (each checked: one that isn't a choice
+// there is is skipped), and all put back.
+await tab('controls');
+await page.selectOption('#sprintMode', 'toggle');
+await tab('dev');
+await page.click('#devMenu .dev-section[data-section="choices"]');
+const sprintRow = '#devMenu .dev-choice[data-choice="sprint"]';
+expect(await page.getAttribute(sprintRow, 'class').then(c => c.includes('changed')) && (await page.textContent(`${sprintRow} .dev-value`)) === 'toggle', 'a changed choice is marked');
+const withChoices = JSON.parse(await page.inputValue('#devMenu .dev-export'));
+expect(withChoices.settings?.sprint === 'toggle' && withChoices.PHYS?.runSpeed === 5, `copied out with the numbers (${JSON.stringify(withChoices.settings)})`);
+const everything = await page.evaluate(() => window.stickSoldiers.devExport?.(true));
+expect(!everything || (everything.setup?.mode && everything.settings?.keys?.jump), 'Copy everything has every choice (every action\'s keys too)');
+const graphicsBefore = await page.evaluate(() => window.stickSoldiers.prefs.graphics);
+await page.fill('#devMenu .dev-import', JSON.stringify({ settings: { camera: { follow: 200, look: 80, glide: 50 }, graphics: 'potato' }, setup: { bots: 8, difficulty: 'hard', destruction: 'off' } }));
+await page.click('#devMenu [data-import]');
+const pasted = await page.evaluate(() => ({ camera: window.stickSoldiers.prefs.camera, menu: window.stickSoldiers.readMenu(), graphics: window.stickSoldiers.prefs.graphics, msg: document.querySelector('#devMenu .dev-msg').textContent }));
+expect(pasted.camera.follow === 200 && pasted.camera.glide === 50 && pasted.menu.bots === 8 && pasted.menu.difficulty === 'hard' && pasted.menu.destruction === 'off',
+  `choices pasted in are used (${JSON.stringify({ ...pasted, menu: undefined })})`);
+expect(pasted.graphics === graphicsBefore && /0 numbers and 4 choices \(1 skipped: settings\.graphics/.test(pasted.msg), `one that isn't a choice there is is skipped (${pasted.msg})`);
+page.once('dialog', d => d.accept());
+await page.click('#devMenu [data-choices-reset]');
+const back = await page.evaluate(() => ({ camera: window.stickSoldiers.prefs.camera, menu: window.stickSoldiers.readMenu(), sprint: window.stickSoldiers.prefs.sprint, exported: document.querySelector('#devMenu .dev-export').value }));
+expect(back.camera.follow === 330 && back.menu.bots === 5 && back.menu.destruction === 'on' && back.sprint === 'hold' && !/"settings"|"setup"/.test(back.exported),
+  `Put them all back (${JSON.stringify({ camera: back.camera, bots: back.menu.bots, sprint: back.sprint })})`);
 await page.reload();
 await page.waitForFunction(() => window.stickSoldiers);
 await page.click('#openSettings');

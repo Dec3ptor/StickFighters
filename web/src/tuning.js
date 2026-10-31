@@ -290,7 +290,8 @@ function flatten(obj) {
   const ok = [], skipped = [];
   const walk = (o, p) => {
     for (const k of Object.keys(o)) {
-      if (!p.length && (k === 'stickSoldiersTuning' || k === 'note')) continue;
+      // (Not numbers: the header, and players' choices, pasted in apart: gamedefaults.js.)
+      if (!p.length && (k === 'stickSoldiersTuning' || k === 'note' || k === 'settings' || k === 'setup')) continue;
       const v = o[k], q = [...p, k];
       if (v && typeof v === 'object' && !Array.isArray(v)) walk(v, q);
       else if (tunable(q) && fit(q, v) != null) ok.push([keyOf(q), fit(q, v)]);

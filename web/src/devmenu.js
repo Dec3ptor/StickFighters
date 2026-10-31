@@ -1,6 +1,7 @@
 // Settings, Developer: the game's numbers (tuning.js), section by section, changed live; a
-// search across all of them; and boxes to copy them out (to paste to whoever makes them the
-// game's defaults) and to paste them back in.
+// search across all of them; the choices players make (Settings, the game setup: main.js and
+// gamedefaults.js), as chosen here; and boxes to copy all of it out (to paste to whoever makes
+// them the game's defaults) and to paste it back in.
 
 import {
   tuningSections, tuningField, setTuning, resetTuning, resetAllTuning, changedCount, exportTuning, importTuning, usingHostTuning,
@@ -9,11 +10,18 @@ import {
 const fmt = v => String(Math.round(v * 1e4) / 1e4);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// (The section of players' choices, after the numbers' sections.)
+const CHOICES = { id: 'choices', name: 'Settings & setup' };
+
 export class DevMenu {
-  /** el: the element to fill (Settings' Developer page). onChange(): a number changed. */
-  constructor(el, { onChange = () => {} } = {}) {
+  /**
+   * el: the element to fill (Settings' Developer page). onChange(): a number changed. choices:
+   * the choices players make (main.js): { rows(), changed(), read({ all }), apply(obj, { reset }) }.
+   */
+  constructor(el, { onChange = () => {}, choices = null } = {}) {
     this.el = el;
     this.onChange = onChange;
+    this.choices = choices;
     this.section = 'movement';
     this.weapon = null;
     this.find = '';
@@ -36,7 +44,7 @@ export class DevMenu {
   build() {
     this.built = true;
     this.el.innerHTML = `
-      <p class="muted-note">Every number the game plays by, changed as you type, and kept in this browser. Most changes show straight away; health, the bots' reactions and their route maps change from the next match. Numbers are at full speed: the game plays at 75%, so in play speeds are &times;0.75 and times &divide;0.75. In games you host, everyone plays by your numbers (from the next match).</p>
+      <p class="muted-note">Every number the game plays by, changed as you type, and kept in this browser. Most changes show straight away; health, the bots' reactions and their route maps change from the next match. Numbers are at full speed: the game plays at 75%, so in play speeds are &times;0.75 and times &divide;0.75. In games you host, everyone plays by your numbers (from the next match). <b>Settings &amp; setup</b> lists everything players choose, in Settings and the game setup, as you've chosen it: what you copy out carries those too, so it can all become the game's defaults.</p>
       <p class="dev-host note hidden">You're in someone else's game, so everyone's using the host's numbers. Yours are kept for your own games.</p>
       <div class="dev-bar">
         <div class="dev-sections" role="tablist" aria-label="Developer sections"></div>
@@ -51,20 +59,24 @@ export class DevMenu {
           <textarea class="dev-export" readonly spellcheck="false" aria-label="Your changes, as JSON"></textarea>
         </div>
         <div class="dev-io-col">
-          <div class="dev-io-head"><b>Paste numbers in</b><span><button type="button" class="small" data-import>Import</button></span></div>
-          <textarea class="dev-import" spellcheck="false" placeholder="Paste what Copy changes gave…" aria-label="Numbers to import, as JSON"></textarea>
+          <div class="dev-io-head"><b>Paste in</b><span><button type="button" class="small" data-import>Import</button></span></div>
+          <textarea class="dev-import" spellcheck="false" placeholder="Paste what Copy changes gave…" aria-label="Numbers and choices to import, as JSON"></textarea>
         </div>
       </div>
-      <div class="dev-foot"><p class="dev-msg muted-note" aria-live="polite"></p><button type="button" class="small danger" data-reset-all>Reset everything</button></div>`;
+      <div class="dev-foot"><p class="dev-msg muted-note" aria-live="polite"></p><button type="button" class="small danger" data-reset-all>Reset every number</button></div>`;
     const q = s => this.el.querySelector(s);
     q('.dev-find').addEventListener('input', e => { this.find = e.target.value.trim().toLowerCase(); this.showRows(); });
     q('.dev-weapon-pick').addEventListener('change', e => { this.weapon = e.target.value; this.showRows(); });
     for (const b of this.el.querySelectorAll('[data-copy]')) b.addEventListener('click', () => this.copy(b.dataset.copy === 'all'));
     q('[data-import]').addEventListener('click', () => {
-      const r = importTuning(q('.dev-import').value);
-      if (r.error) return this.say(r.error);
-      const skipped = r.skipped.length ? ` (${r.skipped.length} skipped: ${r.skipped.slice(0, 4).join(', ')}${r.skipped.length > 4 ? '…' : ''})` : '';
-      this.say(`Imported ${r.applied} number${r.applied === 1 ? '' : 's'}${skipped}.`);
+      let obj;
+      try { obj = JSON.parse(q('.dev-import').value); } catch { return this.say('That isn\'t JSON: paste what Copy changes gives.'); }
+      const r = importTuning(obj);
+      const c = this.choices ? this.choices.apply(obj) : { applied: 0, skipped: [] };
+      const all = [...c.skipped, ...r.skipped];
+      const skipped = all.length ? ` (${all.length} skipped: ${all.slice(0, 4).join(', ')}${all.length > 4 ? '…' : ''})` : '';
+      const n = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`;
+      this.say(`Imported ${n(r.applied, 'number')}${this.choices ? ` and ${n(c.applied, 'choice')}` : ''}${skipped}.`);
       q('.dev-import').value = '';
       this.changed();
     });
@@ -109,8 +121,8 @@ export class DevMenu {
 
   showSections() {
     const box = this.el.querySelector('.dev-sections');
-    box.replaceChildren(...this.sections.map(s => {
-      const n = s.groups.reduce((sum, g) => sum + g.paths.filter(p => tuningField(p).changed).length, 0);
+    box.replaceChildren(...[...this.sections, ...(this.choices ? [CHOICES] : [])].map(s => {
+      const n = s === CHOICES ? this.choices.changed() : s.groups.reduce((sum, g) => sum + g.paths.filter(p => tuningField(p).changed).length, 0);
       const b = this.el.ownerDocument.createElement('button');
       b.type = 'button';
       b.className = 'dev-section';
@@ -139,6 +151,7 @@ export class DevMenu {
   /** The rows: the section's numbers (one weapon's, for Weapons), or everything matching the search. */
   showRows() {
     const box = this.el.querySelector('.dev-rows');
+    if (this.section === CHOICES.id && !this.find) return this.showChoices(box);
     let groups;
     if (this.find) {
       groups = [];
@@ -168,13 +181,50 @@ export class DevMenu {
       }).join('')}`).join('') : '<p class="muted-note">Nothing matches.</p>';
   }
 
+  /** Players' choices: each as chosen here, and the game's own (changed where they differ). Changed where they're chosen. */
+  showChoices(box) {
+    this.el.querySelector('.dev-weapon').classList.add('hidden');
+    box.innerHTML = `<p class="muted-note">Change these where they are: Settings' other sections, and the game setup on the main menu. Copied out with the numbers; pasted in, they're used here.</p>
+      ${this.choices.rows().map(g => `<h4 class="dev-group">${esc(g.name)}</h4>
+        ${g.rows.map(r => `<div class="dev-row dev-choice${r.changed ? ' changed' : ''}" data-choice="${esc(r.key)}">
+          <div class="dev-label"><b>${esc(r.label)}</b><small>${esc(r.page)} · ${esc(r.key)} · default ${esc(r.def)}</small></div>
+          <span class="dev-value">${esc(r.value)}</span>
+        </div>`).join('')}`).join('')}
+      <div class="dev-row-end"><button type="button" class="small" data-choices-reset>Put them all back</button></div>`;
+    box.querySelector('[data-choices-reset]').addEventListener('click', () => {
+      const n = this.choices.changed();
+      if (!n) return this.say('Nothing to put back: every choice is the game\'s own.');
+      if (!this.el.ownerDocument.defaultView.confirm(`Put all ${n} changed choice${n === 1 ? '' : 's'} (Settings and the game setup) back to the game's own?`)) return;
+      this.choices.apply(null, { reset: true });
+      this.say('Every choice is back to the game\'s own.');
+      this.changed();
+    });
+  }
+
+  /** How many numbers and choices are changed. */
+  total() { return changedCount() + (this.choices?.changed() || 0); }
+
+  /** Everything changed (or all of it), as JSON: the choices, then the numbers. */
+  exportText(all = false) {
+    const numbers = JSON.parse(exportTuning({ all }));
+    delete numbers.stickSoldiersTuning;
+    delete numbers.note;
+    const out = { stickSoldiersTuning: 1, note: all ? 'everything: Settings, the game setup and every number (at full speed)' : 'changed from the defaults (numbers at full speed)' };
+    if (this.choices) {
+      const { settings, setup } = this.choices.read({ all });
+      if (all || Object.keys(settings).length) out.settings = settings;
+      if (all || Object.keys(setup).length) out.setup = setup;
+    }
+    return JSON.stringify({ ...out, ...numbers }, null, 2);
+  }
+
   showExport() {
-    this.el.querySelector('.dev-export').value = changedCount() ? exportTuning() : '';
-    this.el.querySelector('.dev-export').placeholder = 'No changes yet: every number is the game\'s own.';
+    this.el.querySelector('.dev-export').value = this.total() ? this.exportText() : '';
+    this.el.querySelector('.dev-export').placeholder = 'No changes yet: everything is the game\'s own.';
   }
 
   async copy(all) {
-    const text = exportTuning({ all });
+    const text = this.exportText(all);
     const box = this.el.querySelector('.dev-export');
     let ok = false;
     try { await navigator.clipboard.writeText(text); ok = true; } catch {
@@ -184,7 +234,8 @@ export class DevMenu {
       box.select();
       try { ok = this.el.ownerDocument.execCommand('copy'); } catch { ok = false; }
     }
-    this.say(ok ? `Copied ${all ? 'every number' : `your ${changedCount()} change${changedCount() === 1 ? '' : 's'}`}: paste it to make ${all ? 'them' : 'these'} the game's defaults.` : 'Select the text in the box and copy it.');
+    const n = this.total();
+    this.say(ok ? `Copied ${all ? 'everything' : `your ${n} change${n === 1 ? '' : 's'}`}: paste it to make ${all ? 'it' : 'them'} the game's defaults.` : 'Select the text in the box and copy it.');
   }
 
   say(text) {

@@ -37,6 +37,7 @@ import { setKeys, savedKeys, resetKeys, isKey, keysFor, keyOf, mouseKey, keyName
 import { KeybindList } from './keysui.js';
 import { loadTuning, tuningToShare, useOwnTuning, tuningVersion } from './tuning.js';
 import { DevMenu } from './devmenu.js';
+import { DEFAULT_GROUPS, defaultRows, changedDefaults, gameDefaults, readDefaults } from './gamedefaults.js';
 import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
 
@@ -167,7 +168,8 @@ function showBots() {
   $('botsNote').classList.toggle('hidden', botsChosen() < 300);
 }
 
-function buildMenu(settings) {
+/** The game setup's choices, as saved (at the start, and when pasted into the developer menu). */
+function fillSetup(settings) {
   $('name').value = settings.name;
   $('bots').max = BOT_STEPS.length - 1;
   $('bots').value = BOT_STEPS.reduce((best, n, i) => (Math.abs(n - settings.bots) < Math.abs(BOT_STEPS[best] - settings.bots) ? i : best), 0);
@@ -188,13 +190,17 @@ function buildMenu(settings) {
   $('side').value = String(settings.side === 2 ? 2 : 1);
   $('botVision').value = settings.botVision === 'sight' ? 'sight' : 'classic';
   $('fog').value = settings.fog === 'on' ? 'on' : 'off';
+  $('mute').checked = settings.muted;
+  audio.setMuted(settings.muted);
+}
+
+function buildMenu(settings) {
+  fillSetup(settings);
   $('playClass').innerHTML = CLASS_IDS.map(c => `<option value="${c}">${CLASSES[c].name}</option>`).join('');
   $('playClass').value = profile.cls;
   $('playClass').addEventListener('change', () => { profile.cls = $('playClass').value; saveKit(profile); });
   // (Remembered for this mode first: modeFields() shows the choice remembered for the mode.)
   $('classes').addEventListener('change', () => { rememberMenu(); modeFields(); });
-  $('mute').checked = settings.muted;
-  audio.setMuted(settings.muted);
   $('bots').addEventListener('input', showBots);
   $('mode').addEventListener('change', () => {
     modeFields();
@@ -899,6 +905,14 @@ function setVolume(v, save = true) {
 }
 
 function openSettings() {
+  fillSettings();
+  showSettingsPage(state.settingsPage);
+  show('settings', true);
+  $('settingsDone').focus();
+}
+
+/** The Settings screen's controls, as chosen. */
+function fillSettings() {
   // Experimental: the same choices as the game setup's.
   $('setBotVision').value = $('botVision').value;
   $('setFog').value = $('fog').value;
@@ -917,9 +931,6 @@ function openSettings() {
   devMenu.render();
   showSkins();
   settingsNotes();
-  showSettingsPage(state.settingsPage);
-  show('settings', true);
-  $('settingsDone').focus();
 }
 
 /** Show one section of Settings (the one last looked at, when it opens again). */
@@ -929,6 +940,8 @@ function showSettingsPage(page) {
   for (const p of pages) p.classList.toggle('hidden', p.dataset.page !== page);
   for (const t of document.querySelectorAll('#settings .set-tab')) t.setAttribute('aria-selected', String(t.dataset.page === page));
   state.settingsPage = page;
+  // (The developer menu shows what's chosen in the other sections: as it is now.)
+  if (page === 'dev') devMenu.render();
 }
 
 function closeSettings() {
@@ -1040,8 +1053,64 @@ function setSkin(id) {
   showSkins();
 }
 
-// The developer menu (Settings: Developer): the game's numbers (tuning.js).
-const devMenu = new DevMenu($('devMenu'));
+/** Use the saved Settings' choices (at the start, and when pasted into the developer menu). */
+function usePrefs(settings) {
+  for (const k in prefs) prefs[k] = settings[k];
+  setVolume(prefs.volume, false);
+  prefs.crosshair = setCrosshair(prefs.crosshair);
+  prefs.camera = setCamera(prefs.camera);
+  prefs.keys = setKeys(prefs.keys);
+  showKeys();
+  pacer.setMode(prefs.fpsCap);
+  perf.on = prefs.showFps || params.has('fps');
+}
+
+// The developer menu's Settings & setup (gamedefaults.js): the choices players make, against the
+// game's own. Pasted in, each must be one of the choices there are (the menus' own, for those
+// picked from a list); the crosshair, camera and keys are tidied up as they're used.
+const SELECTS = {
+  graphics: 'graphics', quality: 'quality', fpsCap: 'fpsCap', sprint: 'sprintMode', aimZoom: 'aimZoom', pointer: 'pointerMode',
+  mode: 'mode', difficulty: 'difficulty', fragLimit: 'fragLimit', side: 'side', lives: 'lives', gunKills: 'gunKills', crates: 'crates',
+  destruction: 'destruction', streaks: 'streaks', botVision: 'botVision', fog: 'fog', maxPlayers: 'maxPlayers', visibility: 'visibility',
+};
+function choiceOk(key, v) {
+  if (SELECTS[key]) return [...$(SELECTS[key]).options].some(o => o.value === String(v));
+  if (key === 'volume') return v >= 0 && v <= 100;
+  if (key === 'bots') return Number.isInteger(v) && v >= 0 && v <= BOT_STEPS[BOT_STEPS.length - 1];
+  if (key === 'skin') return isSkin(v);
+  if (key === 'map') return maps.data.has(v) || /^(custom|community):/.test(v);
+  if (key === 'goals') return Object.entries(v).every(([m, n]) => MODES[m]?.goal?.options.includes(n));
+  return true;
+}
+const gameChoices = {
+  rows: () => defaultRows(loadSettings(), DEFAULTS),
+  changed: () => changedDefaults(loadSettings(), DEFAULTS),
+  read: ({ all = false } = {}) => gameDefaults(loadSettings(), DEFAULTS, { all }),
+  /** Choices pasted in (or `reset`: the game's own): saved and used straight away. */
+  apply(obj, { reset = false } = {}) {
+    const { values, skipped } = reset ? { values: Object.fromEntries(DEFAULT_GROUPS.flatMap(g => g.fields.map(([k]) => [k, DEFAULTS[k]]))), skipped: [] }
+      : readDefaults(obj, DEFAULTS, choiceOk);
+    const n = Object.keys(values).length;
+    if (!n) return { applied: 0, skipped };
+    const was = { graphics: prefs.graphics, quality: prefs.quality, skin: prefs.skin };
+    saveSettings({ ...loadSettings(), ...values, ...('graphics' in values ? { graphicsPicked: !reset } : {}) });
+    const now = loadSettings();
+    usePrefs(now);
+    savePrefs(); // (as tidied up)
+    if (prefs.graphics !== was.graphics) setGraphics(prefs.graphics);
+    if (prefs.quality !== was.quality) { renderer.setQuality?.(prefs.quality); pacer.restart(performance.now(), true); }
+    if (prefs.pointer !== 'locked') input.unlock();
+    if (prefs.skin !== was.skin) setSkin(prefs.skin);
+    fillSetup(now);
+    modeFields();
+    buildMapCards(now.map, { follow: true });
+    fillSettings();
+    return { applied: n, skipped };
+  },
+};
+
+// The developer menu (Settings: Developer): the game's numbers (tuning.js), and the choices above.
+const devMenu = new DevMenu($('devMenu'), { choices: gameChoices });
 
 /** The keys named on the page (the menu's Controls) as they're set: <span data-keys="action"> (data-first: just the first). */
 function showKeys() {
@@ -1968,18 +2037,11 @@ async function boot() {
   profile = loadKit();
   // (Classes switched off: nothing about them in the menus.)
   document.body.classList.toggle('no-classes', !CLASSES_ON);
-  for (const k in prefs) prefs[k] = settings[k];
-  setVolume(prefs.volume, false);
-  prefs.crosshair = setCrosshair(prefs.crosshair);
-  prefs.camera = setCamera(prefs.camera);
-  prefs.keys = setKeys(prefs.keys);
-  showKeys();
+  usePrefs(settings);
   // The developer menu's numbers, as changed in this browser.
   loadTuning();
   // (Keyboards other than QWERTY: name keys as they're printed, where the browser can say.)
   navigator.keyboard?.getLayoutMap?.().then(m => { useLayout(m); keybinds.render(); showKeys(); }).catch(() => {});
-  pacer.setMode(prefs.fpsCap);
-  perf.on ||= prefs.showFps;
   const [index, legs, r] = await Promise.all([
     fetch('data/maps/index.json').then(r => r.json()),
     fetch('data/animations/legs.json').then(r => r.json()),
@@ -2061,6 +2123,7 @@ async function boot() {
   window.stickSoldiers = {
     state, get renderer() { return renderer; }, get edition() { return edition; }, get input() { return input; }, setEdition, openGamePicker, pacer, prefs, perf, setGraphics, startMatch, endMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab,
     get profile() { return profile; }, openPicker, openLoadout,
+    devExport: all => JSON.parse(devMenu.exportText(all)), // (what the developer menu copies out)
   };
 }
 
