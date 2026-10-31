@@ -122,23 +122,27 @@ await host.keyboard.press('Escape');
 await joiner.waitForFunction(() => window.stickSoldiers.feelNow().camera.look === 40, null, { timeout: 5000 }).catch(() => {});
 const feel = await joiner.evaluate(() => ({ ...window.stickSoldiers.feelNow(), own: window.stickSoldiers.prefs.camera.look, ownZoom: window.stickSoldiers.prefs.aimZoom }));
 expect(feel.host && feel.camera.look === 40 && feel.aimZoom === 'more' && feel.own === 100 && feel.ownZoom === 'slight', `the joiner sees it with the host's camera and aiming zoom, theirs kept (${JSON.stringify(feel)})`);
-// (The speed it runs at most, on the ground: bots can knock it about now and then.)
+// (The speed it runs at most often, on the ground: bots can knock it about now and then. Right,
+// then left: one way may be into a wall.)
 await joiner.bringToFront();
-await joiner.waitForFunction(() => window.stickSoldiers.state.me?.alive, null, { timeout: 10000 }).catch(() => {});
 const runs = async page => {
-  await page.keyboard.down('KeyD');
-  const speed = await page.evaluate(() => new Promise(res => {
-    const counts = new Map(), t0 = performance.now();
-    const tick = () => {
-      const b = window.stickSoldiers.state.me?.body;
-      if (b?.onGround && Math.abs(b.vx) > 0.5) { const k = Math.abs(b.vx).toFixed(2); counts.set(k, (counts.get(k) || 0) + 1); }
-      if (performance.now() - t0 < 1200) requestAnimationFrame(tick);
-      else res([...counts].sort((a, b) => b[1] - a[1])[0]?.[0]);
-    };
-    tick();
-  }));
-  await page.keyboard.up('KeyD');
-  return speed;
+  const counts = new Map();
+  for (const key of ['KeyD', 'KeyA']) {
+    await page.waitForFunction(() => window.stickSoldiers.state.me?.alive, null, { timeout: 10000 }).catch(() => {});
+    await page.keyboard.down(key);
+    const seen = await page.evaluate(() => new Promise(res => {
+      const counts = {}, t0 = performance.now();
+      const tick = () => {
+        const b = window.stickSoldiers.state.me?.body;
+        if (window.stickSoldiers.state.me?.alive && b?.onGround && Math.abs(b.vx) > 0.5) { const k = Math.abs(b.vx).toFixed(2); counts[k] = (counts[k] || 0) + 1; }
+        if (performance.now() - t0 < 800) requestAnimationFrame(tick); else res(counts);
+      };
+      tick();
+    }));
+    await page.keyboard.up(key);
+    for (const [k, n] of Object.entries(seen)) counts.set(k, (counts.get(k) || 0) + n);
+  }
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
 };
 const joinerRuns = await runs(joiner);
 expect(joinerRuns === '3.75', `the joiner runs at the host's new speed (${joinerRuns}; 3.75 expected)`);
