@@ -58,9 +58,24 @@ const blocked = await page.evaluate(() => {
     forwardButton: fire(body, mouse('mousedown', { button: 4 })),
     selecting: fire(body, new Event('selectstart', { bubbles: true, cancelable: true })),
     dragging: fire(body, new Event('dragstart', { bubbles: true, cancelable: true })),
+    // Shortcuts: anything with Ctrl, Alt or Cmd held, Alt and F10 (the browser's menu), F7
+    // (caret browsing) and / (Firefox's quick find).
+    ...Object.fromEntries([
+      ['ctrlShiftA', 'keydown', 'KeyA', { ctrlKey: true, shiftKey: true }], ['ctrlH', 'keydown', 'KeyH', { ctrlKey: true }],
+      ['ctrlP', 'keydown', 'KeyP', { ctrlKey: true }], ['altBack', 'keydown', 'ArrowLeft', { altKey: true }],
+      ['altDown', 'keydown', 'AltLeft', { altKey: true }], ['altUp', 'keyup', 'AltLeft', {}], ['f10Up', 'keyup', 'F10', {}],
+      ['caretBrowsing', 'keydown', 'F7', {}], ['quickFind', 'keydown', 'Slash', {}],
+    ].map(([what, type, code, o]) => [what, fire(body, new KeyboardEvent(type, { code, bubbles: true, cancelable: true, ...o }))])),
   };
 });
 for (const [what, ok] of Object.entries(blocked)) check(ok, `while playing, blocked: ${what}`);
+// ...but not in a text box (online games' chat), where shortcuts are the text's.
+const inChat = await page.evaluate(() => {
+  const ev = new KeyboardEvent('keydown', { code: 'KeyH', ctrlKey: true, bubbles: true, cancelable: true });
+  document.querySelector('#chatInput').dispatchEvent(ev);
+  return ev.defaultPrevented;
+});
+check(!inChat, 'in a text box, shortcuts are left alone');
 // (Let go of the mouse buttons pressed above.)
 await page.mouse.up();
 
@@ -246,7 +261,9 @@ const free = await page.evaluate(() => {
   document.body.dispatchEvent(ev);
   const menuEv = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
   document.body.dispatchEvent(menuEv);
-  return { zoom: !ev.defaultPrevented, menu: !menuEv.defaultPrevented, selecting: getComputedStyle(document.body).userSelect !== 'none' };
+  const keyEv = new KeyboardEvent('keydown', { code: 'KeyH', ctrlKey: true, bubbles: true, cancelable: true });
+  document.body.dispatchEvent(keyEv);
+  return { zoom: !ev.defaultPrevented, menu: !menuEv.defaultPrevented, selecting: getComputedStyle(document.body).userSelect !== 'none', shortcuts: !keyEv.defaultPrevented };
 });
 for (const [what, ok] of Object.entries(free)) check(ok, `in the menus, the browser's own ${what} works`);
 // The menu's list of controls shows the keys as they're set; Reset puts them all back.
@@ -258,6 +275,33 @@ await page.click('#keysReset');
 const keys2 = await saved();
 check(Object.keys(keys2).length === 0 && await page.textContent(keyButton('jump')) === 'W', `Reset all keys (${JSON.stringify(keys2)})`);
 await page.keyboard.press('Escape');
+
+// 8. Firefox opens its own menu on Shift + right click whatever a page does (unless the mouse is
+// locked to it): the game lets go of everything held (what's let go of while the menu's open
+// never reaches it), says once how to stop it, and Settings says so too. (Chromium, saying it's
+// Firefox.)
+const ff = await browser.newPage({ viewport: { width: 1280, height: 720 }, userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0' });
+ff.on('pageerror', e => errors.push(`firefox: ${e}`));
+await ff.goto(url.replace('lock=on', 'lock=off'));
+await ff.waitForFunction(() => window.stickSoldiers);
+const ffNote = await ff.evaluate(() => getComputedStyle(document.querySelector('#settings .firefox-only')).display);
+check(ffNote !== 'none' && await page.evaluate(() => getComputedStyle(document.querySelector('#settings .firefox-only')).display) === 'none', `Settings has a note for Firefox's players only (${ffNote})`);
+await ff.evaluate(() => { const s = window.stickSoldiers.readMenu(); window.stickSoldiers.startMatch({ ...s, map: 'ssdm1.json', mode: 'ffa', bots: 0 }); });
+await ff.waitForFunction(() => window.stickSoldiers.state.game && window.stickSoldiers.state.me.alive, null, { timeout: 15000 });
+await ff.mouse.move(640, 360);
+await ff.keyboard.down('KeyD');
+await ff.keyboard.down('Shift');
+await ff.waitForTimeout(100);
+const before = await ff.evaluate(() => [...window.stickSoldiers.input.keys]);
+await ff.mouse.down({ button: 'right' });
+const after = await ff.evaluate(() => ({ keys: [...window.stickSoldiers.input.keys], right: window.stickSoldiers.input.mouse.right, toast: document.querySelector('#toast').classList.contains('hidden') ? '' : document.querySelector('#toast').textContent }));
+await ff.mouse.up({ button: 'right' });
+await ff.keyboard.up('Shift');
+await ff.keyboard.up('KeyD');
+check(before.includes('KeyD') && before.includes('Shift'), `keys held before (${before})`);
+check(after.keys.length === 0 && !after.right, `Firefox's menu on Shift + right click: everything let go of (${JSON.stringify(after)})`);
+check(/about:config/.test(after.toast) && /shift_suppresses_event/.test(after.toast), `and how to stop it (${after.toast.slice(0, 60)})`);
+await ff.close();
 
 console.log(JSON.stringify({ blocked, moved, errors }, null, 2));
 await browser.close();

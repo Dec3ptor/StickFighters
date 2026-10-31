@@ -4,7 +4,7 @@ import { SPEEDS, DEFAULT_SPEED, SHOW_SPEED_MENU } from './config.js';
 import { Game } from './game.js';
 import { NavGraph } from './nav.js';
 import { BotController, BOT_PROFILES } from './bot.js';
-import { Input, PlayerController } from './input.js';
+import { Input, PlayerController, FIREFOX } from './input.js';
 import { createRenderer, autoGraphics } from './glrender.js';
 import { Renderer, setCamera, CAMERA_DEFAULTS } from './render.js';
 import { RemasteredRenderer, drawRemasteredPreview } from './rm/renderer.js';
@@ -622,12 +622,12 @@ function openEditor(record) {
   editor.open(record);
 }
 
-function toast(text) {
+function toast(text, ms = 5000) {
   const el = $('toast');
   el.textContent = text;
   el.classList.remove('hidden');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => el.classList.add('hidden'), 5000);
+  toast.timer = setTimeout(() => el.classList.add('hidden'), ms);
 }
 
 function setPaused(p) {
@@ -1996,6 +1996,14 @@ async function boot() {
     state.freedAt = performance.now();
     setPaused(true);
   };
+  // Firefox's own menu on Shift + right click, which no page can stop: how to stop it (once).
+  input.onFirefoxMenu = () => {
+    if (state.firefoxTold) return;
+    state.firefoxTold = true;
+    toast("Firefox opens its own menu on Shift + right click, and no web page can stop it. To play without it, lock the mouse to the game (Settings, Mouse & crosshair), or open about:config in Firefox and set dom.event.contextmenu.shift_suppresses_event to false.", 15000);
+  };
+  // (Firefox-only notes in Settings.)
+  document.documentElement.classList.toggle('firefox', FIREFOX);
   setLegAnimations(legs);
   audio.preload();
   audio.listen(window); // (sound starts at the first click, tap or key; nothing listens once it's running)

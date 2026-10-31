@@ -14,6 +14,19 @@ const GAME_KEYS = new Set([
 // otherwise open browser shortcuts (Ctrl+D bookmarks, Ctrl+S saves...), and the game
 // would miss the key being let go and keep moving.
 const MODIFIERS = new Set(['ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight']);
+// Keys whose browser actions are blocked while a match is played, even unbound: Alt and F10
+// (the menu bar, or the browser's menu), F1 (help), F3 (find), F6 (the address bar), F7 (caret
+// browsing), / and ' (Firefox's quick find), Backspace and the menu key. Alt and F10 act when
+// they're let go of (MENU_KEYS).
+const BROWSER_KEYS = new Set(['AltLeft', 'AltRight', 'F1', 'F3', 'F6', 'F7', 'F10', 'Slash', 'Quote', 'Backspace', 'ContextMenu']);
+const MENU_KEYS = new Set(['AltLeft', 'AltRight', 'F10']);
+
+/**
+ * Firefox opens its own menu on Shift + right click whatever a page does (it doesn't even tell
+ * the page), unless the mouse is locked to the page. Its players can turn that off: about:config,
+ * dom.event.contextmenu.shift_suppresses_event.
+ */
+export const FIREFOX = typeof navigator !== 'undefined' && /\bFirefox\//.test(navigator.userAgent || '');
 
 // The weapon slots' actions: Weapon 1-10 pick slots 0-9 (the number keys, to start with); the
 // sledgehammer is slot 10 (F).
@@ -40,6 +53,7 @@ export class Input {
     this.wantsLock = () => false; // main.js: whether the mouse should be locked to the game now
     this.onPress = null;          // main.js: a click on the game (it can lock the mouse, or go full screen, then)
     this.onLockLost = null;       // main.js: the player freed the mouse (Esc), so open the menu
+    this.onFirefoxMenu = null;    // main.js: Firefox opened its own menu on Shift + right click (FIREFOX)
 
     window.addEventListener('keydown', e => {
       if (!this.enabled) return;
@@ -54,9 +68,8 @@ export class Input {
       if (e.code === 'MetaLeft' || e.code === 'MetaRight') this.keys.clear();
     });
     // Leaving the page (a browser dialog, another window or tab): nothing stays held.
-    const release = () => { this.keys.clear(); this.mouse.left = this.mouse.right = false; };
-    window.addEventListener('blur', release);
-    document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
+    window.addEventListener('blur', () => this.letGo());
+    document.addEventListener('visibilitychange', () => { if (document.hidden) this.letGo(); });
     window.addEventListener('mousemove', e => {
       if (this.locked) {
         // (Just after locking, browsers can report the cursor being moved into the middle.)
@@ -98,6 +111,14 @@ export class Input {
         if (e.button === 0) this.mouse.left = this.mouse.clicked = true;
         if (e.button === 2) this.mouse.right = this.mouse.rightClicked = true;
         if (!this.enabled) return;
+        // Firefox opens its own menu on Shift + right click (FIREFOX), and what's let go of while
+        // it's open never reaches the game: let go of everything now (keys still held come back
+        // as they repeat), and say why the menu's there.
+        if (FIREFOX && e.button === 2 && e.shiftKey && !this.locked) {
+          this.letGo();
+          this.onFirefoxMenu?.();
+          return;
+        }
         const key = mouseKey(e.button);
         this.keys.add(key);
         this.pressed(key);
@@ -146,6 +167,10 @@ export class Input {
    * of the game: no menu on a right click, no zooming with Ctrl + wheel or scrolling
    * with Shift + wheel, no selecting text, no dragging, no pasting or scrolling with
    * the middle button, and no going back or forward with the mouse's side buttons.
+   * And no shortcuts: with Ctrl, Alt or Cmd held (Ctrl's a crouch key), keys do nothing in
+   * the browser (Ctrl + Shift + A, Ctrl + H, Alt + left...), nor do BROWSER_KEYS. (A browser
+   * keeps a few for itself whatever a page does, Ctrl + W, Ctrl + T and Ctrl + N among them:
+   * in full screen, Chrome and Edge let the game have those too. And see FIREFOX.)
    */
   guard() {
     const playing = () => document.body.classList.contains('playing');
@@ -160,6 +185,16 @@ export class Input {
     window.addEventListener('wheel', e => {
       if (playing() && (e.ctrlKey || e.target instanceof HTMLCanvasElement)) e.preventDefault();
     }, { passive: false });
+    window.addEventListener('keydown', e => {
+      if (playing() && !typing(e) && (e.ctrlKey || e.altKey || e.metaKey || BROWSER_KEYS.has(e.code))) e.preventDefault();
+    });
+    window.addEventListener('keyup', e => { if (playing() && !typing(e) && MENU_KEYS.has(e.code)) e.preventDefault(); });
+  }
+
+  /** Nothing held any more (the page lost the keyboard and mouse for a while). */
+  letGo() {
+    this.keys.clear();
+    this.mouse.left = this.mouse.right = false;
   }
 
   /** A key or button pressed: noted for the game (one-press actions' keys queued). */
