@@ -1,8 +1,12 @@
 // Settings, Controls: every action and its keys. Click a key to change it, then press the new
 // key or mouse button (or turn the wheel): Esc keeps it as it was, Backspace or Delete clears it.
-// + adds another key (up to MAX_KEYS). A key taken from another action leaves that one.
+// × beside a key removes it (an action can be left with none); + adds another (up to MAX_KEYS).
+// A key taken from another action leaves that one.
 
 import { ACTIONS, MAX_KEYS, keysFor, keyName, bindKey, unbindKey, keyOf, mouseKey, canBind } from './keys.js';
+
+/** An action's name without its notes in brackets ('Jump (hold in the air...)' -> 'Jump'). */
+const shortName = a => a.name.replace(/ \(.*$/, '');
 
 export class KeybindList {
   /**
@@ -48,7 +52,7 @@ export class KeybindList {
       const keys = doc.createElement('span');
       keys.className = 'kb-keys';
       const list = keysFor(a.id);
-      list.forEach((k, i) => keys.append(this.keyButton(a, i, keyName(k))));
+      list.forEach((k, i) => keys.append(this.keyChip(a, i, keyName(k))));
       if (this.listening?.id === a.id && this.listening.at >= list.length) keys.append(this.keyButton(a, list.length, null));
       else if (list.length < MAX_KEYS) {
         const add = doc.createElement('button');
@@ -74,6 +78,39 @@ export class KeybindList {
     note.setAttribute('aria-live', 'polite');
     note.textContent = this.note;
     this.el.replaceChildren(frag, note);
+  }
+
+  /** A key: the button to change it, and × to remove it (not while it's waiting for its new key). */
+  keyChip(a, at, label) {
+    const doc = this.el.ownerDocument;
+    const chip = doc.createElement('span');
+    chip.className = 'kb-chip';
+    chip.append(this.keyButton(a, at, label));
+    if (!(this.listening?.id === a.id && this.listening.at === at)) {
+      const what = `Remove ${label} from ${shortName(a)}`;
+      const x = doc.createElement('button');
+      x.type = 'button';
+      x.className = 'kb-remove';
+      x.dataset.at = String(at);
+      x.textContent = '×';
+      x.title = what;
+      x.setAttribute('aria-label', what);
+      x.addEventListener('click', () => this.remove(a, at, label));
+      chip.append(x);
+    }
+    return chip;
+  }
+
+  /** Take key number `at` off action `a` (shown as `label`). */
+  remove(a, at, label) {
+    this.cancel();
+    unbindKey(a.id, at);
+    this.say(`${label} removed from ${shortName(a)}${keysFor(a.id).length ? '' : ': it has no key now (+ adds one)'}.`);
+    this.onChange();
+    this.render();
+    // (On the next key of the action's, or its +, for the keyboard.)
+    const row = this.el.querySelector(`.kb-row[data-action="${a.id}"]`);
+    (row?.querySelector(`.kb-remove[data-at="${at}"]`) || row?.querySelector('.kb-add') || row?.querySelector('.kb-key'))?.focus();
   }
 
   keyButton(a, at, label) {

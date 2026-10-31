@@ -274,6 +274,20 @@ await page.click('#settings .set-tab[data-page="controls"]');
 await page.click('#keysReset');
 const keys2 = await saved();
 check(Object.keys(keys2).length === 0 && await page.textContent(keyButton('jump')) === 'W', `Reset all keys (${JSON.stringify(keys2)})`);
+// × beside a key takes it off: W off jumping (Space and ↑ still jump), then the rest (unbound).
+const remove = (id, at = 0) => `#keybinds .kb-row[data-action="${id}"] .kb-remove[data-at="${at}"]`;
+await page.click(remove('jump'));
+const keys3 = await saved();
+const removedNote = await page.textContent('#keybinds .kb-note');
+check(JSON.stringify(keys3.jump) === '["Space","ArrowUp"]' && await page.textContent(keyButton('jump')) === 'Space' && /W removed from Jump\./.test(removedNote),
+  `× removes W from jump (${JSON.stringify(keys3)}, "${removedNote}")`);
+await page.click(remove('jump'));
+await page.click(remove('jump'));
+const keys4 = await saved();
+check(Array.isArray(keys4.jump) && keys4.jump.length === 0 && /Unbound/.test(await page.textContent('#keybinds .kb-row[data-action="jump"]')) && /no key now/.test(await page.textContent('#keybinds .kb-note')),
+  `and an action can be left with none (${JSON.stringify(keys4)})`);
+await page.screenshot({ path: `${outDir}/controls-keys-removed.png` });
+await page.click('#keysReset');
 await page.keyboard.press('Escape');
 
 // 8. Firefox opens its own menu on Shift + right click whatever a page does (unless the mouse is

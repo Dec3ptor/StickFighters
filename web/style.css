@@ -374,6 +374,14 @@ button.kb-key, button.kb-add {
   border-bottom-width: 3px; background: var(--soft); font-variant-numeric: tabular-nums;
 }
 button.kb-add { min-width: 34px; padding: 5px 9px; color: var(--muted); border-style: dashed; border-bottom-width: 1.5px; background: transparent; }
+/* A key and the × that removes it, side by side. */
+.kb-chip { display: inline-flex; align-items: stretch; }
+.kb-chip button.kb-key { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+button.kb-remove {
+  min-width: 0; padding: 0 7px; font-size: 15px; line-height: 1; color: var(--muted); background: transparent;
+  border-width: 1.5px; border-left-width: 0; border-bottom-width: 3px; border-top-left-radius: 0; border-bottom-left-radius: 0;
+}
+button.kb-remove:hover, button.kb-remove:focus-visible { color: #b3261e; }
 button.kb-key.listening { background: var(--ink); color: var(--paper); animation: kb-pulse 1s ease-in-out infinite alternate; }
 @keyframes kb-pulse { from { opacity: 1; } to { opacity: 0.65; } }
 .kb-none { color: #b3261e; font-size: 13px; margin-right: 4px; }
@@ -651,6 +659,9 @@ html[data-game="remastered"] .xhair canvas { border: 1px solid var(--line); bord
 html[data-game="remastered"] .kb-row { border-bottom-color: rgba(255, 255, 255, 0.07); }
 html[data-game="remastered"] .screen button.kb-key { border-radius: 8px; border-bottom-width: 3px; border-bottom-color: rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.08); }
 html[data-game="remastered"] .screen button.kb-add { border-radius: 8px; border-style: dashed; background: transparent; }
+html[data-game="remastered"] .screen .kb-chip button.kb-key { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+html[data-game="remastered"] .screen button.kb-remove { border-radius: 0 8px 8px 0; border-bottom-width: 3px; border-bottom-color: rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.04); }
+html[data-game="remastered"] .screen button.kb-remove:hover { color: #ff7a6a; }
 html[data-game="remastered"] .screen button.kb-key.listening { background: linear-gradient(90deg, #3d7ff0, #7a5cff); color: #fff; }
 html[data-game="remastered"] .kb-none { color: #ff7a6a; }
 html[data-game="remastered"] .skin-preview { border: 1px solid var(--line); border-radius: 12px; }
