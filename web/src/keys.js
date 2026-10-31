@@ -50,6 +50,14 @@ export const MAX_KEYS = 4;
 const SHARED = [['use', 'next'], ['freeCam', 'jump']];
 const shares = (a, b) => SHARED.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
 
+/**
+ * An action's keys that other actions have too (but for those that may share), in `all`: every
+ * action's keys, { action: [keys] }. Returns [[key, [the other actions' ids]]].
+ */
+export function sharedKeys(all, id) {
+  return (all[id] || []).map(k => [k, Object.keys(all).filter(o => o !== id && !shares(id, o) && all[o]?.includes(k))]).filter(([, others]) => others.length);
+}
+
 // Keys on both sides of the keyboard count as one.
 const SIDES = {
   ShiftLeft: 'Shift', ShiftRight: 'Shift', ControlLeft: 'Control', ControlRight: 'Control',
@@ -63,6 +71,32 @@ export const mouseKey = button => `Mouse${button}`;
 const VALID = /^(Key[A-Z]|Digit\d|Numpad\w+|Arrow(Up|Down|Left|Right)|F\d{1,2}|Shift|Control|Alt|Meta|Mouse[0-4]|Wheel(Up|Down)|Space|Enter|Tab|Backspace|Delete|Insert|Home|End|PageUp|PageDown|CapsLock|Backquote|Minus|Equal|BracketLeft|BracketRight|Backslash|Semicolon|Quote|Comma|Period|Slash|IntlBackslash|IntlRo|IntlYen|ContextMenu)$/;
 /** Whether a key can be bound (Esc can't: it's the menu's). */
 export const canBind = key => typeof key === 'string' && VALID.test(key);
+
+// Keys typed by name (the developer menu's keys), in any case: those named as they are, and a few
+// short names.
+const NAMED = new Map([
+  'Shift', 'Control', 'Alt', 'Meta', 'Space', 'Enter', 'Tab', 'Backspace', 'Delete', 'Insert', 'Home', 'End', 'PageUp', 'PageDown',
+  'CapsLock', 'Backquote', 'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Backslash', 'Semicolon', 'Quote', 'Comma', 'Period',
+  'Slash', 'IntlBackslash', 'IntlRo', 'IntlYen', 'ContextMenu', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'WheelUp', 'WheelDown',
+].map(k => [k.toLowerCase(), k]));
+const SHORT_NAMES = {
+  ctrl: 'Control', cmd: 'Meta', win: 'Meta', up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight',
+  lmb: 'Mouse0', mmb: 'Mouse1', rmb: 'Mouse2',
+};
+/** A key typed in ('W', 'space', 'Up', 'KeyW', 'mouse0'...), as bindings have it, or null if it isn't one that can be bound. */
+export function keyFromText(text) {
+  const t = String(text ?? '').trim(), l = t.toLowerCase();
+  if (canBind(t)) return t;
+  let m;
+  if ((m = /^(?:key)?([a-z])$/.exec(l))) return `Key${m[1].toUpperCase()}`;
+  if ((m = /^(?:digit)?(\d)$/.exec(l))) return `Digit${m[1]}`;
+  if ((m = /^(f\d{1,2}|mouse[0-4]|numpad\w+)$/.exec(l))) {
+    const k = m[1][0].toUpperCase() + m[1].slice(1).replace(/^(ouse|umpad)(\w)/, (_, w, c) => w + c.toUpperCase());
+    return canBind(k) ? k : null;
+  }
+  if ((m = /^(shift|control|alt|meta)(left|right)$/.exec(l))) return NAMED.get(m[1]);
+  return NAMED.get(l) || SHORT_NAMES[l] || null;
+}
 
 const defaults = () => new Map(ACTIONS.map(a => [a.id, [...a.keys]]));
 let binds = defaults();

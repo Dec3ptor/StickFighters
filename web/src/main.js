@@ -6,7 +6,7 @@ import { NavGraph } from './nav.js';
 import { BotController, BOT_PROFILES } from './bot.js';
 import { Input, PlayerController, FIREFOX } from './input.js';
 import { createRenderer, autoGraphics } from './glrender.js';
-import { Renderer, setCamera, CAMERA_DEFAULTS } from './render.js';
+import { Renderer, setCamera, CAMERA_DEFAULTS, CAMERA_LIMITS } from './render.js';
 import { RemasteredRenderer, drawRemasteredPreview } from './rm/renderer.js';
 import { FramePacer, isEven } from './framerate.js';
 import { drawHud, drawReplay } from './hud.js';
@@ -17,7 +17,7 @@ import { makeRng, lerp } from './util.js';
 import { Editor } from './editor.js';
 import { listMaps, getMap, saveMap } from './mapstore.js';
 import { decodeShare, encodeShare, normalizeMap } from './custommaps.js';
-import { MODES } from './modes.js';
+import { MODES, MODE_IDS } from './modes.js';
 import { WEAPONS } from './weapons.js';
 import { GameMap, seamsOf, fillSeams } from './map.js';
 import { Lobby, inviteCode, parseInvite } from './net/lobby.js';
@@ -32,12 +32,12 @@ import { loadKit, saveKit, KIT_KEY } from './kitchoice.js';
 import { BuyMenu } from './buymenu.js';
 import { canShop } from './defuse.js';
 import { renderLoadout, renderPicker } from './loadout.js';
-import { CROSSHAIR_STYLES, CROSSHAIR_COLORS, CROSSHAIR_DEFAULTS, setCrosshair, drawCrosshair, crosshairCursor } from './crosshair.js';
+import { CROSSHAIR_STYLES, CROSSHAIR_COLORS, CROSSHAIR_DEFAULTS, CROSSHAIR_LIMITS, setCrosshair, drawCrosshair, crosshairCursor } from './crosshair.js';
 import { setKeys, savedKeys, resetKeys, isKey, keysFor, keyOf, mouseKey, keyName, keyLabel, keyText, useLayout } from './keys.js';
 import { KeybindList } from './keysui.js';
 import { loadTuning, tuningToShare, useOwnTuning, tuningVersion } from './tuning.js';
 import { DevMenu } from './devmenu.js';
-import { DEFAULT_GROUPS, defaultRows, changedDefaults, gameDefaults, readDefaults } from './gamedefaults.js';
+import { DEFAULT_GROUPS, CHOICE_KEYS, defaultRows, changedDefaults, gameDefaults, readDefaults, tidy, equal } from './gamedefaults.js';
 import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
 
@@ -1065,48 +1065,158 @@ function usePrefs(settings) {
   perf.on = prefs.showFps || params.has('fps');
 }
 
-// The developer menu's Settings & setup (gamedefaults.js): the choices players make, against the
-// game's own. Pasted in, each must be one of the choices there are (the menus' own, for those
-// picked from a list); the crosshair, camera and keys are tidied up as they're used.
+// The developer menu's Settings & setup (gamedefaults.js): the defaults for the choices players
+// make, kept apart from your own (just those changed from the game's own), changed there or
+// pulled from the current game, copied out to become the game's own.
+const DEV_DEFAULTS = 'stick-soldiers-dev-defaults';
+function loadDevDefaults() {
+  try { const d = JSON.parse(localStorage.getItem(DEV_DEFAULTS) || '{}'); return d && typeof d === 'object' && !Array.isArray(d) ? d : {}; } catch { return {}; }
+}
+function saveDevDefaults(d) {
+  try { if (Object.keys(d).length) localStorage.setItem(DEV_DEFAULTS, JSON.stringify(d)); else localStorage.removeItem(DEV_DEFAULTS); } catch { /* private mode */ }
+}
+
+// How each is picked there, and checked (gamedefaults.js: tidy): those picked from a list in
+// Settings or the game setup, from the same list.
 const SELECTS = {
   graphics: 'graphics', quality: 'quality', fpsCap: 'fpsCap', sprint: 'sprintMode', aimZoom: 'aimZoom', pointer: 'pointerMode',
   mode: 'mode', difficulty: 'difficulty', fragLimit: 'fragLimit', side: 'side', lives: 'lives', gunKills: 'gunKills', crates: 'crates',
   destruction: 'destruction', streaks: 'streaks', botVision: 'botVision', fog: 'fog', maxPlayers: 'maxPlayers', visibility: 'visibility',
 };
-function choiceOk(key, v) {
-  if (SELECTS[key]) return [...$(SELECTS[key]).options].some(o => o.value === String(v));
-  if (key === 'volume') return v >= 0 && v <= 100;
-  if (key === 'bots') return Number.isInteger(v) && v >= 0 && v <= BOT_STEPS[BOT_STEPS.length - 1];
-  if (key === 'skin') return isSkin(v);
-  if (key === 'map') return maps.data.has(v) || /^(custom|community):/.test(v);
-  if (key === 'goals') return Object.entries(v).every(([m, n]) => MODES[m]?.goal?.options.includes(n));
-  return true;
+function choiceSpecs() {
+  const list = pairs => ({ type: 'select', options: pairs.map(([value, label]) => ({ value, label })) });
+  const num = ([min, max], step) => ({ type: 'number', min, max, step });
+  const specs = {};
+  for (const [key, id] of Object.entries(SELECTS)) {
+    specs[key] = list([...$(id).options].map(o => [typeof DEFAULTS[key] === 'number' ? +o.value : o.value, o.textContent.trim()]));
+  }
+  for (const key of ['showFps', 'fullscreen', 'muted', 'showPing']) specs[key] = { type: 'bool' };
+  specs.volume = num([0, 100], 1);
+  specs.bots = list(BOT_STEPS.map(n => [n, String(n)]));
+  specs.skin = list(SKINS.map(k => [k.id, k.name]));
+  specs.map = list(maps.index.map(m => [m.file, m.name]));
+  specs.keys = { type: 'keys' };
+  const fields = (defs, rows) => rows.map(([key, label, spec]) => ({ key, label, spec, def: defs[key] }));
+  specs.crosshair = {
+    type: 'fields', fields: fields(CROSSHAIR_DEFAULTS, [
+      ['style', 'Style', list(CROSSHAIR_STYLES)], ['color', 'Colour', list(CROSSHAIR_COLORS)], ['custom', 'Custom colour', { type: 'color' }],
+      ['size', 'Size', num(CROSSHAIR_LIMITS.size, 1)], ['thickness', 'Thickness', num(CROSSHAIR_LIMITS.thickness, 0.5)],
+      ['gap', 'Gap', num(CROSSHAIR_LIMITS.gap, 1)], ['opacity', 'Opacity (%)', num(CROSSHAIR_LIMITS.opacity, 5)], ['outline', 'Edge', { type: 'bool' }],
+    ]),
+  };
+  specs.camera = {
+    type: 'fields', fields: fields(CAMERA_DEFAULTS, [
+      ['look', 'Look toward the mouse (%)', num(CAMERA_LIMITS.look, 5)], ['glide', 'Look smoothing (ms)', num(CAMERA_LIMITS.glide, 10)],
+      ['follow', 'Follow smoothing (ms)', num(CAMERA_LIMITS.follow, 10)],
+    ]),
+  };
+  // (Each objective mode's goal: those not at the mode's own.)
+  specs.goals = {
+    type: 'fields', sparse: true,
+    fields: MODE_IDS.filter(m => MODES[m].goal).map(m => ({
+      key: m, label: `${MODES[m].name}: ${MODES[m].goal.label.toLowerCase()}`, def: MODES[m].goal.value,
+      spec: list(MODES[m].goal.options.map(v => [v, v === 0 ? 'Auto' : String(v)])),
+    })),
+  };
+  return specs;
 }
+
+/** The game's own, for each choice. */
+const ownChoices = () => Object.fromEntries(CHOICE_KEYS.map(k => [k, JSON.parse(JSON.stringify(DEFAULTS[k]))]));
+
+/** The defaults, each choice: the game's own, but for those changed in the developer menu. */
+function devDefaults(specs = choiceSpecs()) {
+  const d = loadDevDefaults(), out = ownChoices();
+  for (const k of CHOICE_KEYS) {
+    const v = Object.hasOwn(d, k) ? tidy(specs[k], d[k]) : undefined;
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
+/** Change some of the defaults ({ key: value }, each as tidied up). */
+function keepDevDefaults(values) {
+  const d = loadDevDefaults();
+  for (const [k, v] of Object.entries(values)) {
+    if (equal(v, DEFAULTS[k])) delete d[k];
+    else d[k] = v;
+  }
+  saveDevDefaults(d);
+}
+
+/**
+ * Your choices as they are now (the current game): Settings, and the game setup: the match's,
+ * while you're in one you started, the main menu's otherwise. Each tidied up as the defaults are.
+ */
+function currentChoices(specs = choiceSpecs()) {
+  const saved = loadSettings();
+  const setup = state.game && state.mode !== 'client' && state.settings ? state.settings : readMenu();
+  const out = {};
+  for (const g of DEFAULT_GROUPS) {
+    for (const [k] of g.fields) {
+      const raw = g.id === 'settings' ? (k in prefs ? prefs[k] : saved[k]) : (k in setup ? setup[k] : saved[k]);
+      const v = tidy(specs[k], raw);
+      out[k] = v === undefined ? raw : v;
+    }
+  }
+  return out;
+}
+
+/** Use these choices as yours ({ key: value }: every one, for the defaults tried out). */
+function useChoices(values) {
+  const was = { graphics: prefs.graphics, quality: prefs.quality, skin: prefs.skin };
+  const saved = loadSettings();
+  saveSettings({ ...saved, ...values, graphicsPicked: saved.graphicsPicked || values.graphics !== DEFAULTS.graphics });
+  const now = loadSettings();
+  usePrefs(now);
+  savePrefs(); // (as tidied up)
+  if (prefs.graphics !== was.graphics) setGraphics(prefs.graphics);
+  if (prefs.quality !== was.quality) { renderer.setQuality?.(prefs.quality); pacer.restart(performance.now(), true); }
+  if (prefs.pointer !== 'locked') input.unlock();
+  if (prefs.skin !== was.skin) setSkin(prefs.skin);
+  fillSetup(now);
+  modeFields();
+  buildMapCards(now.map, { follow: true });
+  fillSettings();
+}
+
 const gameChoices = {
-  rows: () => defaultRows(loadSettings(), DEFAULTS),
-  changed: () => changedDefaults(loadSettings(), DEFAULTS),
-  read: ({ all = false } = {}) => gameDefaults(loadSettings(), DEFAULTS, { all }),
-  /** Choices pasted in (or `reset`: the game's own): saved and used straight away. */
-  apply(obj, { reset = false } = {}) {
-    const { values, skipped } = reset ? { values: Object.fromEntries(DEFAULT_GROUPS.flatMap(g => g.fields.map(([k]) => [k, DEFAULTS[k]]))), skipped: [] }
-      : readDefaults(obj, DEFAULTS, choiceOk);
-    const n = Object.keys(values).length;
-    if (!n) return { applied: 0, skipped };
-    const was = { graphics: prefs.graphics, quality: prefs.quality, skin: prefs.skin };
-    saveSettings({ ...loadSettings(), ...values, ...('graphics' in values ? { graphicsPicked: !reset } : {}) });
-    const now = loadSettings();
-    usePrefs(now);
-    savePrefs(); // (as tidied up)
-    if (prefs.graphics !== was.graphics) setGraphics(prefs.graphics);
-    if (prefs.quality !== was.quality) { renderer.setQuality?.(prefs.quality); pacer.restart(performance.now(), true); }
-    if (prefs.pointer !== 'locked') input.unlock();
-    if (prefs.skin !== was.skin) setSkin(prefs.skin);
-    fillSetup(now);
-    modeFields();
-    buildMapCards(now.map, { follow: true });
-    fillSettings();
-    return { applied: n, skipped };
+  rows() { const specs = choiceSpecs(); return defaultRows(devDefaults(specs), DEFAULTS, currentChoices(specs), specs); },
+  changed: () => changedDefaults(devDefaults(), DEFAULTS),
+  read: ({ all = false } = {}) => gameDefaults(devDefaults(), DEFAULTS, { all }),
+  /** One default changed: kept as tidied up (returned), or undefined if it isn't one it can be. */
+  set(key, v) {
+    const kept = tidy(choiceSpecs()[key], v);
+    if (kept !== undefined) keepDevDefaults({ [key]: kept });
+    return kept;
   },
+  /** One default (or every one) back to the game's own. */
+  reset(key) {
+    if (key) keepDevDefaults({ [key]: DEFAULTS[key] });
+    else saveDevDefaults({});
+  },
+  /**
+   * One default (or every one) pulled from the current game: made yours. Returns how many
+   * changed, and those skipped (yours can't be one: one of your own maps, say).
+   */
+  pull(key) {
+    const specs = choiceSpecs(), mine = currentChoices(specs), was = devDefaults(specs), values = {}, skipped = [];
+    for (const k of key ? [key] : CHOICE_KEYS) {
+      const v = tidy(specs[k], mine[k]);
+      if (v === undefined) skipped.push(k);
+      else values[k] = v;
+    }
+    keepDevDefaults(values);
+    return { changed: Object.keys(values).filter(k => !equal(values[k], was[k])).length, skipped };
+  },
+  /** Choices pasted in: made the defaults (each checked). */
+  apply(obj) {
+    const { values, skipped } = readDefaults(obj, DEFAULTS, choiceSpecs());
+    keepDevDefaults(values);
+    return { applied: Object.keys(values).length, skipped };
+  },
+  /** The defaults tried out: every one made yours, as a new player starts. */
+  use() { useChoices(devDefaults()); },
 };
 
 // The developer menu (Settings: Developer): the game's numbers (tuning.js), and the choices above.

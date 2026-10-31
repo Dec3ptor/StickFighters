@@ -404,9 +404,23 @@ input.dev-find { width: min(260px, 100%); }
 .dev-row input[type="number"] { width: 100%; font: inherit; padding: 5px 7px; border: 1.5px solid var(--line); background: var(--paper); color: var(--ink); font-variant-numeric: tabular-nums; }
 button.dev-reset { padding: 3px 0; font-size: 15px; }
 /* (Players' choices: shown as chosen, not typed in here.) */
-.dev-row.dev-choice { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+/* The defaults for players' choices: label, control, Pull, reset; the crosshair, keys and the like with a control for each part, below. */
+.dev-row.dev-choice { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) auto 34px; }
+.dev-row.dev-choice.dev-wide { grid-template-columns: minmax(0, 1fr) auto 34px; }
+.dev-wide .dev-edit { grid-column: 1 / -1; grid-row: 2; }
+.dev-edit select, .dev-edit input[type="text"] { padding: 5px 7px; font-size: 14px; }
+.dev-edit input[type="checkbox"] { width: 18px; height: 18px; margin: 0; accent-color: var(--ink); }
+.dev-edit input[type="color"] { display: block; width: 56px; height: 30px; padding: 0 2px; border: 1.5px solid var(--line); background: var(--paper); }
+.dev-subs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 16px; padding: 2px 0 4px; }
+.dev-subs.dev-keys { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.dev-sub { display: flex; flex-direction: column; gap: 3px; font-size: 13px; font-weight: bold; }
+.dev-sub small { font-weight: normal; color: var(--muted); }
+.dev-sub .dev-ctl { font-weight: normal; }
+.dev-sub.changed > span { color: #b06a00; }
+button.dev-pull { padding: 3px 10px; font-size: 13px; }
+button.dev-pull:disabled { opacity: 0.25; cursor: default; }
+.dev-choice-bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
 .dev-value { font-size: 14px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-.dev-row-end { display: flex; justify-content: flex-end; padding-top: 10px; }
 button.dev-reset:disabled { opacity: 0.25; cursor: default; }
 .dev-io { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .dev-io-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
@@ -422,7 +436,8 @@ button.dev-reset:disabled { opacity: 0.25; cursor: default; }
   .set-row, .xhair .set-row { grid-template-columns: 1fr; }
   .dev-io { grid-template-columns: 1fr; }
   .dev-row { grid-template-columns: minmax(0, 1fr) 100px 34px; }
-  .dev-row.dev-choice { grid-template-columns: 1fr; }
+  .dev-row.dev-choice { grid-template-columns: minmax(0, 1fr) auto 34px; }
+  .dev-choice .dev-edit { grid-column: 1 / -1; grid-row: 2; }
   .xhair { grid-template-columns: 1fr; }
   .set-foot { padding: 10px 16px; }
 }
@@ -644,6 +659,6 @@ html[data-game="remastered"] .skin-card canvas { border: none; border-radius: 8p
 html[data-game="remastered"] .screen button.skin-card[aria-checked="true"] { border-color: #6a8cff; box-shadow: 0 0 0 1px #6a8cff, 0 0 22px rgba(106, 140, 255, 0.35); background: rgba(74, 139, 255, 0.14); }
 html[data-game="remastered"] .screen button.dev-section[aria-selected="true"] { background: linear-gradient(90deg, #3d7ff0, #7a5cff); color: #fff; border-color: transparent; }
 html[data-game="remastered"] .dev-row { border-bottom-color: rgba(255, 255, 255, 0.07); }
-html[data-game="remastered"] .dev-row.changed b { color: #ffb648; }
+html[data-game="remastered"] .dev-row.changed b, html[data-game="remastered"] .dev-sub.changed > span { color: #ffb648; }
 html[data-game="remastered"] .dev-row input[type="number"], html[data-game="remastered"] .dev-io textarea, html[data-game="remastered"] input.dev-find { border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.06); color: var(--ink); }
 @media (max-width: 760px) { html[data-game="remastered"] .set-tabs { border-right: none; border-bottom: 1px solid var(--line); } }

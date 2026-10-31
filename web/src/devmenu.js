@@ -1,17 +1,54 @@
 // Settings, Developer: the game's numbers (tuning.js), section by section, changed live; a
-// search across all of them; the choices players make (Settings, the game setup: main.js and
-// gamedefaults.js), as chosen here; and boxes to copy all of it out (to paste to whoever makes
-// them the game's defaults) and to paste it back in.
+// search across all of them; the defaults for the choices players make (Settings, the game
+// setup: main.js and gamedefaults.js), changed here or pulled from the current game; and boxes
+// to copy all of it out (to paste to whoever makes them the game's defaults) and to paste it back in.
 
 import {
   tuningSections, tuningField, setTuning, resetTuning, resetAllTuning, changedCount, exportTuning, importTuning, usingHostTuning,
 } from './tuning.js';
+import { parts, describe, differences, equal } from './gamedefaults.js';
+import { canBind, keyFromText, sharedKeys, MAX_KEYS } from './keys.js';
 
 const fmt = v => String(Math.round(v * 1e4) / 1e4);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // (The section of players' choices, after the numbers' sections.)
 const CHOICES = { id: 'choices', name: 'Settings & setup' };
+
+/** A control for a choice (or for a part of one: sub), as its editor (spec) has it. */
+function control(spec, v, label, sub = '') {
+  const a = `class="dev-ctl"${sub ? ` data-sub="${esc(sub)}"` : ''} aria-label="${esc(label)}"`;
+  switch (spec?.type) {
+    case 'select': {
+      const known = spec.options.some(o => equal(o.value, v));
+      return `<select ${a}>${known ? '' : `<option value="" selected disabled>${esc(describe('', v))}</option>`}${spec.options.map(o =>
+        `<option value="${esc(String(o.value))}"${equal(o.value, v) ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`;
+    }
+    case 'bool': return `<input type="checkbox" ${a}${v ? ' checked' : ''}>`;
+    case 'number': return `<input type="number" ${a} min="${spec.min}" max="${spec.max}" step="${spec.step || 'any'}" value="${esc(String(v))}">`;
+    case 'color': return `<input type="color" ${a} value="${esc(v)}">`;
+    case 'keyList': return `<input type="text" ${a} value="${esc(v.join(' '))}" spellcheck="false" autocomplete="off">`;
+    default: return `<span class="dev-value">${esc(describe('', v))}</span>`;
+  }
+}
+
+/** What's in a control, as its editor has it (undefined: nothing it can be). Keys: as typed, where they aren't keys. */
+function readControl(el, spec) {
+  switch (spec.type) {
+    case 'select': return spec.options.find(o => String(o.value) === el.value)?.value;
+    case 'bool': return el.checked;
+    case 'number': return el.value.trim() === '' ? undefined : Number(el.value);
+    case 'keyList': return el.value.split(/[\s,/]+/).filter(Boolean).map(t => keyFromText(t) ?? t);
+    default: return el.value;
+  }
+}
+
+/** Show a value in its control (left as it is if it shows it already: the caret stays put). */
+function fillControl(el, spec, v) {
+  if (spec.type === 'bool') { el.checked = !!v; return; }
+  const text = spec.type === 'keyList' ? v.join(' ') : String(v);
+  if (el.value !== text) el.value = text;
+}
 
 export class DevMenu {
   /**
@@ -27,6 +64,7 @@ export class DevMenu {
     this.find = '';
     this.sections = null;
     this.built = false;
+    this.rowsByKey = new Map(); // (the choices' rows, as last shown)
   }
 
   /** Draw it (again, with the numbers as they are now). */
@@ -44,7 +82,7 @@ export class DevMenu {
   build() {
     this.built = true;
     this.el.innerHTML = `
-      <p class="muted-note">Every number the game plays by, changed as you type, and kept in this browser. Most changes show straight away; health, the bots' reactions and their route maps change from the next match. Numbers are at full speed: the game plays at 75%, so in play speeds are &times;0.75 and times &divide;0.75. In games you host, everyone plays by your numbers (from the next match). <b>Settings &amp; setup</b> lists everything players choose, in Settings and the game setup, as you've chosen it: what you copy out carries those too, so it can all become the game's defaults.</p>
+      <p class="muted-note">Every number the game plays by, changed as you type, and kept in this browser. Most changes show straight away; health, the bots' reactions and their route maps change from the next match. Numbers are at full speed: the game plays at 75%, so in play speeds are &times;0.75 and times &divide;0.75. In games you host, everyone plays by your numbers (from the next match). <b>Settings &amp; setup</b> has the defaults for everything players choose (in Settings and the game setup), to change, or to pull from the current game: what you copy out carries those too, so it can all become the game's defaults.</p>
       <p class="dev-host note hidden">You're in someone else's game, so everyone's using the host's numbers. Yours are kept for your own games.</p>
       <div class="dev-bar">
         <div class="dev-sections" role="tablist" aria-label="Developer sections"></div>
@@ -87,20 +125,26 @@ export class DevMenu {
       this.say('Every number is back to the game\'s own.');
       this.changed();
     });
-    // (A number typed in: used when it's done, Enter or leaving the box.)
+    // (A number typed in: used when it's done, Enter or leaving the box. A default: the same.)
     this.el.addEventListener('change', e => {
+      const row = e.target.closest?.('.dev-row');
+      if (row?.dataset.choice) return this.editChoice(row, e.target);
       const input = e.target.closest?.('.dev-row input');
       if (!input) return;
-      const row = input.closest('.dev-row'), path = row.dataset.key.split('.');
+      const path = row.dataset.key.split('.');
       const kept = setTuning(path, Number(input.value));
       if (kept == null) { this.say(`${row.querySelector('b').textContent}: that isn't a number it can be.`); input.value = fmt(tuningField(path).value); return; }
       input.value = fmt(kept);
       this.changed(row, path);
     });
     this.el.addEventListener('click', e => {
-      const b = e.target.closest?.('.dev-reset');
+      const all = e.target.closest?.('[data-choices]');
+      if (all) return this.allChoices(all.dataset.choices);
+      const b = e.target.closest?.('.dev-reset, .dev-pull');
       if (!b) return;
-      const row = b.closest('.dev-row'), path = row.dataset.key.split('.');
+      const row = b.closest('.dev-row');
+      if (row.dataset.choice) return this.oneChoice(row.dataset.choice, b.classList.contains('dev-pull') ? 'pull' : 'reset');
+      const path = row.dataset.key.split('.');
       resetTuning(path);
       row.querySelector('input').value = fmt(tuningField(path).value);
       this.changed(row, path);
@@ -181,24 +225,130 @@ export class DevMenu {
       }).join('')}`).join('') : '<p class="muted-note">Nothing matches.</p>';
   }
 
-  /** Players' choices: each as chosen here, and the game's own (changed where they differ). Changed where they're chosen. */
+  /**
+   * The defaults for players' choices: each with its control, how it compares with the game's
+   * own and yours (marked where it isn't the game's own), and buttons to pull yours in or put
+   * the game's own back.
+   */
   showChoices(box) {
     this.el.querySelector('.dev-weapon').classList.add('hidden');
-    box.innerHTML = `<p class="muted-note">Change these where they are: Settings' other sections, and the game setup on the main menu. Copied out with the numbers; pasted in, they're used here.</p>
-      ${this.choices.rows().map(g => `<h4 class="dev-group">${esc(g.name)}</h4>
-        ${g.rows.map(r => `<div class="dev-row dev-choice${r.changed ? ' changed' : ''}" data-choice="${esc(r.key)}">
-          <div class="dev-label"><b>${esc(r.label)}</b><small>${esc(r.page)} · ${esc(r.key)} · default ${esc(r.def)}</small></div>
-          <span class="dev-value">${esc(r.value)}</span>
-        </div>`).join('')}`).join('')}
-      <div class="dev-row-end"><button type="button" class="small" data-choices-reset>Put them all back</button></div>`;
-    box.querySelector('[data-choices-reset]').addEventListener('click', () => {
-      const n = this.choices.changed();
-      if (!n) return this.say('Nothing to put back: every choice is the game\'s own.');
-      if (!this.el.ownerDocument.defaultView.confirm(`Put all ${n} changed choice${n === 1 ? '' : 's'} (Settings and the game setup) back to the game's own?`)) return;
-      this.choices.apply(null, { reset: true });
-      this.say('Every choice is back to the game\'s own.');
-      this.changed();
-    });
+    const groups = this.choices.rows();
+    this.rowsByKey = new Map(groups.flatMap(g => g.rows.map(r => [r.key, r])));
+    box.innerHTML = `<p class="muted-note">The defaults for everything players choose: what a new player starts with. They're kept here apart from your own choices: change them here, or pull them from the current game (yours as they are now: Settings, and the game setup, or the match you're in). Copied out with the numbers; pasted in, they come here. <b>Use in my game</b> sets yours to them, to try them out.</p>
+      <div class="dev-choice-bar">
+        <button type="button" class="small" data-choices="pull">Pull from current game</button>
+        <button type="button" class="small" data-choices="use">Use in my game</button>
+        <button type="button" class="small" data-choices="reset">Put them all back</button>
+      </div>
+      ${groups.map(g => `<h4 class="dev-group">${esc(g.name)}</h4>${g.rows.map(r => this.choiceRow(r)).join('')}`).join('')}`;
+  }
+
+  /** A default's row: its label and note, its control (or a part's control each: the crosshair, the keys...), Pull and reset. */
+  choiceRow(r) {
+    const ps = parts(r.spec);
+    const edit = ps
+      ? `<div class="dev-subs${r.spec.type === 'keys' ? ' dev-keys' : ''}">${ps.map(p => {
+        const v = r.value?.[p.key] ?? p.def;
+        return `<label class="dev-sub${equal(v, p.def) ? '' : ' changed'}" data-part="${esc(p.key)}"><span>${esc(p.label)} <small>${esc(describe(p.key, p.def, p.spec))}</small></span>${control(p.spec, v, `${r.label}: ${p.label}`, p.key)}</label>`;
+      }).join('')}</div>`
+      : control(r.spec, r.value, r.label);
+    return `<div class="dev-row dev-choice${ps ? ' dev-wide' : ''}${r.changed ? ' changed' : ''}" data-choice="${esc(r.key)}">
+      <div class="dev-label"><b>${esc(r.label)}</b><small>${esc(this.choiceNote(r))}</small></div>
+      <div class="dev-edit">${edit}</div>
+      <button type="button" class="dev-pull small" title="Pull from current game: the default becomes what you have now"${r.same ? ' disabled' : ''}>Pull</button>
+      <button type="button" class="dev-reset small" title="Back to the game's own" aria-label="Back to the game's own"${r.changed ? '' : ' disabled'}>&#8634;</button>
+    </div>`;
+  }
+
+  /** Where it's from, and the game's own and yours (those parts that differ, for the crosshair, the keys...). */
+  choiceNote(r) {
+    const ps = parts(r.spec);
+    const words = list => list.map(p => `${r.spec.type === 'keys' ? p.key : p.label.toLowerCase()} ${describe(p.key, p.value, p.spec)}`).join(', ');
+    const own = !ps ? describe(r.key, r.def, r.spec) : r.changed ? words(differences(r.spec, r.value, r.def)) : 'as here';
+    const yours = r.same ? 'the same' : ps ? words(differences(r.spec, r.value, r.mine)) : describe(r.key, r.mine, r.spec);
+    return `${r.page} · ${r.key} · game's own: ${own} · yours: ${yours}`;
+  }
+
+  /** A default changed in its control (or in one of its parts'). */
+  editChoice(row, el) {
+    const r = this.rowsByKey.get(row.dataset.choice);
+    if (!r || !el.classList.contains('dev-ctl')) return;
+    const p = el.dataset.sub ? parts(r.spec).find(x => x.key === el.dataset.sub) : null;
+    const spec = p ? p.spec : r.spec, v = readControl(el, spec), name = p ? `${r.label}: ${p.label}` : r.label;
+    const bad = spec.type === 'keyList' ? v.filter(k => !canBind(k)) : [];
+    const kept = bad.length || v === undefined ? undefined : this.choices.set(r.key, p ? { ...(r.value || {}), [p.key]: v } : v);
+    if (bad.length) this.say(`${name}: ${bad.map(k => `“${k}”`).join(', ')} ${bad.length === 1 ? 'isn\'t a key' : 'aren\'t keys'}. Name keys as W, Space, Up, Shift, Mouse0 (the left button), WheelUp…, with spaces between.`);
+    else if (kept === undefined) this.say(`${name}: that isn't one it can be.`);
+    else if (spec.type === 'keyList') {
+      // (Kept as typed, but said: a key that's another action's too, as Settings' Controls never has it.)
+      const all = Object.fromEntries(parts(r.spec).map(x => [x.key, kept[x.key] ?? x.def]));
+      const short = id => parts(r.spec).find(x => x.key === id).label.replace(/ \(.*$/, '');
+      const clash = sharedKeys(all, p.key).map(([k, others]) => `${k} is ${others.map(o => `${short(o)}'s`).join(' and ')} too`);
+      this.say([v.length > MAX_KEYS ? `${MAX_KEYS} keys at most: the first ${MAX_KEYS} kept` : '', ...clash].filter(Boolean).map(t => `${name}: ${t}.`).join(' '));
+    } else this.say('');
+    this.choicesChanged();
+  }
+
+  /** One default pulled from the current game, or put back to the game's own. */
+  oneChoice(key, what) {
+    const r = this.rowsByKey.get(key);
+    if (what === 'reset') {
+      this.choices.reset(key);
+      this.say('');
+    } else {
+      const { skipped } = this.choices.pull(key);
+      this.say(skipped.length ? `${r.label}: yours (${describe(key, r.mine, r.spec)}) can't be a default.` : `${r.label}: pulled from the current game (the default is what you have now).`);
+    }
+    this.choicesChanged();
+  }
+
+  /** Every default pulled from the current game, tried out (made yours), or put back to the game's own. */
+  allChoices(what) {
+    const win = this.el.ownerDocument.defaultView, n = this.choices.changed();
+    if (what === 'pull') {
+      if (n && !win.confirm('Pull everything from the current game: every default becomes what you have now (Settings, and the game setup)? The defaults changed here are replaced.')) return;
+      const { changed, skipped } = this.choices.pull();
+      const names = skipped.map(k => this.rowsByKey.get(k)?.label || k), one = names.length === 1;
+      this.say(`Pulled from the current game: ${changed} default${changed === 1 ? '' : 's'} changed.${names.length ? ` (${names.join(', ')}: yours can't be ${one ? 'a default' : 'defaults'}, so ${one ? 'it stays' : 'they stay'} as before.)` : ''}`);
+    } else if (what === 'use') {
+      if (!win.confirm('Set your own Settings and game setup to these defaults (every one, as a new player starts)? Your own choices are replaced: to keep them, pull them in first.')) return;
+      this.choices.use();
+      this.say('Your Settings and game setup are these defaults now (the game setup from the next match).');
+    } else {
+      if (!n) return this.say('Nothing to put back: every default is the game\'s own.');
+      if (!win.confirm(`Put all ${n} changed default${n === 1 ? '' : 's'} (Settings and the game setup) back to the game's own? Your own choices stay as they are.`)) return;
+      this.choices.reset();
+      this.say('Every default is back to the game\'s own.');
+    }
+    this.choicesChanged();
+  }
+
+  /** The defaults changed: show them (in place, so whatever's being typed in keeps its place), and what's copied out. */
+  choicesChanged() {
+    for (const g of this.choices.rows()) {
+      for (const r of g.rows) {
+        this.rowsByKey.set(r.key, r);
+        const row = this.el.querySelector(`.dev-choice[data-choice="${r.key}"]`);
+        if (!row) continue;
+        row.classList.toggle('changed', r.changed);
+        row.querySelector('.dev-label small').textContent = this.choiceNote(r);
+        row.querySelector('.dev-pull').disabled = r.same;
+        row.querySelector('.dev-reset').disabled = !r.changed;
+        const ps = parts(r.spec);
+        if (!ps) {
+          const c = row.querySelector('.dev-ctl');
+          if (c && r.spec) fillControl(c, r.spec, r.value);
+          continue;
+        }
+        for (const p of ps) {
+          const part = row.querySelector(`.dev-sub[data-part="${p.key}"]`), v = r.value?.[p.key] ?? p.def;
+          part.classList.toggle('changed', !equal(v, p.def));
+          fillControl(part.querySelector('.dev-ctl'), p.spec, v);
+        }
+      }
+    }
+    this.showSections();
+    this.showExport();
   }
 
   /** How many numbers and choices are changed. */

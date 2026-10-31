@@ -260,31 +260,72 @@ await page.fill('#devMenu .dev-import', '{"RULES": {"respawnTicks": 60}, "NOPE":
 await page.click('#devMenu [data-import]');
 expect(/Imported 1 number and 0 choices \(1 skipped/.test(await page.textContent('#devMenu .dev-msg')), `imported (${await page.textContent('#devMenu .dev-msg')})`);
 await page.screenshot({ path: `${outDir}/settings-developer.png` });
-// Settings & setup: the choices players make, as chosen here (marked where they're not the
-// game's own), copied out with the numbers, pasted in (each checked: one that isn't a choice
-// there is is skipped), and all put back.
+// Settings & setup: the defaults for the choices players make, kept apart from your own: each
+// with yours beside it (Sprint, toggled in Settings: yours isn't the game's own), pulled from the
+// current game, changed here (each checked: a key that isn't one is turned away), copied out with
+// the numbers, pasted in, tried out (made yours), and all put back.
 await tab('controls');
 await page.selectOption('#sprintMode', 'toggle');
 await tab('dev');
 await page.click('#devMenu .dev-section[data-section="choices"]');
-const sprintRow = '#devMenu .dev-choice[data-choice="sprint"]';
-expect(await page.getAttribute(sprintRow, 'class').then(c => c.includes('changed')) && (await page.textContent(`${sprintRow} .dev-value`)) === 'toggle', 'a changed choice is marked');
-const withChoices = JSON.parse(await page.inputValue('#devMenu .dev-export'));
-expect(withChoices.settings?.sprint === 'toggle' && withChoices.PHYS?.runSpeed === 5, `copied out with the numbers (${JSON.stringify(withChoices.settings)})`);
+const choice = key => `#devMenu .dev-choice[data-choice="${key}"]`;
+const sprintNote = await page.textContent(`${choice('sprint')} small`);
+expect(!(await page.getAttribute(choice('sprint'), 'class')).includes('changed') && /game's own: Hold to sprint · yours: Press to start or stop$/.test(sprintNote)
+  && !(await page.isDisabled(`${choice('sprint')} .dev-pull`)), `the default, and yours beside it (${sprintNote})`);
+await page.click(`${choice('sprint')} .dev-pull`);
+expect((await page.getAttribute(choice('sprint'), 'class')).includes('changed') && await page.inputValue(`${choice('sprint')} select`) === 'toggle'
+  && await page.isDisabled(`${choice('sprint')} .dev-pull`), 'pulled from the current game');
+// Changed here (yours stay as they are).
+await page.selectOption(`${choice('difficulty')} select`, 'hard');
+await page.fill(`${choice('camera')} [data-sub="follow"]`, '203');
+await page.press(`${choice('camera')} [data-sub="follow"]`, 'Tab');
+await page.fill(`${choice('keys')} [data-sub="jump"]`, 'space w');
+await page.press(`${choice('keys')} [data-sub="jump"]`, 'Tab');
+await page.fill(`${choice('keys')} [data-sub="fire"]`, 'Spcae');
+await page.press(`${choice('keys')} [data-sub="fire"]`, 'Tab');
+const typo = await page.textContent('#devMenu .dev-msg');
+const edited = JSON.parse(await page.inputValue('#devMenu .dev-export'));
+expect(edited.settings?.sprint === 'toggle' && edited.setup?.difficulty === 'hard' && edited.settings?.camera?.follow === 200 && edited.PHYS?.runSpeed === 5,
+  `changed here (to the step), copied out with the numbers (${JSON.stringify({ settings: edited.settings, setup: edited.setup })})`);
+expect(JSON.stringify(edited.settings?.keys) === '{"jump":["Space","KeyW"]}' && await page.inputValue(`${choice('keys')} [data-sub="jump"]`) === 'Space KeyW'
+  && await page.inputValue(`${choice('keys')} [data-sub="fire"]`) === 'Mouse0' && /“Spcae” isn't a key/.test(typo), `keys typed in by name; one that isn't a key turned away (${typo})`);
+// (A key another action has too: said, as Settings' Controls never has it; its own keys again: as it comes.)
+await page.fill(`${choice('keys')} [data-sub="reload"]`, 'e');
+await page.press(`${choice('keys')} [data-sub="reload"]`, 'Tab');
+const clash = await page.textContent('#devMenu .dev-msg');
+expect(/Keys: Reload: KeyE is Next weapon's and Plant or defuse the bomb's too\./.test(clash), `a key another action has too, said (${clash})`);
+await page.fill(`${choice('keys')} [data-sub="reload"]`, 'KeyR');
+await page.press(`${choice('keys')} [data-sub="reload"]`, 'Tab');
+expect(!JSON.parse(await page.inputValue('#devMenu .dev-export')).settings?.keys?.reload, 'and its own again: not a change');
+const mineNow = await page.evaluate(() => ({ difficulty: window.stickSoldiers.readMenu().difficulty, follow: window.stickSoldiers.prefs.camera.follow, keys: window.stickSoldiers.prefs.keys }));
+expect(mineNow.difficulty === 'normal' && mineNow.follow === 330 && !mineNow.keys.jump, `yours as they were (${JSON.stringify(mineNow)})`);
 const everything = await page.evaluate(() => window.stickSoldiers.devExport?.(true));
-expect(!everything || (everything.setup?.mode && everything.settings?.keys?.jump), 'Copy everything has every choice (every action\'s keys too)');
-const graphicsBefore = await page.evaluate(() => window.stickSoldiers.prefs.graphics);
-await page.fill('#devMenu .dev-import', JSON.stringify({ settings: { camera: { follow: 200, look: 80, glide: 50 }, graphics: 'potato' }, setup: { bots: 8, difficulty: 'hard', destruction: 'off' } }));
+expect(!everything || (everything.setup?.mode && everything.settings?.keys?.jump?.join() === 'Space,KeyW' && everything.settings?.keys?.fire), 'Copy everything has every default (every action\'s keys too)');
+// Pasted in: made the defaults (each checked: one that isn't a choice there is is skipped).
+await page.fill('#devMenu .dev-import', JSON.stringify({ settings: { camera: { follow: 200, look: 80, glide: 50 }, graphics: 'potato' }, setup: { bots: 8, destruction: 'off' } }));
 await page.click('#devMenu [data-import]');
-const pasted = await page.evaluate(() => ({ camera: window.stickSoldiers.prefs.camera, menu: window.stickSoldiers.readMenu(), graphics: window.stickSoldiers.prefs.graphics, msg: document.querySelector('#devMenu .dev-msg').textContent }));
-expect(pasted.camera.follow === 200 && pasted.camera.glide === 50 && pasted.menu.bots === 8 && pasted.menu.difficulty === 'hard' && pasted.menu.destruction === 'off',
-  `choices pasted in are used (${JSON.stringify({ ...pasted, menu: undefined })})`);
-expect(pasted.graphics === graphicsBefore && /0 numbers and 4 choices \(1 skipped: settings\.graphics/.test(pasted.msg), `one that isn't a choice there is is skipped (${pasted.msg})`);
+const pasted = JSON.parse(await page.inputValue('#devMenu .dev-export'));
+const pastedMsg = await page.textContent('#devMenu .dev-msg');
+expect(pasted.settings?.camera?.look === 80 && pasted.setup?.bots === 8 && pasted.setup?.destruction === 'off' && pasted.setup?.difficulty === 'hard'
+  && await page.inputValue(`${choice('bots')} select`) === '8', `pasted in: made the defaults (${JSON.stringify(pasted.setup)})`);
+expect(/0 numbers and 3 choices \(1 skipped: settings\.graphics/.test(pastedMsg), `one that isn't a choice there is is skipped (${pastedMsg})`);
+// Tried out: every one made yours.
 page.once('dialog', d => d.accept());
-await page.click('#devMenu [data-choices-reset]');
-const back = await page.evaluate(() => ({ camera: window.stickSoldiers.prefs.camera, menu: window.stickSoldiers.readMenu(), sprint: window.stickSoldiers.prefs.sprint, exported: document.querySelector('#devMenu .dev-export').value }));
-expect(back.camera.follow === 330 && back.menu.bots === 5 && back.menu.destruction === 'on' && back.sprint === 'hold' && !/"settings"|"setup"/.test(back.exported),
-  `Put them all back (${JSON.stringify({ camera: back.camera, bots: back.menu.bots, sprint: back.sprint })})`);
+await page.click('#devMenu [data-choices="use"]');
+const tried = await page.evaluate(() => ({ camera: window.stickSoldiers.prefs.camera, menu: window.stickSoldiers.readMenu(), sprint: window.stickSoldiers.prefs.sprint, keys: window.stickSoldiers.prefs.keys }));
+expect(tried.camera.look === 80 && tried.menu.bots === 8 && tried.menu.difficulty === 'hard' && tried.menu.destruction === 'off' && tried.sprint === 'toggle' && tried.keys.jump?.join() === 'Space,KeyW',
+  `tried out: made yours (${JSON.stringify({ camera: tried.camera, bots: tried.menu.bots, keys: tried.keys })})`);
+await page.screenshot({ path: `${outDir}/settings-developer-defaults.png` });
+// All put back: the defaults are the game's own again (yours stay), then made yours too.
+page.once('dialog', d => d.accept());
+await page.click('#devMenu [data-choices="reset"]');
+const back = await page.evaluate(() => ({ exported: document.querySelector('#devMenu .dev-export').value, kept: localStorage.getItem('stick-soldiers-dev-defaults'), bots: window.stickSoldiers.readMenu().bots }));
+expect(!/"settings"|"setup"/.test(back.exported) && back.kept === null && back.bots === 8, `Put them all back (${JSON.stringify(back)})`);
+page.once('dialog', d => d.accept());
+await page.click('#devMenu [data-choices="use"]');
+const own = await page.evaluate(() => ({ camera: window.stickSoldiers.prefs.camera, menu: window.stickSoldiers.readMenu(), sprint: window.stickSoldiers.prefs.sprint, keys: window.stickSoldiers.prefs.keys }));
+expect(own.camera.follow === 330 && own.camera.look === 100 && own.menu.bots === 5 && own.menu.destruction === 'on' && own.sprint === 'hold' && !Object.keys(own.keys).length,
+  `and the game's own made yours (${JSON.stringify({ camera: own.camera, bots: own.menu.bots })})`);
 await page.reload();
 await page.waitForFunction(() => window.stickSoldiers);
 await page.click('#openSettings');
@@ -308,10 +349,18 @@ expect(Math.abs(fastest - 3.75) < 0.05, `the match runs at the new speed (${fast
 await page.keyboard.press('Escape');
 await page.click('#pauseSettings');
 await tab('dev');
+// In a match, yours are the match's (with no bots, this one).
+await page.click('#devMenu .dev-section[data-section="choices"]');
+const botsNote = await page.textContent(`${choice('bots')} small`);
+expect(/yours: 0$/.test(botsNote), `yours, from the match (${botsNote})`);
+await page.click(`${choice('bots')} .dev-pull`);
+expect(JSON.parse(await page.inputValue('#devMenu .dev-export')).setup?.bots === 0, 'pulled from the match');
+await page.click(`${choice('bots')} .dev-reset`);
+await page.click('#devMenu .dev-section[data-section="movement"]');
 page.once('dialog', d => d.accept());
 await page.click('#devMenu [data-reset-all]');
 await page.waitForFunction(() => document.querySelector('#devMenu .dev-row[data-key="PHYS.runSpeed"] input')?.value === '3.4');
-expect(await page.evaluate(() => localStorage.getItem('stick-soldiers-dev')) === null, 'nothing left to remember');
+expect(await page.evaluate(() => localStorage.getItem('stick-soldiers-dev') ?? localStorage.getItem('stick-soldiers-dev-defaults')) === null, 'nothing left to remember');
 
 // 8. Character: the skins, each pictured. Picked mid-match, it's worn at once, and remembered.
 await tab('character');
