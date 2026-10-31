@@ -106,6 +106,55 @@ expect((await S(host)).chat.includes('gg no re'), 'host got the chat message');
 await host.screenshot({ path: `${outDir}/online-host.png` });
 await joiner.screenshot({ path: `${outDir}/online-joiner.png` });
 
+// 4b. The host changes its numbers (run speed up to 5: 3.75 a frame at 75%), camera and aiming
+// zoom mid-match: everyone in the game goes by them straight away, with their own kept.
+await host.keyboard.press('Escape');
+await host.click('#pauseSettings');
+await host.click('#settings .set-tab[data-page="dev"]');
+await host.fill('#devMenu .dev-row[data-key="PHYS.runSpeed"] input', '5');
+await host.press('#devMenu .dev-row[data-key="PHYS.runSpeed"] input', 'Enter');
+await host.click('#settings .set-tab[data-page="camera"]');
+await host.$eval('#camLook', el => { el.value = '40'; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
+await host.click('#settings .set-tab[data-page="controls"]');
+await host.selectOption('#aimZoom', 'more');
+await host.click('#settingsDone');
+await host.keyboard.press('Escape');
+await joiner.waitForFunction(() => window.stickSoldiers.feelNow().camera.look === 40, null, { timeout: 5000 }).catch(() => {});
+const feel = await joiner.evaluate(() => ({ ...window.stickSoldiers.feelNow(), own: window.stickSoldiers.prefs.camera.look, ownZoom: window.stickSoldiers.prefs.aimZoom }));
+expect(feel.host && feel.camera.look === 40 && feel.aimZoom === 'more' && feel.own === 100 && feel.ownZoom === 'slight', `the joiner sees it with the host's camera and aiming zoom, theirs kept (${JSON.stringify(feel)})`);
+// (The speed it runs at most, on the ground: bots can knock it about now and then.)
+await joiner.bringToFront();
+await joiner.waitForFunction(() => window.stickSoldiers.state.me?.alive, null, { timeout: 10000 }).catch(() => {});
+const runs = async page => {
+  await page.keyboard.down('KeyD');
+  const speed = await page.evaluate(() => new Promise(res => {
+    const counts = new Map(), t0 = performance.now();
+    const tick = () => {
+      const b = window.stickSoldiers.state.me?.body;
+      if (b?.onGround && Math.abs(b.vx) > 0.5) { const k = Math.abs(b.vx).toFixed(2); counts.set(k, (counts.get(k) || 0) + 1); }
+      if (performance.now() - t0 < 1200) requestAnimationFrame(tick);
+      else res([...counts].sort((a, b) => b[1] - a[1])[0]?.[0]);
+    };
+    tick();
+  }));
+  await page.keyboard.up('KeyD');
+  return speed;
+};
+const joinerRuns = await runs(joiner);
+expect(joinerRuns === '3.75', `the joiner runs at the host's new speed (${joinerRuns}; 3.75 expected)`);
+// (Back as they were, for the rest.)
+await host.bringToFront();
+await host.keyboard.press('Escape');
+await host.click('#pauseSettings');
+await host.click('#settings .set-tab[data-page="dev"]');
+await host.click('#devMenu .dev-row[data-key="PHYS.runSpeed"] .dev-reset');
+await host.click('#settingsDone');
+await host.keyboard.press('Escape');
+await joiner.bringToFront();
+await joiner.waitForTimeout(400);
+const joinerRunsAgain = await runs(joiner);
+expect(joinerRunsAgain === '2.55', `and back to the game's own when the host puts it back (${joinerRunsAgain}; 2.55 expected)`);
+
 // 5. The host starts the next match: the joiner sees everyone again, bots included.
 const firstTick = (await S(host)).tick;
 await host.keyboard.press('Escape');
@@ -171,12 +220,14 @@ await joiner.waitForSelector('#menu:not(.hidden)', { timeout: 10000 }).catch(() 
 const toast = await joiner.textContent('#toast');
 expect(/host/i.test(toast), `joiner told the host left ("${toast}")`);
 expect((await S(joiner)).mode === 'offline' && !(await S(joiner)).playing, 'joiner back at the menu');
+const feelAfter = await joiner.evaluate(() => window.stickSoldiers.feelNow());
+expect(!feelAfter.host && feelAfter.camera.look === 100 && feelAfter.aimZoom === 'slight', `the joiner's own camera and aiming zoom back (${JSON.stringify(feelAfter)})`);
 // (Through public relays the "closed" update can take a few seconds to reach them all.)
 await joiner.waitForFunction(name => ![...document.querySelectorAll('.game-row b')].some(b => b.textContent === name), GAME, { timeout: publicRelays ? 15000 : 5000 }).catch(() => {});
 const after = await joiner.$$eval('.game-row b', els => els.map(e => e.textContent));
 expect(!after.includes(GAME), 'closed game is gone from the list');
 
-console.log(JSON.stringify({ listed, cq, classes, pings, host: h1.soldiers.length, joinerMe: j1.me, chat: (await S(host)).chat, quick: t1.mode, toast, errors }, null, 2));
+console.log(JSON.stringify({ listed, feel, joinerRuns, joinerRunsAgain, cq, classes, pings, host: h1.soldiers.length, joinerMe: j1.me, chat: (await S(host)).chat, quick: t1.mode, toast, errors }, null, 2));
 await browser.close();
 server.close();
 await relay?.close();

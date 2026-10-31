@@ -6,7 +6,7 @@ import { NavGraph } from './nav.js';
 import { BotController, BOT_PROFILES } from './bot.js';
 import { Input, PlayerController, FIREFOX } from './input.js';
 import { createRenderer, autoGraphics } from './glrender.js';
-import { Renderer, setCamera, CAMERA_DEFAULTS, CAMERA_LIMITS } from './render.js';
+import { Renderer, setCamera, tidyCamera, cameraInUse, CAMERA_DEFAULTS, CAMERA_LIMITS } from './render.js';
 import { RemasteredRenderer, drawRemasteredPreview } from './rm/renderer.js';
 import { FramePacer, isEven } from './framerate.js';
 import { drawHud, drawReplay } from './hud.js';
@@ -526,8 +526,8 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   const map = await mapDataFor(settings.map);
   // Let the loading message paint before building the bots' route map.
   await new Promise(r => setTimeout(r, 30));
-  // Our own numbers (Settings, Developer) for a game of ours: someone else's game had theirs.
-  useOwnTuning();
+  // Our own numbers (Settings, Developer), camera and aiming zoom for a game of ours: someone else's game had theirs.
+  useOwnRules();
   const options = {
     lives: settings.lives, gunGameKills: settings.gunKills, crates: settings.crates,
     botVision: settings.botVision === 'sight' ? 'sight' : 'classic', fog: settings.fog === 'on',
@@ -997,11 +997,43 @@ function showCamera() {
   }
 }
 
-/** A camera setting changed: use it (straight away, mid-match too), save it and show it. */
+/** A camera setting changed: use it (straight away, mid-match too; in someone else's game, from our own next), save it and show it. */
 function changeCamera(change) {
-  prefs.camera = setCamera({ ...prefs.camera, ...change });
+  prefs.camera = tidyCamera({ ...prefs.camera, ...change });
+  if (!hostFeel) setCamera(prefs.camera);
   savePrefs();
   showCamera();
+  shareRules();
+}
+
+// In someone else's game, everyone sees it as its host does: the host's camera, and how far
+// aiming down the sights zooms (Settings). Ours are kept, for our own games. (Null in ours.)
+let hostFeel = null;
+/** Our camera and aiming zoom, for the players in our game. */
+const feelToShare = () => ({ camera: { ...prefs.camera }, aimZoom: prefs.aimZoom });
+/** Use the host's camera and aiming zoom (null: our own again). */
+function useHostFeel(f) {
+  hostFeel = f && typeof f === 'object' ? { camera: tidyCamera(f.camera), aimZoom: AIM_ZOOM[f.aimZoom] ? f.aimZoom : 'slight' } : null;
+  setCamera(hostFeel ? hostFeel.camera : prefs.camera);
+  for (const el of document.querySelectorAll('.host-feel')) el.classList.toggle('hidden', !hostFeel);
+}
+/** How much aiming down the sights zooms: the host's, in someone else's game. */
+const aimZoomNow = () => AIM_ZOOM[hostFeel ? hostFeel.aimZoom : prefs.aimZoom] ?? 1;
+/** Back to our own numbers, camera and aiming zoom (our own games, or out of someone else's). */
+function useOwnRules() {
+  useOwnTuning();
+  useHostFeel(null);
+}
+
+// Our numbers (Settings, Developer), camera and aiming zoom: everyone in a game we host goes by
+// them, as they join and whenever we change one (sent once it's settled: a slider being dragged
+// sends the last of it).
+const rulesToShare = () => ({ tuning: tuningToShare(), feel: feelToShare() });
+let rulesTimer = 0;
+function shareRules() {
+  if (state.net?.role !== 'host') return;
+  clearTimeout(rulesTimer);
+  rulesTimer = setTimeout(() => { if (state.net?.role === 'host') state.net.host?.broadcast({ t: 'rules', ...rulesToShare() }); }, 150);
 }
 
 // The keys (Settings: Controls): the list of actions and their keys, saved as they change.
@@ -1058,7 +1090,8 @@ function usePrefs(settings) {
   for (const k in prefs) prefs[k] = settings[k];
   setVolume(prefs.volume, false);
   prefs.crosshair = setCrosshair(prefs.crosshair);
-  prefs.camera = setCamera(prefs.camera);
+  prefs.camera = tidyCamera(prefs.camera);
+  setCamera(hostFeel ? hostFeel.camera : prefs.camera);
   prefs.keys = setKeys(prefs.keys);
   showKeys();
   pacer.setMode(prefs.fpsCap);
@@ -1178,6 +1211,7 @@ function useChoices(values) {
   modeFields();
   buildMapCards(now.map, { follow: true });
   fillSettings();
+  shareRules();
 }
 
 const gameChoices = {
@@ -1220,7 +1254,7 @@ const gameChoices = {
 };
 
 // The developer menu (Settings: Developer): the game's numbers (tuning.js), and the choices above.
-const devMenu = new DevMenu($('devMenu'), { choices: gameChoices });
+const devMenu = new DevMenu($('devMenu'), { choices: gameChoices, onChange: shareRules });
 
 /** The keys named on the page (the menu's Controls) as they're set: <span data-keys="action"> (data-first: just the first). */
 function showKeys() {
@@ -1435,14 +1469,13 @@ async function hostMatch(game, settings, map, nav, rng) {
     mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, mapName: map.name,
     options: game.options,
     map: map.builtin ? { builtin: map.builtin } : { code: await encodeShare(map.data) },
-    // (Our developer menu's numbers, if we've changed any: everyone here plays by them.)
-    tuning: tuningToShare(),
   };
   net.addBot = g => addBot(g, nav, settings, rng);
   if (!net.host) {
     net.host = new NetHost({
       maxPlayers: settings.maxPlayers, botCount: settings.bots,
-      matchInfo: () => net.matchInfo,
+      // (With our numbers, camera and aiming zoom as they are when each player joins.)
+      matchInfo: () => ({ ...net.matchInfo, ...rulesToShare() }),
       addBot: g => net.addBot(g),
       onChange: () => net.handle?.update(),
       onChat: m => addChat(m),
@@ -1531,9 +1564,11 @@ function startClient(link) {
       state.step = 1000 / game.tickRate;
       enterMatch(game, me);
     },
+    onFeel: f => useHostFeel(f),
     onEnd: reason => {
       if (state.net !== net) return;
       state.net = null;
+      useOwnRules();
       show('connecting', false);
       endMatch('menu');
       if (reason) toast(reason);
@@ -1547,8 +1582,8 @@ function startClient(link) {
 function leaveOnline() {
   const net = state.net;
   state.net = null;
-  // (Someone else's game had its own numbers: ours again.)
-  useOwnTuning();
+  // (Someone else's game had its own numbers, camera and aiming zoom: ours again.)
+  useOwnRules();
   if (!net) return;
   if (net.role === 'host') { net.handle?.close(); net.host?.close(); }
   if (net.role === 'client') net.client?.leave();
@@ -1681,7 +1716,7 @@ function frame(now) {
     !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open;
   const ax = free ? free.x : lerp(view.prevX ?? view.x, view.x, alpha) + (view.drawDX || 0);
   const ay = free ? free.y : lerp(view.prevY ?? view.y, view.y, alpha) + (view.drawDY || 0);
-  renderer.updateCamera(g, ax, ay, state.menuOpen || watchMode ? null : input.mouse, sniping, dt, sights ? AIM_ZOOM[prefs.aimZoom] ?? 1 : 1);
+  renderer.updateCamera(g, ax, ay, state.menuOpen || watchMode ? null : input.mouse, sniping, dt, sights ? aimZoomNow() : 1);
   const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
   renderer.fogFrom = view;
@@ -1997,7 +2032,7 @@ function wire() {
   $('sprintMode').addEventListener('change', () => { prefs.sprint = $('sprintMode').value === 'toggle' ? 'toggle' : 'hold'; savePrefs(); });
   $('pointerMode').addEventListener('change', () => { prefs.pointer = $('pointerMode').value === 'locked' ? 'locked' : 'system'; savePrefs(); if (prefs.pointer !== 'locked') input.unlock(); });
   $('fullscreenPref').addEventListener('change', () => { prefs.fullscreen = $('fullscreenPref').checked; savePrefs(); if (!prefs.fullscreen) leaveFullscreen(true); });
-  $('aimZoom').addEventListener('change', () => { prefs.aimZoom = AIM_ZOOM[$('aimZoom').value] ? $('aimZoom').value : 'slight'; savePrefs(); });
+  $('aimZoom').addEventListener('change', () => { prefs.aimZoom = AIM_ZOOM[$('aimZoom').value] ? $('aimZoom').value : 'slight'; savePrefs(); shareRules(); });
   // The crosshair.
   for (const [id, label] of CROSSHAIR_STYLES) $('xhStyle').add(new Option(label, id));
   for (const [id, label] of CROSSHAIR_COLORS) $('xhColor').add(new Option(label, id));
@@ -2234,6 +2269,8 @@ async function boot() {
     state, get renderer() { return renderer; }, get edition() { return edition; }, get input() { return input; }, setEdition, openGamePicker, pacer, prefs, perf, setGraphics, startMatch, endMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab,
     get profile() { return profile; }, openPicker, openLoadout,
     devExport: all => JSON.parse(devMenu.exportText(all)), // (what the developer menu copies out)
+    // The camera and aiming zoom in use (the host's, in someone else's game).
+    feelNow: () => ({ camera: cameraInUse(), aimZoom: hostFeel ? hostFeel.aimZoom : prefs.aimZoom, host: !!hostFeel }),
   };
 }
 

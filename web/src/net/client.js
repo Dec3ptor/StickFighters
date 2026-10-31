@@ -120,6 +120,8 @@ export class NetClient {
         if (this.events.length > 300) this.events.splice(0, this.events.length - 300);
         break;
       case 'chat': this.addChat(data); break;
+      // The host changed its numbers, camera or aiming zoom mid-match: everyone here goes by them now.
+      case 'rules': useHostTuning(data.tuning || null); this.opts.onFeel?.(data.feel || null); break;
       case 'pong': { const rtt = this.clock() - data.at; this.ping = this.ping == null ? rtt : this.ping * 0.7 + rtt * 0.3; break; }
       case 'end': this.end(data.reason || 'The game ended'); break;
     }
@@ -137,8 +139,10 @@ export class NetClient {
     const m = w.match, mine = ++this.welcomes;
     const mapData = await this.opts.loadMap(m);
     if (mine !== this.welcomes) return; // (a newer welcome came while this map loaded: that one's the match)
-    // The host's numbers (its developer menu: none changed means the game's own), for everyone here.
+    // The host's numbers (its developer menu: none changed means the game's own), and its camera
+    // and aiming zoom, for everyone here.
     useHostTuning(m.tuning || null);
+    this.opts.onFeel?.(m.feel || null);
     const game = new Game({ mapData, mode: m.mode, fragLimit: m.fragLimit, options: m.options, speed: m.speed, effects: true, seed: 1 });
     game.online = true;
     this.game = game;

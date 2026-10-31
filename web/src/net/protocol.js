@@ -3,14 +3,15 @@
 // Fast, unreliable channel (binary, lost packets don't matter):
 //   player -> host: inputs, 60 a second (each packet repeats the last few, in case one is lost)
 //   host -> player: snapshots, 20 a second: every soldier, projectile and pickup
-// Reliable channel (JSON): joining, the roster, sounds and effects, kill feed, chat,
-// and class and loadout choices (player -> host).
+// Reliable channel (JSON): joining, the roster, sounds and effects, kill feed, chat, the host's
+// numbers, camera and aiming zoom (as it joins, and whenever the host changes them), and class
+// and loadout choices (player -> host).
 
 import { WEAPONS } from '../weapons.js';
 import { CLASS_IDS, UPGRADE_IDS } from '../classes.js';
 import { REWARD_IDS } from '../streaks.js';
 
-export const PROTOCOL = 17;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 18;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);

@@ -57,15 +57,23 @@ export const CAMERA_DEFAULTS = Object.freeze({ follow: 330, look: 100, glide: 0 
 export const CAMERA_LIMITS = { follow: [0, 1000], look: [0, 200], glide: [0, 1000] };
 const feel = { ...CAMERA_DEFAULTS };
 
-/** Use these camera settings (anything missing or out of range is left at its default). */
-export function setCamera(opts = {}) {
-  const o = opts && typeof opts === 'object' ? opts : {};
+/** Camera settings tidied up (anything missing or out of range: its default). */
+export function tidyCamera(opts = {}) {
+  const o = opts && typeof opts === 'object' ? opts : {}, out = {};
   for (const k of Object.keys(CAMERA_LIMITS)) {
     const [lo, hi] = CAMERA_LIMITS[k], n = o[k];
-    feel[k] = typeof n === 'number' && Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : CAMERA_DEFAULTS[k];
+    out[k] = typeof n === 'number' && Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : CAMERA_DEFAULTS[k];
   }
+  return out;
+}
+
+/** Use these camera settings (anything missing or out of range is left at its default). */
+export function setCamera(opts = {}) {
+  Object.assign(feel, tidyCamera(opts));
   return { ...feel };
 }
+/** The camera settings in use. */
+export const cameraInUse = () => ({ ...feel });
 
 /** How much of the way to go in a frame of dt ms, to be 95% of the way there after `ms` (0: all of it). */
 const catchUp = (ms, dt) => ms > 0 ? 1 - Math.pow(0.05, dt / ms) : 1;
