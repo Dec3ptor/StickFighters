@@ -435,6 +435,23 @@ html[data-game="remastered"] .talk-quest, html[data-game="remastered"] .journal-
 html[data-game="remastered"] .jq-reward { color: #f2c230; }
 html[data-game="remastered"] .jq-goals li.met { color: #7ee07a; }
 
+/* ---- Worlds online: another player's menu, trading ---- */
+.buy.pmenu { width: min(520px, calc(100vw - 24px)); top: 30vh; }
+.buy.trade { width: min(760px, calc(100vw - 24px)); }
+.trade-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.trade-table { min-height: 80px; display: flex; flex-direction: column; gap: 3px; padding: 6px; background: var(--soft); }
+.trade-item { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.trade-item canvas, .trade-slot canvas { width: 32px; height: 22px; }
+.trade-ok { color: #1f7a2e; text-transform: none; letter-spacing: 0; }
+.trade-coins { display: block; margin-top: 6px; font-size: 13px; }
+.trade-coins input { width: 90px; margin-left: 6px; }
+.trade-bag { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px; }
+.trade-slot { position: relative; padding: 2px; min-height: 0; display: flex; flex-direction: column; align-items: center; font-weight: normal; }
+.trade-slot small { font-size: 10px; line-height: 1; }
+.trade-slot.on { outline: 2px solid #f2c230; outline-offset: -2px; }
+html[data-game="remastered"] .trade-table { background: rgba(255, 255, 255, 0.05); }
+html[data-game="remastered"] .trade-ok { color: #7ee07a; }
+
 /* ---- Worlds: the journal (J): quests, level and perks ---- */
 .buy.journal { width: min(820px, calc(100vw - 24px)); }
 .journal-tabs { display: flex; gap: 4px; }

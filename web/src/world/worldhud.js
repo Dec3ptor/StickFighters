@@ -35,6 +35,8 @@ export function drawWorldHud(r, ctx, game, me, W, H, opts = {}) {
   if (me.alive && me.world) { drawHotbar(ctx, me, W, H); drawXpBar(ctx, game, me, W, H); }
   if (me.world?.quests?.list.length) drawTracker(ctx, game, me, W);
   if (me.world?.levelUp) drawLevelUp(ctx, game, me, W, H);
+  if (me.world?.partyList?.length) drawParty(ctx, me, W);
+  if (me.world?.raidInfo) drawRaid(ctx, game, me, W);
   if (me.alive && me.world && !me.world.dev) drawTalkHint(ctx, game, me, W, H);
   if (me.world) drawGot(ctx, game, me, W, H);
   drawWhere(ctx, game, me, W);
@@ -214,6 +216,44 @@ function drawMarks(r, ctx, game, me, W, H) {
     ctx.fillStyle = mark === '?' ? '#7ee07a' : mark === '★' ? '#e2b8ff' : '#ffe36e';
     ctx.fillText(mark, sx, sy + bob + 1);
   }
+}
+
+/** Your party (social.js): each of the others, their level and health, top right. */
+function drawParty(ctx, me, W) {
+  const list = me.world.partyList, x0 = W - 182;
+  let y = 56;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(16,18,24,0.66)';
+  ctx.fillRect(x0, y, 170, 18 + list.length * 26);
+  ctx.font = `bold 11px ${FONT}`;
+  ctx.fillStyle = '#5ad1ff';
+  ctx.fillText('Party', x0 + 8, y + 10);
+  y += 20;
+  for (const p of list) {
+    ctx.font = `bold 12px ${FONT}`;
+    ctx.fillStyle = p.alive ? '#eef2f7' : '#9aa5b4';
+    ctx.fillText(text(`pt${p.name}${p.level}`, () => `${p.name}  ·  ${p.level}`), x0 + 8, y + 5);
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(x0 + 8, y + 13, 154, 5);
+    ctx.fillStyle = p.health / p.max > 0.4 ? '#5ad16a' : '#e05a4a';
+    ctx.fillRect(x0 + 8, y + 13, 154 * Math.max(0, Math.min(1, p.health / p.max)), 5);
+    y += 26;
+  }
+}
+
+/** A raid on the town you're near (raids.js): said at the top, with how many are left. */
+function drawRaid(ctx, game, me, W) {
+  const r = me.world.raidInfo, pulse = 0.5 + 0.5 * Math.sin(game.tick * 0.15);
+  const line = text(`raid${r.name}${r.left}`, () => `Raid on ${r.name}!  ${r.left} of ${r.total} left`);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold 15px ${FONT}`;
+  const w = ctx.measureText(line).width + 30;
+  ctx.fillStyle = `rgba(120,16,12,${0.7 + 0.2 * pulse})`;
+  ctx.fillRect(W / 2 - w / 2, 50, w, 26);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(line, W / 2, 63);
 }
 
 /** Pointing at one of the townsfolk (talk.js): how to talk to them, over the hotbar. */
@@ -556,8 +596,8 @@ function drawMiniMap(ctx, game, me, W, H) {
     if (!o.alive || o === me) continue;
     const ox = Math.floor(o.x / TILE) - mm.tx + MAP_W / 2, oy = Math.floor(o.y / TILE) - mm.ty + MAP_H / 2;
     if (ox < 0 || ox >= MAP_W || oy < 0 || oy >= MAP_H) continue;
-    const k = o.npc?.kind;
-    ctx.fillStyle = k === 'monster' ? '#ff3b2f' : k === 'merc' ? '#3d7ff0' : k === 'townsfolk' ? '#f2c230' : '#ffffff';
+    const k = o.npc?.kind, mate = me.world?.partyList?.some(p => p.id === o.id);
+    ctx.fillStyle = k === 'monster' ? '#ff3b2f' : k === 'merc' ? '#3d7ff0' : k === 'townsfolk' ? '#f2c230' : mate ? '#5ad1ff' : '#ffffff';
     ctx.fillRect(x0 + ox * MAP_SCALE - 1.5, y0 + oy * MAP_SCALE - 2, 3, 3);
   }
   // You, in the middle (and where the world starts, if it's on the map).

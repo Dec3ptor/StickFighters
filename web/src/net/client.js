@@ -121,7 +121,7 @@ export class NetClient {
       case 'carves': if (this.game) this.applyCarves(data.from, data.list); break;
       // A world (worldnet.js): its chunks; our things, our chest, the bases.
       case 'chunks': this.opts.world?.chunks(data.list); break;
-      case 'inv': case 'chest': case 'claims': case 'talk': this.opts.world?.message(data); break;
+      case 'inv': case 'chest': case 'claims': case 'talk': case 'social': case 'trade': case 'party': this.opts.world?.message(data); break;
       case 'ev':
         if (!this.game) break;
         // Holes in the map change how everything moves: blown straight away, not when the effects show.

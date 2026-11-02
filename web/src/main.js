@@ -51,6 +51,9 @@ import { talkView, talkDo, endTalk } from './world/talk.js';
 import { JournalScreen } from './world/questui.js';
 import { questsOf, dropQuest } from './world/quests.js';
 import { spendPoint } from './world/progress.js';
+import { PlayerMenu, TradeScreen } from './world/socialui.js';
+import { socialOptions, socialDo, tradeView, offerTrade, acceptTrade, cancelTrade, shareQuest } from './world/social.js';
+import { progOf } from './world/progress.js';
 import { WorldHost, WorldClient } from './world/worldnet.js';
 import { seedOf } from './world/noise.js';
 import { setDev, devKey } from './world/devmode.js';
@@ -621,6 +624,8 @@ function endMatch(to = state.returnTo) {
   closeInventory();
   closeTalk();
   closeJournal();
+  closePlayerMenu();
+  closeTrade(false);
   state.replay = null;
   renderer.cam.zoom = 1;
   renderer.forgetMatch?.();
@@ -681,7 +686,7 @@ function setPaused(p) {
   // (A world: no restarting it, and no sitting out to watch. Pausing keeps it as it is.)
   if (state.world) { show('restart', false); show('spectate', false); if (p) saveWorldNow(); }
   else show('spectate', true);
-  if (p) { closeInventory(); closeTalk(); closeJournal(); }
+  if (p) { closeInventory(); closeTalk(); closeJournal(); closePlayerMenu(); }
   state.menuOpen = p;
   show('pause', p);
   fullscreenButton();
@@ -793,7 +798,7 @@ function localNote(text) {
 /** True while the match is being played (no menu, chat or picker open over it). */
 function playingNow() {
   const g = state.game;
-  return !!g && !g.over && !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open && !invScreen?.open && !talkScreen?.open && !journal?.open &&
+  return !!g && !g.over && !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open && !invScreen?.open && !talkScreen?.open && !journal?.open && !playerMenu?.open && !tradeScreen?.open &&
     document.body.classList.contains('playing') && $('settings').classList.contains('hidden');
 }
 
@@ -1144,8 +1149,61 @@ function journalAct(d) {
   const qs = questsOf(me);
   if (d.op === 'qtrack' && qs.list.some(q => q.id === d.id)) { qs.track = d.id; qs.v++; }
   else if (d.op === 'qdrop') dropQuest(me, d.id);
+  else if (d.op === 'qshare') { const text = shareQuest(g, me, d.id); if (text) localNote(text); }
   else if (d.op === 'perk') { const text = spendPoint(me, d.id); if (text) localNote(text); }
   audio.play('click');
+}
+
+// ---- Worlds online: another player (party, trade: social.js) ---------------------------------------------
+
+let playerMenu = null, tradeScreen = null;
+const getPlayerMenu = () => (playerMenu ||= new PlayerMenu($('playerMenu'), { pick: (v, op) => playerPick(v, op), close: () => closePlayerMenu() }));
+const getTrade = () => (tradeScreen ||= new TradeScreen($('trade'), {
+  offer: (slots, coins) => tradeAct({ op: 'toffer', slots, coins }), accept: () => tradeAct({ op: 'taccept' }), cancel: () => closeTrade(true),
+}));
+/** A screen over the game that holds your soldier still. */
+function holdStill() { input.enabled = false; input.clear(); input.unlock(); }
+function letGo() {
+  const g = state.game;
+  if (g && !state.menuOpen && !state.chatOpen && !g.over && !invScreen?.open && !talkScreen?.open && !journal?.open && !playerMenu?.open && !tradeScreen?.open) { input.enabled = true; grabControls(); }
+}
+
+/** Another player right clicked on: what you can do with them ({ id, name, level, options }). */
+function showPlayerMenu(view) {
+  if (!state.game?.world || state.menuOpen) return;
+  getPlayerMenu().show(view);
+  holdStill();
+}
+function closePlayerMenu() { if (!playerMenu?.open) return; playerMenu.hide(); letGo(); }
+function playerPick(view, op) {
+  const g = state.game, me = state.me;
+  closePlayerMenu();
+  if (!g?.world || !me?.world || !view) return;
+  if (state.mode === 'client') state.net?.client?.link.send({ t: 'wop', op: 'social', id: view.id, act: op }, true);
+  else { const o = g.soldiers.find(x => x.id === view.id), text = o && socialDo(g, me, o, op); if (text) localNote(text); }
+  audio.play('click');
+}
+
+/** A trade began, changed, or ended (null). */
+function showTrade(view) {
+  const me = state.me;
+  if (!view) { if (tradeScreen?.open) { tradeScreen.hide(); letGo(); } return; }
+  if (!state.game?.world || !me?.world) return;
+  const was = tradeScreen?.open;
+  getTrade().show(view, me);
+  if (!was) holdStill();
+}
+function closeTrade(cancel) {
+  if (cancel) tradeAct({ op: 'tcancel' });
+  if (tradeScreen?.open) { tradeScreen.hide(); letGo(); }
+}
+function tradeAct(d) {
+  const g = state.game, me = state.me;
+  if (!g?.world || !me?.world) return;
+  if (state.mode === 'client') { state.net?.client?.link.send({ t: 'wop', ...d }, true); return; }
+  if (d.op === 'toffer') offerTrade(g, me, d.slots, d.coins);
+  else if (d.op === 'taccept') { const text = acceptTrade(g, me); if (text) localNote(text); }
+  else if (d.op === 'tcancel') cancelTrade(g, me);
 }
 
 /** The inventory screen's crafting: recipe r made up to `times` times (what doesn't fit goes on the ground). */
@@ -1887,6 +1945,8 @@ function startClient(link) {
       else { closeInventory(); openInventory(chest); }
     },
     onTalk: view => { if (view) showTalk(view); else closeTalk(); },
+    onSocial: view => showPlayerMenu(view),
+    onTrade: view => showTrade(view),
   });
   net.client = new NetClient({
     link, world,
@@ -2106,6 +2166,17 @@ function frame(now) {
     else if (talkScreen?.open) closeTalk();
   } else if (talkScreen?.open) talkScreen.refresh();
   if (journal?.open) journal.refresh();
+  // Another player (social.js): here (hosting), right clicked on one; a trade going on.
+  if (g.world && state.mode !== 'client' && me.world) {
+    if (me.world.social) {
+      const o = g.soldiers.find(x => x.id === me.world.social.id);
+      me.world.social = null;
+      if (o?.world) showPlayerMenu({ id: o.id, name: o.name, level: progOf(o).level, options: socialOptions(g, me, o) });
+    }
+    const tv = tradeView(g, me);
+    if (tv) showTrade(tv); else if (tradeScreen?.open) showTrade(null);
+  }
+  if (tradeScreen?.open) tradeScreen.refresh();
   // Defuse's buy menu: kept up to date, and closed when you can't buy any more.
   if (buyMenu?.open) {
     if (canShop(g, me)) buyMenu.refresh(g, me);
@@ -2504,6 +2575,9 @@ function wire() {
       if (!e.repeat && journal.key(e.code, isKey('journal', keyOf(e.code)))) e.preventDefault();
       return;
     }
+    // Another player's menu, a trade: Esc closes them (a trade's called off).
+    if (playerMenu?.open) { if (!e.repeat && playerMenu.key(e.code)) e.preventDefault(); return; }
+    if (tradeScreen?.open) { if (!e.repeat && tradeScreen.key(e.code)) e.preventDefault(); return; }
     const key = keyOf(e.code);
     if (!e.repeat && pressMenuKey(key)) { e.preventDefault(); return; }
     if (e.code === 'Escape') {

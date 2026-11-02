@@ -19,6 +19,8 @@ import { startTalk, talkTick, folkAt } from './talk.js';
 import { giveXp, countStat, applyProgress, maxHealthOf, damageScale, digScale, lootScale, doubleOreChance, regenTick, progToSave, progFromSave, KILL_XP, MINE_XP } from './progress.js';
 import { questEvent, questsTick, questsToSave, questsFromSave, setQuestHooks } from './quests.js';
 import { valueOf } from './trade.js';
+import { playerAt, shareKill, partyView } from './social.js';
+import { raidsTick, raidKill, raidersLeft } from './raids.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -800,9 +802,12 @@ export function worldInput(game, s, inp) {
   w.prevAlt = alt;
   if (!alt) w.altDone = false;
   let useRight = false;
-  // (Right click on one of the townsfolk, whatever's in hand: talking to them. talk.js.)
-  const npc = altPressed && !inp.crouch && w.target ? folkAt(game, s, w.target.x, w.target.y) : null;
-  if (npc && startTalk(game, s, npc)) { w.altDone = true; inp.alt = false; }
+  // (Right click on another player: what you can do with them, social.js; not with a gun in hand
+  // in a PvP world: that's aiming. On one of the townsfolk, whatever's in hand: talking, talk.js.)
+  const other = altPressed && !inp.crouch && w.target && !(game.world.pvp && item?.kind === 'weapon') ? playerAt(game, s, w.target.x, w.target.y) : null;
+  const npc = !other && altPressed && !inp.crouch && w.target ? folkAt(game, s, w.target.x, w.target.y) : null;
+  if (other) { w.social = { id: other.id, at: game.tick }; w.altDone = true; inp.alt = false; }
+  else if (npc && startTalk(game, s, npc)) { w.altDone = true; inp.alt = false; }
   else if (right) {
     if (altPressed && !inp.crouch && interact(game, s)) w.altDone = true;
     else if (alt && !w.altDone && !inp.fire) useRight = true;
@@ -919,6 +924,16 @@ export function worldTick(game) {
   monstersTick(game);
   townsfolkTick(game);
   questsTick(game);
+  raidsTick(game);
+  // (Each player's party and the raid near them, as their HUD shows it: worked out now and then.)
+  if (game.tick % 30 === 11) {
+    const raid = world.raid, t = raid && world.gen.townIn(raid.k);
+    for (const s of game.soldiers) {
+      if (!s.world || s.npc) continue;
+      s.world.partyList = partyView(game, s);
+      s.world.raidInfo = t && Math.abs(s.x / TILE - (t.x0 + t.x1) / 2) < (t.x1 - t.x0) / 2 + 100 ? { name: raid.name, left: raidersLeft(game), total: raid.total } : null;
+    }
+  }
   for (const s of game.soldiers) {
     if (!s.world) continue;
     if (s.world.talk) talkTick(game, s);
@@ -1040,11 +1055,14 @@ export const worldMode = {
     if (isMonster(victim)) {
       monsterLoot(game, victim, drop, by ? lootScale(by) : 1);
       if (by) {
-        const champion = victim.npc.champion;
-        giveXp(game, by, champion ? KILL_XP.champion : KILL_XP[victim.npc.type] || 10, victim.name);
+        const champion = victim.npc.champion, xp = champion ? KILL_XP.champion : KILL_XP[victim.npc.type] || 10;
+        giveXp(game, by, xp, victim.name);
         countStat(by, 'kills');
         questEvent(game, by, { type: 'kill', what: victim.npc.type, x: victim.x, y: victim.y, champion });
+        // (Their party near shares it: social.js. A raider: counted for the raid, raids.js.)
+        shareKill(game, by, victim, xp);
       }
+      raidKill(game, victim, by);
     }
     else if (victim.world) {
       const lose = Math.floor(victim.world.inv.count('coins') / 2);

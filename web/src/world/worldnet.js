@@ -21,6 +21,7 @@ import { mercsOf } from './monsters.js';
 import { talkView, talkDo } from './talk.js';
 import { progOf, spendPoint, applyProgress } from './progress.js';
 import { questsOf, dropQuest } from './quests.js';
+import { socialOptions, socialDo, tradeView, offerTrade, acceptTrade, cancelTrade, shareQuest } from './social.js';
 
 const LAYERS = ['fg', 'bg', 'shape'];
 const CHUNKS_PER_MESSAGE = 40;
@@ -53,7 +54,7 @@ export class WorldHost {
   /** A player's joined (their soldier made): their things (if they've been here before). */
   join(p) {
     const s = p.soldier;
-    p.wsync = { tiles: [], inv: '', chest: null, chestV: -1, talk: '', overflow: false, ops: [] };
+    p.wsync = { tiles: [], inv: '', chest: null, chestV: -1, talk: '', trade: '', party: '', overflow: false, ops: [] };
     s.world = worldFromSave(this.load?.(s.name) || null);
     rehire(this.game, s);
     this.players.add(p);
@@ -130,7 +131,7 @@ export class WorldHost {
     const m = w.mine, last = w.got[w.got.length - 1];
     // (Their level and quests too: progress.js, quests.js. And who has work for them.)
     const pr = progOf(s), qs = questsOf(s), xg = w.xpGot?.at(-1);
-    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}`;
+    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}`;
     if (key !== ws.inv) {
       ws.inv = key;
       p.link.send({
@@ -139,9 +140,20 @@ export class WorldHost {
         got: w.got.map(g => [g.key, g.n, g.tick]),
         prog: { xp: pr.xp, level: pr.level, points: pr.points, perks: pr.perks, stats: pr.stats, deepest: pr.seen.deepest, towns: pr.seen.towns.length },
         quests: { list: qs.list, track: qs.track, done: qs.done.size }, marks: w.marks || [],
-        xpGot: (w.xpGot || []).map(x => [x.n, x.why, x.tick]), levelUp: w.levelUp || null,
+        xpGot: (w.xpGot || []).map(x => [x.n, x.why, x.tick]), levelUp: w.levelUp || null, raid: w.raidInfo || null,
       }, true);
     }
+    // Playing together (social.js): another player right clicked on (what you can do with them),
+    // a trade (when it changes, or ends), their party (as it changes).
+    if (w.social) {
+      const o = this.game.soldiers.find(x => x.id === w.social.id);
+      if (o?.world) p.link.send({ t: 'social', view: { id: o.id, name: o.name, level: progOf(o).level, options: socialOptions(this.game, s, o) } }, true);
+      w.social = null;
+    }
+    const tv = tradeView(this.game, s), tk = tv ? JSON.stringify(tv) : '';
+    if (tk !== ws.trade) { p.link.send(tv ? { t: 'trade', view: tv } : { t: 'trade', close: true }, true); ws.trade = tk; }
+    const pk = JSON.stringify(w.partyList || []);
+    if (pk !== ws.party) { p.link.send({ t: 'party', list: w.partyList || [] }, true); ws.party = pk; }
     // A chest opened with a right click (worldplay.js's interact): shown to them, and kept up to
     // date while it's open (closed if it goes, or they walk off).
     if (w.openChest) { ws.chest = w.openChest; ws.chestV = -1; w.openChest = null; }
@@ -210,6 +222,17 @@ export class WorldHost {
       case 'qtrack': if (typeof d.id === 'string' && questsOf(s).list.some(q => q.id === d.id)) { questsOf(s).track = d.id; questsOf(s).v++; } break;
       case 'qdrop': if (typeof d.id === 'string') dropQuest(s, d.id); break;
       case 'perk': if (typeof d.id === 'string') { const text = spendPoint(s, d.id); if (text) g.notify(s, text); } break;
+      // (Playing together: social.js.)
+      case 'social': {
+        const o = g.soldiers.find(x => x.id === d.id);
+        const text = o && typeof d.act === 'string' && Math.hypot(o.x - s.x, o.y - s.y) < 12 * 16 ? socialDo(g, s, o, d.act) : null;
+        if (text) g.notify(s, text);
+        break;
+      }
+      case 'toffer': offerTrade(g, s, d.slots, d.coins); break;
+      case 'taccept': { const text = acceptTrade(g, s); if (text && text !== 'Traded') g.notify(s, text); break; }
+      case 'tcancel': cancelTrade(g, s); break;
+      case 'qshare': if (typeof d.id === 'string') { const text = shareQuest(g, s, d.id); if (text) g.notify(s, text); } break;
       // (The inventory screen's right hand buttons: what right click uses.)
       case 'hand': {
         const i = d.slot;
@@ -228,10 +251,12 @@ export class WorldClient {
    * onInv(): our things changed; onChest(chest | null): a chest opened ({ inv, tx, ty }), changed,
    * or closed; onTalk(view | null): a talk began, changed (talk.js's view), or ended.
    */
-  constructor({ onInv = null, onChest = null, onTalk = null } = {}) {
+  constructor({ onInv = null, onChest = null, onTalk = null, onSocial = null, onTrade = null } = {}) {
     this.onInv = onInv;
     this.onChest = onChest;
     this.onTalk = onTalk;
+    this.onSocial = onSocial;
+    this.onTrade = onTrade;
     this.saved = new Map();
     this.game = null;
     this.me = null;
@@ -326,6 +351,7 @@ export class WorldClient {
         w.marks = Array.isArray(d.marks) ? d.marks.filter(m => Array.isArray(m) && Number.isInteger(m[0])) : [];
         w.xpGot = Array.isArray(d.xpGot) ? d.xpGot.map(([n, why, tick]) => ({ n: n | 0, why: String(why || ''), tick: Number(tick) || 0 })) : [];
         if (d.levelUp && Number.isFinite(d.levelUp.tick)) w.levelUp = { level: d.levelUp.level | 0, tick: d.levelUp.tick };
+        w.raidInfo = d.raid && typeof d.raid === 'object' ? { name: String(d.raid.name), left: d.raid.left | 0, total: d.raid.total | 0 } : null;
         this.onInv?.();
         break;
       }
@@ -335,6 +361,9 @@ export class WorldClient {
         break;
       case 'claims': if (game.world) claimsFromSave(game.world, d.list); break;
       case 'talk': this.onTalk?.(d.close || !d.view || typeof d.view !== 'object' ? null : d.view); break;
+      case 'social': if (d.view && typeof d.view === 'object') this.onSocial?.(d.view); break;
+      case 'trade': this.onTrade?.(d.close || !d.view ? null : d.view); break;
+      case 'party': if (me?.world) me.world.partyList = Array.isArray(d.list) ? d.list : []; break;
     }
   }
 }

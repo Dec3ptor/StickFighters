@@ -62,7 +62,7 @@ export class JournalScreen {
     const w = this.me?.world;
     if (!w) return;
     const p = w.prog, qs = w.quests;
-    const key = `${this.tab}|${qs?.v}|${qs?.track}|${qs?.list.length}|${p?.level}|${p?.xp}|${p?.points}|${JSON.stringify(p?.perks || {})}|${w.inv.version}`;
+    const key = `${this.tab}|${qs?.v}|${qs?.track}|${qs?.list.length}|${p?.level}|${p?.xp}|${p?.points}|${JSON.stringify(p?.perks || {})}|${w.inv.version}|${w.partyList?.length || 0}`;
     if (!force && key === this.seen) return;
     this.seen = key;
     for (const b of this.root.querySelectorAll('[data-tab]')) b.classList.toggle('on', b.dataset.tab === this.tab);
@@ -87,6 +87,7 @@ export class JournalScreen {
           ${ready && q.turnIn !== q.giver.key && q.handTo ? `<li class="back">Take it to ${esc(q.handTo.name)}${q.handTo.town ? ` in ${esc(q.handTo.town)}` : ''}</li>` : ''}</ul>
         <div class="jq-foot"><span class="jq-reward">${esc(rewardText(q.reward))}</span>
           <span class="jq-acts">${on ? '<span class="jq-following">Following</span>' : `<button type="button" class="small" data-act="qtrack" data-id="${esc(q.id)}">Follow</button>`}
+          ${q.kind === 'side' && me.world.partyList?.length ? `<button type="button" class="small" data-act="qshare" data-id="${esc(q.id)}">Share</button>` : ''}
           <button type="button" class="small" data-act="qdrop" data-id="${esc(q.id)}">Give up</button></span></div>
       </div>`;
     }).join('');
@@ -114,7 +115,8 @@ export class JournalScreen {
       <h3 class="inv-label">What you've done</h3>
       <div class="journal-stats">
         ${stat('Monsters killed', st.kills)}${stat('Ore and gems mined', st.mined)}${stat('Things made', st.crafted)}${stat('Quests done', st.quests)}
-        ${stat('Towns found', p.seen?.towns?.length)}${stat('Deepest (blocks down)', p.seen?.deepest)}
+        ${stat('Towns found', p.seen?.towns?.length)}${stat('Deepest (blocks down)', p.seen?.deepest)}${stat('Raids beaten back', st.raids)}
+        ${stat('The story', `${st.story || 0} of 13`)}
       </div>
     </div>`;
   }
