@@ -210,7 +210,8 @@ await joiner.keyboard.up('Tab');
 // 6. Quick match finds the same game.
 const third = await player('Quicky');
 await third.click('#quickMatch');
-await third.waitForFunction(() => window.stickSoldiers.state.mode === 'client' && window.stickSoldiers.state.game, null, { timeout: 30000 }).catch(() => {});
+// (Through public relays it may first try games that don't answer, up to 12 s each.)
+await third.waitForFunction(() => window.stickSoldiers.state.mode === 'client' && window.stickSoldiers.state.game, null, { timeout: publicRelays ? 60000 : 30000 }).catch(() => {});
 const t1 = await S(third);
 expect(t1.mode === 'client', `quick match joined the open game (mode ${t1.mode})`);
 await third.waitForTimeout(1500);

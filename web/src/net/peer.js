@@ -27,6 +27,8 @@ export class PeerLink {
     }
     this.ready = new Promise((resolve, reject) => {
       const timer = setTimeout(() => { reject(new Error("Couldn't connect (a firewall may be blocking direct connections)")); this.close('timeout'); }, CONNECT_MS);
+      // Closed before connecting (e.g. the game never answered): give up now, not at the timeout.
+      this.stopConnecting = () => { clearTimeout(timer); reject(new Error("Couldn't connect (the connection was closed)")); };
       const check = () => {
         if (this.reliable.readyState === 'open' && this.fast.readyState === 'open') { clearTimeout(timer); resolve(this); }
       };
@@ -41,6 +43,8 @@ export class PeerLink {
         if (pc.connectionState === 'closed') this.close('closed');
       });
     });
+    // Nobody may be waiting on a link that was given up on early, so its failure isn't an uncaught error.
+    this.ready.catch(() => {});
   }
 
   static make() {
@@ -84,6 +88,7 @@ export class PeerLink {
     if (this.closed) return;
     this.closed = true;
     clearTimeout(this.dropTimer);
+    this.stopConnecting();
     try { this.reliable.close(); this.fast.close(); this.pc.close(); } catch { /* already gone */ }
     this.onclose(reason);
   }

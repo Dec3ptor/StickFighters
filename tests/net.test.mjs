@@ -6,7 +6,7 @@ import { NavGraph } from '../web/src/nav.js';
 import { BotController, BOT_PROFILES } from '../web/src/bot.js';
 import { NetHost } from '../web/src/net/host.js';
 import { NetClient } from '../web/src/net/client.js';
-import { memoryLinks } from '../web/src/net/peer.js';
+import { memoryLinks, PeerLink } from '../web/src/net/peer.js';
 import { encodeInputs, decodeInputs, encodeWorld, encodeSnapshot, decodeSnapshot, SNAPSHOT_EVERY } from '../web/src/net/protocol.js';
 import { DEFAULT_SPEED, PHYS } from '../web/src/config.js';
 import { useOwnTuning, usingHostTuning } from '../web/src/tuning.js';
@@ -738,4 +738,31 @@ test('how far behind others are shown follows late snapshots, within 5 to 10 tic
     at = i;
   }
   assert.equal(calm.at(-1), 6, 'and back to 6');
+});
+
+// A real (WebRTC) link with a stand-in for the browser's connection: only its giving up is tested.
+function fakePeerConnection() {
+  const channel = () => ({ readyState: 'connecting', close() { this.readyState = 'closed'; } });
+  return { createDataChannel: channel, addEventListener() {}, close() {} };
+}
+
+test('a link closed before it connects gives up at once, without an uncaught error', async () => {
+  const uncaught = [];
+  const onUncaught = e => uncaught.push(String(e));
+  process.on('unhandledRejection', onUncaught);
+  try {
+    // Someone waiting for it (joining a game) hears right away, not after the 15 s timeout.
+    const waited = new PeerLink(fakePeerConnection());
+    const t0 = Date.now();
+    waited.close('failed');
+    await assert.rejects(waited.ready, /Couldn't connect/);
+    assert.ok(Date.now() - t0 < 1000, 'gave up at once');
+    // A link nobody waits for (quick match moved on to another game after no answer) stays quiet.
+    const dropped = new PeerLink(fakePeerConnection());
+    dropped.close('failed');
+    await new Promise(r => setTimeout(r, 50));
+    assert.deepEqual(uncaught, []);
+  } finally {
+    process.off('unhandledRejection', onUncaught);
+  }
 });
