@@ -86,12 +86,12 @@ test('ask for work: two quests from someone, taken, shown in the talk, not offer
   visit(m, m.town);
   const npc = m.game.soldiers.find(s => isFolk(s) && s.npc.role === 'merchant');
   startTalk(m.game, m.me, npc);
-  const v = talkView(m.game, m.me);
-  assert.equal(v.quests.offers.length, 2, 'two to choose from');
+  const v = talkView(m.game, m.me), side = vv => vv.quests.offers.filter(q => q.kind === 'side');
+  assert.equal(side(v).length, 2, 'two to choose from (and their own mission: stories.js)');
   assert.ok(v.options.some(o => o.op === 'work'), '"Any work?"');
-  talkDo(m.game, m.me, { op: 'accept', id: v.quests.offers[0].id });
+  talkDo(m.game, m.me, { op: 'accept', id: side(v)[0].id });
   assert.equal(questsOf(m.me).list.length, 1, 'taken');
-  assert.equal(talkView(m.game, m.me).quests.offers.length, 1, 'and not offered again');
+  assert.equal(side(talkView(m.game, m.me)).length, 1, 'and not offered again');
   // (In the HUD's marks: they've still work, so a !.)
   run(m.game, 31);
   assert.ok(m.me.world.marks.some(([id, mk]) => id === npc.id && mk === '!'), 'a ! over them');

@@ -1151,7 +1151,7 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
   if (it.kind === 'quest') {
     // A bundle tied with string (a letter: a folded sheet with a seal).
     ctx.fillStyle = c;
-    if (it.key === 'letter' || it.key === 'map_scrap' || it.key === 'journal') {
+    if (it.key === 'letter' || it.key === 'map_scrap' || it.key === 'journal' || it.key === 'reply') {
       ctx.fillRect(x + w * 0.12, y + w * 0.25, w * 0.76, w * 0.52);
       ctx.strokeStyle = INK; ctx.strokeRect(x + w * 0.12, y + w * 0.25, w * 0.76, w * 0.52);
       ctx.beginPath(); ctx.moveTo(x + w * 0.12, y + w * 0.25); ctx.lineTo(x + w * 0.5, y + w * 0.55); ctx.lineTo(x + w * 0.88, y + w * 0.25); ctx.stroke();

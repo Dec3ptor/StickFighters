@@ -52,7 +52,8 @@ item('greater_potion', 'Greater healing potion', 'food', { stack: 20, heal: 400,
 for (const [key, name, color] of [
   ['parcel', 'Parcel', '#c8a070'], ['letter', 'Sealed letter', '#f0e6c8'], ['locket', 'Silver locket', '#dfe4ec'], ['journal', 'Old journal', '#8a5a2a'],
   ['satchel', 'Lost satchel', '#7a5634'], ['relic', 'Family relic', '#c2a8ff'], ['ring', 'Gold ring', '#f2c230'], ['idol', 'Stone idol', '#9aa0a8'],
-  ['map_scrap', 'Torn map', '#e8dcc0'], ['tools', 'Bag of tools', '#8a8f96'],
+  ['map_scrap', 'Torn map', '#e8dcc0'], ['tools', 'Bag of tools', '#8a8f96'], ['reply', 'Folded reply', '#e6dcc0'],
+  ['seal', 'Ancient seal', '#c46a2a'], ['ember_key', 'Ember key', '#ff7a2a'],
 ]) item(key, name, 'quest', { stack: 20, color });
 // Coins: what monsters drop (and half of what you carry, when you die): mercenaries are hired with them.
 item('coins', 'Coins', 'material', { color: '#f2c230' });

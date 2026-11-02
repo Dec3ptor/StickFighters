@@ -14,6 +14,7 @@ import { ROLES, isFolk, townsNear } from './townsfolk.js';
 import { stockOf, buy, sell, SHOPS, priceFor } from './trade.js';
 import { offersFor, acceptQuest, readyFor, turnIn, questEvent, questsOf, goalText, MAX_QUESTS } from './quests.js';
 import { progOf } from './progress.js';
+import { tellAbout } from './stories.js';
 import { hourOf, dayOf, DAY_TICKS, hireMerc, mercsOf, MERC } from './monsters.js';
 import { hash3 } from './noise.js';
 import { BODY } from '../config.js';
@@ -208,7 +209,7 @@ export function talkView(game, s) {
   const stock = SHOPS[f.role] ? stockOf(game.world, f, t.kind === 'city').map(o => ({ ...o, price: priceFor(o.price, s) })) : null;
   const shop = stock ? { name: SHOPS[f.role].name, role: f.role, stock } : null;
   // Quests: what they've work for (quests.js), and what you can hand in to them.
-  const offers = offersFor(game, s, f, t).map(q => ({ id: q.id, title: q.title, text: q.text, reward: q.reward, goals: q.goals.map(g => goalText(s, g)) }));
+  const offers = offersFor(game, s, f, t).map(q => ({ id: q.id, kind: q.kind, title: q.title, text: q.text, reward: q.reward, goals: q.goals.map(g => goalText(s, g)), step: q.chain ? q.chain.step + 1 : q.kind === 'story' ? q.step + 1 : 0, of: q.steps || 0 }));
   const ready = readyFor(s, f.key).map(q => ({ id: q.id, title: q.title, reward: q.reward }));
   for (const q of readyFor(s, f.key)) options.push({ op: 'turnin', id: q.id, label: q.turnIn === q.giver.key ? `Done: ${q.title}` : `I've brought this for you: ${q.title}` });
   if (offers.length) options.push({ op: 'work', label: `Any work? (${offers.length})` });
@@ -216,6 +217,7 @@ export function talkView(game, s) {
   if (f.role === 'healer') options.push({ op: 'heal', label: fee.heal ? 'Heal me' : 'Heal me (you\'re well)', price: fee.heal });
   if (f.role === 'innkeeper') options.push({ op: 'rest', label: 'Rest here (and come back here)', price: fee.rest });
   if (f.role === 'guard' && f.home.kind === 'barracks' && fee.hire) options.push({ op: 'hire', label: 'Hire a guard to come with you', price: fee.hire });
+  options.push({ op: 'about', label: 'Tell me about yourself' });
   options.push({ op: 'news', label: 'Any news?' });
   options.push({ op: 'bye', label: 'Goodbye' });
   return {
@@ -294,6 +296,10 @@ export function talkDo(game, s, d) {
       w.talk.news = newsFrom(game, f, t);
       say(w.talk.news[0]);
       break;
+    case 'about':
+      // (Their story: stories.js.)
+      say(tellAbout(game.world.gen, f, t));
+      break;
     case 'accept': {
       const q = offersFor(game, s, f, t).find(x => x.id === d.id);
       if (!q) return;
@@ -305,7 +311,7 @@ export function talkDo(game, s, d) {
       const q = readyFor(s, f.key).find(x => x.id === d.id);
       if (!q) return;
       const text = turnIn(game, s, q.id);
-      if (text) { say(`Thank you. ${text.replace(/^Done: [^.]*\. /, 'Here: ')}.`); game.notify(s, text); }
+      if (text) { say(q.said || `Thank you. ${text.replace(/^Done: [^.]*\. /, 'Here: ')}.`); game.notify(s, text); }
       break;
     }
     case 'bye':

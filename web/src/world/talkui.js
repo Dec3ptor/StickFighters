@@ -128,8 +128,8 @@ export class TalkScreen {
     const offers = v.quests?.offers || [];
     this.workEl.classList.toggle('hidden', !this.working || !offers.length);
     if (this.working && offers.length) {
-      this.workEl.innerHTML = offers.map(q => `<div class="talk-quest">
-        <div class="tq-title">${esc(q.title)}</div>
+      this.workEl.innerHTML = offers.map(q => `<div class="talk-quest${q.kind === 'story' ? ' story' : q.kind === 'personal' ? ' personal' : ''}">
+        <div class="tq-title">${q.kind === 'story' ? `<span class="tq-badge">★ The story${q.step ? `, part ${q.step}` : ''}</span> ` : q.kind === 'personal' ? `<span class="tq-badge">${esc(v.name)}'s own${q.of ? `, ${q.step} of ${q.of}` : ''}</span> ` : ''}${esc(q.title)}</div>
         <p class="tq-text">“${esc(q.text)}”</p>
         <ul class="tq-goals">${q.goals.map(g => `<li>${esc(g)}</li>`).join('')}</ul>
         <div class="tq-foot"><span class="jq-reward">${esc(rewardText(q.reward))}</span>

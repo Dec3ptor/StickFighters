@@ -14,7 +14,7 @@ import { devLines } from './devmode.js';
 import { folkAt } from './talk.js';
 import { itemColor, isPrecious } from './iteminfo.js';
 import { xpToNext, MAX_LEVEL } from './progress.js';
-import { goalText, goalPlace, goalMet, questReady } from './quests.js';
+import { goalText, goalPlace, goalMet, questReady, turnInTo } from './quests.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 export const HOT_SIZE = 46;
@@ -113,11 +113,12 @@ function drawTracker(ctx, game, me, W) {
   const x0 = 10, y0 = me.world.dev ? 120 : 56, lines = [];
   const ready = questReady(me, q);
   for (const g of q.goals) lines.push([goalMet(me, g) ? '✓ ' : '• ', goalText(me, g), goalMet(me, g)]);
-  if (ready) lines.push(['→ ', q.turnIn === q.giver.key ? `Back to ${q.giver.name} in ${q.giver.town}` : 'Hand it over', false]);
-  // (Which way: to the first goal that's somewhere, or back to whoever it's for.)
+  const to = ready ? turnInTo(q) : null;
+  if (ready) lines.push(['→ ', to ? `${q.turnIn === q.giver.key ? 'Back to' : 'Take it to'} ${to.name}${to.town ? ` in ${to.town}` : ''}` : 'Hand it over', false]);
+  // (Which way: to the first goal that's somewhere, or to whoever it's handed in to.)
   let place = null;
   for (const g of q.goals) if ((place = goalPlace(me, g))) break;
-  if (ready) place = q.turnIn === q.giver.key ? { x: q.giver.x, y: q.giver.y } : null;
+  if (ready) place = to ? { x: to.x, y: to.y } : null;
   const dir = place ? wayTo(me, place) : '';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
@@ -163,7 +164,7 @@ function drawQuestPointer(r, ctx, game, me, W, H) {
   if (!q) return;
   let place = null;
   for (const g of q.goals) if ((place = goalPlace(me, g))) break;
-  if (questReady(me, q)) place = q.turnIn === q.giver.key ? { x: q.giver.x, y: q.giver.y } : null;
+  if (questReady(me, q)) { const to = turnInTo(q); place = to ? { x: to.x, y: to.y } : null; }
   if (!place) return;
   const k = r.scale, sx = W / 2 + ((place.x + 0.5) * TILE - r.cam.x) * k, sy = H / 2 + ((place.y + 0.5) * TILE - r.cam.y) * k;
   const pulse = 0.5 + 0.5 * Math.sin(game.tick * 0.12);
@@ -206,10 +207,11 @@ function drawMarks(r, ctx, game, me, W, H) {
     const bob = Math.sin(game.tick * 0.1 + id) * 2;
     ctx.fillStyle = 'rgba(16,18,24,0.75)';
     ctx.beginPath(); ctx.arc(sx, sy + bob, 10, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = mark === '?' ? '#7ee07a' : '#f2c230';
+    const col = mark === '?' ? '#7ee07a' : mark === '★' ? '#d08cff' : '#f2c230';
+    ctx.strokeStyle = col;
     ctx.lineWidth = 2;
     ctx.stroke();
-    ctx.fillStyle = mark === '?' ? '#7ee07a' : '#ffe36e';
+    ctx.fillStyle = mark === '?' ? '#7ee07a' : mark === '★' ? '#e2b8ff' : '#ffe36e';
     ctx.fillText(mark, sx, sy + bob + 1);
   }
 }

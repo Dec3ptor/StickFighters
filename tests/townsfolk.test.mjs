@@ -180,7 +180,7 @@ test('right click on someone to talk: they stop, face you, and say something; wa
   assert.equal(v.title, 'Merchant');
   assert.equal(v.town, t.name);
   assert.ok(v.said.length > 5 && !v.said.includes('{'), `they say something (${v.said})`);
-  assert.deepEqual(v.options.map(o => o.op), ['work', 'trade', 'news', 'bye'], 'work (quests.js), their shop, news, goodbye');
+  assert.deepEqual(v.options.map(o => o.op), ['work', 'trade', 'about', 'news', 'bye'], 'work (quests.js), their shop, their story (stories.js), news, goodbye');
   assert.ok(v.shop?.stock.length >= 5, 'a shop with things in it');
   run(m.game, 30);
   assert.equal(merchant.npc.talkTo, m.me.id, 'they stop to talk');

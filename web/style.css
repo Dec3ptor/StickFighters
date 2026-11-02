@@ -416,6 +416,12 @@ html[data-game="remastered"] .inv-coins { color: #f2c230; }
 .talk-left { font-size: 11px; color: var(--muted); text-align: right; }
 html[data-game="remastered"] .talk-face { border-color: rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.08); }
 .talk-opt.turnin { border-color: #1f7a2e; box-shadow: inset 3px 0 0 #1f7a2e; }
+.talk-quest.story { border-left-color: #a052ea; }
+.talk-quest.personal { border-left-color: #2f6fdb; }
+.tq-badge { display: inline-block; margin-right: 4px; padding: 0 6px; font-size: 11px; font-weight: bold; border-radius: 3px; background: #2f6fdb; color: #fff; vertical-align: 2px; }
+.talk-quest.story .tq-badge { background: #a052ea; }
+.journal-quest.story { border-left-color: #a052ea; }
+.journal-quest.personal { border-left-color: #2f6fdb; }
 .talk-work { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
 .talk-quest, .journal-quest { border: 1px solid var(--line, rgba(0, 0, 0, 0.25)); border-left: 4px solid #f2c230; padding: 8px 12px; background: var(--soft); }
 .tq-title, .jq-title { font-weight: bold; font-size: 15px; }

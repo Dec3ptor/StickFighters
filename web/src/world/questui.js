@@ -77,12 +77,14 @@ export class JournalScreen {
     }
     const cards = [...list].reverse().map(q => {
       const ready = questReady(me, q), on = q.id === (qs.track || list.at(-1).id);
-      return `<div class="journal-quest${on ? ' on' : ''}${ready ? ' ready' : ''}">
-        <div class="jq-head"><span class="jq-title">${esc(q.title)}</span>${ready ? '<span class="jq-ready">Done: hand it in</span>' : ''}</div>
+      const badge = q.kind === 'story' ? '<span class="tq-badge" style="background:#a052ea">★ The story</span> ' : q.kind === 'personal' ? `<span class="tq-badge">${esc(q.giver.name)}'s own</span> ` : '';
+      return `<div class="journal-quest${on ? ' on' : ''}${ready ? ' ready' : ''}${q.kind === 'story' ? ' story' : q.kind === 'personal' ? ' personal' : ''}">
+        <div class="jq-head"><span class="jq-title">${badge}${esc(q.title)}</span>${ready ? '<span class="jq-ready">Done: hand it in</span>' : ''}</div>
         <div class="jq-from">From ${esc(q.giver.name)}, the ${esc(q.giver.title.toLowerCase())} of ${esc(q.giver.town)}</div>
         <p class="jq-text">“${esc(q.text)}”</p>
         <ul class="jq-goals">${q.goals.map(g => `<li class="${goalMet(me, g) ? 'met' : ''}">${esc(goalText(me, g))}</li>`).join('')}
-          ${ready && q.turnIn === q.giver.key ? `<li class="back">Go back to ${esc(q.giver.name)} in ${esc(q.giver.town)}</li>` : ''}</ul>
+          ${ready && q.turnIn === q.giver.key ? `<li class="back">Go back to ${esc(q.giver.name)} in ${esc(q.giver.town)}</li>` : ''}
+          ${ready && q.turnIn !== q.giver.key && q.handTo ? `<li class="back">Take it to ${esc(q.handTo.name)}${q.handTo.town ? ` in ${esc(q.handTo.town)}` : ''}</li>` : ''}</ul>
         <div class="jq-foot"><span class="jq-reward">${esc(rewardText(q.reward))}</span>
           <span class="jq-acts">${on ? '<span class="jq-following">Following</span>' : `<button type="button" class="small" data-act="qtrack" data-id="${esc(q.id)}">Follow</button>`}
           <button type="button" class="small" data-act="qdrop" data-id="${esc(q.id)}">Give up</button></span></div>

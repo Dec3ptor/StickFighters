@@ -23,6 +23,8 @@ import { valueOf } from './trade.js';
 import { folkOf, ROLES } from './townsfolk.js';
 import { giveXp, progOf, countStat, KILL_XP } from './progress.js';
 import { WORLD_H } from './worldgen.js';
+import { storyStep, STORY_STEPS } from './story.js';
+import { missionStep } from './stories.js';
 
 /** The most quests a player can have at once. */
 export const MAX_QUESTS = 12;
@@ -406,9 +408,66 @@ export function questsOf(s) {
 /** The period (of days) it is now, for quest offers. */
 export const periodOf = world => Math.floor((dayOf(world.time || 0) - 1) / PERIOD);
 
-/** The quests townsperson f (of town t) has for player s now (not taken, not done). */
+/** The step of the story (story.js) player s is on (STORY_STEPS: it's all done). */
+export function storyAt(s) {
+  const qs = questsOf(s);
+  let n = 0;
+  while (n < STORY_STEPS && qs.done.has(`s:${n}`)) n++;
+  return n;
+}
+
+/**
+ * A story step's or a mission step's quest (story.js, stories.js), from townsperson f of town t,
+ * as quests are. (Handed in to someone else: handTo says who, and where.)
+ */
+function wrapStep(gen, st, id, kind, f, t) {
+  const { giver, town, turnIn: to, steps, want, ...rest } = st;
+  const key = typeof to === 'string' ? to : to?.key || f.key;
+  let handTo = null;
+  if (key !== f.key) {
+    const goalTo = st.goals.find(g => g.to?.key === key)?.to;
+    if (goalTo) handTo = { name: goalTo.name, town: goalTo.town, x: goalTo.x, y: goalTo.y };
+    else if (to && typeof to === 'object') handTo = { name: to.name, town: gen.townIn(to.k)?.name ?? '', x: to.at.x, y: to.at.y };
+  }
+  return {
+    id, kind, tpl: kind, ...rest,
+    giver: { key: f.key, name: f.name, title: f.title, town: t.name, k: t.k, x: f.at.x, y: f.at.y },
+    turnIn: key, handTo, ready: false,
+  };
+}
+
+/** The story's next step, if townsperson f is the one to give it to player s. */
+function storyOffer(game, s, f, t) {
+  const n = storyAt(s), qs = questsOf(s), id = `s:${n}`;
+  if (n >= STORY_STEPS || qs.list.some(q => q.id === id)) return null;
+  const st = storyStep(game.world.gen, n, progOf(s).level);
+  if (!st || st.giver.key !== f.key) return null;
+  return { ...wrapStep(game.world.gen, st, id, 'story', f, t), step: n };
+}
+
+/** The next step of townsperson f's own mission (stories.js) for player s, if there is one and it's not under way. */
+function missionOffer(game, s, f, t) {
+  const qs = questsOf(s);
+  for (let step = 0; step < 3; step++) {
+    const id = `p:${f.key}:${step}`;
+    if (qs.done.has(id)) continue;
+    if (qs.list.some(q => q.id === id)) return null;
+    const st = missionStep(game.world.gen, f, t, step, progOf(s).level);
+    if (!st) return null;
+    return { ...wrapStep(game.world.gen, st, id, 'personal', f, t), chain: { key: f.key, k: t.k, step }, steps: st.steps };
+  }
+  return null;
+}
+
+/**
+ * The quests townsperson f (of town t) has for player s now (not taken, not done): the story's
+ * next step if it's theirs to give, their own mission's next step, and their work.
+ */
 export function offersFor(game, s, f, t) {
   const world = game.world, qs = questsOf(s), level = progOf(s).level, period = periodOf(world), out = [];
+  const story = storyOffer(game, s, f, t), own = missionOffer(game, s, f, t);
+  if (story) out.push(story);
+  if (own) out.push(own);
   for (let i = 0; i < 2; i++) {
     const q = makeQuest(world, f, t, period, i, level);
     if (!q || qs.done.has(q.id) || qs.list.some(x => x.id === q.id)) continue;
@@ -461,8 +520,8 @@ export function goalPlace(s, g) {
   }
 }
 
-/** Whom to go back to with quest q (when its goals are met): a place, or null. */
-export const turnInPlace = q => (q.turnIn === q.giver.key ? { x: q.giver.x, y: q.giver.y } : null);
+/** Whom to go to with quest q when its goals are met (whoever gave it, or handTo): { name, town, x, y }, or null. */
+export const turnInTo = q => (q.turnIn === q.giver.key ? { name: q.giver.name, town: q.giver.town, x: q.giver.x, y: q.giver.y } : q.handTo || null);
 
 /** Player s takes on quest q (from townsperson f's offers). Returns what to tell them. */
 export function acceptQuest(game, s, q) {
@@ -512,8 +571,15 @@ export function turnIn(game, s, id) {
   if (qs.track === q.id) qs.track = qs.list.at(-1)?.id ?? null;
   qs.v++;
   countStat(s, 'quests');
+  if (q.kind === 'story') countStat(s, 'story');
   if (rw.xp) giveXp(game, s, rw.xp, q.title);
   game.sound('hallelujah', s.x, s.y, s.id);
+  // (Their own mission: on to the next step, straight away.)
+  if (q.chain) {
+    const t = game.world.gen.townIn(q.chain.k), f = t && folkOf(game.world.gen.seed, t).find(x => x.key === q.chain.key);
+    const next = f && missionOffer(game, s, f, t);
+    if (next && /^Quest/.test(acceptQuest(game, s, next) || '')) game.notify(s, `Next: ${next.title}`);
+  }
   const items = (rw.items || []).map(([k, n]) => `${n > 1 ? `${n} × ` : ''}${itemOf(k)?.name ?? k}`);
   return `Done: ${q.title}. ${[rw.coins ? `${rw.coins} coins` : '', rw.xp ? `${rw.xp} experience` : '', ...items].filter(Boolean).join(', ')}`;
 }
@@ -557,7 +623,8 @@ export function questEvent(game, s, ev) {
     for (const q of qs.list) {
       if (!q.ready && questReady(s, q)) {
         q.ready = true;
-        game.notify(s, q.turnIn === q.giver.key ? `${q.title}: done. Go back to ${q.giver.name} in ${q.giver.town}` : `${q.title}: done`);
+        const to = turnInTo(q);
+        game.notify(s, to ? `${q.title}: done. Take it to ${to.name}${to.town ? ` in ${to.town}` : ''}` : `${q.title}: done`);
         game.sound('click', s.x, s.y, s.id);
       }
     }
@@ -604,7 +671,8 @@ export function questsTick(game) {
       if (ready !== q.ready) {
         q.ready = ready;
         changed = true;
-        if (ready) game.notify(s, q.turnIn === q.giver.key ? `${q.title}: done. Go back to ${q.giver.name} in ${q.giver.town}` : `${q.title}: done`);
+        const to = turnInTo(q);
+        if (ready) game.notify(s, to ? `${q.title}: done. Take it to ${to.name}${to.town ? ` in ${to.town}` : ''}` : `${q.title}: done`);
       }
     }
     if (changed) qs.v++;
@@ -623,7 +691,10 @@ function markFolk(game, s) {
     const ctl = game.controllers.get(o);
     if (!ctl?.f) continue;
     if (qs.list.some(q => q.turnIn === ctl.f.key && questReady(s, q))) marks.push([o.id, '?']);
-    else if (!full && offersFor(game, s, ctl.f, ctl.t).length) marks.push([o.id, '!']);
+    else if (!full) {
+      const offers = offersFor(game, s, ctl.f, ctl.t);
+      if (offers.length) marks.push([o.id, offers.some(q => q.kind === 'story') ? '★' : '!']);
+    }
   }
   w.marks = marks;
   w.marksKey = marks.map(m => m.join('')).join();
@@ -637,7 +708,7 @@ function spawnChampion(game, g, tag) {
   if (!SOLID[world.tile(at.x, at.y + 1)]) world.setTile(at.x, at.y + 1, K.STONE);
   const m = spawnMonster(game, g.what, at.x * TILE + TILE / 2, (at.y + 1) * TILE - 14);
   m.name = g.name;
-  m.maxHealth = Math.round(MONSTERS[g.what].health * (g.what === 'brute' ? 3 : 4));
+  m.maxHealth = Math.round(MONSTERS[g.what].health * (g.hp || (g.what === 'brute' ? 3 : 4)));
   m.npc.champion = tag;
   return m;
 }
