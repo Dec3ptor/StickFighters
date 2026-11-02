@@ -5,6 +5,7 @@
 import { WEAPONS, STARTING_WEAPONS } from './weapons.js';
 import { objectiveModes } from './objmodes.js';
 import { defuseMode } from './defuse.js';
+import { worldMode } from './world/worldplay.js';
 
 /** Gun game: every kill moves you one weapon along. A kill with the last one wins. */
 export const GUN_GAME_LADDER = [
@@ -202,7 +203,8 @@ const oitc = {
 const { koth, ctf, conquest, rush } = objectiveModes(team);
 const defuse = defuseMode(team);
 
-export const MODES = { ffa: deathmatch, team, gungame, oitc, koth, ctf, conquest, rush, defuse };
-export const MODE_IDS = Object.keys(MODES);
+// (Worlds: world/worldplay.js. Played from the Worlds tab, not picked in the game setup.)
+export const MODES = { ffa: deathmatch, team, gungame, oitc, koth, ctf, conquest, rush, defuse, world: worldMode };
+export const MODE_IDS = Object.keys(MODES).filter(id => !MODES[id].hidden);
 
 export const modeOf = id => MODES[id] || MODES.ffa;

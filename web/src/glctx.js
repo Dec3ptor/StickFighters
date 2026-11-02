@@ -956,6 +956,30 @@ export class GLContext {
     this.insert(sp);
   }
 
+  /**
+   * A canvas drawn as a picture (w x h at (x, y), the transform's turn ignored): its texture's
+   * made once, and sent to the graphics card again when `version` changes. (Not drawImage:
+   * code that draws pictures checks for that to tell a canvas from this.)
+   */
+  image(cv, x, y, w, h, version = 0) {
+    const imgs = this.images ||= new WeakMap();
+    let t = imgs.get(cv);
+    if (!t || t.w !== cv.width || t.h !== cv.height) {
+      t?.tex.destroy(true);
+      imgs.set(cv, t = { tex: this.P.Texture.from(cv, true), w: cv.width, h: cv.height, version });
+    } else if (t.version !== version) {
+      t.tex.source.update();
+      t.version = version;
+    }
+    const m = this.m, k = this.k, sp = this.sprite(t.tex);
+    sp.anchor.set(0);
+    sp.position.set(m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]);
+    sp.width = Math.max(0.01, w * k);
+    sp.height = Math.max(0.01, h * k);
+    sp.alpha = this.globalAlpha;
+    this.insert(sp);
+  }
+
   sprite(tex) {
     let sp = this.sprites[this.spriteUsed];
     if (!sp) this.sprites.push(sp = new this.P.Sprite(tex));

@@ -17,6 +17,7 @@ import { drawSoldier as drawSoldierRm } from './rm/soldiers.js';
 import { Blocks } from './rm/blocks.js';
 import { makeMaterials } from './rm/textures.js';
 import { themeFor } from './rm/themes.js';
+import { WorldView, drawDrops, drawTarget } from './world/worldrender.js';
 
 export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate };
 
@@ -109,6 +110,7 @@ export class Renderer {
 
   /** Stop using this renderer (Settings switched to another). */
   destroy() {
+    this.worldView?.detach();
     window.removeEventListener('resize', this.onResize);
     this.dprQuery?.removeEventListener?.('change', this.onDpr);
     this.dprQuery = null;
@@ -241,6 +243,7 @@ export class Renderer {
     this.drawEffects(game);
     for (let i = 0; i < list.length; i++) if (list[i].current === 'SR') this.drawLaser(game, list[i]);
     this.drawBuildGhost(game, viewer);
+    if (game.world) this.drawWorldOver(game, viewer);
     this.drawNames(game, shown.names, alpha, viewer);
     fog?.drawAlerts(this.ctx);
   }
@@ -278,6 +281,8 @@ export class Renderer {
   /** The match is over and gone: let go of its soldiers (the lists below are kept for the next). */
   forgetMatch() {
     this.rmLook = null;
+    this.worldView?.detach();
+    this.worldLooks = null;
     const out = this.shown;
     if (!out) return;
     out.soldiers.length = 0;
@@ -310,6 +315,7 @@ export class Renderer {
    * shift as the camera moves (so there are no tiles for maps with them).
    */
   drawMap(game) {
+    if (game.world) { this.drawWorld(game); return; }
     const mixed = game.map.looks?.remastered;
     this.tiled ??= Renderer.tiles === 'on';
     if (mixed || !this.tiled || !(this.mapTiles ||= new MapTiles()).draw(this, game, !this.cleared)) {
@@ -336,6 +342,19 @@ export class Renderer {
   }
 
   /** The whole canvas white (then back to the world transform). */
+  /** A world (world mode): on white paper, its blocks (worldrender.js), then what's lying on the ground. */
+  drawWorld(game) {
+    if (!this.cleared) this.clearWhite();
+    (this.worldView ||= new WorldView('classic')).drawBlocks(this, game);
+    drawDrops(this.ctx, game, 'classic', this.alpha ?? 1, this.view);
+  }
+
+  /** Over a world, once everything in it is drawn: the dark underground, and the block the crosshair's on. */
+  drawWorldOver(game, viewer) {
+    this.worldView?.drawLight(this, game, 0.72);
+    drawTarget(this.ctx, game, viewer, 'classic');
+  }
+
   clearWhite() {
     const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);

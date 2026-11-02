@@ -223,6 +223,43 @@ export const MAP_THEMES = {
 export const THEME_IDS = Object.keys(THEMES);
 
 /**
+ * Looks only worlds (world mode) are drawn in, besides the maps' own: a world's sky and
+ * scenery are the biome's under the camera (worldTheme). Kept apart from THEMES, so the
+ * themes custom maps get from their names stay as they were.
+ */
+export const WORLD_THEMES = {
+  meadow: {
+    name: 'Meadow',
+    sky: [[0, '#3f7fc4'], [0.55, '#93c4ea'], [1, '#e4f2f6']],
+    sun: { x: 0.72, y: 0.18, r: 32, color: '#fffdf0', glow: '#fff2c4', glowR: 320 },
+    clouds: { color: '#ffffff', alpha: 0.55, count: 9, top: 0.06, bottom: 0.4 },
+    haze: '#d4e8f2',
+    layers: [
+      { p: 0.07, gen: 'peaks', height: 320, color: '#93aecb', haze: 0.5, snow: '#f2f7fc' },
+      { p: 0.18, gen: 'hills', height: 210, color: '#6f9c62', haze: 0.32 },
+      { p: 0.4, gen: 'canopy', height: 170, color: '#3a6a37', haze: 0.14 },
+    ],
+    ground: '#1d3a1e',
+    fore: { gen: 'grass', height: 70, color: '#0b1c0c' },
+    mist: { color: '#f0f8ff', alpha: 0.3 },
+    weather: null,
+    material: 'mossrock', top: 'grass', tint: '#7a8a68',
+    light: { x: 0.45, y: -0.9, color: '#fffbe8', strength: 0.5 },
+    ink: '#15201a', halo: '#ffffff', haloAlpha: 0.3, rim: '#fff8d8',
+    vignette: 0.3, dark: 0,
+  },
+};
+
+// Each biome's look (worldgen.js's biomes).
+const BIOME_THEMES = { plains: 'meadow', forest: 'meadow', mountains: 'meadow', desert: 'desert', badlands: 'desert', jungle: 'jungle', snow: 'arctic' };
+
+/** The look for a world where a biome (its key) is. */
+export function worldTheme(biome) {
+  const id = BIOME_THEMES[biome] || 'meadow';
+  return { id, ...(WORLD_THEMES[id] || THEMES[id]) };
+}
+
+/**
  * The theme for a map: its own (`map.theme`, from the map maker), the game map's,
  * or one picked from its name (so a custom map always looks the same).
  */

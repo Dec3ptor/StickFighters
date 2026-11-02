@@ -1,0 +1,243 @@
+// What players carry in a world (world mode): every block and wall they can place, the tools
+// that mine and shape them, the game's own weapons and their ammunition, and materials. And
+// the inventory that holds them: a hotbar of ten slots (the number keys) and a bag.
+//
+// Items go by key (text), which saved worlds keep: 'dirt', 'pickaxe', 'M4', 'bullets'...
+//   kind   'block' (places a block), 'wall' (a wall behind), 'tool' (pick, axe, hammer),
+//          'weapon' (one of WEAPONS), 'ammo', 'material'
+//   stack  how many fit in a slot
+
+import { BLOCKS, WALLS, BLOCK_BY_KEY } from './blocks.js';
+import { WEAPONS } from '../weapons.js';
+
+export const HOTBAR = 10;
+export const BAG = 30;
+
+const I = new Map();
+const item = (key, name, kind, o = {}) => I.set(key, { key, name, kind, stack: 999, ...o });
+
+// Blocks: each one players can have (what mining gives, and what's built with).
+for (const b of BLOCKS) {
+  if (b.key === 'air' || b.drop !== b.key) continue;
+  if (['loot_crate', 'bedrock', 'door_open'].includes(b.key)) continue;
+  item(b.key, b.name, 'block', { block: b.id, color: b.ore || b.color, dark: b.dark, pattern: b.pattern });
+}
+// (Mining a tree gives wood, which is built with as logs.)
+item('wood', 'Wood', 'block', { block: BLOCK_BY_KEY.get('log').id, color: '#8a6238', dark: '#5c3f22', pattern: 'rings' });
+// Walls.
+for (const w of WALLS) if (w.drop === w.key) item(w.key, w.name, 'wall', { wall: w.id, color: w.color });
+
+// Materials (crafting: the next stage).
+item('coal', 'Coal', 'material', { color: '#202020' });
+
+// Tools. power: damage a hit does to a block (a block's `hard` is how many basic hits it
+// takes); every: updates between hits (at full speed); tier: the hardest blocks it can mine.
+item('pickaxe', 'Copper pickaxe', 'tool', { stack: 1, tool: 'pick', power: 1, every: 13, tier: 1, color: '#d07a3a', handle: '#7a5634' });
+item('iron_pickaxe', 'Iron pickaxe', 'tool', { stack: 1, tool: 'pick', power: 1.6, every: 12, tier: 2, color: '#c9ccd2', handle: '#7a5634' });
+item('gold_pickaxe', 'Gold pickaxe', 'tool', { stack: 1, tool: 'pick', power: 2.3, every: 11, tier: 3, color: '#f2c230', handle: '#5c3f22' });
+item('crystal_pickaxe', 'Crystal pickaxe', 'tool', { stack: 1, tool: 'pick', power: 3.2, every: 9, tier: 4, color: '#5ee0ff', handle: '#3a2c48' });
+item('axe', 'Copper axe', 'tool', { stack: 1, tool: 'axe', power: 1.2, every: 15, tier: 1, color: '#d07a3a', handle: '#7a5634' });
+item('hammer', 'Builder\'s hammer', 'tool', { stack: 1, tool: 'hammer', power: 1.5, every: 12, tier: 1, color: '#8a8f96', handle: '#7a5634' });
+
+// Ammunition, and the game's weapons (each takes one kind of ammo, or uses itself up: grenades,
+// sheep, dynamite...; melee weapons and the rope need none).
+item('bullets', 'Bullets', 'ammo', { color: '#c8a040' });
+item('shells', 'Shotgun shells', 'ammo', { color: '#c8402c' });
+item('rockets', 'Rockets', 'ammo', { stack: 99, color: '#5a6a3a' });
+item('arrows', 'Arrows', 'ammo', { color: '#8a6a3a' });
+item('fuel', 'Fuel', 'ammo', { color: '#e07a1f' });
+
+/** The ammo item weapon `id` uses: a key, 'self' (each one is used up), or null (none needed). */
+export function ammoOf(id) {
+  const d = WEAPONS[id];
+  if (!d) return null;
+  switch (d.kind) {
+    case 'bullet': return (d.pellets || 0) > 1 ? 'shells' : 'bullets';
+    case 'rail': case 'seeker': return 'bullets';
+    case 'arrow': return 'arrows';
+    case 'rocket': return 'rockets';
+    case 'flame': return 'fuel';
+    case 'melee': case 'rope': return null;
+    default: return 'self';
+  }
+}
+
+for (const [id, d] of Object.entries(WEAPONS)) {
+  if (d.hidden || d.kind === 'build' || d.kind === 'plant') continue;
+  const self = ammoOf(id) === 'self';
+  item(id, d.name, 'weapon', { weapon: id, stack: self ? 20 : 1, ammo: ammoOf(id) });
+}
+
+export const ITEMS = I;
+export const itemOf = key => I.get(key) || null;
+
+/**
+ * What a new character starts with: tools to dig and build, a pistol, and enough to start a
+ * base (crafting, the next stage, will make more).
+ */
+export const STARTING_KIT = [
+  ['pickaxe', 1], ['axe', 1], ['hammer', 1], ['Platinum', 1], ['torch', 30], ['planks', 99], ['platform', 40], ['ladder', 20],
+  ['door', 4], ['plank_wall', 99], ['bullets', 120], ['glass', 30], ['stone_bricks', 99], ['Shotgun', 1], ['shells', 30],
+];
+
+/** A player's things: HOTBAR + BAG slots, each null or { key, n } (a gun's also has mag: rounds in its magazine). */
+export class Inventory {
+  constructor(size = HOTBAR + BAG) {
+    this.slots = new Array(size).fill(null);
+    this.version = 0; // goes up with every change (the hotbar and inventory screen redraw)
+  }
+
+  /** How many of `key` there are in all. */
+  count(key) {
+    let n = 0;
+    for (const s of this.slots) if (s && s.key === key) n += s.n;
+    return n;
+  }
+
+  /** Room for how many more of `key`. */
+  room(key) {
+    const it = itemOf(key);
+    if (!it) return 0;
+    let n = 0;
+    for (const s of this.slots) n += !s ? it.stack : s.key === key ? it.stack - s.n : 0;
+    return n;
+  }
+
+  /** Put n of `key` in (onto stacks of it first, then the first empty slots). Returns how many didn't fit. */
+  add(key, n = 1) {
+    const it = itemOf(key);
+    if (!it || n <= 0) return n;
+    for (const s of this.slots) {
+      if (n <= 0) break;
+      if (s && s.key === key && s.n < it.stack) { const k = Math.min(n, it.stack - s.n); s.n += k; n -= k; }
+    }
+    for (let i = 0; i < this.slots.length && n > 0; i++) {
+      if (this.slots[i]) continue;
+      const k = Math.min(n, it.stack);
+      this.slots[i] = { key, n: k };
+      n -= k;
+    }
+    this.version++;
+    return n;
+  }
+
+  /** Take n of `key` out (from the last stacks first). Returns how many were taken. */
+  remove(key, n = 1) {
+    let took = 0;
+    for (let i = this.slots.length - 1; i >= 0 && took < n; i--) {
+      const s = this.slots[i];
+      if (!s || s.key !== key) continue;
+      const k = Math.min(n - took, s.n);
+      s.n -= k;
+      took += k;
+      if (s.n <= 0) this.slots[i] = null;
+    }
+    if (took) this.version++;
+    return took;
+  }
+
+  /** Take n out of slot i. Returns { key, n } taken, or null. */
+  take(i, n = Infinity) {
+    const s = this.slots[i];
+    if (!s) return null;
+    const k = Math.min(n, s.n);
+    s.n -= k;
+    if (s.n <= 0) this.slots[i] = null;
+    this.version++;
+    return { key: s.key, n: k };
+  }
+
+  /** Swap slots a and b (or put a's stack onto b's, if they're the same thing). */
+  move(a, b) {
+    if (a === b) return;
+    const A = this.slots[a], Bs = this.slots[b];
+    if (A && Bs && A.key === Bs.key && (itemOf(A.key)?.stack ?? 1) > 1) {
+      const it = itemOf(A.key), k = Math.min(A.n, it.stack - Bs.n);
+      Bs.n += k; A.n -= k;
+      if (A.n <= 0) this.slots[a] = null;
+    } else {
+      this.slots[a] = Bs;
+      this.slots[b] = A;
+    }
+    this.version++;
+  }
+
+  /** Half of slot i's stack into the first empty slot (none if there's no room). */
+  split(i) {
+    const s = this.slots[i];
+    if (!s || s.n < 2) return false;
+    const to = this.slots.indexOf(null);
+    if (to < 0) return false;
+    const half = Math.floor(s.n / 2);
+    s.n -= half;
+    this.slots[to] = { key: s.key, n: half };
+    this.version++;
+    return true;
+  }
+
+  /**
+   * Slot i's stack across to the other part (the hotbar's to the bag, the bag's to the
+   * hotbar): onto stacks of the same thing there first, then the first empty slot.
+   */
+  quickMove(i) {
+    const s = this.slots[i];
+    if (!s) return false;
+    const it = itemOf(s.key), toBag = i < HOTBAR;
+    const from = toBag ? HOTBAR : 0, to = toBag ? this.slots.length : HOTBAR;
+    for (let j = from; j < to && s.n > 0; j++) {
+      const o = this.slots[j];
+      if (o && o.key === s.key && it && o.n < it.stack && o.mag == null && s.mag == null) { const k = Math.min(s.n, it.stack - o.n); o.n += k; s.n -= k; }
+    }
+    for (let j = from; j < to && s.n > 0; j++) if (!this.slots[j]) { this.slots[j] = s; this.slots[i] = null; break; }
+    if (s.n <= 0) this.slots[i] = null;
+    this.version++;
+    return this.slots[i] !== s;
+  }
+
+  /** The bag put in order (tools and guns first, then blocks...), stacks of the same thing joined. */
+  sortBag() {
+    const order = { tool: 0, weapon: 1, ammo: 2, block: 3, wall: 4, material: 5 };
+    const items = this.slots.slice(HOTBAR).filter(Boolean);
+    const joined = [];
+    for (const s of items) {
+      const it = itemOf(s.key);
+      let left = s.n;
+      if (it && s.mag == null) {
+        for (const o of joined) {
+          if (left <= 0) break;
+          if (o.key === s.key && o.mag == null && o.n < it.stack) { const k = Math.min(left, it.stack - o.n); o.n += k; left -= k; }
+        }
+      }
+      if (left > 0) joined.push({ ...s, n: left });
+    }
+    const rank = s => order[itemOf(s.key)?.kind] ?? 9;
+    joined.sort((a, b) => rank(a) - rank(b) || (itemOf(a.key)?.name || a.key).localeCompare(itemOf(b.key)?.name || b.key) || b.n - a.n);
+    for (let i = HOTBAR; i < this.slots.length; i++) this.slots[i] = joined[i - HOTBAR] || null;
+    this.version++;
+  }
+
+  toJSON() { return this.slots.map(s => (!s ? null : s.mag > 0 ? [s.key, s.n, s.mag] : [s.key, s.n])); }
+
+  /** An inventory as saved (unknown items, from a newer game, are kept as they are). */
+  static from(list, size = HOTBAR + BAG) {
+    const inv = new Inventory(size);
+    if (Array.isArray(list)) {
+      for (let i = 0; i < Math.min(size, list.length); i++) {
+        const s = list[i];
+        if (Array.isArray(s) && typeof s[0] === 'string' && Number.isFinite(s[1]) && s[1] > 0) {
+          inv.slots[i] = { key: s[0], n: Math.floor(s[1]) };
+          if (Number.isFinite(s[2]) && s[2] > 0) inv.slots[i].mag = Math.floor(s[2]);
+        }
+      }
+    }
+    return inv;
+  }
+
+  /** A new character's things (the guns loaded). */
+  static starting() {
+    const inv = new Inventory();
+    for (const [key, n] of STARTING_KIT) inv.add(key, n);
+    for (const s of inv.slots) if (s && WEAPONS[s.key]?.mag) s.mag = WEAPONS[s.key].mag;
+    return inv;
+  }
+}

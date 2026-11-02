@@ -10,7 +10,7 @@ import { Renderer, fillSpikes } from '../render.js';
 import { drawObjectives, drawCarried } from '../objdraw.js';
 import { Fog } from '../fog.js';
 import { lerp } from '../util.js';
-import { themeFor, THEMES } from './themes.js';
+import { themeFor, THEMES, worldTheme } from './themes.js';
 import { Backdrop, dropScreenCopy } from './backdrop.js';
 import { Blocks } from './blocks.js';
 import { makeMaterials } from './textures.js';
@@ -21,6 +21,8 @@ import { styledContext } from './hudstyle.js';
 import { css } from './color.js';
 import { GameMap } from '../map.js';
 import { paintMap } from '../maptiles.js';
+import { WorldView, drawDrops, drawTarget } from '../world/worldrender.js';
+import { TILE, BLOCKS, MAGMA } from '../world/blocks.js';
 
 export // After a quality or map change, how long (ms) before the frame rate says anything about the quality.
 const SETTLE = 2500;
@@ -32,6 +34,9 @@ function lowest(map) {
   for (const s of map.solids) if (s.b > b) b = s.b;
   return Number.isFinite(b) ? b : map.bounds.bottom;
 }
+
+// The colour of the light a glowing block gives (its ore's colour, or its own).
+const glowOf = id => (id === MAGMA ? '#ff7a30' : BLOCKS[id].ore || BLOCKS[id].color);
 
 const seedOf = s => { let h = 7; for (const c of String(s || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 100000; };
 
@@ -115,6 +120,51 @@ export class RemasteredRenderer extends Renderer {
     return (this.look = look);
   }
 
+  /**
+   * A world's look: the sky and scenery of the biome under the camera (changing once the
+   * camera's been over another biome a moment), standing on the land round about. Each look
+   * is kept once made.
+   */
+  worldLookFor(game) {
+    const world = game.world, q = this.quality, gen = world.gen, tx = Math.floor(this.cam.x / TILE);
+    let wl = this.worldLooks;
+    if (wl?.world !== world) wl = this.worldLooks = { world, looks: new Map(), mats: new Map(), theme: worldTheme(gen.biomeAt(tx).key), since: 0, ground: null };
+    const here = worldTheme(gen.biomeAt(tx).key);
+    if (here.id !== wl.theme.id) { if (++wl.since > 45) { wl.theme = here; wl.since = 0; } } else wl.since = 0;
+    // (The scenery stands a little below the land round about, eased as the land rises and falls.)
+    let sum = 0;
+    for (let i = -6; i <= 6; i++) sum += gen.surfaceAt(tx + i * 12);
+    const land = (sum / 13) * TILE + 140;
+    wl.ground = wl.ground == null ? land : wl.ground + (land - wl.ground) * 0.04;
+    const theme = wl.theme, key = `${theme.id}/${q}`;
+    let look = wl.looks.get(key);
+    if (!look) {
+      let mats = wl.mats.get(theme.id);
+      if (!mats) wl.mats.set(theme.id, mats = makeMaterials(this.ctx, theme));
+      look = {
+        map: game.map, theme, quality: q, at: performance.now(),
+        backdrop: new Backdrop(theme, seedOf(`${world.name}/${theme.id}`), q),
+        mats, blocks: null,
+        weather: q === 'low' ? null : new Weather(theme.weather, q),
+        ground: 0, floor: Infinity,
+      };
+      wl.looks.set(key, look);
+    }
+    look.ground = Math.round(wl.ground);
+    return (this.look = look);
+  }
+
+  /** A world (world mode): its blocks (worldrender.js), what glows in them lighting up round it, and what's on the ground. */
+  drawWorld(game) {
+    const v = this.worldView ||= new WorldView('remastered');
+    v.drawBlocks(this, game);
+    if (this.quality !== 'low') {
+      const g = v.glows;
+      for (let i = 0; i < g.length; i += 4) this.lights.add(g[i], g[i + 1], 16 + g[i + 2] * 3.4, glowOf(g[i + 3]), 0.18 + g[i + 2] / 40);
+    }
+    drawDrops(this.ctx, game, 'remastered', this.alpha ?? 1, this.view);
+  }
+
   /** Behind the menus: the scenery of the map picked (or a sunset city), slowly panning. */
   clear() {
     const now = performance.now(), dt = Math.min(100, now - this.frameAt);
@@ -152,7 +202,8 @@ export class RemasteredRenderer extends Renderer {
   render(game, alpha, viewer) {
     const now = performance.now(), dt = Math.min(100, now - this.frameAt);
     this.frameAt = now;
-    const look = this.lookFor(game.map), theme = look.theme;
+    const world = game.world;
+    const look = world ? this.worldLookFor(game) : this.lookFor(game.map), theme = look.theme;
     const ctx = this.ctx, s = this.scale * this.dpr;
     this.blank = false;
     this.alpha = alpha;
@@ -168,7 +219,8 @@ export class RemasteredRenderer extends Renderer {
     // Fog of war: what's out of sight is worked out now, and darkened after the world is drawn.
     this.fogNow = game.options?.fog && !this.noFog && (this.fogFrom || viewer) ? (this.fog ||= new Fog()).update(game, this.fogFrom || viewer, alpha) : null;
 
-    look.blocks.draw(this, game.map, look.mats, theme, !!game.options?.destruction);
+    if (world) this.drawWorld(game);
+    else look.blocks.draw(this, game.map, look.mats, theme, !!game.options?.destruction);
     // Blocks given the original's look (the map maker's Look tool): paper and ink, as the
     // original draws them, in front of the solid blocks' sides.
     if (game.map.looks?.classic) paintMap(ctx, game.map, this.lineW, this.view, !!game.options?.destruction, 'remastered');
@@ -186,6 +238,8 @@ export class RemasteredRenderer extends Renderer {
     for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);
     this.drawBuildGhost(game, viewer);
 
+    // A world: dark underground (the glows and flashes go over it).
+    if (world) this.worldView.drawLight(this, game, 0.86);
     if (this.quality !== 'low') this.lights.draw(ctx, this.view);
     if (theme.dark && this.quality === 'high') this.lights.drawDarkness(this, theme.dark);
     else if (theme.dark) {
@@ -201,10 +255,12 @@ export class RemasteredRenderer extends Renderer {
     look.backdrop.drawFore(ctx, this, look.floor);
     ctx.setTransform(s, 0, 0, s, tx, ty);
     for (const sol of shown.names) this.drawName(game, sol, alpha, viewer);
-    look.weather?.draw(ctx, this, dt);
+    // (No weather underground.)
+    if (!world || this.cam.y < (world.gen.surfaceAt(Math.floor(this.cam.x / TILE)) + 14) * TILE) look.weather?.draw(ctx, this, dt);
     if (this.quality === 'high') drawVignette(ctx, this.pw, this.ph, theme.vignette);
     ctx.setTransform(s, 0, 0, s, tx, ty);
     this.fogNow?.drawAlerts(ctx);
+    if (world) drawTarget(ctx, game, viewer, 'remastered');
   }
 
   drawSoldier(game, s, alpha) {

@@ -14,6 +14,8 @@ export function makeBody(x, y) {
     momentum: 0,       // ticks of keeping speed in the air (after a rope swing or a big hit)
     // Set during each step, for animation and sound:
     jetting: false, bounced: false, jumped: false, landed: 0,
+    // Worlds: standing on a one-way platform; dropping through one (updates left); on a ladder.
+    onPlatform: false, dropping: 0, climbing: false,
   };
 }
 
@@ -38,8 +40,13 @@ export function stepBody(body, input, map) {
   body.jumped = false;
   body.landed = 0;
 
+  // Worlds' ladders: hold jump to climb, crouch to go down (no falling while on one).
+  const ladder = !!map.climbable && map.climbable(body.x - BODY.halfW, body.y + bodyTop(body), body.x + BODY.halfW, body.y + BODY.bottom);
+  body.climbing = ladder && (body.climbing || !!input.jump || !!input.crouch);
+  if (body.dropping > 0) body.dropping--;
+
   // Crouch (only on the ground; standing up needs head room).
-  if (input.crouch && wasGround) {
+  if (input.crouch && wasGround && !body.climbing) {
     body.crouching = true;
   } else if (body.crouching) {
     const blocked = map.overlap(body.x - BODY.halfW, body.y + BODY.top, body.x + BODY.halfW, body.y + BODY.crouchTop);
@@ -71,8 +78,16 @@ export function stepBody(body, input, map) {
     body.vx += dv > accel ? accel : dv < -accel ? -accel : dv;
   }
 
+  // Worlds: crouch and jump on a one-way platform drops through it.
+  if (input.jumpPressed && wasGround && input.crouch && body.onPlatform) {
+    body.dropping = 12;
+    body.onGround = false;
+    body.onPlatform = false;
+    body.crouching = false;
+    body.y += 1;
+  }
   // Jumping.
-  if (input.jumpPressed && wasGround && !body.crouching) {
+  else if (input.jumpPressed && wasGround && !body.crouching && !body.climbing) {
     body.vy = -PHYS.jumpSpeed;
     body.onGround = false;
     body.jumped = true;
@@ -89,17 +104,21 @@ export function stepBody(body, input, map) {
     body.fuel = Math.min(100, body.fuel + PHYS.jetRegen);
   }
 
-  body.vy = Math.min(body.vy + PHYS.gravity, PHYS.maxFall);
+  if (body.climbing) body.vy = input.jump ? -PHYS.climbSpeed : input.crouch ? PHYS.climbSpeed : 0;
+  else body.vy = Math.min(body.vy + PHYS.gravity, PHYS.maxFall);
   if (body.y < map.bounds.top - RULES.ceilingMargin && body.vy < 0) body.vy = 0;
 
   moveX(body, map, wasGround);
   const touched = moveY(body, map, wasGround);
 
   if (!touched) {
-    const under = body.vy >= 0 ? supportUnder(body, map) : null;
+    let under = body.vy >= 0 ? supportUnder(body, map) : null;
+    // (Dropping through a platform: not stood on.)
+    if (under?.platform && body.dropping > 0) under = null;
     // A jump pad only launches you when it's under your middle; its edge works as floor.
     body.onGround = !!under && !(under.bounce && under.l <= body.x && body.x <= under.r);
-    if (body.onGround) body.vy = 0;
+    body.onPlatform = !!under?.platform;
+    if (body.onGround && !body.climbing) body.vy = 0;
   }
   if (body.rope) holdRope(body, input, map);
 }
@@ -141,10 +160,11 @@ function moveX(body, map, wasGround) {
     let hit = overlapAt(body, map, nx, body.y);
     if (!hit) { body.x = nx; continue; }
 
-    // Walk up small ledges.
+    // Walk up small ledges (in a world, a block high).
     if (wasGround) {
       let stepped = false;
-      for (let up = 1; up <= PHYS.stepUp; up++) {
+      const most = map.stepUp ?? PHYS.stepUp;
+      for (let up = 1; up <= most; up++) {
         if (!overlapAt(body, map, nx, body.y - up)) {
           body.x = nx;
           body.y -= up;
@@ -180,7 +200,23 @@ function moveY(body, map, wasGround) {
     const ny = body.y + dy;
     const top = bodyTop(body);
     const hits = HITS, n = map.overlapAll(body.x - BODY.halfW, ny + top, body.x + BODY.halfW, ny + BODY.bottom, hits);
-    if (n === 0) { body.y = ny; continue; }
+    if (n === 0) {
+      // Worlds: landing on a one-way platform from above (unless dropping through one, or climbing).
+      if (dy > 0 && map.landing && !(body.dropping > 0) && !body.climbing) {
+        const at = map.landing(body.x - BODY.halfW, body.x + BODY.halfW, body.y + BODY.bottom, ny + BODY.bottom);
+        if (at != null) {
+          body.y = at - BODY.bottom;
+          if (!wasGround) body.landed = body.vy;
+          body.vy = 0;
+          body.onGround = true;
+          body.onPlatform = true;
+          body.padLaunch = false;
+          return true;
+        }
+      }
+      body.y = ny;
+      continue;
+    }
 
     if (dy > 0) {
       let floor = hits[0];
@@ -201,6 +237,7 @@ function moveY(body, map, wasGround) {
         if (!wasGround) body.landed = body.vy;
         body.vy = 0;
         body.onGround = true;
+        body.onPlatform = false;
         body.padLaunch = false;
       }
     } else {

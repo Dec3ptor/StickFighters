@@ -441,6 +441,14 @@ export const WEAPONS = {
     bot: { score: 0, value: 0 },
   },
   // The Engineer's tool (classes on): ammo is blocks, which come back over time (gadgets.js).
+  // Worlds (world mode): bare hands, for a tool or a block in hand (drawn as the item: worldplay.js),
+  // or nothing. The use button digs or builds with those; with nothing, it's a punch.
+  Hands: {
+    name: 'Hands', short: 'Hands', slot: 10, kind: 'melee', hidden: true,
+    rof: 22, reach: 18, arc: 0.3, damage: 9, knock: 2.5, lift: 1, ammo: Infinity, sound: 'punch',
+    look: { type: 'none' },
+    bot: { near: 0, far: 18, score: 1, value: 0 },
+  },
   Builder: {
     name: 'Builder', short: 'Builder', slot: 9, kind: 'build', hidden: true, tool: true,
     rof: 24, ammo: 6, maxAmmo: 6, sound: 'build', semi: true,

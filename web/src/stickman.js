@@ -156,7 +156,8 @@ export function buildPose(s) {
 
   // Arms hold the weapon along the aim.
   const sx = nx - ux * 2, sy = ny - uy * 2;
-  const def = WEAPONS[s.current] || WEAPONS.Platinum;
+  // (In a world, what's in hand may be a tool or a block: s.held says how it looks.)
+  const def = s.held || WEAPONS[s.current] || WEAPONS.Platinum;
   const dx = Math.cos(s.aim), dy = Math.sin(s.aim);
   const kick = s.anim.recoil;
   const twoHanded = TWO_HANDED.has(def.look.type);

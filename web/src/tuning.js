@@ -81,7 +81,7 @@ const LABELS = {
     jumpCut: ['Short hop: letting go of jump caps the climb at', 'smaller: shorter hops'], bounceScale: ['Jump pad launch'],
     stepUp: ['Walks up steps this high', 'px'], jetAccel: ['Jetpack thrust'], jetMaxUp: ['Jetpack: fastest climb'],
     jetDrain: ['Jetpack: fuel used each update', 'fuel is 0-100'], jetRegen: ['Jetpack: fuel back each update on the ground'],
-    ropeClimb: ['Ninja rope: climbing speed'], sprintSpeed: ['Sprint: times faster'], sprintDrain: ['Sprint: stamina used each update', 'stamina is 0-100'],
+    ropeClimb: ['Ninja rope: climbing speed'], climbSpeed: ['Ladders (worlds): climbing speed'], sprintSpeed: ['Sprint: times faster'], sprintDrain: ['Sprint: stamina used each update', 'stamina is 0-100'],
     sprintRegen: ['Sprint: stamina back each update'], sprintRecover: ['Sprint: winded until stamina is back to'],
   },
   MOTION: {

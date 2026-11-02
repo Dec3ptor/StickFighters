@@ -40,6 +40,11 @@ import { DevMenu } from './devmenu.js';
 import { DEFAULT_GROUPS, CHOICE_KEYS, defaultRows, changedDefaults, gameDefaults, readDefaults, tidy, equal } from './gamedefaults.js';
 import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
+import { TileWorld } from './world/tileworld.js';
+import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT } from './world/worldsave.js';
+import { playerToSave, worldFromSave, dropItem } from './world/worldplay.js';
+import { InventoryScreen } from './world/inventoryui.js';
+import { seedOf } from './world/noise.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -59,6 +64,7 @@ const state = {
   chat: [], chatOpen: false, setupFor: 'offline', nextMatchAt: 0,
   spectating: false,   // chosen from the in-game menu (sitting out to watch)
   spec: { id: null, free: false, x: 0, y: 0 }, // watching: who the camera follows, or the free camera
+  world: null,         // playing a world: { rec (as kept: worldsave.js), game, savedAt }
 };
 let editor = null;
 let lobby = null;
@@ -256,10 +262,13 @@ function modeFields() {
 function showTab(tab) {
   state.tab = tab;
   $('tabOnline').setAttribute('aria-pressed', String(tab === 'online'));
-  $('tabOffline').setAttribute('aria-pressed', String(tab !== 'online'));
+  $('tabOffline').setAttribute('aria-pressed', String(tab !== 'online' && tab !== 'worlds'));
+  $('tabWorlds').setAttribute('aria-pressed', String(tab === 'worlds'));
   show('online', tab === 'online');
-  show('setup', tab !== 'online');
+  show('worlds', tab === 'worlds');
+  show('setup', tab !== 'online' && tab !== 'worlds');
   if (tab === 'online') { startWatching(); setupFor('offline', false); }
+  else if (tab === 'worlds') { stopWatching(); setupFor('offline', false); show('setup', false); renderWorlds(); }
   else { stopWatching(); setupFor(tab === 'host' ? 'host' : 'offline'); }
 }
 
@@ -596,6 +605,9 @@ function enterMatch(game, me) {
 }
 
 function endMatch(to = state.returnTo) {
+  // A world: kept as it is now (and the soldier's things and where they are).
+  if (state.world) saveWorldNow(true);
+  closeInventory();
   state.replay = null;
   renderer.cam.zoom = 1;
   renderer.forgetMatch?.();
@@ -619,6 +631,7 @@ function showMenu() {
   show('menu', true);
   buildMapCards(selectedMap(), { follow: true });
   if (state.tab === 'online') startWatching();
+  if (state.tab === 'worlds') renderWorlds();
 }
 
 function openEditor(record) {
@@ -651,7 +664,11 @@ function setPaused(p) {
   show('restart', state.mode !== 'client');
   show('changeClass', !!state.game?.classesOn);
   $('spectate').textContent = state.me?.spectating ? 'Join game' : 'Spectate';
-  $('quit').textContent = state.mode === 'host' ? 'End game for everyone' : state.mode === 'client' ? 'Leave game' : 'Quit to menu';
+  $('quit').textContent = state.mode === 'host' ? 'End game for everyone' : state.mode === 'client' ? 'Leave game' : state.world ? 'Save and quit' : 'Quit to menu';
+  // (A world: no restarting it, and no sitting out to watch. Pausing keeps it as it is.)
+  if (state.world) { show('restart', false); show('spectate', false); if (p) saveWorldNow(); }
+  else show('spectate', true);
+  if (p) closeInventory();
   state.menuOpen = p;
   show('pause', p);
   fullscreenButton();
@@ -763,7 +780,7 @@ function localNote(text) {
 /** True while the match is being played (no menu, chat or picker open over it). */
 function playingNow() {
   const g = state.game;
-  return !!g && !g.over && !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open &&
+  return !!g && !g.over && !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open && !invScreen?.open &&
     document.body.classList.contains('playing') && $('settings').classList.contains('hidden');
 }
 
@@ -836,6 +853,156 @@ function buyItem(id) {
   const why = g.rules.buyItem(g, me, id);
   if (why) { localNote(why); audio.play('menuMove'); }
   buyMenu?.refresh(g, me);
+}
+
+// ---- Worlds ---------------------------------------------------------------------------------
+
+/** The Worlds tab's list: the worlds kept in this browser, the last played first. */
+async function renderWorlds() {
+  const el = $('worldList');
+  let list;
+  try { list = await listWorlds(); }
+  catch (err) { el.innerHTML = `<p class="muted-note">This browser can't keep worlds: ${esc(err?.message || err)}</p>`; return; }
+  state.worldList = list;
+  if (!list.length) { el.innerHTML = '<p class="muted-note">No worlds yet: make one below.</p>'; return; }
+  const when = t => {
+    const d = new Date(t), today = new Date();
+    return d.toDateString() === today.toDateString() ? `today, ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+  el.innerHTML = list.map(w => `
+    <div class="world-card" data-world="${esc(w.id)}">
+      <div class="world-info"><b>${esc(w.name)}</b><span class="muted-note">Seed ${esc(w.seed)} &middot; played ${esc(when(w.played))}</span></div>
+      <button type="button" class="primary" data-act="play">Play</button>
+      <button type="button" class="small" data-act="export">Export</button>
+      <button type="button" class="small" data-act="delete">Delete</button>
+    </div>`).join('');
+}
+
+/** A click in the list of worlds: play, export or delete one. */
+async function worldAction(e) {
+  const b = e.target.closest('button[data-act]'), card = e.target.closest('[data-world]');
+  if (!b || !card) return;
+  const rec = state.worldList?.find(w => w.id === card.dataset.world);
+  if (!rec) return;
+  audio.unlock();
+  if (b.dataset.act === 'play') { audio.play('menuSelect'); startWorld(rec); return; }
+  if (b.dataset.act === 'export') {
+    try {
+      const { text, file } = await exportWorld(rec.id);
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      const a = Object.assign(document.createElement('a'), { href: url, download: file });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) { toast(`Couldn't export that world: ${err?.message || err}`); }
+    return;
+  }
+  if (b.dataset.act === 'delete' && confirm(`Delete "${rec.name}"? Everything built in it goes too, and this can't be undone.`)) {
+    await deleteWorld(rec.id).catch(err => toast(`Couldn't delete it: ${err?.message || err}`));
+    renderWorlds();
+  }
+}
+
+/** A new world, from the Worlds tab (its seed as typed, or a random one), played straight away. */
+async function newWorld() {
+  audio.unlock(); audio.play('menuSelect');
+  const typed = $('worldSeed').value.trim();
+  const seed = typed ? seedOf(typed) : (Math.random() * 2 ** 31) | 0;
+  const n = (state.worldList?.length || 0) + 1;
+  try {
+    const rec = await createWorld({ name: $('worldName').value.trim() || `World ${n}`, seed });
+    $('worldName').value = '';
+    $('worldSeed').value = '';
+    startWorld(rec);
+  } catch (err) { toast(`Couldn't make the world: ${err?.message || err}`); }
+}
+
+/** Play world `rec` (as kept): its changed chunks loaded, you back where you were with your things. */
+async function startWorld(rec) {
+  stopWatching();
+  state.returnTo = 'menu';
+  state.settings = readMenu();
+  show('menu', false); show('pause', false); show('over', false); show('connecting', false);
+  $('toEditor').classList.add('hidden');
+  show('loading', true);
+  await new Promise(r => setTimeout(r, 30));
+  let saved;
+  try { saved = await loadChunks(rec.id); }
+  catch (err) { show('loading', false); showMenu(); toast(`Couldn't load that world: ${err?.message || err}`); return; }
+  // Our own numbers (Settings, Developer), camera and aiming zoom: a world's played offline.
+  useOwnRules();
+  const world = new TileWorld({ seed: rec.seed, name: rec.name, saved });
+  const game = new Game({ world, mode: 'world', speed: state.settings.speed, options: { destruction: true, crates: 'off', streaks: false }, seed: (Math.random() * 2 ** 31) | 0 });
+  state.step = 1000 / game.tickRate;
+  const me = game.addSoldier({ name: playerName(), isBot: false, team: 0, skin: prefs.skin }, new PlayerController(input, () => renderer, playerOptions));
+  me.world = worldFromSave(rec.player);
+  me.respawnTimer = 1;
+  state.mode = 'offline';
+  rec.played = Date.now();
+  state.world = { rec, game, savedAt: performance.now() };
+  enterMatch(game, me);
+  const at = me.world.resume || world.spawns[0];
+  renderer.snapCamera(at.x, at.y - 20);
+}
+
+/**
+ * Keep the world being played (its changed chunks, and your things and where you are).
+ * last: it's being left (let go of once it's kept).
+ */
+function saveWorldNow(last = false) {
+  const w = state.world;
+  if (!w) return Promise.resolve();
+  if (last) state.world = null;
+  w.savedAt = performance.now();
+  const me = w.game.soldiers.find(s => s.world && !s.isBot);
+  if (me) w.rec.player = playerToSave(me);
+  w.rec.played = Date.now();
+  const chunks = w.game.world.takeDirty();
+  return saveWorld(w.rec, chunks).catch(err => {
+    // (Kept for the next try.)
+    for (const c of chunks) c.dirty = true;
+    toast(`Couldn't save the world: ${err?.message || err}`);
+  });
+}
+
+/** A world file chosen (the Worlds tab's Import): kept here as a new world. */
+async function importWorldFile(file) {
+  if (!file) return;
+  try {
+    const rec = await importWorld(await file.text());
+    toast(`"${rec.name}" is in your worlds`);
+    renderWorlds();
+  } catch (err) { toast(err?.message || String(err)); }
+}
+
+// ---- Worlds: the inventory screen ----------------------------------------------------------------
+
+let invScreen = null;
+const getInventory = () => (invScreen ||= new InventoryScreen($('inventory'), { drop: i => dropFromInventory(i), close: () => closeInventory() }));
+
+/** I: your things (the game carries on; your soldier stands still while it's open). */
+function openInventory() {
+  const g = state.game, me = state.me;
+  if (!g?.world || !me?.world || state.menuOpen || state.chatOpen || g.over) return;
+  getInventory().show(me);
+  input.enabled = false;
+  input.clear();
+  input.unlock();
+}
+
+function closeInventory() {
+  if (!invScreen?.open) return;
+  invScreen.hide();
+  if (state.game && !state.menuOpen && !state.chatOpen && !state.game.over) { input.enabled = true; grabControls(); }
+}
+
+/** The inventory screen's Drop: slot i's stack, thrown in front of you. */
+function dropFromInventory(i) {
+  const g = state.game, me = state.me;
+  if (!g?.world || !me?.world || !me.alive) return;
+  const taken = me.world.inv.take(i);
+  if (taken) dropItem(g, taken.key, taken.n, me.x + me.facing * 8, me.y - 14, me.facing * 3, -2, 60);
 }
 
 /** The class picker (C while waiting to respawn, or the pause menu's Change class). */
@@ -1742,6 +1909,9 @@ function frame(now) {
     picking: state.pickerOpen,
   });
   if (hudR !== renderer) renderer.classButton = hudR.classButton;
+  // A world: kept every minute (and when it's paused or left); the inventory screen up to date.
+  if (state.world && !state.paused && now - state.world.savedAt > 60000) saveWorldNow();
+  if (invScreen?.open) invScreen.refresh();
   // Defuse's buy menu: kept up to date, and closed when you can't buy any more.
   if (buyMenu?.open) {
     if (canShop(g, me)) buyMenu.refresh(g, me);
@@ -1884,6 +2054,7 @@ function pressMenuKey(key) {
   const g = state.game;
   if (!g || state.menuOpen || state.chatOpen) return false;
   if (isKey('buy', key) && g.rules.buyItem) { openBuy(); return true; }
+  if (isKey('inventory', key) && g.world) { openInventory(); return true; }
   if (isKey('changeClass', key) && g.classesOn && !g.over) {
     if (!state.me.alive) openPicker();
     else localNote(`Change class while waiting to respawn (${keyLabel('changeClass')}), or from the menu (Esc)`);
@@ -1979,6 +2150,13 @@ function startBackgroundTicker() {
 function wire() {
   $('tabOnline').addEventListener('click', () => { showTab('online'); rememberMenu(); });
   $('tabOffline').addEventListener('click', () => { showTab('offline'); rememberMenu(); });
+  $('tabWorlds').addEventListener('click', () => { showTab('worlds'); rememberMenu(); });
+  $('worldList').addEventListener('click', worldAction);
+  $('newWorldForm').addEventListener('submit', e => { e.preventDefault(); newWorld(); });
+  $('importWorld').addEventListener('click', () => $('importWorldFile').click());
+  $('importWorldFile').addEventListener('change', () => { importWorldFile($('importWorldFile').files[0]); $('importWorldFile').value = ''; });
+  // (Leaving the page mid-world: kept as it is, as far as the browser lets it finish.)
+  window.addEventListener('pagehide', () => { if (state.world) saveWorldNow(); });
   $('openEditor').addEventListener('click', () => openEditor(listMaps()[0] || null));
   $('quickMatch').addEventListener('click', quickMatch);
   $('hostGame').addEventListener('click', () => { stopWatching(); setupFor('host'); });
@@ -2101,6 +2279,11 @@ function wire() {
       if (!e.repeat && buyMenu.key(e.code, state.game, state.me)) e.preventDefault();
       return;
     }
+    // A world's inventory screen: I or Esc closes it.
+    if (invScreen?.open) {
+      if (!e.repeat && invScreen.key(e.code)) e.preventDefault();
+      return;
+    }
     const key = keyOf(e.code);
     if (!e.repeat && pressMenuKey(key)) { e.preventDefault(); return; }
     if (e.code === 'Escape') {
@@ -2216,7 +2399,7 @@ async function boot() {
   audio.listen(window); // (sound starts at the first click, tap or key; nothing listens once it's running)
   maps.index = index;
   await Promise.all(index.map(async m => maps.data.set(m.file, await fetch('data/maps/' + m.file).then(r => r.json()))));
-  state.tab = settings.tab === 'offline' ? 'offline' : 'online';
+  state.tab = ['offline', 'worlds'].includes(settings.tab) ? settings.tab : 'online';
 
   editor = new Editor({
     root: $('editor'),
@@ -2268,6 +2451,7 @@ async function boot() {
   window.stickSoldiers = {
     state, get renderer() { return renderer; }, get edition() { return edition; }, get input() { return input; }, setEdition, openGamePicker, pacer, prefs, perf, setGraphics, startMatch, endMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab,
     get profile() { return profile; }, openPicker, openLoadout,
+    startWorld, saveWorldNow, renderWorlds, openInventory, closeInventory, get inventory() { return invScreen; },
     devExport: all => JSON.parse(devMenu.exportText(all)), // (what the developer menu copies out)
     // The camera and aiming zoom in use (the host's, in someone else's game).
     feelNow: () => ({ camera: cameraInUse(), aimZoom: hostFeel ? hostFeel.aimZoom : prefs.aimZoom, host: !!hostFeel }),

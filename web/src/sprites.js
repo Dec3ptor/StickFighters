@@ -158,9 +158,41 @@ export function drawWeapon(ctx, def, lying) {
       break;
     case 'axe':
       ctx.fillRect(0, -0.8, L, 1.6);
-      ctx.fillStyle = '#9aa0a6';
+      ctx.fillStyle = look.head || '#9aa0a6';
       ctx.beginPath(); ctx.moveTo(L - 4, -1); ctx.lineTo(L - 1, -6); ctx.lineTo(L + 2, -5); ctx.lineTo(L + 1, 1); ctx.closePath(); ctx.fill();
       ctx.strokeStyle = '#555'; ctx.lineWidth = 0.5; ctx.stroke();
+      break;
+    // Worlds' tools and things in hand (worldplay.js).
+    case 'pickaxe':
+      // A handle, and a curved head across its end, pointed both ways.
+      ctx.fillRect(0, -0.8, L, 1.6);
+      ctx.fillStyle = look.head || '#9aa0a6';
+      ctx.beginPath(); ctx.moveTo(L + 1, -7); ctx.quadraticCurveTo(L + 3.5, 0, L + 1, 7); ctx.lineTo(L - 1, 6); ctx.quadraticCurveTo(L + 1, 0, L - 1, -6); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#444'; ctx.lineWidth = 0.5; ctx.stroke();
+      break;
+    case 'mallet':
+      ctx.fillRect(0, -0.8, L - 2, 1.6);
+      ctx.fillStyle = look.head || '#8a8f96';
+      ctx.fillRect(L - 3, -4, 6, 8);
+      ctx.strokeStyle = '#444'; ctx.lineWidth = 0.5; ctx.strokeRect(L - 3, -4, 6, 8);
+      break;
+    case 'block':
+      // A block held out in front (a small one: the real thing's in the world).
+      ctx.fillStyle = look.color;
+      ctx.fillRect(3, -3.5, 7, 7);
+      ctx.fillStyle = look.dark || '#555';
+      ctx.fillRect(3, 2, 7, 1.5);
+      ctx.strokeStyle = '#222'; ctx.lineWidth = 0.6; ctx.strokeRect(3, -3.5, 7, 7);
+      break;
+    case 'torch':
+      ctx.fillStyle = '#7a5634';
+      ctx.fillRect(2, -0.9, 9, 1.8);
+      ctx.fillStyle = '#ffb040';
+      ctx.beginPath(); ctx.arc(12, 0, 2.6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff2b0';
+      ctx.beginPath(); ctx.arc(12, 0, 1.2, 0, Math.PI * 2); ctx.fill();
+      break;
+    case 'none':
       break;
     default:
       ctx.fillRect(0, -1.3, L, 2.6);

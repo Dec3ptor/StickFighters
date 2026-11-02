@@ -12,6 +12,7 @@ import { hasGPU } from './gpu.js';
 import { GLContext, QuadBatch, QP } from './glctx.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
 import { fillSeams, hatch, courses } from './map.js';
+import { WorldView, drawDrops } from './world/worldrender.js';
 
 const INK = 0x111111;
 // Particles drawn as sprites (the rest are drawn as shapes, like on the canvas).
@@ -108,6 +109,8 @@ export class GLRenderer extends Renderer {
 
   destroy() {
     super.destroy();
+    for (const t of this.worldTex?.values() || []) t.tex.destroy(true);
+    this.worldTex?.clear();
     // (The sprite batches' shaders listen to PixiJS's shared white texture, which would keep
     // them, and the textures they draw with, alive after this renderer's gone.)
     this.stainQuads?.mesh?.shader.destroy();
@@ -158,6 +161,7 @@ export class GLRenderer extends Renderer {
     this.drawEffects(game);
     for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);
     this.drawBuildGhost(game, viewer);
+    if (game.world) this.drawWorldOver(game, viewer);
     if (this.drawNames) this.drawNames(game, shown.names, alpha, viewer);
     else for (const sol of shown.names) this.drawName(game, sol, alpha, viewer);
     fog?.drawAlerts(ctx);
@@ -169,6 +173,7 @@ export class GLRenderer extends Renderer {
    * each frame, underneath: their sides shift as the camera moves.
    */
   drawMap(game) {
+    if (game.world) { this.drawWorld(game); return; }
     const e = Math.round(this.lineW * 20) / 20, mixed = game.map.looks?.remastered;
     if (this.mapFor !== game.map || this.mapEdge !== e || this.mapVersion !== game.map.version) {
       this.mapFor = game.map;
@@ -204,6 +209,37 @@ export class GLRenderer extends Renderer {
     if (mixed) this.drawRemasteredBlocks(game);
     this.ctx.insert(this.mapLayer);
     this.drawPads(game, false);
+  }
+
+  /**
+   * A world (world mode): its pictures (worldrender.js) as sprites, each picture's texture
+   * sent to the graphics card again only when it's been drawn again. (The page behind is white.)
+   */
+  drawWorld(game) {
+    this.worldView ||= new WorldView('classic', {
+      picture: (cv, x, y, w, h, key, fresh) => this.worldPicture(cv, x, y, w, h, key, fresh),
+      forget: key => { this.worldTex?.get(key)?.tex.destroy(true); this.worldTex?.delete(key); },
+    });
+    this.worldView.drawBlocks(this, game);
+    drawDrops(this.ctx, game, 'classic', this.alpha ?? 1, this.view);
+  }
+
+  /** A world's picture on screen (in screen pixels), its texture made, or brought up to date. */
+  worldPicture(cv, x, y, w, h, key, fresh) {
+    const texs = this.worldTex ||= new Map();
+    let t = texs.get(key);
+    if (!t || t.w !== cv.width || t.h !== cv.height) {
+      t?.tex.destroy(true);
+      t = { tex: this.P.Texture.from(cv, true), w: cv.width, h: cv.height };
+      texs.set(key, t);
+    } else if (fresh) t.tex.source.update();
+    const sp = this.ctx.sprite(t.tex);
+    sp.anchor.set(0);
+    sp.alpha = 1;
+    sp.position.set(x, y);
+    sp.width = w;
+    sp.height = h;
+    this.ctx.insert(sp);
   }
 
   /** Sprites from a batch into the picture at this point (the camera's scale and place set). */

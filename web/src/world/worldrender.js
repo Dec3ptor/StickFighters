@@ -1,0 +1,838 @@
+// Drawing a world (world mode), in either game's look: the original's paper and ink (blocks
+// white, outlined in ink where they meet the open, marked by what they are), or Remastered's
+// colours. Blocks are drawn a patch at a time (PATCH tiles square) into pictures kept until a
+// block in them changes, so a frame is a few dozen pictures copied, whatever's in them. Then the
+// light (dark underground, lit by torches and glowing things), what's lying on the ground, and
+// the crosshair's block: what you'd dig, and what you'd build (a whole shape, dragged out).
+
+import * as K from './blocks.js';
+import { BLOCKS, WALLS, SOLID, CLEAR, LIGHT, TILE, AIR, NO_WALL, SHAPES, shade } from './blocks.js';
+import { WORLD_H } from './worldgen.js';
+import { hash3 } from './noise.js';
+import { itemOf } from './items.js';
+import { REACH, shapeTiles, canPlace, inHand } from './worldplay.js';
+
+export const PATCH = 16;                 // tiles across a picture
+const PP = PATCH * TILE;                 // its size in the world (px)
+const PATCHES_Y = WORLD_H / PATCH;
+const MAX_PIXELS = 20e6;                 // pictures kept, at most (in pixels): the least recently drawn go first
+const PAINT_MS = 4;                      // time a frame spends making pictures, at most (at least one; more with none there yet)
+const INK = '#111';
+// shade(), remembered: the same few colours are worked out for every block drawn.
+const TINTS = new Map();
+function tint(hex, k) {
+  const key = hex + k;
+  let c = TINTS.get(key);
+  if (c === undefined) {
+    if (TINTS.size > 5000) TINTS.clear();
+    TINTS.set(key, c = shade(hex, k));
+  }
+  return c;
+}
+const pkey = (px, py) => (px + 1048576) * 64 + py;
+
+// Which sides of a tile each shape covers completely: [top, right, bottom, left].
+const COVER = {
+  full: [1, 1, 1, 1], bottom: [0, 0, 1, 0], top: [1, 0, 0, 0], rampR: [0, 1, 1, 0], rampL: [0, 0, 1, 1], ceilR: [1, 1, 0, 0], ceilL: [1, 0, 0, 1],
+};
+const SHAPE_KEYS = SHAPES.map(s => s.key);
+// Each shape's outline (in sixteenths), drawn as a polygon: ramps are drawn as the slopes they are.
+const OUTLINE = {
+  full: [[0, 0], [16, 0], [16, 16], [0, 16]],
+  bottom: [[0, 8], [16, 8], [16, 16], [0, 16]],
+  top: [[0, 0], [16, 0], [16, 8], [0, 8]],
+  rampR: [[16, 0], [16, 16], [0, 16]],
+  rampL: [[0, 0], [16, 16], [0, 16]],
+  ceilR: [[0, 0], [16, 0], [16, 16]],
+  ceilL: [[0, 0], [16, 0], [0, 16]],
+};
+
+// ---- One picture: a patch of the world -----------------------------------------------------------
+
+/** The patch's tiles, and a tile's worth round it (for edges), read once. */
+function readPatch(world, px, py, grid) {
+  const x0 = px * PATCH - 1, y0 = py * PATCH - 1, W = PATCH + 2;
+  for (let j = 0; j < W; j++) {
+    for (let i = 0; i < W; i++) {
+      const tx = x0 + i, ty = y0 + j, k = j * W + i;
+      grid.fg[k] = world.tile(tx, ty);
+      grid.bg[k] = world.wall(tx, ty);
+      grid.sh[k] = SOLID[grid.fg[k]] ? world.shape(tx, ty) : 0;
+    }
+  }
+}
+
+/** Whether the tile at grid index k covers side `side` (0 top, 1 right, 2 bottom, 3 left) of its neighbour. */
+function covers(grid, k, side) {
+  const id = grid.fg[k];
+  if (!SOLID[id] || CLEAR[id]) return false;
+  return COVER[SHAPE_KEYS[grid.sh[k]]][side] === 1;
+}
+
+// (w: how many tiles across the grid is.)
+const GRIDS = { w: PATCH + 2, fg: new Uint8Array((PATCH + 2) ** 2), bg: new Uint8Array((PATCH + 2) ** 2), sh: new Uint8Array((PATCH + 2) ** 2) };
+
+/**
+ * Draw patch (px, py) of `world` into g (set to world coordinates). What gives off light in it
+ * goes in `lights` (x, y, level, block: four numbers each).
+ */
+function paintPatch(g, world, px, py, look, lights) {
+  const grid = GRIDS, W = PATCH + 2, x0 = px * PATCH, y0 = py * PATCH;
+  readPatch(world, px, py, grid);
+  const classic = look === 'classic';
+  lights.length = 0;
+  // Walls behind, where they show.
+  for (let j = 0; j < PATCH; j++) {
+    for (let i = 0; i < PATCH; i++) {
+      const k = (j + 1) * W + i + 1, wall = grid.bg[k], id = grid.fg[k];
+      if (wall === NO_WALL || (SOLID[id] && grid.sh[k] === 0 && !CLEAR[id])) continue;
+      drawWall(g, (x0 + i) * TILE, (y0 + j) * TILE, wall, classic, x0 + i, y0 + j);
+    }
+  }
+  // Blocks, then the plants, trees and things in front.
+  const edges = [];
+  for (let j = 0; j < PATCH; j++) {
+    for (let i = 0; i < PATCH; i++) {
+      const k = (j + 1) * W + i + 1, id = grid.fg[k];
+      if (id === AIR) continue;
+      const x = (x0 + i) * TILE, y = (y0 + j) * TILE, tx = x0 + i, ty = y0 + j;
+      if (LIGHT[id]) lights.push(x + TILE / 2, y + TILE / 2, LIGHT[id], id);
+      if (SOLID[id]) drawBlock(g, grid, k, x, y, id, classic, tx, ty, edges);
+      else drawThing(g, grid, k, x, y, id, classic, tx, ty);
+    }
+  }
+  // The outlines where blocks meet the open, all in one go.
+  if (edges.length) {
+    g.strokeStyle = classic ? INK : 'rgba(10,8,12,0.75)';
+    g.lineWidth = classic ? 1.3 : 1;
+    g.lineCap = 'square';
+    g.beginPath();
+    for (let e = 0; e < edges.length; e += 4) { g.moveTo(edges[e], edges[e + 1]); g.lineTo(edges[e + 2], edges[e + 3]); }
+    g.stroke();
+  }
+}
+
+/** A wall behind: the original's light hatching, or Remastered's dark colour. */
+function drawWall(g, x, y, wall, classic, tx, ty) {
+  if (classic) {
+    g.fillStyle = '#ececec';
+    g.fillRect(x, y, TILE, TILE);
+    g.strokeStyle = '#d0d0d0';
+    g.lineWidth = 0.8;
+    g.beginPath();
+    for (let d = -TILE; d < TILE; d += 6) { g.moveTo(x + Math.max(0, d), y + Math.max(0, -d)); g.lineTo(x + Math.min(TILE, d + TILE), y + Math.min(TILE, TILE - d)); }
+    g.stroke();
+    return;
+  }
+  const w = WALLS[wall], h = hash3(7, tx, ty);
+  g.fillStyle = tint(w.color, 0.92 + (h & 15) / 160);
+  g.fillRect(x, y, TILE, TILE);
+  g.fillStyle = 'rgba(0,0,0,0.18)';
+  g.fillRect(x, y + TILE - 1, TILE, 1);
+  g.fillRect(x + TILE - 1, y, 1, TILE);
+  if (w.key.includes('brick')) { g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(x, y + 7, TILE, 1); g.fillRect(x + ((ty & 1) ? 4 : 11), y, 1, 7); g.fillRect(x + ((ty & 1) ? 11 : 4), y + 8, 1, 8); }
+  else if (w.key.includes('plank')) { g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(x, y + 5, TILE, 1); g.fillRect(x, y + 11, TILE, 1); }
+  else if (w.key === 'glass_wall') { g.fillStyle = 'rgba(255,255,255,0.2)'; g.fillRect(x + 3, y + 2, 2, 10); }
+}
+
+/** A solid block: its shape, filled; its marks; the edges where it meets the open (to edges). */
+function drawBlock(g, grid, k, x, y, id, classic, tx, ty, edges) {
+  const b = BLOCKS[id], W = grid.w, shapeKey = SHAPE_KEYS[grid.sh[k]], h = hash3(3, tx, ty);
+  const pts = OUTLINE[shapeKey];
+  // Fill.
+  if (classic) g.fillStyle = id === K.GLASS || id === K.ICE ? '#f4fbff' : '#fff';
+  else g.fillStyle = tint(b.color, 0.93 + (h & 15) / 140);
+  if (shapeKey === 'full') g.fillRect(x, y, TILE, TILE);
+  else poly(g, x, y, pts, true);
+  // Marks.
+  if (shapeKey === 'full') marks(g, b, x, y, h, classic, grid, k);
+  // Remastered: lit from above, shaded below and to the right.
+  if (!classic && shapeKey === 'full') {
+    if (!covers(grid, k - W, 2)) { g.fillStyle = 'rgba(255,255,255,0.22)'; g.fillRect(x, y, TILE, 2); }
+    if (!covers(grid, k + W, 0)) { g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(x, y + TILE - 2, TILE, 2); }
+    if (!covers(grid, k + 1, 3)) { g.fillStyle = 'rgba(0,0,0,0.14)'; g.fillRect(x + TILE - 2, y, 2, TILE); }
+  }
+  // Edges where it meets the open (not where another block covers it).
+  if (shapeKey === 'full') {
+    if (!covers(grid, k - W, 2)) edges.push(x, y, x + TILE, y);
+    if (!covers(grid, k + 1, 3)) edges.push(x + TILE, y, x + TILE, y + TILE);
+    if (!covers(grid, k + W, 0)) edges.push(x, y + TILE, x + TILE, y + TILE);
+    if (!covers(grid, k - 1, 1)) edges.push(x, y, x, y + TILE);
+  } else {
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], c = pts[(i + 1) % pts.length];
+      edges.push(x + a[0], y + a[1], x + c[0], y + c[1]);
+    }
+  }
+}
+
+function poly(g, x, y, pts, fill) {
+  g.beginPath();
+  g.moveTo(x + pts[0][0], y + pts[0][1]);
+  for (let i = 1; i < pts.length; i++) g.lineTo(x + pts[i][0], y + pts[i][1]);
+  g.closePath();
+  if (fill) g.fill(); else g.stroke();
+}
+
+/** What marks a block (its pattern): in ink in the original, in its colours in Remastered. */
+function marks(g, b, x, y, h, classic, grid, k) {
+  const ink = classic ? '#9a9a9a' : b.dark;
+  const r = n => (h >>> n) & 15;
+  switch (b.pattern) {
+    case 'grass': {
+      // Soil, with grass on top where it's open (under a block, it's just soil).
+      const open = !covers(grid, k - grid.w, 2);
+      if (!classic) {
+        g.fillStyle = b.dark;
+        g.fillRect(x, y + (open ? 5 : 0), TILE, open ? TILE - 5 : TILE);
+        g.fillStyle = tint(b.dark, 0.85);
+        g.fillRect(x + 2 + r(4) % 12, y + 9 + r(8) % 5, 2, 2);
+      }
+      if (open) {
+        if (!classic) { g.fillStyle = b.color; g.fillRect(x, y, TILE, 5); }
+        g.fillStyle = classic ? INK : tint(b.color, 1.2);
+        for (let i = 1; i < TILE; i += 3) g.fillRect(x + i, y - 1 - (((h >>> i) & 1) ? 1 : 0), 1, classic ? 2.5 : 3);
+      }
+      break;
+    }
+    case 'dots':
+      g.fillStyle = ink;
+      g.fillRect(x + 2 + r(0) % 11, y + 2 + r(4) % 11, 1.4, 1.4);
+      g.fillRect(x + 2 + r(8) % 11, y + 2 + r(12) % 11, 1.4, 1.4);
+      if (r(16) > 8) g.fillRect(x + 2 + r(20) % 11, y + 2 + r(24) % 11, 1.4, 1.4);
+      break;
+    case 'stipple':
+      g.fillStyle = ink;
+      for (let i = 0; i < 5; i++) g.fillRect(x + 1 + ((h >>> (i * 5)) & 15) % 14, y + 1 + ((h >>> (i * 5 + 2)) & 15) % 14, 1, 1);
+      break;
+    case 'cracks':
+      if (r(0) < 6) {
+        g.strokeStyle = ink;
+        g.lineWidth = 0.8;
+        g.beginPath();
+        const cx = x + 3 + r(4) % 10, cy = y + 3 + r(8) % 10;
+        g.moveTo(cx - 3, cy - 2); g.lineTo(cx, cy); g.lineTo(cx + 3, cy - 1);
+        g.stroke();
+      }
+      break;
+    case 'pebbles':
+      g.strokeStyle = ink;
+      g.lineWidth = 0.7;
+      for (let i = 0; i < 3; i++) g.strokeRect(x + 2 + ((h >>> (i * 6)) & 15) % 11, y + 2 + ((h >>> (i * 6 + 3)) & 15) % 11, 2, 2);
+      break;
+    case 'strata':
+      g.fillStyle = ink;
+      g.fillRect(x, y + 5 + (r(0) & 1), TILE, 1);
+      g.fillRect(x + r(4) % 8, y + 11, 6, 1);
+      break;
+    case 'veins':
+      g.strokeStyle = classic ? '#d0602c' : '#ff8a3a';
+      g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(x, y + 3 + r(0) % 8); g.lineTo(x + 8, y + 6 + r(4) % 6); g.lineTo(x + TILE, y + 2 + r(8) % 10); g.stroke();
+      break;
+    case 'ore': {
+      // Ores keep a fleck of their colour in both games: worth telling apart.
+      g.fillStyle = b.ore;
+      for (let i = 0; i < 4; i++) {
+        const ox = x + 2 + ((h >>> (i * 7)) & 15) % 11, oy = y + 2 + ((h >>> (i * 7 + 3)) & 15) % 11;
+        g.fillRect(ox, oy, 3, 3);
+        if (classic) { g.strokeStyle = INK; g.lineWidth = 0.6; g.strokeRect(ox, oy, 3, 3); }
+      }
+      break;
+    }
+    case 'rings':
+      g.strokeStyle = ink;
+      g.lineWidth = 0.8;
+      g.beginPath(); g.moveTo(x + 2, y + 1); g.lineTo(x + 2, y + TILE - 1); g.moveTo(x + 8, y + 1); g.lineTo(x + 8, y + TILE - 1); g.moveTo(x + 13, y + 1); g.lineTo(x + 13, y + TILE - 1); g.stroke();
+      break;
+    case 'planks':
+      g.fillStyle = ink;
+      g.fillRect(x, y + 5, TILE, 1);
+      g.fillRect(x, y + 11, TILE, 1);
+      g.fillRect(x + ((h & 1) ? 4 : 10), y, 1, 5);
+      g.fillRect(x + ((h & 1) ? 12 : 6), y + 6, 1, 5);
+      break;
+    case 'bricks': {
+      g.fillStyle = ink;
+      g.fillRect(x, y + 7, TILE, 1);
+      g.fillRect(x, y + 15, TILE, 1);
+      const odd = (y / TILE) & 1;
+      g.fillRect(x + (odd ? 4 : 11), y, 1, 7);
+      g.fillRect(x + (odd ? 11 : 4), y + 8, 1, 7);
+      if (b.key === 'mossy_bricks') { g.fillStyle = classic ? '#8aa86a' : '#5f8a3a'; g.fillRect(x + r(0) % 10, y, 5, 2); }
+      break;
+    }
+    case 'glass':
+      g.strokeStyle = classic ? '#b0c0c8' : 'rgba(255,255,255,0.6)';
+      g.lineWidth = 0.8;
+      g.beginPath(); g.moveTo(x + 3, y + 9); g.lineTo(x + 8, y + 4); g.moveTo(x + 6, y + 12); g.lineTo(x + 12, y + 6); g.stroke();
+      break;
+    case 'metal':
+      g.strokeStyle = classic ? '#9a9a9a' : tint(b.color, 0.7);
+      g.lineWidth = 0.8;
+      g.strokeRect(x + 1.5, y + 1.5, TILE - 3, TILE - 3);
+      g.fillStyle = classic ? INK : tint(b.color, 0.55);
+      g.fillRect(x + 3, y + 3, 1.5, 1.5); g.fillRect(x + 11.5, y + 3, 1.5, 1.5); g.fillRect(x + 3, y + 11.5, 1.5, 1.5); g.fillRect(x + 11.5, y + 11.5, 1.5, 1.5);
+      break;
+    case 'door': {
+      g.strokeStyle = classic ? INK : tint(b.color, 0.6);
+      g.lineWidth = 0.8;
+      g.strokeRect(x + 2.5, y + 0.5, TILE - 5, TILE - 1);
+      // (The handle on the middle of the three.)
+      const W = grid.w;
+      if (grid.fg[k - W] === K.DOOR && grid.fg[k + W] === K.DOOR) { g.fillStyle = classic ? INK : '#e0c060'; g.fillRect(x + TILE - 6, y + 7, 2, 2); }
+      break;
+    }
+    case 'crate':
+      g.strokeStyle = classic ? INK : '#3a2c14';
+      g.lineWidth = 1;
+      g.strokeRect(x + 1.5, y + 1.5, TILE - 3, TILE - 3);
+      g.beginPath(); g.moveTo(x + 2, y + 2); g.lineTo(x + TILE - 2, y + TILE - 2); g.moveTo(x + TILE - 2, y + 2); g.lineTo(x + 2, y + TILE - 2); g.stroke();
+      break;
+    default: break;
+  }
+}
+
+/** Something you walk through: trees, plants, torches, platforms, ladders, an open door. */
+function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
+  const b = BLOCKS[id], h = hash3(5, tx, ty), W = grid.w;
+  const col = classic ? '#fff' : b.color, line = classic ? INK : tint(b.color, 0.55);
+  switch (b.pattern) {
+    case 'bark': {
+      // (Inside a crown: leaves behind it.)
+      const l = grid.fg[k - 1], r = grid.fg[k + 1];
+      if (LEAFY.has(l) && LEAFY.has(r) && l !== K.TRUNK && r !== K.TRUNK) leafFill(g, BLOCKS[l], x, y, h, classic);
+      g.fillStyle = col; g.fillRect(x + 4, y, 8, TILE);
+      g.strokeStyle = line; g.lineWidth = classic ? 1.2 : 1;
+      g.beginPath(); g.moveTo(x + 4, y); g.lineTo(x + 4, y + TILE); g.moveTo(x + 12, y); g.lineTo(x + 12, y + TILE);
+      g.moveTo(x + 7, y + 3 + (h & 3)); g.lineTo(x + 7, y + 9 + (h & 3)); g.stroke();
+      break;
+    }
+    case 'leaves': {
+      // A crown: each tile of it filled, with bumps (points, for pines) where it meets the
+      // open, outlined (in ink in the original).
+      leafFill(g, b, x, y, h, classic);
+      const spiky = id === K.PINE_LEAVES, R = 4;
+      const bumps = BUMPS;
+      bumps.length = 0;
+      if (!LEAFY.has(grid.fg[k - W])) bumps.push(x + 4, y, Math.PI, 0, x + 12, y, Math.PI, 0);
+      if (!LEAFY.has(grid.fg[k + 1])) bumps.push(x + 16, y + 4, -Math.PI / 2, Math.PI / 2, x + 16, y + 12, -Math.PI / 2, Math.PI / 2);
+      if (!LEAFY.has(grid.fg[k + W])) bumps.push(x + 12, y + 16, 0, Math.PI, x + 4, y + 16, 0, Math.PI);
+      if (!LEAFY.has(grid.fg[k - 1])) bumps.push(x, y + 12, Math.PI / 2, Math.PI * 1.5, x, y + 4, Math.PI / 2, Math.PI * 1.5);
+      if (!bumps.length) break;
+      const edge = (fill) => {
+        g.beginPath();
+        for (let i = 0; i < bumps.length; i += 4) {
+          const cx = bumps[i], cy = bumps[i + 1], a0 = bumps[i + 2], a1 = bumps[i + 3];
+          g.moveTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R);
+          if (spiky) { const m = (a0 + a1) / 2; g.lineTo(cx + Math.cos(m) * R * 1.3, cy + Math.sin(m) * R * 1.3); g.lineTo(cx + Math.cos(a1) * R, cy + Math.sin(a1) * R); }
+          else g.arc(cx, cy, R, a0, a1);
+          if (fill) g.closePath();
+        }
+        if (fill) g.fill(); else g.stroke();
+      };
+      g.fillStyle = classic ? '#fff' : leafColor(b, h);
+      edge(true);
+      g.strokeStyle = classic ? INK : tint(b.color, 0.55);
+      g.lineWidth = classic ? 1.1 : 0.9;
+      edge(false);
+      break;
+    }
+    case 'blades':
+      g.strokeStyle = classic ? INK : b.color;
+      g.lineWidth = 1;
+      g.beginPath();
+      for (let i = 0; i < 3; i++) { const bx = x + 3 + i * 5 + ((h >>> (i * 2)) & 1); g.moveTo(bx, y + TILE); g.lineTo(bx + ((h >>> (i + 6)) & 1 ? 2 : -2), y + 6 + ((h >>> (i * 3)) & 3)); }
+      g.stroke();
+      break;
+    case 'flower':
+      g.strokeStyle = classic ? INK : '#4f8a34'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x + 8, y + TILE); g.lineTo(x + 8, y + 8); g.stroke();
+      g.fillStyle = classic ? '#fff' : ['#e05a6a', '#f2c230', '#8a6ae0', '#f2f2f2'][h & 3];
+      g.beginPath(); g.arc(x + 8, y + 7, 2.6, 0, Math.PI * 2); g.fill();
+      if (classic) { g.strokeStyle = INK; g.stroke(); }
+      break;
+    case 'mushroom':
+      g.fillStyle = classic ? '#fff' : '#d8f0f4'; g.fillRect(x + 7, y + 9, 2, 7);
+      g.fillStyle = classic ? '#bfe9f2' : b.color;
+      g.beginPath(); g.arc(x + 8, y + 9, 5, Math.PI, 0); g.fill();
+      if (classic) { g.strokeStyle = INK; g.lineWidth = 1; g.stroke(); }
+      break;
+    case 'vine':
+      g.strokeStyle = classic ? INK : b.color; g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(x + 8, y); g.quadraticCurveTo(x + 4 + (h & 7), y + 8, x + 8, y + TILE); g.stroke();
+      break;
+    case 'cactus': {
+      g.fillStyle = classic ? '#fff' : b.color;
+      g.fillRect(x + 4, y, 8, TILE);
+      g.strokeStyle = classic ? INK : tint(b.color, 0.6); g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x + 4, y); g.lineTo(x + 4, y + TILE); g.moveTo(x + 12, y); g.lineTo(x + 12, y + TILE); g.stroke();
+      g.fillStyle = classic ? INK : '#d8e8a0';
+      g.fillRect(x + 2, y + 4, 2, 1); g.fillRect(x + 12, y + 9, 2, 1);
+      break;
+    }
+    case 'torch':
+      g.fillStyle = classic ? INK : '#7a5634';
+      g.fillRect(x + 7, y + 6, 2, 10);
+      g.fillStyle = '#ffb040';
+      g.beginPath(); g.arc(x + 8, y + 5, 3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#fff4c0';
+      g.beginPath(); g.arc(x + 8, y + 5.5, 1.4, 0, Math.PI * 2); g.fill();
+      break;
+    case 'platform':
+      g.fillStyle = classic ? '#fff' : b.color;
+      g.fillRect(x, y, TILE, 4);
+      g.strokeStyle = classic ? INK : tint(b.color, 0.55); g.lineWidth = 1;
+      g.strokeRect(x + 0.5, y + 0.5, TILE - 1, 3.5);
+      g.beginPath(); g.moveTo(x + 3, y + 4); g.lineTo(x + 3, y + 7); g.moveTo(x + 13, y + 4); g.lineTo(x + 13, y + 7); g.stroke();
+      break;
+    case 'ladder':
+      g.strokeStyle = classic ? INK : b.color; g.lineWidth = 1.4;
+      g.beginPath(); g.moveTo(x + 3, y); g.lineTo(x + 3, y + TILE); g.moveTo(x + 13, y); g.lineTo(x + 13, y + TILE);
+      g.moveTo(x + 3, y + 4); g.lineTo(x + 13, y + 4); g.moveTo(x + 3, y + 12); g.lineTo(x + 13, y + 12); g.stroke();
+      break;
+    case 'door_open':
+      g.fillStyle = classic ? '#fff' : b.color;
+      g.fillRect(x, y, 4, TILE);
+      g.strokeStyle = classic ? INK : tint(b.color, 0.55); g.lineWidth = 1;
+      g.strokeRect(x + 0.5, y + 0.5, 3, TILE - 1);
+      break;
+    default:
+      g.fillStyle = col; g.fillRect(x + 4, y + 4, 8, 8);
+  }
+}
+
+// Leaves (and what a crown is made of: a trunk inside it isn't its edge).
+const LEAFY = new Set([K.LEAVES, K.PINE_LEAVES, K.JUNGLE_LEAVES, K.TRUNK]);
+const BUMPS = [];
+const leafColor = (b, h) => tint(b.color, 0.92 + (h & 15) / 140);
+
+/** A tile of leaves, filled: white with a few leaf marks in the original; in Remastered, its colour, dappled. */
+function leafFill(g, b, x, y, h, classic) {
+  if (classic) {
+    g.fillStyle = '#fff';
+    g.fillRect(x, y, TILE, TILE);
+    g.strokeStyle = '#b8b8b8';
+    g.lineWidth = 0.8;
+    g.beginPath();
+    const ax = x + 3 + (h & 7), ay = y + 4 + ((h >> 3) & 7);
+    g.moveTo(ax - 2, ay - 1.5); g.lineTo(ax, ay); g.lineTo(ax + 2, ay - 1.5);
+    g.stroke();
+    return;
+  }
+  g.fillStyle = leafColor(b, h);
+  g.fillRect(x, y, TILE, TILE);
+  g.fillStyle = tint(b.color, 0.72);
+  g.fillRect(x + 2 + (h & 7), y + 3 + ((h >> 3) & 7), 3, 2);
+  g.fillRect(x + 9 - ((h >> 6) & 3), y + 9 + ((h >> 8) & 3), 3, 2);
+  g.fillStyle = tint(b.color, 1.18);
+  g.fillRect(x + 4 + ((h >> 10) & 7), y + 1 + ((h >> 13) & 3), 2, 2);
+}
+
+// ---- Light ---------------------------------------------------------------------------------------
+
+/**
+ * How lit each tile in the box is (0 dark to 15 full light): daylight down to the first block
+ * or wall in each column, and the light of torches and glowing blocks, spread out (less with
+ * each tile, more less through solid blocks). solid: filled in with which tiles are solid
+ * (for spreading more light later: spread()).
+ */
+export function lightBox(world, x0, y0, w, h, out, day = 15, solid = null) {
+  const n = w * h;
+  if (!out || out.length < n) out = new Uint8Array(n);
+  if (!solid || solid.length < n) solid = new Uint8Array(n);
+  for (let i = 0; i < w; i++) {
+    const tx = x0 + i;
+    // Down from the top of the sky: is the column open above the box?
+    let sky = day;
+    for (let ty = 0; ty < y0 && sky; ty++) if (blocksSky(world, tx, ty)) sky = 0;
+    for (let j = 0; j < h; j++) {
+      const ty = y0 + j, k = j * w + i, id = world.tile(tx, ty);
+      solid[k] = SOLID[id] && !CLEAR[id] ? 1 : 0;
+      if (sky && blocksSky(world, tx, ty)) sky = 0;
+      out[k] = Math.max(sky, LIGHT[id]);
+    }
+  }
+  spread(out, solid, w, 0, 0, w, h);
+  lightBox.solid = solid;
+  return out;
+}
+
+/**
+ * Light spread out from where it is, in the part of the box (w tiles across) from (x0, y0)
+ * to (x1, y1) (not including them): sweeps each way, twice (near enough to spreading from every
+ * light in turn).
+ */
+export function spread(out, solid, w, x0, y0, x1, y1) {
+  for (let pass = 0; pass < 2; pass++) {
+    for (let j = y0; j < y1; j++) {
+      let v = 0;
+      for (let i = x0; i < x1; i++) { const k = j * w + i; v = Math.max(out[k], v - (solid[k] ? SOLID_DIM : 1)); out[k] = v; }
+      v = 0;
+      for (let i = x1 - 1; i >= x0; i--) { const k = j * w + i; v = Math.max(out[k], v - (solid[k] ? SOLID_DIM : 1)); out[k] = v; }
+    }
+    for (let i = x0; i < x1; i++) {
+      let v = 0;
+      for (let j = y0; j < y1; j++) { const k = j * w + i; v = Math.max(out[k], v - (solid[k] ? SOLID_DIM : 1)); out[k] = v; }
+      v = 0;
+      for (let j = y1 - 1; j >= y0; j--) { const k = j * w + i; v = Math.max(out[k], v - (solid[k] ? SOLID_DIM : 1)); out[k] = v; }
+    }
+  }
+}
+
+/** How bright the glow round each soldier is (they always see a little way round them, even underground). */
+export const SOLDIER_GLOW = 11;
+
+// How much light is lost going through a solid block (through the open, 1 a tile).
+const SOLID_DIM = 2;
+// The dark's colour in each game.
+const DARK_CLASSIC = [34, 34, 38], DARK_RM = [5, 7, 14];
+const blocksSky = (world, tx, ty) => { const id = world.tile(tx, ty); return (SOLID[id] && !CLEAR[id]) || world.wall(tx, ty) !== NO_WALL; };
+
+// ---- The view ---------------------------------------------------------------------------------------
+
+export class WorldView {
+  /**
+   * look: 'classic' or 'remastered'. picture(canvas, sx, sy, sw, sh, key, fresh, soft): how the
+   * renderer puts a picture on the screen (in screen pixels; fresh: drawn again since it was
+   * last shown; soft: smoothed, as the light is), by default with the canvas's drawImage.
+   * forget(key): a picture's let go (WebGL frees its texture).
+   */
+  constructor(look, { picture = null, forget = null } = {}) {
+    this.look = look;
+    this.picture = picture;
+    this.forget = forget;
+    this.pics = new Map();  // patch key -> { canvas, g, px, py, stale, used, res, lights }
+    this.world = null;
+    this.frame = 0;
+    this.res = 0;
+    this.lit = null;        // the light worked out last: { x0, y0, w, h, data, version, canvas }
+    this.glows = [];        // what gives off light on screen: x, y (world), level, block (in fours)
+  }
+
+  /** Watch `world` for changes (the pictures of patches changed are drawn again). */
+  attach(world) {
+    if (this.world === world) return;
+    this.detach();
+    this.world = world;
+    this.onEdit = (tx, ty) => {
+      // (The patch, and its neighbour if it's on the edge: their outlines meet.)
+      const px = Math.floor(tx / PATCH), py = Math.floor(ty / PATCH);
+      const lx = tx - px * PATCH, ly = ty - py * PATCH;
+      this.stale(px, py);
+      if (lx === 0) this.stale(px - 1, py);
+      if (lx === PATCH - 1) this.stale(px + 1, py);
+      if (ly === 0) this.stale(px, py - 1);
+      if (ly === PATCH - 1) this.stale(px, py + 1);
+    };
+    world.listeners.push(this.onEdit);
+  }
+
+  detach() {
+    if (!this.world) return;
+    const i = this.world.listeners.indexOf(this.onEdit);
+    if (i >= 0) this.world.listeners.splice(i, 1);
+    for (const k of this.pics.keys()) this.forget?.(k);
+    if (this.lit) this.forget?.('light');
+    this.pics.clear();
+    this.world = null;
+    this.lit = null;
+  }
+
+  stale(px, py) { const p = this.pics.get(pkey(px, py)); if (p) p.stale = true; }
+
+  /** Picture pixels for each world pixel, at the renderer's scale s (changed only for a real change of zoom). */
+  resFor(s) {
+    if (!this.res || s > this.res * 1.25 || s < this.res / 1.6) this.res = Math.min(3, Math.max(1, Math.ceil(s * 2) / 2));
+    return this.res;
+  }
+
+  /** The world's blocks on screen (r: the renderer, its view and transform worked out for this frame). */
+  drawBlocks(r, game) {
+    const world = game.world;
+    this.attach(world);
+    this.frame++;
+    const v = r.view, res = this.resFor(r.s);
+    const px0 = Math.floor(v.l / PP), px1 = Math.floor(v.r / PP);
+    const py0 = Math.max(0, Math.floor(v.t / PP)), py1 = Math.min(PATCHES_Y - 1, Math.floor(v.b / PP));
+    // (Nearest the middle first, when there are more to draw again than a frame's worth.)
+    const order = this.order ||= [];
+    order.length = 0;
+    for (let py = py0; py <= py1; py++) for (let px = px0; px <= px1; px++) order.push(pkey(px, py));
+    const mx = (v.l + v.r) / 2 / PP - 0.5, my = (v.t + v.b) / 2 / PP - 0.5;
+    const far = k => { const dx = Math.floor(k / 64) - 1048576 - mx, dy = (k % 64) - my; return dx * dx + dy * dy; };
+    order.sort((a, b) => far(a) - far(b));
+    const ctx = r.ctx, direct = !this.picture;
+    if (direct) ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const glows = this.glows;
+    glows.length = 0;
+    let painted = 0;
+    const start = performance.now();
+    for (let i = 0; i < order.length; i++) {
+      const key = order[i];
+      let p = this.pics.get(key), fresh = false;
+      if (!p || p.stale || p.res !== res) {
+        // (Over this frame's budget: what was there before, if anything, until it's drawn again;
+        // where there's nothing yet, a while longer.)
+        const over = painted > 0 && performance.now() - start > (p ? PAINT_MS : PAINT_MS * 3);
+        if (over && !p) continue;
+        if (!over) {
+          p = this.paint(world, Math.floor(key / 64) - 1048576, key % 64, res, p);
+          this.pics.set(key, p);
+          painted++;
+          fresh = true;
+        }
+      }
+      p.used = this.frame;
+      this.show(r, p, key, fresh);
+      for (let j = 0; j < p.lights.length; j++) glows.push(p.lights[j]);
+    }
+    if (direct) ctx.setTransform(r.s, 0, 0, r.s, r.tx, r.ty);
+    // Let go of pictures not shown for a while, the oldest first, past the most kept.
+    // (As many as fit in MAX_PIXELS, and never fewer than what's on screen, and a few round it.)
+    const most = Math.max(order.length + 8, Math.floor(MAX_PIXELS / (PP * res) ** 2));
+    if (this.pics.size > most) {
+      const old = [];
+      for (const [k, p] of this.pics) if (p.used < this.frame - 2) old.push([k, p.used]);
+      old.sort((a, b) => a[1] - b[1]);
+      for (let i = 0; i < old.length && this.pics.size > most; i++) { this.forget?.(old[i][0]); this.pics.delete(old[i][0]); }
+    }
+  }
+
+  /** Picture p on the screen, its edges on whole pixels (so pictures side by side meet exactly). */
+  show(r, p, key, fresh) {
+    const s = r.s, x0 = Math.round(p.px * PP * s + r.tx), y0 = Math.round(p.py * PP * s + r.ty);
+    const x1 = Math.round((p.px + 1) * PP * s + r.tx), y1 = Math.round((p.py + 1) * PP * s + r.ty);
+    if (this.picture) this.picture(p.canvas, x0, y0, x1 - x0, y1 - y0, key, fresh, false);
+    else r.ctx.drawImage(p.canvas, x0, y0, x1 - x0, y1 - y0);
+  }
+
+  /** Draw patch (px, py) into its picture (made, or the one it had used again). */
+  paint(world, px, py, res, p) {
+    if (!p) {
+      const canvas = document.createElement('canvas');
+      p = { canvas, g: canvas.getContext('2d'), px, py, res: 0, stale: false, used: 0, lights: [] };
+    }
+    const size = Math.round(PP * res);
+    if (p.canvas.width !== size) { p.canvas.width = size; p.canvas.height = size; }
+    else { p.g.setTransform(1, 0, 0, 1, 0, 0); p.g.clearRect(0, 0, size, size); }
+    p.px = px; p.py = py; p.res = res; p.stale = false;
+    p.g.setTransform(res, 0, 0, res, -px * PP * res, -py * PP * res);
+    paintPatch(p.g, world, px, py, this.look, p.lights);
+    return p;
+  }
+
+  /**
+   * The dark: underground, and in rooms walled in, the only light is from torches and what
+   * glows (and a little round each soldier). Worked out for the tiles on screen (and round
+   * them) when they change or the view's moved on, the soldiers' glow as they move, and drawn
+   * as a soft shadow over everything (dark: how dark it gets, 0 to 1).
+   */
+  drawLight(r, game, dark = 0.9) {
+    const world = game.world, v = r.view, m = 16;
+    const x0 = Math.floor(v.l / TILE) - m, y0 = Math.max(0, Math.floor(v.t / TILE) - m);
+    const w = Math.ceil((v.r - v.l) / TILE) + 2 * m, h = Math.min(WORLD_H - y0, Math.ceil((v.b - v.t) / TILE) + 2 * m);
+    let lit = this.lit, all = false;
+    const moved = !lit || x0 < lit.x0 || y0 < lit.y0 || x0 + w > lit.x0 + lit.w || y0 + h > lit.y0 + lit.h;
+    if (moved || lit.version !== world.version || lit.dark !== dark) {
+      const X0 = x0 - 6, Y0 = Math.max(0, y0 - 6), W = w + 12, H = Math.min(WORLD_H - Y0, h + 12);
+      const base = lightBox(world, X0, Y0, W, H, lit?.base, 15, lit?.solid);
+      const c = lit?.canvas || document.createElement('canvas');
+      if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+      const g = c.getContext('2d');
+      lit = this.lit = {
+        x0: X0, y0: Y0, w: W, h: H, base, solid: lightBox.solid, data: lit?.data?.length >= W * H ? lit.data : new Uint8Array(W * H),
+        version: world.version, dark, canvas: c, g, img: lit?.img?.width === W && lit.img.height === H ? lit.img : g.createImageData(W, H),
+        glowKey: null, glow: null, fresh: true,
+      };
+      all = true;
+    }
+    // The soldiers' glow, where they are now.
+    const src = this.glowSrc ||= [];
+    src.length = 0;
+    for (const s of game.soldiers) {
+      if (!s.alive || s.spectating) continue;
+      const tx = Math.floor(s.x / TILE) - lit.x0, ty = Math.floor((s.y - 8) / TILE) - lit.y0;
+      if (tx >= 0 && ty >= 0 && tx < lit.w && ty < lit.h) src.push(tx, ty);
+    }
+    const key = src.join();
+    if (all || key !== lit.glowKey) {
+      // The part to work out again: where the glow was, and where it is now.
+      const R = SOLDIER_GLOW;
+      let l = Infinity, t = Infinity, rr = -Infinity, b = -Infinity;
+      const add = list => { for (let i = 0; i < list.length; i += 2) { l = Math.min(l, list[i] - R); rr = Math.max(rr, list[i] + R + 1); t = Math.min(t, list[i + 1] - R); b = Math.max(b, list[i + 1] + R + 1); } };
+      if (all) { l = 0; t = 0; rr = lit.w; b = lit.h; } else { add(lit.glow || []); add(src); }
+      l = Math.max(0, l); t = Math.max(0, t); rr = Math.min(lit.w, rr); b = Math.min(lit.h, b);
+      if (rr > l && b > t) {
+        const { base, data, solid } = lit, W = lit.w;
+        for (let j = t; j < b; j++) data.set(base.subarray(j * W + l, j * W + rr), j * W + l);
+        for (let i = 0; i < src.length; i += 2) { const k = src[i + 1] * W + src[i]; data[k] = Math.max(data[k], SOLDIER_GLOW); }
+        if (src.length) spread(data, solid, W, l, t, rr, b);
+        const px = lit.img.data, dk = this.look === 'classic' ? DARK_CLASSIC : DARK_RM;
+        for (let j = t; j < b; j++) {
+          for (let i = l; i < rr; i++) {
+            const k = j * W + i, a = 1 - data[k] / 15, o = k * 4;
+            px[o] = dk[0]; px[o + 1] = dk[1]; px[o + 2] = dk[2];
+            px[o + 3] = Math.round(255 * dark * a * a * (3 - 2 * a));
+          }
+        }
+        lit.g.putImageData(lit.img, 0, 0, l, t, rr - l, b - t);
+        lit.fresh = true;
+      }
+      lit.glowKey = key;
+      lit.glow = src.slice();
+    }
+    const s = r.s, sx = lit.x0 * TILE * s + r.tx, sy = lit.y0 * TILE * s + r.ty, sw = lit.w * TILE * s, sh = lit.h * TILE * s;
+    if (this.picture) this.picture(lit.canvas, sx, sy, sw, sh, 'light', lit.fresh, true);
+    else {
+      const ctx = r.ctx, smooth = ctx.imageSmoothingEnabled;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(lit.canvas, sx, sy, sw, sh);
+      ctx.imageSmoothingEnabled = smooth;
+      ctx.setTransform(s, 0, 0, s, r.tx, r.ty);
+    }
+    lit.fresh = false;
+  }
+
+  /** How lit tile (tx, ty) is (0 to 15), as last worked out (15 where it hasn't been). */
+  lightAt(tx, ty) {
+    const l = this.lit;
+    if (!l || tx < l.x0 || ty < l.y0 || tx >= l.x0 + l.w || ty >= l.y0 + l.h) return 15;
+    return l.data[(ty - l.y0) * l.w + (tx - l.x0)];
+  }
+}
+
+// ---- What's drawn over the world each frame ------------------------------------------------------
+
+/** Things lying on the ground (small, bobbing). */
+export function drawDrops(ctx, game, look, alpha = 1, view = null) {
+  const drops = game.world?.drops;
+  if (!drops?.length) return;
+  const classic = look === 'classic', t = game.tick;
+  for (const d of drops) {
+    const it = itemOf(d.key);
+    if (!it || (view && (d.x < view.l || d.x > view.r || d.y < view.t || d.y > view.b))) continue;
+    const x = d.px + (d.x - d.px) * alpha, y = d.py + (d.y - d.py) * alpha - 4 + (d.rest ? Math.sin((t + d.x) * 0.08) * 1.2 : 0);
+    drawIcon(ctx, it, x - 4, y - 4, 8, classic);
+  }
+}
+
+// A block on its own, for its picture as an item: three tiles across, open round the middle.
+const ICON = { w: 3, fg: new Uint8Array(9), bg: new Uint8Array(9), sh: new Uint8Array(9) };
+const ICON_EDGES = [];
+
+/** A block's or a wall's picture as an item (as it looks in the world), w square at (x, y). */
+export function drawTileIcon(ctx, it, x, y, w, classic) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(w / TILE, w / TILE);
+  if (it.kind === 'wall') {
+    drawWall(ctx, 0, 0, it.wall, classic, 0, 1);
+    ctx.strokeStyle = classic ? '#9a9a9a' : 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, TILE - 1, TILE - 1);
+  } else {
+    const id = it.block, edges = ICON_EDGES;
+    ICON.fg.fill(AIR); ICON.bg.fill(NO_WALL); ICON.sh.fill(0);
+    ICON.fg[4] = id;
+    edges.length = 0;
+    if (SOLID[id]) drawBlock(ctx, ICON, 4, 0, 0, id, classic, 2, 3, edges);
+    else drawThing(ctx, ICON, 4, 0, 0, id, classic, 2, 3);
+    if (edges.length) {
+      ctx.strokeStyle = classic ? INK : 'rgba(10,8,12,0.75)';
+      ctx.lineWidth = classic ? 1.3 : 1;
+      ctx.beginPath();
+      for (let e = 0; e < edges.length; e += 4) { ctx.moveTo(edges[e], edges[e + 1]); ctx.lineTo(edges[e + 2], edges[e + 3]); }
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+/** An item's picture, w square at (x, y) (detail: blocks and walls as they look in the world; else plain, for little ones). */
+export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
+  const c = it.color || '#888';
+  if (detail && (it.kind === 'block' || it.kind === 'wall')) { drawTileIcon(ctx, it, x, y, w, classic); return; }
+  ctx.lineWidth = Math.max(0.6, w / 12);
+  if (it.kind === 'block' || it.kind === 'wall') {
+    ctx.fillStyle = classic && !it.color?.startsWith('#d0') ? '#fff' : c;
+    if (it.kind === 'wall') { ctx.fillStyle = classic ? '#e4e4e4' : c; }
+    ctx.fillRect(x, y, w, w);
+    if (classic && it.pattern === 'ore') { ctx.fillStyle = c; ctx.fillRect(x + w * 0.3, y + w * 0.3, w * 0.4, w * 0.4); }
+    else if (!classic) { ctx.fillStyle = it.dark || tint(c, 0.7); ctx.fillRect(x, y + w * 0.75, w, w * 0.25); }
+    ctx.strokeStyle = INK;
+    ctx.strokeRect(x, y, w, w);
+    return;
+  }
+  if (it.kind === 'tool') {
+    ctx.strokeStyle = it.handle || '#7a5634';
+    ctx.beginPath(); ctx.moveTo(x + w * 0.2, y + w * 0.9); ctx.lineTo(x + w * 0.75, y + w * 0.25); ctx.stroke();
+    ctx.fillStyle = it.color;
+    if (it.tool === 'pick') { ctx.beginPath(); ctx.moveTo(x + w * 0.35, y + w * 0.05); ctx.quadraticCurveTo(x + w * 0.95, y + w * 0.05, x + w * 0.95, y + w * 0.65); ctx.lineTo(x + w * 0.75, y + w * 0.25); ctx.closePath(); ctx.fill(); ctx.strokeStyle = INK; ctx.stroke(); }
+    else if (it.tool === 'axe') { ctx.beginPath(); ctx.moveTo(x + w * 0.55, y + w * 0.1); ctx.lineTo(x + w, y + w * 0.3); ctx.lineTo(x + w * 0.8, y + w * 0.55); ctx.closePath(); ctx.fill(); ctx.strokeStyle = INK; ctx.stroke(); }
+    else { ctx.fillRect(x + w * 0.5, y, w * 0.45, w * 0.35); ctx.strokeStyle = INK; ctx.strokeRect(x + w * 0.5, y, w * 0.45, w * 0.35); }
+    return;
+  }
+  if (it.kind === 'ammo' || it.kind === 'material') {
+    ctx.fillStyle = c;
+    for (let i = 0; i < 3; i++) ctx.fillRect(x + w * (0.12 + i * 0.3), y + w * 0.25, w * 0.2, w * 0.6);
+    ctx.strokeStyle = INK;
+    for (let i = 0; i < 3; i++) ctx.strokeRect(x + w * (0.12 + i * 0.3), y + w * 0.25, w * 0.2, w * 0.6);
+    return;
+  }
+  // A weapon: a dark shape, the length of the slot.
+  ctx.fillStyle = '#444';
+  ctx.fillRect(x + w * 0.05, y + w * 0.4, w * 0.9, w * 0.22);
+  ctx.fillRect(x + w * 0.2, y + w * 0.55, w * 0.15, w * 0.3);
+}
+
+/**
+ * The crosshair's block, for the player (`me`): how far a block being dug has got (cracks),
+ * what would be built there, or the whole shape a drag would build.
+ */
+export function drawTarget(ctx, game, me, look) {
+  const w = me?.world;
+  if (!w?.target || !me.alive) return;
+  const t = w.target, classic = look === 'classic', { item } = inHand(me);
+  const x = t.tx * TILE, y = t.ty * TILE;
+  // Digging: the cracks so far.
+  if (w.mine && w.mine.tx === t.tx && w.mine.ty === t.ty) {
+    const f = Math.min(1, w.mine.dmg / Math.max(0.5, w.mine.of || 1));
+    ctx.strokeStyle = classic ? INK : 'rgba(0,0,0,0.75)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    const n = 1 + Math.floor(f * 4);
+    for (let i = 0; i < n; i++) {
+      const a = i * 1.9 + 0.4;
+      ctx.moveTo(x + 8, y + 8);
+      ctx.lineTo(x + 8 + Math.cos(a) * 7 * f + 1, y + 8 + Math.sin(a) * 7 * f);
+    }
+    ctx.stroke();
+  }
+  const building = item && (item.kind === 'block' || item.kind === 'wall');
+  if (building) {
+    const cells = w.drag ? shapeTiles(w.brush, w.drag, t) : [t];
+    ctx.globalAlpha = 0.45;
+    for (const c of cells) {
+      const ok = canPlace(game, item, c.tx, c.ty);
+      ctx.fillStyle = ok ? (classic ? '#9ad' : item.color || '#8ac') : 'rgba(220,60,60,0.6)';
+      if (!ok && w.drag) continue;
+      ctx.fillRect(c.tx * TILE, c.ty * TILE, TILE, TILE);
+    }
+    ctx.globalAlpha = 1;
+    if (w.drag) {
+      ctx.fillStyle = classic ? INK : '#fff';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillText(`${cells.filter(c => canPlace(game, item, c.tx, c.ty)).length}`, x + TILE + 2, y - 2);
+    }
+  }
+  // The block's outline: solid in reach, dashed out of it.
+  ctx.strokeStyle = classic ? INK : 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 1;
+  if (!t.near) ctx.setLineDash?.([2, 2]);
+  ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
+  if (!t.near) ctx.setLineDash?.([]);
+}
+
+export { REACH };

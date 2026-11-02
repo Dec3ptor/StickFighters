@@ -9,6 +9,7 @@ import { CLASSES, weaponFor } from './classes.js';
 import { GADGETS, rechargeTicks } from './gadgets.js';
 import { REWARDS, JUGGER_TICKS, nextReward } from './streaks.js';
 import { keyLabel, keyShort, keyText, slotAction } from './keys.js';
+import { drawWorldHud, heldBar } from './world/worldhud.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
@@ -109,16 +110,19 @@ export function drawHud(r, game, me, opts = {}) {
 
   if (me.alive) {
     drawStatus(ctx, game, me, W, H, opts);
-    drawWeaponBar(ctx, me, W, H);
+    // (A world: the hotbar instead, drawWorldHud.)
+    if (!game.world) drawWeaponBar(ctx, me, W, H);
   }
 
   const standings = standingsOf(game);
-  // (Defuse: your money where the scores go; Tab shows everyone.)
-  if (game.mode === 'defuse' && game.modeState) drawMoney(ctx, game, me, W, H);
+  // (Defuse: your money where the scores go; Tab shows everyone. A world: what you've picked
+  // up there, where you are at the top, and a map of what's round you.)
+  if (game.world) drawWorldHud(r, ctx, game, me, W, H);
+  else if (game.mode === 'defuse' && game.modeState) drawMoney(ctx, game, me, W, H);
   else drawScores(ctx, game, me, H, standings);
   drawFeed(ctx, game, W, opts.chat);
-  drawTop(ctx, game, me, W, standings, r, H);
-  if (bigMap(game.map) && !game.over) drawMinimap(r, ctx, game, me, W);
+  if (!game.world) drawTop(ctx, game, me, W, standings, r, H);
+  if (!game.world && bigMap(game.map) && !game.over) drawMinimap(r, ctx, game, me, W);
   // Fog of war: sounds from out of sight, off screen.
   r.fogNow?.drawEdgeAlerts(ctx, r, W, H);
 
@@ -263,7 +267,10 @@ function drawStatus(ctx, game, me, W, H, opts) {
   bar(ctx, -half - gap / 2, y, half, h, me.health / me.maxHealth, 'health', healthLabel(Math.max(0, Math.ceil(me.health)), me.maxHealth), true);
   // (With the soldier's upgrade: Extended mag holds more.)
   const def = weaponFor(me, me.current), inv = me.weapons[me.current];
-  if (def && inv) {
+  // (A world, with something other than a gun in hand: what it is, and how many.)
+  const held = me.world && !inv ? heldBar(me) : null;
+  if (held) bar(ctx, gap / 2, y, half, h, held[0], held[1], held[2], true);
+  else if (def && inv) {
     let frac = 1, label = def.name;
     if (def.mag) {
       // (With spare ammo: what's in the magazine, then what's left to reload with.)

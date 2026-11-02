@@ -51,17 +51,19 @@ export class Game {
    *   fireDelay: the time between shots, times this (every weapon),
    *   streaks: false turns kill streak rewards off (where the mode has them: streaks.js) }
    */
-  constructor({ mapData, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1, options = {} }) {
+  constructor({ mapData, world = null, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1, options = {} }) {
     // Speed rescales shared constants, so set it before anything reads them.
     setGameSpeed(speed);
-    this.map = new GameMap(mapData);
+    // A world (world mode: world/tileworld.js) is the map, made of blocks, as big as anyone goes.
+    this.world = world;
+    this.map = world || new GameMap(mapData);
     this.mode = mode;
     this.rules = modeOf(mode);
     this.options = { lives: 3, gunGameKills: 1, crates: 'normal', botVision: 'classic', fog: false, destruction: false, classes: false, bulletSpeed: 1, fireDelay: 1, ...options };
     // Every change to the map so far, in order (online players repeat them): holes blown
     // ([x, y, radius]: destructible maps) and blocks built (['+', l, t, r, b, built]: the Engineer's Builder).
     this.carves = [];
-    if (this.options.destruction) this.protectFloors();
+    if (this.options.destruction && !world) this.protectFloors();
     // Noises bots can hear (with bot vision 'sight'): { x, y, r (how far it carries), by, tick }.
     this.noises = [];
     this.fragLimit = fragLimit;
@@ -98,7 +100,9 @@ export class Game {
     this.awards = null;
     // Sentry Sheep out there (kill streak rewards; also in projectiles).
     this.sentries = [];
-    this.grid = new SoldierGrid(this.map.bounds);
+    // (A world's grid covers the middle of it: anyone further out counts as being at its edge.)
+    const sp = world?.spawns[0];
+    this.grid = new SoldierGrid(world ? { left: sp.x - 32768, top: world.bounds.top, right: sp.x + 32768, bottom: world.bounds.bottom } : this.map.bounds);
     // The objective modes' state (flags, capture points...): plain data, sent to online players.
     this.modeState = null;
     // Classes on: spawn beacons (gadgets.js).
@@ -270,10 +274,11 @@ export class Game {
   /** Blow a hole (online players: one the host made). Returns true if anything broke. */
   applyCarve(x, y, r) {
     const area = this.map.carve(x, y, r, !this.options.destruction);
-    // (Kept even if nothing broke here, so everyone's list of holes lines up.)
-    if (this.online) this.carves.push([x, y, r]);
+    // (Kept even if nothing broke here, so everyone's list of holes lines up. A world keeps its
+    // own changes, block by block.)
+    if (this.online && !this.world) this.carves.push([x, y, r]);
     if (!area) return false;
-    if (!this.online) this.carves.push([x, y, r]);
+    if (!this.online && !this.world) this.carves.push([x, y, r]);
     // Things lying on what's gone fall; arrows stuck in it go with it. (While projectiles move,
     // the ones out there already too: see combat.js updateProjectiles.)
     dropFrom(this.projectiles, area);

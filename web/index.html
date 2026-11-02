@@ -42,6 +42,7 @@
       <nav class="tabs" aria-label="Play">
         <button type="button" class="tab" id="tabOnline" data-tab="online" aria-pressed="true">Play online</button>
         <button type="button" class="tab" id="tabOffline" data-tab="offline" aria-pressed="false">Play vs bots</button>
+        <button type="button" class="tab" id="tabWorlds" data-tab="worlds" aria-pressed="false">Worlds</button>
         <button type="button" class="tab classes-only" id="openLoadout">Loadout</button>
         <button type="button" class="tab" id="openEditor">Map maker</button>
         <button type="button" class="tab" id="openSettings">Settings</button>
@@ -59,6 +60,23 @@
         </div>
         <div id="gameList" class="game-list" aria-live="polite"></div>
         <p class="muted-note">Games run in the host's browser, so they end when the host leaves. Got an invite link? Just open it.</p>
+      </div>
+
+      <div id="worlds" class="tab-panel hidden">
+        <div class="list-head">
+          <h3>Your worlds</h3>
+          <span class="muted-note">Kept in this browser</span>
+          <button type="button" id="importWorld" class="small">Import a world&hellip;</button>
+          <input type="file" id="importWorldFile" accept=".ssworld,.json,application/json" class="hidden">
+        </div>
+        <div id="worldList" class="world-list" aria-live="polite"></div>
+        <form id="newWorldForm" class="new-world" autocomplete="off">
+          <h3>New world</h3>
+          <label class="field">Name <input id="worldName" maxlength="32" spellcheck="false" placeholder="World 1"></label>
+          <label class="field" title="The same seed makes the same world, anywhere: a word or a number">Seed <input id="worldSeed" maxlength="40" spellcheck="false" placeholder="Random"></label>
+          <button type="submit" class="primary">Make it and play</button>
+        </form>
+        <p class="muted-note">An endless world of plains, forests, mountains, deserts, jungles and tundra, with caves, ores and ruins underneath, to dig through and build in, your shooter's guns in hand. <kbd>1</kbd>&ndash;<kbd>0</kbd> or the wheel pick from your hotbar; hold the mouse button to dig or build; <kbd>R</kbd> with blocks changes how they go down (one, a line, a rectangle, a box: drag it out); right click opens doors; <kbd>I</kbd> opens your things; <kbd>G</kbd> throws what's in your hand. It keeps itself every minute, and when you pause or leave. Export a world to keep a copy, or to play it in another browser.</p>
       </div>
 
       <div id="setup" class="tab-panel hidden">
@@ -490,6 +508,7 @@
     </div>
   </section>
   <section id="buyMenu" class="buy hidden" aria-label="Buy menu"></section>
+  <section id="inventory" class="buy inv hidden" aria-label="Your things"></section>
   <form id="chatForm" class="chat hidden" autocomplete="off">
     <input id="chatInput" maxlength="140" placeholder="Say something (Enter to send, Esc to cancel)" spellcheck="false">
   </form>
