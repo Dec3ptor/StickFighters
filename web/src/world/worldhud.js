@@ -6,7 +6,7 @@ import { HOTBAR, itemOf } from './items.js';
 import { WEAPONS } from '../weapons.js';
 import { BLOCKS, WALLS, TILE, AIR, NO_WALL, shade } from './blocks.js';
 import { WORLD_H } from './worldgen.js';
-import { inHand, BRUSH_NAMES } from './worldplay.js';
+import { inHand, BRUSH_NAMES, claimAt } from './worldplay.js';
 import { drawIcon } from './worldrender.js';
 import { clock, dayOf, isNight, nightness } from './monsters.js';
 import { keyShort, slotAction, keyLabel } from '../keys.js';
@@ -133,7 +133,9 @@ function drawWhere(ctx, game, me, W) {
   const where = deep > 2 ? `${deep} blocks down` : 'on the surface';
   const along = from === 0 ? 'where the world starts' : `${Math.abs(from)} ${from < 0 ? 'west' : 'east'}`;
   const time = `Day ${dayOf(world.time || 0)}, ${clock(world.time || 0)}${isNight(world.time || 0) ? ' (night)' : ''}`;
-  const line = text(`w${col.biome.name}|${where}|${along}|${time}`, () => `${col.biome.name}  ·  ${where}  ·  ${along}  ·  ${time}`);
+  const c = world.claims?.size ? claimAt(world, tx, ty) : null;
+  const base = c ? (c.owner.toLowerCase() === String(me.name).toLowerCase() ? 'your base' : `${c.owner}'s base`) : '';
+  const line = text(`w${col.biome.name}|${where}|${along}|${time}|${base}`, () => `${base ? `${base}  ·  ` : ''}${col.biome.name}  ·  ${where}  ·  ${along}  ·  ${time}`);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   // (On a pale panel: it's often dark underground.)

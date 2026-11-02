@@ -28,6 +28,7 @@ recipe('plank_wall', 4, [['planks', 1]], 'workbench');
 recipe('door', 1, [['planks', 6]], 'workbench');
 recipe('chest', 1, [['planks', 8]], 'workbench');
 recipe('bed', 1, [['planks', 15]], 'workbench');
+recipe('claim_flag', 1, [['planks', 10], ['stone', 20]], 'workbench');
 recipe('furnace', 1, [['stone', 20], ['wood', 4], ['torch', 3]], 'workbench');
 recipe('anvil', 1, [['iron_bar', 5]], 'workbench');
 recipe('arrows', 10, [['wood', 1], ['stone', 1]], 'workbench');

@@ -119,10 +119,15 @@ export class NetClient {
         }
         break;
       case 'carves': if (this.game) this.applyCarves(data.from, data.list); break;
+      // A world (worldnet.js): its chunks; our things, our chest, the bases.
+      case 'chunks': this.opts.world?.chunks(data.list); break;
+      case 'inv': case 'chest': case 'claims': this.opts.world?.message(data); break;
       case 'ev':
         if (!this.game) break;
         // Holes in the map change how everything moves: blown straight away, not when the effects show.
         if (data.cv) this.applyCarves(data.cv.from, data.cv.list);
+        // (So do a world's blocks.)
+        if (data.tc) this.opts.world?.tiles(data.tc);
         this.events.push(data);
         this.queueFx(data);
         this.tape?.addEvents(data);
@@ -148,14 +153,18 @@ export class NetClient {
   async start(w) {
     if (w.v !== PROTOCOL) { this.end('That game is running a different version. Refresh the page and try again.'); return; }
     const m = w.match, mine = ++this.welcomes;
-    const mapData = await this.opts.loadMap(m);
+    // (A world is made here from its seed and the chunks the host has sent: world/worldnet.js.)
+    const world = m.mode === 'world' && m.world ? this.opts.world?.makeWorld(m) : null;
+    if (m.mode === 'world' && !world) { this.end("Couldn't load the world"); return; }
+    const mapData = world ? null : await this.opts.loadMap(m);
     if (mine !== this.welcomes) return; // (a newer welcome came while this map loaded: that one's the match)
     // The host's numbers (its developer menu: none changed means the game's own), and its camera
     // and aiming zoom, for everyone here.
     useHostTuning(m.tuning || null);
     this.opts.onFeel?.(m.feel || null);
-    const game = new Game({ mapData, mode: m.mode, fragLimit: m.fragLimit, options: m.options, speed: m.speed, effects: true, seed: 1 });
+    const game = new Game({ mapData, world, mode: m.mode, fragLimit: m.fragLimit, options: m.options, speed: m.speed, effects: true, seed: 1 });
     game.online = true;
+    if (world) game.mirror = true;
     this.game = game;
     this.me = null;
     this.matchNo = w.n & 255;
@@ -173,6 +182,7 @@ export class NetClient {
     this.applyRoster(w.roster);
     this.applyCarves(0, w.carves);
     this.me = game.soldiers.find(s => s.id === w.you) || null;
+    if (world) this.opts.world.attach(game, this.me);
     for (const c of w.chat || []) this.addChat(c);
     this.link.send({ t: 'ready' });
     this.opts.onStart?.(game, this.me, m);
@@ -192,6 +202,8 @@ export class NetClient {
       s.team = r.team;
       s.remote = !!r.remote;
       s.skin = isSkin(r.skin) ? r.skin : 'auto';
+      // (A world's monsters and mercenaries: drawn and mapped as such.)
+      s.npc = r.npc === 'monster' || r.npc === 'merc' ? { kind: r.npc } : null;
       // (Our own: unless we've just asked to change it, and the host hasn't caught up yet.)
       if (s !== this.me || this.clock() - (this.spectateAt ?? -1e9) > 1500) s.spectating = !!r.spec;
     }
@@ -284,6 +296,7 @@ export class NetClient {
     }
     g.teamScore = snap.teamScore;
     if (snap.mode) g.modeState = snap.mode;
+    if (snap.world) this.opts.world?.snapshot(snap.world);
     g.over = snap.over;
     if (snap.winner) g.winner = snap.winner >= 100 ? { team: snap.winner - 100 } : { soldier: g.soldiers.find(s => s.id === snap.winner - 1) || this.me };
     else g.winner = null;

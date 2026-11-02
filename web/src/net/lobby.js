@@ -39,7 +39,7 @@ export function parseListing(ev, data) {
     name: str(data.name, 40) || 'Online game',
     hostName: str(data.hostName, 14) || 'Someone',
     mapName: str(data.mapName, 40) || 'Unknown map',
-    mode: ['ffa', 'team', 'gungame', 'oitc'].includes(data.mode) ? data.mode : 'ffa',
+    mode: ['ffa', 'team', 'gungame', 'oitc', 'world'].includes(data.mode) ? data.mode : 'ffa',
     players: int(data.players, 0, 64),
     max: int(data.max, 1, 64),
     bots: int(data.bots, 0, 64),

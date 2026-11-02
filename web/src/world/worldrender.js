@@ -457,6 +457,15 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
       g.strokeRect(x + 2.5, y + 9.5, 11, 4);
       g.beginPath(); g.moveTo(x + 6, y + 9.5); g.lineTo(x + 6, y + 12); g.stroke();
       break;
+    case 'flag':
+      // A pole, with a flag at the top.
+      g.fillStyle = classic ? INK : '#5c4a3a';
+      g.fillRect(x + 3, y + 1, 1.5, 15);
+      g.fillRect(x + 1, y + 15, 6, 1);
+      g.fillStyle = b.color;
+      g.beginPath(); g.moveTo(x + 4.5, y + 1.5); g.lineTo(x + 14, y + 4.5); g.lineTo(x + 4.5, y + 7.5); g.closePath(); g.fill();
+      g.strokeStyle = classic ? INK : tint(b.color, 0.55); g.lineWidth = 1; g.stroke();
+      break;
     case 'door_open':
       g.fillStyle = classic ? '#fff' : b.color;
       g.fillRect(x, y, 4, TILE);
@@ -592,12 +601,19 @@ export class WorldView {
       if (ly === PATCH - 1) this.stale(px, py + 1);
     };
     world.listeners.push(this.onEdit);
+    this.onChunk = (cx, cy) => {
+      const per = 32 / PATCH;
+      for (let j = 0; j < per; j++) for (let i = 0; i < per; i++) this.stale(cx * per + i, cy * per + j);
+    };
+    world.chunkListeners?.push(this.onChunk);
   }
 
   detach() {
     if (!this.world) return;
     const i = this.world.listeners.indexOf(this.onEdit);
     if (i >= 0) this.world.listeners.splice(i, 1);
+    const j = this.world.chunkListeners?.indexOf(this.onChunk) ?? -1;
+    if (j >= 0) this.world.chunkListeners.splice(j, 1);
     for (const k of this.pics.keys()) this.forget?.(k);
     if (this.lit) this.forget?.('light');
     this.pics.clear();

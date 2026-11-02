@@ -70,6 +70,12 @@
           <input type="file" id="importWorldFile" accept=".ssworld,.json,application/json" class="hidden">
         </div>
         <div id="worldList" class="world-list" aria-live="polite"></div>
+        <div class="world-online">
+          <span class="muted-note">Hosting online:</span>
+          <label class="field">Players <select id="worldMax"><option>2</option><option>4</option><option selected>8</option><option>12</option><option>16</option></select></label>
+          <label class="field">Who can join <select id="worldVis"><option value="public">Anyone (listed)</option><option value="private">Invite link only</option></select></label>
+          <label class="field" title="Whether players (and their mercenaries) can shoot each other. Monsters are fair game either way, and bases are protected either way.">PvP <select id="worldPvp"><option value="on">On</option><option value="off">Off</option></select></label>
+        </div>
         <form id="newWorldForm" class="new-world" autocomplete="off">
           <h3>New world</h3>
           <label class="field">Name <input id="worldName" maxlength="32" spellcheck="false" placeholder="World 1"></label>

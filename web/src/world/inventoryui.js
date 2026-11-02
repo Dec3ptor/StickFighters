@@ -8,7 +8,7 @@
 // picked up; Sort puts the bag in order. Click a recipe to make it (shift-click: five times).
 // Hover over anything to see what it is.
 
-import { HOTBAR, BAG, itemOf } from './items.js';
+import { HOTBAR, BAG, itemOf, Inventory } from './items.js';
 import { WEAPONS } from '../weapons.js';
 import { drawWeapon } from '../sprites.js';
 import { drawIcon } from './worldrender.js';
@@ -35,6 +35,9 @@ export class InventoryScreen {
     this.picked = null;    // the stack picked up: { box: 'me' | 'chest', i }
     this.seen = '';        // (what the slots and recipes were last drawn for)
     this.near = new Set();
+    // In someone else's world: what's done here goes to the host (fn({ op, ... })), which sends
+    // our things back changed (worldnet.js). Null: done here.
+    this.remote = null;
     this.build();
   }
 
@@ -99,9 +102,13 @@ export class InventoryScreen {
       if (p?.box === 'me') this.onDrop(p.i);
       this.refresh(true);
     });
-    this.root.querySelector('[data-act="sort"]').addEventListener('click', () => { this.picked = null; this.inv?.sortBag(); this.refresh(true); });
-    this.root.querySelector('[data-act="take-all"]').addEventListener('click', () => { this.everything(this.chest?.inv, this.inv); });
-    this.root.querySelector('[data-act="put-all"]').addEventListener('click', () => { this.everything(this.inv, this.chest?.inv, HOTBAR); });
+    this.root.querySelector('[data-act="sort"]').addEventListener('click', () => {
+      this.picked = null;
+      if (this.remote) this.remote({ op: 'sort' }); else this.inv?.sortBag();
+      this.refresh(true);
+    });
+    this.root.querySelector('[data-act="take-all"]').addEventListener('click', () => { if (this.remote) this.remote({ op: 'take-all' }); else this.everything(this.chest?.inv, this.inv); });
+    this.root.querySelector('[data-act="put-all"]').addEventListener('click', () => { if (this.remote) this.remote({ op: 'put-all' }); else this.everything(this.inv, this.chest?.inv, HOTBAR); });
     this.root.querySelector('[data-only]').addEventListener('change', () => this.refresh(true));
     this.whatEl = this.root.querySelector('[data-what]');
     this.nearEl = this.root.querySelector('[data-near]');
@@ -147,17 +154,22 @@ export class InventoryScreen {
     if (!inv) return;
     if (shift) {
       this.picked = null;
-      if (this.chest) send(inv, i, box === 'me' ? this.chest.inv : this.inv, box === 'me' ? 0 : HOTBAR);
+      if (this.remote) this.remote({ op: 'send', a: [box, i] });
+      else if (this.chest) send(inv, i, box === 'me' ? this.chest.inv : this.inv, box === 'me' ? 0 : HOTBAR);
       else inv.quickMove(i);
     } else if (!this.picked) { if (inv.slots[i]) this.picked = { box, i }; }
     else if (this.picked.box === box && this.picked.i === i) this.picked = null;
-    else { moveBetween(this.box(this.picked.box), this.picked.i, inv, i); this.picked = null; }
+    else {
+      if (this.remote) this.remote({ op: 'move', a: [this.picked.box, this.picked.i], b: [box, i] });
+      else moveBetween(this.box(this.picked.box), this.picked.i, inv, i);
+      this.picked = null;
+    }
     this.refresh(true);
   }
 
   split(box, i) {
     this.picked = null;
-    this.box(box)?.split(i);
+    if (this.remote) this.remote({ op: 'split', a: [box, i] }); else this.box(box)?.split(i);
     this.refresh(true);
   }
 
@@ -225,48 +237,9 @@ export class InventoryScreen {
   }
 }
 
-/** Slot i's stack of `a` onto slot j of `b` (the same inventory or another): swapped, or onto a stack of the same thing. */
-export function moveBetween(a, i, b, j) {
-  if (a === b) { a.move(i, j); return; }
-  const A = a.slots[i], Bs = b.slots[j];
-  if (!A) return;
-  const it = itemOf(A.key);
-  if (Bs && Bs.key === A.key && (it?.stack ?? 1) > 1) {
-    const k = Math.min(A.n, it.stack - Bs.n);
-    Bs.n += k; A.n -= k;
-    if (A.n <= 0) a.slots[i] = null;
-  } else {
-    a.slots[i] = Bs;
-    b.slots[j] = A;
-  }
-  a.version++;
-  b.version++;
-}
-
-/**
- * Slot i's stack of `a` sent to `b`: onto stacks of the same thing there first, then into its
- * first empty slot from `from` on (then the ones before). What doesn't fit stays.
- */
-export function send(a, i, b, from = 0) {
-  const s = a.slots[i];
-  if (!s || a === b) return;
-  const it = itemOf(s.key);
-  if ((it?.stack ?? 1) > 1) {
-    for (const o of b.slots) {
-      if (s.n <= 0) break;
-      if (o && o.key === s.key && o.n < it.stack) { const k = Math.min(s.n, it.stack - o.n); o.n += k; s.n -= k; }
-    }
-  }
-  if (s.n > 0) {
-    const n = b.slots.length;
-    for (let k = 0; k < n; k++) {
-      const j = (from + k) % n;
-      if (!b.slots[j]) { b.slots[j] = s; a.slots[i] = null; break; }
-    }
-  } else a.slots[i] = null;
-  a.version++;
-  b.version++;
-}
+// (Moving stacks between inventories: items.js.)
+export const moveBetween = (a, i, b, j) => Inventory.moveBetween(a, i, b, j);
+export const send = (a, i, b, from = 0) => Inventory.send(a, i, b, from);
 
 /** What an item is for, after its name. */
 function whatFor(it) {

@@ -42,10 +42,11 @@ import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
 import { TileWorld } from './world/tileworld.js';
 import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT } from './world/worldsave.js';
-import { playerToSave, worldFromSave, dropItem, chestAt, chestsToSave, chestsFromSave, rehire, REACH } from './world/worldplay.js';
+import { playerToSave, worldFromSave, dropItem, chestAt, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, rehire, REACH } from './world/worldplay.js';
 import { craft, stationsNear } from './world/crafting.js';
 import { itemOf } from './world/items.js';
 import { InventoryScreen } from './world/inventoryui.js';
+import { WorldHost, WorldClient } from './world/worldnet.js';
 import { seedOf } from './world/noise.js';
 
 const $ = id => document.getElementById(id);
@@ -576,7 +577,9 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
 
 function enterMatch(game, me) {
   const b = game.map.bounds;
-  renderer.snapCamera((b.left + b.right) / 2, (b.top + b.bottom) / 2);
+  // (A world: where it starts, not the middle of all of it.)
+  const at = game.world?.spawns[0];
+  renderer.snapCamera(at ? at.x : (b.left + b.right) / 2, at ? at.y - 20 : (b.top + b.bottom) / 2);
   state.game = game;
   state.me = me;
   state.paused = false;
@@ -875,6 +878,7 @@ async function renderWorlds() {
     <div class="world-card" data-world="${esc(w.id)}">
       <div class="world-info"><b>${esc(w.name)}</b><span class="muted-note">Seed ${esc(w.seed)} &middot; played ${esc(when(w.played))}</span></div>
       <button type="button" class="primary" data-act="play">Play</button>
+      <button type="button" data-act="host" title="Play it online: friends can join (keep it open while they play)">Host online</button>
       <button type="button" class="small" data-act="export">Export</button>
       <button type="button" class="small" data-act="delete">Delete</button>
     </div>`).join('');
@@ -888,6 +892,7 @@ async function worldAction(e) {
   if (!rec) return;
   audio.unlock();
   if (b.dataset.act === 'play') { audio.play('menuSelect'); startWorld(rec); return; }
+  if (b.dataset.act === 'host') { audio.play('menuSelect'); startWorld(rec, { online: true }); return; }
   if (b.dataset.act === 'export') {
     try {
       const { text, file } = await exportWorld(rec.id);
@@ -920,8 +925,11 @@ async function newWorld() {
   } catch (err) { toast(`Couldn't make the world: ${err?.message || err}`); }
 }
 
-/** Play world `rec` (as kept): its changed chunks loaded, you back where you were with your things. */
-async function startWorld(rec) {
+/**
+ * Play world `rec` (as kept): its changed chunks loaded, you back where you were with your
+ * things. online: hosted, for friends to join (the Worlds tab's choices: how many, who, PvP).
+ */
+async function startWorld(rec, { online = false } = {}) {
   stopWatching();
   state.returnTo = 'menu';
   state.settings = readMenu();
@@ -936,7 +944,10 @@ async function startWorld(rec) {
   useOwnRules();
   const world = new TileWorld({ seed: rec.seed, name: rec.name, saved });
   chestsFromSave(world, rec.chests);
+  claimsFromSave(world, rec.claims);
   world.time = Number.isFinite(rec.time) ? rec.time : 0;
+  if (online) rec.pvp = $('worldPvp').value !== 'off';
+  world.pvp = rec.pvp !== false;
   const game = new Game({ world, mode: 'world', speed: state.settings.speed, options: { destruction: true, crates: 'off', streaks: false }, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
   const me = game.addSoldier({ name: playerName(), isBot: false, team: 0, skin: prefs.skin }, new PlayerController(input, () => renderer, playerOptions));
@@ -945,10 +956,44 @@ async function startWorld(rec) {
   rehire(game, me);
   state.mode = 'offline';
   rec.played = Date.now();
-  state.world = { rec, game, savedAt: performance.now() };
+  state.world = { rec, game, savedAt: performance.now(), sync: null };
+  if (online) hostWorld(game, rec);
   enterMatch(game, me);
   const at = me.world.resume || world.spawns[0];
   renderer.snapCamera(at.x, at.y - 20);
+}
+
+/** The world being played, hosted online: friends can join it (worldnet.js keeps them in step). */
+function hostWorld(game, rec) {
+  const net = state.net = { role: 'host' };
+  const settings = net.settings = {
+    name: playerName(), maxPlayers: Math.max(2, Math.min(16, +$('worldMax').value || 8)), visibility: $('worldVis').value === 'private' ? 'private' : 'public',
+    gameName: `${playerName()}'s world`,
+  };
+  // (Players who've been here before have their things back: kept in the world, by name.)
+  const sync = state.world.sync = new WorldHost(game, {
+    load: name => rec.players?.[name.toLowerCase()] || null,
+    save: (name, data) => { (rec.players ||= {})[name.toLowerCase()] = data; },
+  });
+  net.matchInfo = { mode: 'world', mapName: rec.name, speed: game.speed, options: game.options };
+  net.host = new NetHost({
+    maxPlayers: settings.maxPlayers, botCount: 0, world: sync,
+    matchInfo: () => ({ ...net.matchInfo, world: sync.info(), ...rulesToShare() }),
+    addBot: () => {},
+    onChange: () => net.handle?.update(),
+    onChat: m => addChat(m),
+  });
+  net.host.setGame(game);
+  state.mode = 'host';
+  net.handle = getLobby().host({
+    info: () => ({
+      name: settings.gameName, hostName: settings.name, mapName: rec.name, mode: 'world',
+      players: net.host.humans, max: settings.maxPlayers, bots: 0, private: settings.visibility === 'private',
+    }),
+    accept: () => (net.host.humans >= net.host.opts.maxPlayers ? 'That world is full' : null),
+    onPlayer: (link, name) => net.host.addPlayer(link, name),
+  });
+  addChat({ system: true, text: `Your world is online${settings.visibility === 'private' ? ' (invite only)' : ''}, PvP ${game.world.pvp ? 'on' : 'off'}: press Esc to copy an invite link.` });
 }
 
 /**
@@ -960,9 +1005,12 @@ function saveWorldNow(last = false) {
   if (!w) return Promise.resolve();
   if (last) state.world = null;
   w.savedAt = performance.now();
-  const me = w.game.soldiers.find(s => s.world && !s.isBot);
+  const me = w.game.soldiers.find(s => s.world && !s.isBot && !s.remote);
   if (me) w.rec.player = playerToSave(me, w.game);
+  // (Hosted: the players in it keep their things too.)
+  w.sync?.saveAll();
   w.rec.chests = chestsToSave(w.game.world);
+  w.rec.claims = claimsToSave(w.game.world);
   w.rec.time = Math.round(w.game.world.time || 0);
   w.rec.played = Date.now();
   const chunks = w.game.world.takeDirty();
@@ -997,7 +1045,9 @@ const getInventory = () => (invScreen ||= new InventoryScreen($('inventory'), {
 function openInventory(chest = null) {
   const g = state.game, me = state.me;
   if (!g?.world || !me?.world || state.menuOpen || state.chatOpen || g.over) return;
-  getInventory().show(me, g, chest);
+  const inv = getInventory();
+  inv.remote = state.mode === 'client' ? op => state.net?.client?.link.send({ t: 'wop', ...op }, true) : null;
+  inv.show(me, g, chest);
   input.enabled = false;
   input.clear();
   input.unlock();
@@ -1005,6 +1055,8 @@ function openInventory(chest = null) {
 
 function closeInventory() {
   if (!invScreen?.open) return;
+  // (In someone else's world: the host's told the chest's closed.)
+  if (invScreen.chest && state.mode === 'client') state.net?.client?.link.send({ t: 'wop', op: 'close' }, true);
   invScreen.hide();
   if (state.game && !state.menuOpen && !state.chatOpen && !state.game.over) { input.enabled = true; grabControls(); }
 }
@@ -1013,6 +1065,7 @@ function closeInventory() {
 function craftItem(r, times) {
   const g = state.game, me = state.me;
   if (!g?.world || !me?.world || !me.alive) return;
+  if (state.mode === 'client') { state.net?.client?.link.send({ t: 'wop', op: 'craft', r: r.id, times }, true); audio.play('click'); return; }
   const { made, left } = craft(me.world.inv, r, stationsNear(g.world, me.x, me.y - 8), times);
   if (!made) return;
   if (left) dropItem(g, r.key, left, me.x, me.y - 14, me.facing * 2, -2, 30);
@@ -1024,6 +1077,7 @@ function craftItem(r, times) {
 function dropFromInventory(i) {
   const g = state.game, me = state.me;
   if (!g?.world || !me?.world || !me.alive) return;
+  if (state.mode === 'client') { state.net?.client?.link.send({ t: 'wop', op: 'drop', i }, true); return; }
   const taken = me.world.inv.take(i);
   if (taken) dropItem(g, taken.key, taken.n, me.x + me.facing * 8, me.y - 14, me.facing * 3, -2, 60);
 }
@@ -1621,7 +1675,7 @@ function stopWatching() { watcher?.stop(); watcher = null; }
 
 const MODE_SHORT = {
   ffa: 'Free-for-all', team: 'Team', gungame: 'Gun game', oitc: 'One in the chamber',
-  koth: 'King of the hill', ctf: 'Capture the flag', conquest: 'Conquest', rush: 'Rush', defuse: 'Defuse',
+  koth: 'King of the hill', ctf: 'Capture the flag', conquest: 'Conquest', rush: 'Rush', defuse: 'Defuse', world: 'World',
 };
 
 function renderGameList(list) {
@@ -1737,8 +1791,16 @@ async function quickMatch() {
 
 function startClient(link) {
   const net = state.net = { role: 'client' };
+  const world = new WorldClient({
+    onInv: () => invScreen?.refresh(true),
+    onChest: chest => {
+      if (!chest) { if (invScreen?.open && invScreen.chest) { invScreen.chest = null; closeInventory(); } return; }
+      if (invScreen?.open && invScreen.chest?.tx === chest.tx && invScreen.chest?.ty === chest.ty) { invScreen.chest.inv = chest.inv; invScreen.refresh(true); }
+      else { closeInventory(); openInventory(chest); }
+    },
+  });
   net.client = new NetClient({
-    link,
+    link, world,
     controller: new PlayerController(input, () => renderer, playerOptions),
     loadMap: async m => {
       if (m.map?.builtin && maps.data.has(m.map.builtin)) return maps.data.get(m.map.builtin);

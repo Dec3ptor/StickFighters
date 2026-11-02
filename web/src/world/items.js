@@ -226,6 +226,54 @@ export class Inventory {
 
   toJSON() { return this.slots.map(s => (!s ? null : s.mag > 0 ? [s.key, s.n, s.mag] : [s.key, s.n])); }
 
+  /** Slot i's stack of `a` onto slot j of `b` (the same inventory or another, a chest's): swapped, or onto a stack of the same thing. */
+  static moveBetween(a, i, b, j) {
+    if (a === b) { a.move(i, j); return; }
+    const A = a.slots[i], Bs = b.slots[j];
+    if (!A) return;
+    const it = itemOf(A.key);
+    if (Bs && Bs.key === A.key && (it?.stack ?? 1) > 1) {
+      const k = Math.min(A.n, it.stack - Bs.n);
+      Bs.n += k; A.n -= k;
+      if (A.n <= 0) a.slots[i] = null;
+    } else {
+      a.slots[i] = Bs;
+      b.slots[j] = A;
+    }
+    a.version++;
+    b.version++;
+  }
+
+  /**
+   * Slot i's stack of `a` sent to `b`: onto stacks of the same thing there first, then into its
+   * first empty slot from `from` on (then the ones before). What doesn't fit stays.
+   */
+  static send(a, i, b, from = 0) {
+    const s = a.slots[i];
+    if (!s || a === b) return;
+    const it = itemOf(s.key);
+    if ((it?.stack ?? 1) > 1) {
+      for (const o of b.slots) {
+        if (s.n <= 0) break;
+        if (o && o.key === s.key && o.n < it.stack) { const k = Math.min(s.n, it.stack - o.n); o.n += k; s.n -= k; }
+      }
+    }
+    if (s.n > 0) {
+      const n = b.slots.length;
+      for (let k = 0; k < n; k++) {
+        const j = (from + k) % n;
+        if (!b.slots[j]) { b.slots[j] = s; a.slots[i] = null; break; }
+      }
+    } else a.slots[i] = null;
+    a.version++;
+    b.version++;
+  }
+
+  /** Everything in `a` (from slot `start` on) sent to `b` (into its slots from `from` on), as much as fits. */
+  static sendAll(a, b, start = 0, from = 0) {
+    for (let i = start; i < a.slots.length; i++) Inventory.send(a, i, b, from);
+  }
+
   /** An inventory as saved (unknown items, from a newer game, are kept as they are). */
   static from(list, size = HOTBAR + BAG) {
     const inv = new Inventory(size);

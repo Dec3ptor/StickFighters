@@ -312,11 +312,14 @@ button.big { font-size: 18px; padding: 13px 24px; letter-spacing: 0.04em; }
 /* ---- Worlds (the menu's Worlds tab) ---- */
 .world-list { border: 1.5px solid var(--line); margin-top: 8px; min-height: 80px; max-height: 300px; overflow-y: auto; }
 .world-list > .muted-note { padding: 22px 12px; text-align: center; margin: 0; }
-.world-card { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid #ddd; }
+.world-card { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid #ddd; }
 .world-card:last-child { border-bottom: none; }
 .world-info b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .world-info .muted-note { margin: 0; font-size: 12px; }
 .world-card button { padding: 6px 14px; }
+.world-online { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 12px; margin-top: 8px; }
+.world-online .field { margin: 0; }
+.world-online .muted-note { margin: 0 0 6px; }
 .new-world { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 12px; margin-top: 14px; }
 .new-world h3 { width: 100%; margin: 0; font-size: 16px; }
 .new-world .field { margin: 0; flex: 1 1 160px; }

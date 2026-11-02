@@ -103,6 +103,8 @@ export const ANVIL = def('anvil', 'Anvil', furniture({ hard: 6, resist: 20, colo
 export const GUNSMITH = def('gunsmith', "Gunsmith's bench", furniture({ hard: 4, resist: 12, color: '#56606e', pattern: 'gunsmith', station: 'gunsmith' }));
 export const CHEST = def('chest', 'Chest', furniture({ hard: 2, resist: 6, wood: true, color: '#9a6a3a', pattern: 'chest' }));
 export const BED = def('bed', 'Bed', furniture({ hard: 2, resist: 4, wood: true, color: '#b03a3a', pattern: 'bed' }));
+// A base flag: claims the blocks round it (worldplay.js: CLAIM_R) for whoever put it up.
+export const CLAIM_FLAG = def('claim_flag', 'Base flag', furniture({ hard: 3, resist: 30, wood: true, color: '#c8282e', pattern: 'flag' }));
 
 export const BLOCKS = B;
 export const BLOCK_BY_KEY = new Map(B.map(b => [b.key, b]));

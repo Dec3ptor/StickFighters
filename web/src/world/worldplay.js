@@ -10,7 +10,7 @@ import { Inventory, itemOf, HOTBAR } from './items.js';
 import { WORLD_H, CHUNK } from './worldgen.js';
 import { MOTION, BODY } from '../config.js';
 import { WEAPONS } from '../weapons.js';
-import { monstersTick, armNpc, sideOf, isMonster, monsterLoot, hireMerc, mercsOf, MERC } from './monsters.js';
+import { monstersTick, armNpc, foes, isMonster, monsterLoot, hireMerc, mercsOf, MERC } from './monsters.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -28,6 +28,49 @@ const SOFT = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.VINE]);
 const NEEDS_GROUND = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.MUSHROOM, K.CACTUS]);
 const DOORS = new Set([K.DOOR, K.DOOR_OPEN]);
 const LEAF = new Set([K.LEAVES, K.PINE_LEAVES, K.JUNGLE_LEAVES, K.VINE]);
+
+// ---- Bases (claims) -----------------------------------------------------------------------------
+
+/** How far a base flag claims round it (blocks, each way, across and up and down). */
+export const CLAIM_R = 20;
+
+/** The claim covering tile (tx, ty) ({ tx, ty, owner }), or null. */
+export function claimAt(world, tx, ty) {
+  for (const c of world.claims?.values() || []) if (Math.abs(c.tx - tx) <= CLAIM_R && Math.abs(c.ty - ty) <= CLAIM_R) return c;
+  return null;
+}
+
+const sameName = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+
+/** Whether soldier s may change tile (tx, ty) (dig, build, open a chest): not in someone else's base. */
+export function mayChange(world, s, tx, ty) {
+  if (!s || !world.claims?.size) return true;
+  const c = claimAt(world, tx, ty);
+  return !c || sameName(c.owner, s.name);
+}
+
+/** A world's claims as saved: [[tx, ty, owner], ...]. */
+export const claimsToSave = world => [...(world.claims?.values() || [])].map(c => [c.tx, c.ty, c.owner]);
+
+/** A world's claims from a save (those whose flag is still there). */
+export function claimsFromSave(world, list) {
+  world.claims = new Map();
+  if (!Array.isArray(list)) return;
+  for (const row of list) {
+    if (!Array.isArray(row) || !Number.isInteger(row[0]) || !Number.isInteger(row[1]) || typeof row[2] !== 'string') continue;
+    world.claims.set(`${row[0]},${row[1]}`, { tx: row[0], ty: row[1], owner: row[2].slice(0, 14) });
+  }
+}
+
+/** Tell s it's someone else's base (once in a while, not for every click). */
+function notYours(game, s, tx, ty) {
+  const c = claimAt(game.world, tx, ty);
+  if (s.world && game.tick - (s.world.toldClaim || -1e9) > 90) {
+    s.world.toldClaim = game.tick;
+    game.notify(s, `That's ${c?.owner ?? 'someone'}'s base`);
+  }
+  return false;
+}
 
 // ---- Chests -------------------------------------------------------------------------------------
 
@@ -311,6 +354,7 @@ function dig(game, s, it, inp) {
   const b = BLOCKS[world.tile(t.tx, t.ty)];
   const how = t.near ? digs(it, b) : null;
   if (!how) return false;
+  if (!mayChange(world, s, t.tx, t.ty)) return notYours(game, s, t.tx, t.ty) || true;
   if (w.cool > 0) return true;
   w.cool = it.every / MOTION.timeScale;
   s.anim.swing = 1;
@@ -352,6 +396,7 @@ export function breakBlock(game, tx, ty, by = null) {
     if (id === K.LOOT_CRATE) openCrate(game, x, y);
     else if (b.drop) dropItem(game, b.drop, 1, x, y);
     if (id === K.CHEST) spillChest(game, tx, ty);
+    if (id === K.CLAIM_FLAG) world.claims?.delete(`${tx},${ty}`);
   }
   game.sound(b.wood ? 'thunk' : 'smash', x, y);
   game.fx?.rubble?.(x, y, 6);
@@ -370,6 +415,7 @@ function settle(game, tx, ty) {
     world.setTile(x, y, AIR);
     if (b.drop) dropItem(game, b.drop, 1, x * TILE + TILE / 2, y * TILE + TILE / 2);
     if (id === K.CHEST) spillChest(game, x, y);
+    if (id === K.CLAIM_FLAG) world.claims?.delete(`${x},${y}`);
     settle(game, x, y);
   }
 }
@@ -491,12 +537,26 @@ function soldierIn(game, tx, ty0, ty1) {
 function placeOne(game, s, it, tx, ty) {
   const w = s.world, world = game.world;
   if (w.inv.count(it.key) <= 0 || !canPlace(game, it, tx, ty)) return false;
+  if (!mayChange(world, s, tx, ty)) return notYours(game, s, tx, ty);
+  // A base flag: not where it would take in someone else's base.
+  if (it.block === K.CLAIM_FLAG) {
+    for (const c of world.claims?.values() || []) {
+      if (!sameName(c.owner, s.name) && Math.abs(c.tx - tx) <= 2 * CLAIM_R && Math.abs(c.ty - ty) <= 2 * CLAIM_R) {
+        game.notify(s, `Too near ${c.owner}'s base`);
+        return false;
+      }
+    }
+  }
   if (it.kind === 'wall') world.setWall(tx, ty, it.wall);
   else if (it.block === K.DOOR) {
     const bottom = doorSpot(game, tx, ty);
     for (let y = bottom - 2; y <= bottom; y++) world.setTile(tx, y, K.DOOR);
   } else world.setTile(tx, ty, it.block);
   w.inv.remove(it.key, 1);
+  if (it.block === K.CLAIM_FLAG) {
+    (world.claims ||= new Map()).set(`${tx},${ty}`, { tx, ty, owner: s.name });
+    game.notify(s, `Your base: nobody else can build, dig or open chests within ${CLAIM_R} blocks of the flag`);
+  }
   return true;
 }
 
@@ -570,6 +630,7 @@ function hammer(game, s, it, inp) {
   const w = s.world, t = w.target, world = game.world;
   if (!inp.fire || w.cool > 0 || !t.near) return !!inp.fire && t.near;
   const id = world.tile(t.tx, t.ty), x = t.tx * TILE + 8, y = t.ty * TILE + 8;
+  if (!mayChange(world, s, t.tx, t.ty)) return notYours(game, s, t.tx, t.ty) || true;
   w.cool = it.every / MOTION.timeScale;
   s.anim.swing = 1;
   if (SOLID[id]) {
@@ -603,6 +664,7 @@ function interact(game, s) {
   if (!t?.near) return false;
   const id = world.tile(t.tx, t.ty);
   if (id === K.CHEST) {
+    if (!mayChange(world, s, t.tx, t.ty)) return notYours(game, s, t.tx, t.ty) || true;
     chestAt(world, t.tx, t.ty);
     w.openChest = { tx: t.tx, ty: t.ty };
     game.sound('click', t.tx * TILE + 8, t.ty * TILE + 8, s.id);
@@ -636,6 +698,7 @@ function interact(game, s) {
 export function worldInput(game, s, inp) {
   const w = s.world;
   if (!w || !s.alive) return inp;
+  if (game.mirror) return mirrorInput(game, s, inp);
   // The hotbar: slots by number ('#n': see setup), or along with the wheel and Q / E.
   if (typeof inp.switchTo === 'string' && inp.switchTo[0] === '#') w.slot = Math.max(0, Math.min(HOTBAR - 1, Number(inp.switchTo.slice(1)) || 0));
   else if (inp.cycle) w.slot = (w.slot + inp.cycle + HOTBAR) % HOTBAR;
@@ -689,7 +752,7 @@ export function worldInput(game, s, inp) {
     fire = false;
   } else if (item && item.kind !== 'weapon') fire = false;
   // (Nothing in hand: a punch. And plants and torches break with anything.)
-  if (!item && inp.fire && w.target.near && BLOCKS[game.world.tile(w.target.tx, w.target.ty)].tool === 'hand' && w.cool <= 0) {
+  if (!item && inp.fire && w.target.near && BLOCKS[game.world.tile(w.target.tx, w.target.ty)].tool === 'hand' && w.cool <= 0 && mayChange(game.world, s, w.target.tx, w.target.ty)) {
     breakBlock(game, w.target.tx, w.target.ty, s);
     w.cool = 12 / MOTION.timeScale;
     fire = false;
@@ -697,6 +760,24 @@ export function worldInput(game, s, inp) {
   w.prevFire = !!inp.fire;
   inp.fire = fire;
   if (!fire) inp.firePressed = false;
+  return inp;
+}
+
+/**
+ * Playing in someone else's world: the host does it all. Here, only the block aimed at, and the
+ * shape being dragged out (for drawing them). (Called for each input again as the host's
+ * corrections come in: the drag goes by new inputs only.)
+ */
+function mirrorInput(game, s, inp) {
+  const w = s.world;
+  w.target = targetOf(s, inp);
+  if (inp.seq == null || inp.seq > (w.seenSeq || 0)) {
+    w.seenSeq = inp.seq ?? 0;
+    const { item } = inHand(s);
+    const dragging = item && (item.kind === 'block' || item.kind === 'wall') && w.brush !== 'single' && item.block !== K.DOOR && item.block !== K.TORCH;
+    if (!dragging || !inp.fire) w.drag = null;
+    else if (!w.drag && inp.firePressed && w.target.near) w.drag = { tx: w.target.tx, ty: w.target.ty };
+  }
   return inp;
 }
 
@@ -740,6 +821,8 @@ export const worldMode = {
     const world = game.world;
     if (!world) return;
     world.drops ||= [];
+    world.claims ||= new Map();
+    world.protect = (tx, ty) => world.claims.size > 0 && !!claimAt(world, tx, ty);
     world.onBreak = (tx, ty, id) => {
       const b = BLOCKS[id], x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
       if (id === K.LOOT_CRATE) openCrate(game, x, y);
@@ -768,8 +851,8 @@ export const worldMode = {
   },
 
   damage(game, amount) { return amount; },
-  /** Monsters don't hurt monsters; nor mercenaries the one who hired them, or each other. */
-  canHurt(game, attacker, target) { return sideOf(attacker) !== sideOf(target); },
+  /** Monsters don't hurt monsters; nor mercenaries the one who hired them; players each other only with PvP on. */
+  canHurt(game, attacker, target) { return foes(game.world, attacker, target); },
 
   /** Killed: a monster drops coins and loot; a player drops half their coins (they keep the rest, and their things). */
   onKill(game, victim) {

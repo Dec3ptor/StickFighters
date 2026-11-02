@@ -64,6 +64,8 @@ export class TileWorld {
     this.editCount = 0;
     // Told of every change: fn(tx, ty, layer ('fg', 'bg' or 'shape'), was).
     this.listeners = [];
+    // Told of a whole chunk replaced (loadChunk): fn(cx, cy).
+    this.chunkListeners = [];
     // Told of each block a blast breaks: fn(tx, ty, block). (The world's rules drop what it gives.)
     this.onBreak = null;
     // The boxes handed out by the lookups: used again in turn (callers read what they need
@@ -93,6 +95,20 @@ export class TileWorld {
     this.lastKey = k;
     this.lastChunk = c;
     return c;
+  }
+
+  /**
+   * Chunk `key`'s contents replaced with `data` ({ fg, bg, shape }): online, a chunk as the host
+   * has it. If it isn't made yet, it's kept for when it is.
+   */
+  loadChunk(key, data) {
+    const c = this.chunks.get(key);
+    if (!c) { this.saved.set(key, data); return; }
+    c.fg.set(data.fg); c.bg.set(data.bg); c.shape.set(data.shape);
+    c.version++;
+    c.edited = true;
+    this.version++;
+    for (const fn of this.chunkListeners) fn(c.cx, c.cy);
   }
 
   /** True if chunk (cx, cy) has been made already (without making it). */
@@ -351,6 +367,8 @@ export class TileWorld {
         if (id === AIR) continue;
         const b = BLOCKS[id];
         if (builtOnly && b.natural) continue;
+        // (Players' bases are blast-proof: worldplay.js's claims.)
+        if (this.protect?.(tx, ty)) continue;
         const cx = tx * TILE + TILE / 2 - x, cy = ty * TILE + TILE / 2 - y, reach = r - b.resist;
         if (reach <= 0 || cx * cx + cy * cy > reach * reach) continue;
         this.setTile(tx, ty, AIR);

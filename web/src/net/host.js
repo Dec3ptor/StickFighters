@@ -98,6 +98,8 @@ export class NetHost {
     link.onmessage = (data, reliable) => this.receive(p, data, reliable);
     link.onclose = () => this.removePlayer(p, 'left');
     p.soldier = this.soldierFor(p);
+    // (A world: their things, if they've been in it before.)
+    this.opts.world?.join(p);
     this.balanceBots();
     this.welcome(p);
     this.broadcast({ t: 'roster', roster: this.roster() });
@@ -136,6 +138,7 @@ export class NetHost {
 
   removePlayer(p, why = 'left') {
     if (!this.players.delete(p)) return;
+    this.opts.world?.leave(p);
     if (this.game && p.soldier) this.game.removeSoldier(p.soldier);
     this.balanceBots();
     this.broadcast({ t: 'roster', roster: this.roster() });
@@ -148,17 +151,18 @@ export class NetHost {
     const g = this.game;
     if (!g) return;
     const want = Math.max(0, Math.min(this.opts.botCount, this.opts.maxPlayers - this.humans));
-    let bots = g.soldiers.filter(s => s.isBot);
+    // (Bots only: not a world's monsters or mercenaries.)
+    let bots = g.soldiers.filter(s => s.isBot && !s.npc);
     while (bots.length > want) {
       const worst = [...bots].sort((a, b) => a.frags - b.frags)[0];
       g.removeSoldier(worst);
       bots = bots.filter(b => b !== worst);
     }
-    while (bots.length < want) { this.opts.addBot(g); bots = g.soldiers.filter(s => s.isBot); }
+    while (bots.length < want) { this.opts.addBot(g); bots = g.soldiers.filter(s => s.isBot && !s.npc); }
   }
 
   roster() {
-    return this.game.soldiers.map(s => ({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, remote: !!s.remote, spec: !!s.spectating, skin: s.skin }));
+    return this.game.soldiers.map(s => ({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, remote: !!s.remote, spec: !!s.spectating, skin: s.skin, npc: s.npc?.kind || null }));
   }
 
   /** Someone started or stopped spectating (called by the game): everyone's list of players changes. */
@@ -168,6 +172,8 @@ export class NetHost {
 
   /** Everything a player needs to set up the match. (The chat so far only goes to players who just joined.) */
   welcome(p, { fresh = true } = {}) {
+    // (A world: the chunks changed so far go first.)
+    this.opts.world?.sendChunks(p);
     p.link.send({
       t: 'welcome', v: PROTOCOL, n: this.matchNo, you: p.soldier.id, tick: this.game.tick,
       match: this.opts.matchInfo(), roster: this.roster(), chat: fresh ? this.chatLog.slice(-8) : [],
@@ -242,6 +248,7 @@ export class NetHost {
         this.chat(p.soldier?.name || p.name, data.text, p.soldier?.team);
         break;
       }
+      case 'wop': this.opts.world?.op(p, data); break;
       case 'bye': p.link.close('left'); break;
     }
   }
@@ -295,7 +302,18 @@ export class NetHost {
   afterTick() {
     const g = this.game;
     if (!g) return;
+    this.opts.world?.tick();
     this.sharePings();
+    // (Soldiers come and go besides players: a world's monsters and mercenaries. Everyone's told.)
+    if (g.tick % 15 === 0 && this.players.size) {
+      let sig = '';
+      for (const s of g.soldiers) sig += `${s.id},`;
+      if (sig !== this.rosterSig) {
+        const first = this.rosterSig == null;
+        this.rosterSig = sig;
+        if (!first) this.broadcast({ t: 'roster', roster: this.roster() });
+      }
+    }
     if (g.tick === this.sentTick) {
       // The match is over and the clock has stopped: just refresh now and then.
       if (++this.idle % 30) return;
@@ -312,7 +330,10 @@ export class NetHost {
       const ft = e.ft.map(t => g.tick - t); // (how many updates before this one each effect was)
       for (const p of ready) {
         p.link.send(encodeSnapshot(g, p.soldier, p.ctl.ackSeq, world), false);
-        if (!any) continue;
+        // (A world: their things and their chest when they change, and the blocks changed.)
+        this.opts.world?.sync(p);
+        const wx = this.opts.world?.events(p);
+        if (!any && !wx) continue;
         const id = p.soldier.id;
         p.link.send({
           t: 'ev', tick: g.tick,
@@ -323,6 +344,7 @@ export class NetHost {
           n: e.n.filter(x => x[1] === id).map(x => x[0]),
           // ([text, sub, kind, mine (1: to this player, 0: everyone), about])
           c: e.c.filter(x => x[3] == null || x[3] === id).map(x => [x[0], x[1], x[2], x[3] == null ? 0 : 1, x[4]]),
+          ...wx,
         }, true);
       }
     }

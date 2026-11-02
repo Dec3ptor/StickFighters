@@ -10,8 +10,9 @@
 import { WEAPONS } from '../weapons.js';
 import { CLASS_IDS, UPGRADE_IDS } from '../classes.js';
 import { REWARD_IDS } from '../streaks.js';
+import { ITEMS } from '../world/items.js';
 
-export const PROTOCOL = 19;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 20;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -24,6 +25,14 @@ const ITEM_TYPES = ['health', 'armour', 'jetpack', 'weapon', 'crate', 'medkit', 
 
 export const weaponIndex = id => WEAPON_INDEX.get(id) ?? 255;
 export const weaponAt = i => WEAPON_IDS[i] || null;
+// Worlds: a hotbar slot picked ('#0' to '#9') goes as one of these instead of a weapon.
+const SLOT_BASE = 230;
+const switchCode = s => (typeof s === 'string' && /^#\d$/.test(s) ? SLOT_BASE + Number(s[1]) + 1 : s ? weaponIndex(s) + 1 : 0);
+const switchFrom = v => (v > SLOT_BASE && v <= SLOT_BASE + 10 ? `#${v - SLOT_BASE - 1}` : v ? weaponAt(v - 1) : null);
+// Worlds' items (things on the ground), by number.
+const ITEM_KEYS = [...ITEMS.keys()];
+const ITEM_INDEX = new Map(ITEM_KEYS.map((k, i) => [k, i]));
+const MAX_DROPS = 200;
 // Classes (0: none) and weapon upgrades, as numbers.
 const classIndex = cls => CLASS_IDS.indexOf(cls) + 1;
 const classAt = i => CLASS_IDS[i - 1] || null;
@@ -111,7 +120,7 @@ export function encodeInputs(inputs) {
     w.u8((i.sprint ? 1 : 0) | (i.gadget ? 2 : 0) | (i.plank ? 4 : 0) | (i.use ? 8 : 0) | (i.drop ? 16 : 0) | (i.reload ? 32 : 0));
     w.u16(angleToU16(i.aim ?? 0));
     w.u16(clampU16(i.aimDist ?? 200));
-    w.u8(i.switchTo ? weaponIndex(i.switchTo) + 1 : 0);
+    w.u8(switchCode(i.switchTo));
     w.i8(i.cycle || 0);
     w.u8(REWARD_IDS.indexOf(i.streak) + 1);
   }
@@ -136,7 +145,7 @@ export function decodeInputs(data) {
       seq: last - (n - 1 - k), move, jump: !!(f & 1), jumpPressed: !!(f & 2), crouch: !!(f & 4), jet: !!(f & 8),
       fire: !!(f & 16), firePressed: !!(f & 32), alt: !!(f & 64), selfDestruct: !!(f & 128), sprint: !!(f2 & 1), gadget: !!(f2 & 2), plank: !!(f2 & 4),
       use: !!(f2 & 8), drop: !!(f2 & 16), reload: !!(f2 & 32), aim, aimDist,
-      switchTo: sw ? weaponAt(sw - 1) : null, cycle: cycle || 0, streak,
+      switchTo: switchFrom(sw), cycle: cycle || 0, streak,
     });
   }
   return out;
@@ -229,6 +238,19 @@ export function encodeWorld(game) {
   const end = game.over && (game.awards || game.finalKill) ? TEXT.encode(JSON.stringify({ awards: game.awards || [], finalKill: game.finalKill || null })) : NONE;
   w.u16(end.length);
   w.bytes(end);
+  // Worlds: the time of day, and what's lying on the ground.
+  const world = game.world;
+  w.u8(world ? 1 : 0);
+  if (world) {
+    w.u32(Math.max(0, Math.floor(world.time || 0)));
+    const drops = (world.drops || []).filter(d => d.n > 0 && ITEM_INDEX.has(d.key)).slice(-MAX_DROPS);
+    w.u8(drops.length);
+    for (const d of drops) {
+      w.u16(ITEM_INDEX.get(d.key)); w.u16(clampU16(d.n));
+      w.f32(d.x); w.f32(d.y);
+      w.u8(d.rest ? 1 : 0);
+    }
+  }
   return w.done();
 }
 
@@ -386,6 +408,15 @@ export function decodeSnapshot(data) {
       snap.end = { awards: cleanAwards(e.awards), finalKill: cleanKill(e.finalKill) };
     } catch { /* ignore a bad one */ }
     r.o += el;
+  }
+  snap.world = null;
+  if (r.left && r.u8()) {
+    const world = snap.world = { time: r.u32(), drops: [] };
+    const nd = r.u8();
+    for (let i = 0; i < nd; i++) {
+      const key = ITEM_KEYS[r.u16()], n = r.u16(), x = r.f32(), y = r.f32(), rest = !!(r.u8() & 1);
+      if (key) world.drops.push({ key, n, x, y, rest });
+    }
   }
   return snap;
 }

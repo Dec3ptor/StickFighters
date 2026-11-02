@@ -56,6 +56,13 @@ const MERC_NAMES = ['Vasquez', 'Drake', 'Hicks', 'Frost', 'Apone', 'Dietrich', '
 
 /** Which side a soldier's on: monsters together, each player with their mercenaries. */
 export const sideOf = s => (s.npc?.kind === 'monster' ? 'monsters' : s.npc?.kind === 'merc' ? `p${s.npc.owner}` : `p${s.id}`);
+/** Whether `a` can hurt `b` in `world`: not on the same side, and players (and their mercenaries) only with PvP on. */
+export function foes(world, a, b) {
+  const sa = sideOf(a), sb = sideOf(b);
+  if (sa === sb) return false;
+  if (sa === 'monsters' || sb === 'monsters') return true;
+  return world?.pvp !== false;
+}
 export const isMonster = s => s.npc?.kind === 'monster';
 export const isMerc = s => s.npc?.kind === 'merc';
 
