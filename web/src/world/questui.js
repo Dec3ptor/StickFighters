@@ -1,18 +1,25 @@
 // The journal (world mode, J): your quests (quests.js), each with who gave it, what they said, its
 // goals and how far along they are, and what it pays; follow one (the HUD shows its goals and
-// which way to go) or give it up. And your character (progress.js): your level, experience, perk
-// points to spend on perks, and what you've done. The game carries on while it's open.
+// which way to go) or give it up. Your character (progress.js): your level, experience, perk
+// points to spend on perks, and what you've done. And the codex (codex.js): everything there is
+// to have, how it's had, and what you've found. The game carries on while it's open.
 
 import { itemOf } from './items.js';
 import { goalText, goalMet, questReady, MAX_QUESTS } from './quests.js';
 import { PERKS, xpToNext, MAX_LEVEL, maxHealthOf } from './progress.js';
 import { keyLabel } from '../keys.js';
+import { gearRewardText, RARITY, rarityOf } from './gear.js';
+import { codexEntries, CODEX_CATS } from './codex.js';
+import { itemColor, itemDetails } from './iteminfo.js';
+import { drawIcon } from './worldrender.js';
+import { WEAPONS } from '../weapons.js';
+import { drawWeapon } from '../sprites.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 /** A quest's reward, in words. */
 export function rewardText(rw = {}) {
-  return [rw.coins ? `${rw.coins} coins` : '', rw.xp ? `${rw.xp} XP` : '', ...(rw.items || []).map(([k, n]) => `${n > 1 ? `${n} × ` : ''}${itemOf(k)?.name ?? k}`)].filter(Boolean).join(' · ');
+  return [rw.coins ? `${rw.coins} coins` : '', rw.xp ? `${rw.xp} XP` : '', ...(rw.items || []).map(([k, n]) => `${n > 1 ? `${n} × ` : ''}${itemOf(k)?.name ?? k}`), rw.gear ? gearRewardText(rw.gear) : ''].filter(Boolean).join(' · ');
 }
 
 export class JournalScreen {
@@ -30,14 +37,19 @@ export class JournalScreen {
         <div class="journal-tabs">
           <button type="button" class="journal-tab" data-tab="quests">Quests</button>
           <button type="button" class="journal-tab" data-tab="character">Character</button>
+          <button type="button" class="journal-tab" data-tab="codex">Codex</button>
         </div>
         <button type="button" class="buy-close" data-close>Close <kbd data-journal-key>J</kbd></button>
       </div>
       <div class="journal-body" data-body></div>`;
     this.body = this.root.querySelector('[data-body]');
+    this.cat = 'all';
+    this.q = '';
     this.root.querySelector('[data-close]').addEventListener('click', () => this.onClose());
     for (const b of this.root.querySelectorAll('[data-tab]')) b.addEventListener('click', () => { this.tab = b.dataset.tab; this.refresh(true); });
     this.body.addEventListener('click', e => {
+      const c = e.target.closest('[data-cat]');
+      if (c) { this.cat = c.dataset.cat; this.codexList(); return; }
       const b = e.target.closest('[data-act]');
       if (!b) return;
       this.onAct({ op: b.dataset.act, id: b.dataset.id });
@@ -47,7 +59,7 @@ export class JournalScreen {
 
   get open() { return !this.root.classList.contains('hidden'); }
 
-  /** Open (tab: 'quests' or 'character'), for soldier `me`. */
+  /** Open (tab: 'quests', 'character' or 'codex'), for soldier `me`. */
   show(me, tab = null) {
     this.me = me;
     if (tab) this.tab = tab;
@@ -62,11 +74,55 @@ export class JournalScreen {
     const w = this.me?.world;
     if (!w) return;
     const p = w.prog, qs = w.quests;
+    // (The codex: only when what's found changes, so its search box keeps what's typed.)
+    if (this.tab === 'codex') {
+      const ck = `codex|${w.found?.length || 0}`;
+      if (!force && ck === this.seen) return;
+      this.seen = ck;
+      for (const b of this.root.querySelectorAll('[data-tab]')) b.classList.toggle('on', b.dataset.tab === this.tab);
+      if (!this.body.querySelector('[data-codex]')) this.codexShell();
+      this.codexList();
+      return;
+    }
     const key = `${this.tab}|${qs?.v}|${qs?.track}|${qs?.list.length}|${p?.level}|${p?.xp}|${p?.points}|${JSON.stringify(p?.perks || {})}|${w.inv.version}|${w.partyList?.length || 0}`;
     if (!force && key === this.seen) return;
     this.seen = key;
     for (const b of this.root.querySelectorAll('[data-tab]')) b.classList.toggle('on', b.dataset.tab === this.tab);
     this.body.innerHTML = this.tab === 'character' ? this.character() : this.quests();
+  }
+
+  /** The codex's search box and kinds, made once (the list under them changes). */
+  codexShell() {
+    this.body.innerHTML = `<div class="codex" data-codex>
+      <div class="codex-head"><span class="codex-found" data-found></span>
+        <input type="search" class="codex-search" placeholder="Search: a name, or where it's from" spellcheck="false" data-search value="${esc(this.q)}"></div>
+      <div class="codex-cats">${Object.entries(CODEX_CATS).map(([k, v]) => `<button type="button" class="small" data-cat="${k}">${esc(v)}</button>`).join('')}</div>
+      <div class="codex-list" data-list></div>
+    </div>`;
+    const search = this.body.querySelector('[data-search]');
+    search.addEventListener('input', () => { this.q = search.value; this.codexList(); });
+    search.addEventListener('keydown', e => { if (e.key !== 'Escape') e.stopPropagation(); });
+  }
+
+  /** The codex's entries, as the search and kind pick them: found ones first ticked. */
+  codexList() {
+    const el = this.body.querySelector('[data-list]');
+    if (!el) return;
+    const all = codexEntries(), found = new Set(this.me?.world?.found || []), q = this.q.trim().toLowerCase();
+    for (const b of this.body.querySelectorAll('[data-cat]')) b.classList.toggle('on', b.dataset.cat === this.cat);
+    const n = all.filter(e => found.has(e.id)).length;
+    this.body.querySelector('[data-found]').textContent = `Found ${n} of ${all.length}`;
+    const list = all.filter(e => (this.cat === 'all' || e.cat === this.cat) && (!q || e.name.toLowerCase().includes(q) || e.where.toLowerCase().includes(q) || (e.g && RARITY[rarityOf(e.g.r)].name.toLowerCase() === q)));
+    el.innerHTML = list.length ? list.map((e, i) => {
+      const it = itemOf(e.key), d = itemDetails(it, 1, e.g), col = e.g ? RARITY[rarityOf(e.g.r)].color : itemColor(it);
+      const tip = [d?.name ?? e.name, ...(d?.lines || [])].join('\n');
+      return `<div class="codex-row${found.has(e.id) ? ' found' : ''}" style="--c:${col}" title="${esc(tip)}">
+        <canvas width="36" height="26" data-i="${i}"></canvas>
+        <div class="codex-text"><div class="codex-name">${e.g ? `<span class="codex-rar">${esc(RARITY[rarityOf(e.g.r)].name)}</span> ` : ''}${esc(e.name)}${found.has(e.id) ? ' <span class="codex-tick">✓</span>' : ''}</div>
+        <div class="codex-where">${esc(e.where)}</div></div>
+      </div>`;
+    }).join('') : '<p class="muted-note">Nothing like that.</p>';
+    for (const cv of el.querySelectorAll('canvas[data-i]')) paintIcon(cv, itemOf(list[+cv.dataset.i].key));
   }
 
   quests() {
@@ -122,8 +178,24 @@ export class JournalScreen {
   }
 
   /** A key while it's open: true if it was the screen's. */
+  // (Typing in the codex's search box isn't the journal's key.)
   key(code, isJournalKey) {
     if (code === 'Escape' || isJournalKey) { this.onClose(); return true; }
     return false;
   }
+}
+
+/** A thing's picture on a little canvas (a gun drawn as it's held; anything else, its icon). */
+function paintIcon(cv, it) {
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!it) return;
+  if (it.kind === 'weapon') {
+    const def = WEAPONS[it.weapon], L = def?.look?.length || 12, k = Math.min(cv.height / 18, (cv.width - 6) / (L + 8));
+    if (!def) return;
+    ctx.save(); ctx.translate(cv.width / 2, cv.height / 2); ctx.scale(k, k); drawWeapon(ctx, def, true); ctx.restore();
+    return;
+  }
+  const w = Math.min(cv.width, cv.height) * 0.85;
+  drawIcon(ctx, it, cv.width / 2 - w / 2, cv.height / 2 - w / 2, w, false, true);
 }

@@ -8,7 +8,7 @@ import { itemOf } from './items.js';
 import { WEAPONS } from '../weapons.js';
 import { RECIPES, STATION_NAMES, madeFrom } from './crafting.js';
 import { valueOf, SHOPS, offerFor } from './trade.js';
-import { RARITY, gearLines, gearValue } from './gear.js';
+import { RARITY, gearLines, gearValue, rarityOf } from './gear.js';
 
 /** Each kind of thing's colour (bright: they're shown on dark panels). */
 export const CATEGORY_COLORS = {
@@ -36,7 +36,7 @@ export function categoryOf(it) {
 
 /** An item's colour (by its key or the item; a piece of gear: its rarity's, gear.js, given its details or just its rarity). */
 export function itemColor(it, g = null) {
-  if (g) return RARITY[typeof g === 'string' ? g : g.r]?.color || RARITY.normal.color;
+  if (g) return RARITY[rarityOf(typeof g === 'string' ? g : g.r)].color;
   return CATEGORY_COLORS[categoryOf(typeof it === 'string' ? itemOf(it) : it)] || '#dddddd';
 }
 
@@ -46,7 +46,7 @@ export const stackName = (it, g = null) => g?.name || it?.name || '';
 /** Whether an item is worth making a fuss of: it glows where it lies, and it's said big as it's picked up. (Gear: magic or better.) */
 export function isPrecious(it, g = null) {
   if (!it) return false;
-  if (g) return (typeof g === 'string' ? g : g.r) !== 'normal';
+  if (g) return rarityOf(typeof g === 'string' ? g : g.r) !== 'basic';
   const c = categoryOf(it);
   return c === 'gem' || c === 'potion' || c === 'weapon' || c === 'coins' || c === 'quest' || valueOf(it.key) >= 15;
 }
@@ -64,7 +64,13 @@ export function itemDetails(it, n = 1, g = null) {
   // (Gear: what it is and what it gives, its rarity's colour, its worth: gear.js.)
   if (cat === 'gear') {
     const v = gearValue(it.key, g);
-    return { name: g?.name || it.name, kind: `Gear · worn on the ${it.wear === 'ring' ? 'finger' : it.wear === 'amulet' ? 'neck' : it.wear} · right click to wear it`, color: itemColor(it, g || 'normal'), lines: gearLines(it.key, g), worth: v ? `Worth about ${v} coins` : '', made: '' };
+    const where = { ring: 'a finger', amulet: 'the neck', hands: 'the hands', waist: 'the waist' }[it.wear] || `the ${it.wear}`;
+    return { name: g?.name || it.name, kind: `Gear · worn on ${where} · right click to wear it`, color: itemColor(it, g || 'basic'), lines: gearLines(it.key, g), worth: v ? `Worth about ${v} coins` : '', made: '' };
+  }
+  // (A weapon dropped with affixes of its own: its own name and colour, then what it is.)
+  if (cat === 'weapon' && g) {
+    const plain = itemDetails(it, n, null);
+    return { ...plain, name: g.name, color: itemColor(it, g), lines: [...gearLines(it.key, g), ...plain.lines], worth: `Worth about ${Math.round(valueOf(it.key) * ({ magic: 1.5, rare: 2.2, epic: 3, legendary: 4.5, unique: 6 }[g.r] || 1))} coins` };
   }
   switch (cat) {
     case 'weapon': {

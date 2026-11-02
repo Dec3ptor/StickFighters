@@ -9,7 +9,7 @@ import { WEAPONS } from '../weapons.js';
 import { drawWeapon } from '../sprites.js';
 import { drawIcon } from './worldrender.js';
 import { offerForSlot, buysAny } from './trade.js';
-import { itemColor } from './iteminfo.js';
+import { itemColor, itemDetails } from './iteminfo.js';
 import { sellScale } from './progress.js';
 import { rewardText } from './questui.js';
 import { drawSkinHead, TUNICS } from '../skins.js';
@@ -147,10 +147,10 @@ export class TalkScreen {
     this.stockEl.innerHTML = shop.stock.length ? shop.stock.map((o, i) => {
       const it = itemOf(o.key);
       if (!it) return '';
-      const can = o.left > 0 && coins >= o.price;
-      return `<button type="button" class="talk-row${o.rare ? ' rare' : ''}" data-buy="${i}" ${o.left > 0 ? '' : 'disabled'} title="${esc(it.name)}${o.rare ? ' (rare)' : ''}">
+      const can = o.left > 0 && coins >= o.price, d = o.g ? itemDetails(it, 1, o.g) : null;
+      return `<button type="button" class="talk-row${o.rare ? ' rare' : ''}" data-buy="${i}" ${o.left > 0 ? '' : 'disabled'} title="${esc(d ? `${d.name}\n${d.lines.join('\n')}` : `${it.name}${o.rare ? ' (rare)' : ''}`)}">
         <canvas width="40" height="28" aria-hidden="true"></canvas>
-        <span class="talk-item">${esc(it.name)}${o.n > 1 ? ` <small>× ${o.n}</small>` : ''}${o.rare ? ' <small class="talk-rare">rare</small>' : ''}</span>
+        <span class="talk-item"${o.g ? ` style="color:${itemColor(it, o.g)}"` : ''}>${esc(o.g?.name || it.name)}${o.n > 1 ? ` <small>× ${o.n}</small>` : ''}${o.rare ? ' <small class="talk-rare">rare</small>' : ''}</span>
         <span class="talk-price${can ? '' : ' short'}">${o.price}</span>
         <span class="talk-left">${o.left > 0 ? `${o.left} left` : 'sold out'}</span>
       </button>`;
@@ -158,7 +158,7 @@ export class TalkScreen {
     for (const b of this.stockEl.querySelectorAll('[data-buy]')) {
       const o = shop.stock[+b.dataset.buy];
       paint(b.querySelector('canvas'), itemOf(o.key));
-      b.addEventListener('click', () => this.onAct({ op: 'buy', key: o.key }));
+      b.addEventListener('click', () => this.onAct(o.slot ? { op: 'buy', key: o.key, slot: o.slot } : { op: 'buy', key: o.key }));
     }
     // Our things they'd buy (each stack: what one, or the lot, fetches).
     const rows = [];

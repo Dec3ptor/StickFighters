@@ -2,7 +2,8 @@
 // gathers at the town's edges (zombies, skeletons, and brutes for the strong) and comes for the
 // guards and anyone outside; the townsfolk shut themselves in. Everyone near the town is told
 // ("Raid on Oakford!", and how many are left), and when the last raider falls, everyone who fought
-// is thanked: coins and experience by how many they killed. A raid not beaten by dawn is over too
+// is thanked: coins and experience by how many they killed, and a piece of gear (gear.js: the more
+// killed, the better its chances of being good). A raid not beaten by dawn is over too
 // (the dead go back into the ground), with nothing for anyone.
 //
 // For one player or many (online, the host runs it: everyone near sees the same raid).
@@ -12,6 +13,8 @@ import { hourOf, isNight, spawnMonster } from './monsters.js';
 import { townsNear } from './townsfolk.js';
 import { giveXp, progOf, countStat } from './progress.js';
 import { hash3 } from './noise.js';
+import { rollGear } from './gear.js';
+import { dropFor } from './quests.js';
 
 const CHECK_EVERY = 60 * 30;   // updates between chances of a raid starting (half a minute)
 const CHANCE = 0.18;           // the chance each time (at night, a town with a player near)
@@ -108,7 +111,12 @@ function endRaid(game, t, won) {
     s.world.inv.add('coins', coins);
     giveXp(game, s, xp, `defending ${raid.name}`);
     countStat(s, 'raids');
-    game.notify(s, `${raid.name} held! The town thanks you: ${coins} coins (${kills} killed)`);
+    // (And a piece of gear: magic at least.)
+    const seed = hash3(world.gen.seed, game.tick, s.id), ilvl = Math.min(30, progOf(s).level + 4);
+    let piece = rollGear(seed, ilvl, 100 + kills * 15, null, null, (seed >>> 5) % 4 === 0);
+    if (piece.g.r === 'basic') piece = rollGear(seed + 1, ilvl, 0, 'magic', null, (seed >>> 5) % 4 === 0);
+    if (!s.world.inv.addGear(piece.key, piece.g)) dropFor(game, s, piece.key, 1, piece.g);
+    game.notify(s, `${raid.name} held! The town thanks you: ${coins} coins and ${piece.g.name} (${kills} killed)`);
     game.sound('hallelujah', s.x, s.y, s.id);
   }
 }

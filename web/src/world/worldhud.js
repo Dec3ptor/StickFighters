@@ -33,6 +33,7 @@ export function drawWorldHud(r, ctx, game, me, W, H, opts = {}) {
   if (game.world.drops?.length) drawDropNames(r, ctx, game, me, W, H, !!opts.showItems);
   if (me.world?.marks?.length) drawMarks(r, ctx, game, me, W, H);
   if (me.alive && me.world?.quests?.list.length) drawQuestPointer(r, ctx, game, me, W, H);
+  if (me.alive && me.world?.graves?.length) drawGravePointer(r, ctx, game, me, W, H);
   if (me.alive && me.world) { drawHotbar(ctx, me, W, H); drawXpBar(ctx, game, me, W, H); }
   if (me.world?.quests?.list.length) drawTracker(ctx, game, me, W);
   if (me.world?.levelUp) drawLevelUp(ctx, game, me, W, H);
@@ -168,17 +169,47 @@ function drawQuestPointer(r, ctx, game, me, W, H) {
   let place = null;
   for (const g of q.goals) if ((place = goalPlace(me, g))) break;
   if (questReady(me, q)) { const to = turnInTo(q); place = to ? { x: to.x, y: to.y } : null; }
-  if (!place) return;
+  if (place) pointAt(r, ctx, game, place, W, H, '#ffe36e');
+}
+
+/** Your nearest grave (worldplay.js's bury): a pale arrow to it, and its name over it. */
+function drawGravePointer(r, ctx, game, me, W, H) {
+  let best = null, bd = Infinity;
+  for (const [tx, ty] of me.world.graves) {
+    const d = Math.hypot((tx + 0.5) * TILE - me.x, (ty + 0.5) * TILE - me.y);
+    if (d < bd) { bd = d; best = { x: tx, y: ty }; }
+  }
+  if (!best || bd < 20) return;
+  pointAt(r, ctx, game, best, W, H, '#cfd6e0', `Your grave · ${Math.round(bd / TILE)} m`);
+}
+
+/**
+ * A pointer to a place (a tile): on screen, a pulsing diamond on it; off it, an arrow at the
+ * screen's edge pointing that way. label: said beside it.
+ */
+function pointAt(r, ctx, game, place, W, H, color, label = null) {
   const k = r.scale, sx = W / 2 + ((place.x + 0.5) * TILE - r.cam.x) * k, sy = H / 2 + ((place.y + 0.5) * TILE - r.cam.y) * k;
   const pulse = 0.5 + 0.5 * Math.sin(game.tick * 0.12);
-  ctx.strokeStyle = '#ffe36e';
-  ctx.fillStyle = '#ffe36e';
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  const say = (x, y) => {
+    if (!label) return;
+    ctx.font = `bold 11px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const w = ctx.measureText(label).width + 10, lx = Math.max(w / 2 + 4, Math.min(W - w / 2 - 4, x));
+    ctx.fillStyle = 'rgba(16,18,24,0.72)';
+    ctx.fillRect(lx - w / 2, y - 8, w, 16);
+    ctx.fillStyle = color;
+    ctx.fillText(label, lx, y + 0.5);
+  };
   if (sx > 20 && sx < W - 20 && sy > 20 && sy < H - 20) {
     ctx.globalAlpha = 0.6 + 0.4 * pulse;
     ctx.lineWidth = 2;
     const s = 8 + pulse * 3;
     ctx.beginPath(); ctx.moveTo(sx, sy - s); ctx.lineTo(sx + s, sy); ctx.lineTo(sx, sy + s); ctx.lineTo(sx - s, sy); ctx.closePath(); ctx.stroke();
     ctx.globalAlpha = 1;
+    say(sx, sy - 22);
     return;
   }
   // (At the edge: inset from it, pointing out.)
@@ -193,6 +224,7 @@ function drawQuestPointer(r, ctx, game, me, W, H) {
   ctx.fill();
   ctx.restore();
   ctx.globalAlpha = 1;
+  say(ex - Math.cos(a) * 26, ey - Math.sin(a) * 26);
 }
 
 /** Over the townsfolk with something for you: a gold ! (work) or ? (a quest to hand in). */
@@ -603,6 +635,14 @@ function drawMiniMap(ctx, game, me, W, H) {
     const k = o.npc?.kind, mate = me.world?.partyList?.some(p => p.id === o.id);
     ctx.fillStyle = k === 'monster' ? '#ff3b2f' : k === 'merc' ? '#3d7ff0' : k === 'townsfolk' ? '#f2c230' : mate ? '#5ad1ff' : '#ffffff';
     ctx.fillRect(x0 + ox * MAP_SCALE - 1.5, y0 + oy * MAP_SCALE - 2, 3, 3);
+  }
+  // Your graves: a pale cross.
+  for (const [gx, gy] of me.world?.graves || []) {
+    const ox = gx - mm.tx + MAP_W / 2, oy = gy - mm.ty + MAP_H / 2;
+    if (ox < 0 || ox >= MAP_W || oy < 0 || oy >= MAP_H) continue;
+    ctx.fillStyle = '#cfd6e0';
+    ctx.fillRect(x0 + ox * MAP_SCALE - 0.75, y0 + oy * MAP_SCALE - 3, 1.5, 6);
+    ctx.fillRect(x0 + ox * MAP_SCALE - 2.25, y0 + oy * MAP_SCALE - 1.5, 4.5, 1.5);
   }
   // You, in the middle (and where the world starts, if it's on the map).
   ctx.fillStyle = '#e02020';

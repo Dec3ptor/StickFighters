@@ -223,7 +223,8 @@ export function tradeView(game, s) {
   const other = otherIn(t, s), them = byName(game, other);
   const side = (who, name) => {
     const o = t.offers[Object.keys(t.offers).find(k => k.toLowerCase() === name.toLowerCase())];
-    return { items: o.slots.map(([i, n]) => [who?.world.inv.slots[i]?.key ?? '', n, i]).filter(x => x[0]), coins: o.coins, ok: o.ok };
+    // (A piece of gear: what it is, its rarity and affixes, for all to see.)
+    return { items: o.slots.map(([i, n]) => { const sl = who?.world.inv.slots[i]; return sl?.g ? [sl.key, n, i, sl.g] : [sl?.key ?? '', n, i]; }).filter(x => x[0]), coins: o.coins, ok: o.ok };
   };
   return { with: other, mine: side(s, s.name), theirs: side(them, other), v: t.v };
 }

@@ -10,7 +10,7 @@
 
 import { BLOCKS, WALLS, BLOCK_BY_KEY } from './blocks.js';
 import { WEAPONS } from '../weapons.js';
-import { BASES } from './gear.js';
+import { BASES, rarityOf } from './gear.js';
 
 export const HOTBAR = 10;
 export const BAG = 30;
@@ -103,6 +103,18 @@ for (const [id, d] of Object.entries(WEAPONS)) {
   item(id, d.name, 'weapon', { weapon: id, stack: self ? 20 : 1, ammo: ammoOf(id) });
 }
 
+/** What a supply crate (found in ruins and caves) can hold: [key, least, most, how likely (a weight)]. */
+export const CRATE_LOOT = [
+  ['bullets', 40, 120, 8], ['shells', 10, 30, 4], ['rockets', 3, 8, 2], ['arrows', 20, 40, 2], ['fuel', 80, 160, 1],
+  ['torch', 6, 14, 5], ['iron_ore', 6, 14, 4], ['gold_ore', 3, 8, 2], ['coal', 6, 16, 4], ['glass', 10, 20, 2], ['metal', 4, 10, 2],
+  ['copper_bar', 3, 8, 3], ['iron_bar', 2, 6, 3], ['gold_bar', 1, 4, 2],
+  ['Magnum', 1, 1, 2], ['Uzi', 1, 1, 2], ['MP5K', 1, 1, 2], ['M4', 1, 1, 2], ['AK47', 1, 1, 2], ['Shotgun', 1, 1, 2],
+  ['Longbow', 1, 1, 1], ['SR', 1, 1, 1], ['Bazooka', 1, 1, 1], ['GrenadeLauncher', 1, 1, 1], ['Flamer', 1, 1, 1],
+  ['ClusterBomb', 2, 4, 2], ['Dynamite', 2, 4, 2], ['Mine', 2, 5, 2], ['Sheep', 1, 2, 1], ['NinjaRope', 1, 1, 1], ['iron_pickaxe', 1, 1, 1],
+  // (The rarest: only ever found in crates.)
+  ['Skunk', 1, 2, 0.6], ['OldWoman', 1, 1, 0.4], ['AirStrike', 1, 1, 0.4], ['NapalmStrike', 1, 1, 0.3], ['Earthquake', 1, 1, 0.2], ['Kamikaze', 1, 1, 0.4],
+];
+
 export const ITEMS = I;
 export const itemOf = key => I.get(key) || null;
 
@@ -119,7 +131,7 @@ export const STARTING_KIT = [
 /** A piece of gear's details from a save or the network: only what there should be. */
 export function cleanGear(g) {
   if (!g || typeof g !== 'object') return null;
-  const out = { r: ['normal', 'magic', 'rare', 'set', 'unique'].includes(g.r) ? g.r : 'normal', name: String(g.name || '').slice(0, 48), stats: {}, ilvl: Math.max(1, Math.min(60, g.ilvl | 0 || 1)) };
+  const out = { r: rarityOf(g.r), name: String(g.name || '').slice(0, 60), stats: {}, ilvl: Math.max(1, Math.min(60, g.ilvl | 0 || 1)) };
   for (const [k, v] of Object.entries(g.stats || {})) if (/^[a-z]{2,6}$/.test(k) && Number.isFinite(v)) out.stats[k] = Math.max(-100, Math.min(500, Math.round(v)));
   if (typeof g.set === 'string') out.set = g.set.slice(0, 24);
   if (typeof g.unique === 'string') out.unique = g.unique.slice(0, 24);

@@ -245,7 +245,7 @@ export function talkDo(game, s, d) {
   switch (d.op) {
     case 'buy': {
       if (typeof d.key !== 'string') return;
-      const text = buy(game.world, s, f, d.key, city);
+      const text = buy(game.world, s, f, d.key, city, typeof d.slot === 'string' ? d.slot : null);
       say(text);
       if (text.startsWith('Bought')) game.sound('pickup', s.x, s.y, s.id);
       break;

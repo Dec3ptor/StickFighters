@@ -82,9 +82,9 @@ export const genOf = rec => Math.max(1, Math.min(WORLD_GEN, rec?.gen | 0 || 1));
 /** Whether a world (its record) has towns. */
 export const hasTowns = rec => genOf(rec) >= 2;
 
-export async function createWorld({ name, seed }) {
+export async function createWorld({ name, seed, death = 'bag' }) {
   const now = Date.now();
-  const rec = { id: newId(), name: worldName(name), seed: seed | 0, created: now, played: now, player: null, format: 1, gen: WORLD_GEN };
+  const rec = { id: newId(), name: worldName(name), seed: seed | 0, created: now, played: now, player: null, format: 1, gen: WORLD_GEN, death: ['coins', 'bag', 'all'].includes(death) ? death : 'bag' };
   await saveWorld(rec, []);
   return rec;
 }

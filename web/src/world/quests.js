@@ -25,6 +25,7 @@ import { giveXp, progOf, countStat, KILL_XP } from './progress.js';
 import { WORLD_H } from './worldgen.js';
 import { storyStep, STORY_STEPS } from './story.js';
 import { missionStep } from './stories.js';
+import { gearReward, rollReward } from './gear.js';
 
 /** The most quests a player can have at once. */
 export const MAX_QUESTS = 12;
@@ -390,6 +391,9 @@ export function makeQuest(world, f, t, period, i, level = 1, only = null) {
   const band = Math.max(1, Math.floor((level - 1) / 3) * 3 + 1);
   const q = KINDS[kind]({ r, f, t, world, level: band, id: null });
   if (!q) return null;
+  // (Now and then, a piece of gear too: a hunt always. What they deal in, if they deal in it: gear.js.)
+  const x = r(), y = r();
+  if (kind === 'hunt' || x < 0.22) q.reward = { ...q.reward, gear: gearReward(f.role, kind === 'hunt' ? (x < 0.4 ? 'rare' : 'magic') : x < 0.04 ? 'rare' : 'magic', y, band + 3) };
   return {
     id: `f:${f.key}:${period}:${i}`, kind: 'side', tpl: kind, band, ...q,
     giver: { key: f.key, name: f.name, title: f.title, town: t.name, k: t.k, x: f.at.x, y: f.at.y },
@@ -442,7 +446,10 @@ function storyOffer(game, s, f, t) {
   if (n >= STORY_STEPS || qs.list.some(q => q.id === id)) return null;
   const st = storyStep(game.world.gen, n, progOf(s).level);
   if (!st || st.giver.key !== f.key) return null;
-  return { ...wrapStep(game.world.gen, st, id, 'story', f, t), step: n };
+  // (Every step of the story gives a piece of gear, better the further it goes.)
+  const q = { ...wrapStep(game.world.gen, st, id, 'story', f, t), step: n };
+  q.reward = { ...q.reward, gear: gearReward(f.role, n >= STORY_STEPS - 2 ? 'legendary' : n >= 8 ? 'epic' : n >= 4 ? 'rare' : 'magic', (n * 0.37) % 1, 4 + n * 2) };
+  return q;
 }
 
 /** The next step of townsperson f's own mission (stories.js) for player s, if there is one and it's not under way. */
@@ -454,7 +461,10 @@ function missionOffer(game, s, f, t) {
     if (qs.list.some(q => q.id === id)) return null;
     const st = missionStep(game.world.gen, f, t, step, progOf(s).level);
     if (!st) return null;
-    return { ...wrapStep(game.world.gen, st, id, 'personal', f, t), chain: { key: f.key, k: t.k, step }, steps: st.steps };
+    const q = { ...wrapStep(game.world.gen, st, id, 'personal', f, t), chain: { key: f.key, k: t.k, step }, steps: st.steps };
+    // (The end of their mission: a rare piece of gear, what they'd know about.)
+    if (step === (st.steps || 3) - 1) q.reward = { ...q.reward, gear: gearReward(f.role, 'rare', (keyHash(f.key) >>> 4) % 97 / 97, progOf(s).level + 4) };
+    return q;
   }
   return null;
 }
@@ -565,6 +575,9 @@ export function turnIn(game, s, id) {
   const rw = q.reward || {};
   if (rw.coins) { const left = inv.add('coins', rw.coins); if (left) dropAt(game, s, 'coins', left); }
   for (const [key, n] of rw.items || []) { const left = inv.add(key, n); if (left) dropAt(game, s, key, left); }
+  // (A piece of gear: rolled now, for this quest and this player: gear.js.)
+  const piece = rw.gear ? rollReward(rw.gear, game.world.gen.seed, q.id, s.name) : null;
+  if (piece && !inv.addGear(piece.key, piece.g)) dropAt(game, s, piece.key, 1, piece.g);
   qs.list.splice(qs.list.indexOf(q), 1);
   qs.done.add(q.id);
   if (qs.done.size > MAX_DONE) qs.done.delete(qs.done.values().next().value);
@@ -581,6 +594,7 @@ export function turnIn(game, s, id) {
     if (next && /^Quest/.test(acceptQuest(game, s, next) || '')) game.notify(s, `Next: ${next.title}`);
   }
   const items = (rw.items || []).map(([k, n]) => `${n > 1 ? `${n} × ` : ''}${itemOf(k)?.name ?? k}`);
+  if (piece) items.push(piece.g.name);
   return `Done: ${q.title}. ${[rw.coins ? `${rw.coins} coins` : '', rw.xp ? `${rw.xp} experience` : '', ...items].filter(Boolean).join(', ')}`;
 }
 
@@ -591,7 +605,9 @@ export function turnIn(game, s, id) {
  */
 let hooks = {};
 export function setQuestHooks(h) { hooks = h; }
-const dropAt = (game, s, key, n) => hooks.drop?.(game, key, n, s.x, s.y - 14);
+const dropAt = (game, s, key, n, g = null) => hooks.drop?.(game, key, n, s.x, s.y - 14, g);
+/** Things for player s that don't fit: at their feet (raids.js's thanks too). */
+export const dropFor = dropAt;
 
 // ---- Keeping quests up to date ---------------------------------------------------------------------------------
 

@@ -136,6 +136,9 @@ export const TOPAZ = gem('topaz_ore', 'Topaz', 'topaz', '#f2a81e');
 export const AMETHYST = gem('amethyst_ore', 'Amethyst', 'amethyst', '#a052ea');
 export const KIMBERLITE = def('kimberlite', 'Kimberlite', { hard: 8, resist: 12, tier: 2, color: '#3e4a56', pattern: 'cracks', natural: true });
 export const DIAMOND = def('diamond_ore', 'Diamond', { hard: 14, resist: 16, tier: 3, drop: 'diamond', color: '#3e4a56', pattern: 'gem', ore: '#c4f6ff', light: 4, natural: true });
+// ---- A grave (worldplay.js): where a player died, with what they lost in it. Nothing breaks it:
+// right clicked, it gives its things back (to whoever it was, or, after a while, to anyone).
+export const GRAVE = def('grave', 'Grave', { solid: false, clear: true, hard: 1, tier: 9, resist: 1e9, drop: null, light: 3, color: '#8d8b86', pattern: 'grave' });
 /** The gem blocks (they glint). */
 export const GEMS = new Set([RUBY, SAPPHIRE, EMERALD, TOPAZ, AMETHYST, DIAMOND]);
 

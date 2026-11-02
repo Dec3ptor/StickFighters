@@ -12,7 +12,7 @@ import * as K from '../web/src/world/blocks.js';
 import { BLOCKS, SHAPES, BLOCK_BY_KEY } from '../web/src/world/blocks.js';
 import { BIOMES, WorldGen } from '../web/src/world/worldgen.js';
 import { Inventory, itemOf, ammoOf, HOTBAR, BAG, STARTING_KIT } from '../web/src/world/items.js';
-import { worldState, playerToSave, worldFromSave, safeSpot, shapeTiles, canPlace, breakBlock, dropItem, REACH } from '../web/src/world/worldplay.js';
+import { worldState, playerToSave, worldFromSave, safeSpot, shapeTiles, canPlace, breakBlock, dropItem, REACH, graveAt } from '../web/src/world/worldplay.js';
 import { lightBox, SOLDIER_GLOW } from '../web/src/world/worldrender.js';
 import { packBytes, unpackBytes, createWorld, saveWorld, loadChunks, listWorlds, deleteWorld, exportWorld, importWorld, worldName } from '../web/src/world/worldsave.js';
 import { seedOf } from '../web/src/world/noise.js';
@@ -634,7 +634,7 @@ test('day and night: the clock, the daylight, when it\'s night', () => {
   assert.equal(world.time, t + 30);
 });
 
-test('monsters come at night (not by day), go for you, and drop coins; you drop half of yours', () => {
+test('monsters come at night (not by day), go for you, and drop coins; half of yours go in your grave', () => {
   const night = play(77);
   night.world.time = DAY_TICKS * 0.75;
   untilAlive(night.game, night.me);
@@ -666,7 +666,8 @@ test('monsters come at night (not by day), go for you, and drop coins; you drop 
   me.world.inv.add('coins', 100 - me.world.inv.count('coins'));
   game.kill(me, null, 'Claws');
   assert.equal(me.world.inv.count('coins'), 50, 'half kept');
-  assert.ok(world.drops.some(d => d.key === 'coins' && d.n === 50), 'half dropped where you died');
+  const [gx, gy] = me.world.graves.at(-1);
+  assert.equal(graveAt(world, gx, gy).inv.count('coins'), 50, 'half in a grave where you died');
 });
 
 test('monsters leave monsters alone; mercenaries follow whoever hired them, shoot monsters, and never them', () => {

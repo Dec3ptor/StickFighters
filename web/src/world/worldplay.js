@@ -6,7 +6,7 @@
 
 import * as K from './blocks.js';
 import { BLOCKS, SOLID, PLATFORMS, TILE, AIR, NO_WALL } from './blocks.js';
-import { Inventory, itemOf, HOTBAR } from './items.js';
+import { Inventory, itemOf, HOTBAR, CRATE_LOOT } from './items.js';
 import { WORLD_H, CHUNK } from './worldgen.js';
 import { MOTION, BODY } from '../config.js';
 import { WEAPONS } from '../weapons.js';
@@ -21,8 +21,9 @@ import { questEvent, questsTick, questsToSave, questsFromSave, setQuestHooks } f
 import { valueOf } from './trade.js';
 import { playerAt, shareKill, partyView } from './social.js';
 import { raidsTick, raidKill, raidersLeft } from './raids.js';
-import { SLOTS, slotKind, gearStats, armorCut, rollGear, dropSeed, dropLevel, RARITY } from './gear.js';
+import { SLOTS, slotKind, gearStats, armorCut, rollGear, dropSeed, dropLevel, RARITY, weaponWith } from './gear.js';
 import { cleanGear } from './items.js';
+import { scanFound, cleanFound } from './codex.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -132,6 +133,140 @@ function spillChest(game, tx, ty) {
   }
 }
 
+// ---- Graves ----------------------------------------------------------------------------------------
+//
+// What a player loses when they die goes in a grave where they died, the world's choice (world.death):
+//   'coins'  half their coins
+//   'bag'    half their coins, and their bag (the hotbar's kept, and what they wear)
+//   'all'    all their coins and everything they have, worn or carried
+// What's carried for a quest is always kept. Their grave is theirs to open (a right click: all of
+// it back, as much as they have room for); after GRAVE_KEEP, anyone's.
+
+export const DEATH_RULES = ['coins', 'bag', 'all'];
+export const DEATH_NAMES = { coins: 'Half your coins', bag: 'Your bag, and half your coins', all: 'Everything' };
+/** How long (ms) only a grave's owner can open it. */
+export const GRAVE_KEEP = 15 * 60 * 1000;
+const GRAVE_SIZE = HOTBAR + 30 + SLOTS.length + 2;
+
+/** The grave at (tx, ty): { owner, at (when, ms), inv, worn: { slot: { key, n, g } } }, or null. */
+export function graveAt(world, tx, ty) {
+  if (world.tile(tx, ty) !== K.GRAVE) return null;
+  return world.graves?.get(chestKey(tx, ty)) || null;
+}
+
+/** Where a grave goes for someone who died at (x, y): an empty place there (or near), down on the ground. */
+function graveSpot(world, x, y) {
+  const tx0 = Math.floor(x / TILE), ty0 = Math.floor(y / TILE);
+  const free = (tx, ty) => ty > 1 && ty < WORLD_H - 2 && world.tile(tx, ty) === AIR;
+  for (let r = 0; r <= 5; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        let tx = tx0 + dx, ty = ty0 + dy;
+        if (!free(tx, ty)) continue;
+        for (let k = 0; k < 40 && free(tx, ty + 1); k++) ty++;
+        return { tx, ty };
+      }
+    }
+  }
+  return null;
+}
+
+/** Player s has died (at where they are): what they lose goes in a grave there (DEATH_RULES). */
+export function bury(game, s) {
+  const world = game.world, w = s.world, rule = DEATH_RULES.includes(world.death) ? world.death : 'bag', inv = w.inv;
+  const box = new Inventory(GRAVE_SIZE), worn = {};
+  const coins = inv.count('coins'), lose = rule === 'all' ? coins : Math.floor(coins / 2);
+  if (lose > 0) { inv.remove('coins', lose); box.add('coins', lose); }
+  if (rule !== 'coins') {
+    for (let i = rule === 'all' ? 0 : HOTBAR; i < inv.slots.length; i++) {
+      const sl = inv.slots[i], at = box.slots.indexOf(null);
+      // (Quest things are kept; and coins, but for what's lost of them: above.)
+      if (!sl || at < 0 || itemOf(sl.key)?.kind === 'quest' || sl.key === 'coins') continue;
+      box.slots[at] = sl;
+      inv.slots[i] = null;
+    }
+    inv.version++;
+    if (rule === 'all') {
+      for (const k of SLOTS) if (w.gear?.[k]) { worn[k] = w.gear[k]; w.gear[k] = null; }
+      if (Object.keys(worn).length) { w.gearV = (w.gearV || 0) + 1; applyProgress(s); }
+    }
+  }
+  if (!box.slots.some(Boolean) && !Object.keys(worn).length) return null;
+  const spot = graveSpot(world, s.x, s.y + BODY.bottom - 6);
+  if (!spot) {
+    // (Nowhere for it: on the ground, then.)
+    for (const sl of [...box.slots, ...Object.values(worn)]) if (sl) dropItem(game, sl.key, sl.n, s.x, s.y - 10, (game.rng() - 0.5) * 3, -2, 60, sl.g || null);
+    return null;
+  }
+  world.setTile(spot.tx, spot.ty, K.GRAVE);
+  (world.graves ||= new Map()).set(chestKey(spot.tx, spot.ty), { owner: s.name, at: Date.now(), inv: box, worn });
+  w.graves = [...(w.graves || []).filter(([x, y]) => x !== spot.tx || y !== spot.ty), [spot.tx, spot.ty]].slice(-8);
+  game.notify(s, `${DEATH_NAMES[rule]}: in your grave where you died. Right click it to have it back`);
+  return spot;
+}
+
+/** Player s opens the grave at (tx, ty): everything in it back (to its owner; after a while, to anyone), as much as there's room for. */
+export function openGrave(game, s, tx, ty) {
+  const world = game.world, gr = graveAt(world, tx, ty), w = s.world, x = tx * TILE + 8, y = ty * TILE + 8;
+  if (!gr) { world.setTile(tx, ty, AIR); return true; }
+  const mine = gr.owner === s.name, wait = GRAVE_KEEP - (Date.now() - gr.at);
+  if (!mine && wait > 0) { game.notify(s, `${gr.owner}'s grave: only they can open it, for ${Math.ceil(wait / 60000)} more minutes`); return true; }
+  const inv = w.inv;
+  // (What was worn, back on, if nothing else is there now.)
+  for (const [k, it] of Object.entries(gr.worn || {})) {
+    if (mine && !w.gear[k]) { w.gear[k] = it; delete gr.worn[k]; w.gearV = (w.gearV || 0) + 1; }
+    else { const at = inv.slots.indexOf(null); if (at >= 0) { inv.slots[at] = it; delete gr.worn[k]; } }
+  }
+  for (let i = 0; i < gr.inv.slots.length; i++) {
+    const sl = gr.inv.slots[i];
+    if (!sl) continue;
+    if (sl.g || sl.mag != null || (itemOf(sl.key)?.stack ?? 1) === 1) {
+      const at = inv.slots.indexOf(null);
+      if (at >= 0) { inv.slots[at] = sl; gr.inv.slots[i] = null; }
+    } else {
+      const left = inv.add(sl.key, sl.n);
+      if (left > 0) sl.n = left; else gr.inv.slots[i] = null;
+    }
+  }
+  inv.version++;
+  gr.inv.version++;
+  applyProgress(s);
+  const left = gr.inv.slots.some(Boolean) || Object.keys(gr.worn || {}).length > 0;
+  if (!left) {
+    world.graves.delete(chestKey(tx, ty));
+    world.setTile(tx, ty, AIR);
+    const owner = game.soldiers.find(o => o.world && o.name === gr.owner);
+    if (owner) owner.world.graves = (owner.world.graves || []).filter(([a, b]) => a !== tx || b !== ty);
+    game.fx?.rubble?.(x, y, 4);
+  }
+  game.notify(s, `${mine ? 'Your things, back' : `${gr.owner}'s things`}${left ? ' (no room for the rest: it stays in the grave)' : ''}`);
+  game.sound('respawnItem', x, y);
+  return true;
+}
+
+/** A world's graves as saved: [[tx, ty, owner, at, things, worn]]. */
+export function gravesToSave(world) {
+  const out = [];
+  for (const [k, gr] of world.graves || []) {
+    const [tx, ty] = k.split(',').map(Number);
+    if (world.tile(tx, ty) === K.GRAVE) out.push([tx, ty, gr.owner, gr.at, gr.inv.toJSON(), Object.fromEntries(Object.entries(gr.worn || {}).map(([s, it]) => [s, [it.key, it.g]]))]);
+  }
+  return out;
+}
+
+/** A world's graves from a save. */
+export function gravesFromSave(world, list) {
+  world.graves = new Map();
+  if (!Array.isArray(list)) return;
+  for (const row of list) {
+    if (!Array.isArray(row) || !Number.isInteger(row[0]) || !Number.isInteger(row[1])) continue;
+    const worn = {};
+    for (const [k, it] of Object.entries(row[5] || {})) if (SLOTS.includes(k) && Array.isArray(it) && itemOf(it[0])?.kind === 'gear') worn[k] = { key: it[0], n: 1, g: cleanGear(it[1]) || { r: 'basic', name: itemOf(it[0]).name, stats: {}, ilvl: 1 } };
+    world.graves.set(chestKey(row[0], row[1]), { owner: String(row[2] || '').slice(0, 24), at: Number(row[3]) || 0, inv: Inventory.from(row[4], GRAVE_SIZE), worn });
+  }
+}
+
 // ---- Players' things ---------------------------------------------------------------------------
 
 /** A soldier's world state: their things, and what they're doing with them. */
@@ -154,6 +289,7 @@ export function playerToSave(s, game = null) {
     // (Their level and perks, and their quests: progress.js, quests.js. What they wear: gear.js.)
     prog: progToSave(s), quests: questsToSave(s),
     gear: Object.fromEntries(SLOTS.map(k => [k, w.gear?.[k] ? [w.gear[k].key, w.gear[k].g] : null])),
+    graves: w.graves || [], found: w.found || [],
   };
 }
 
@@ -171,9 +307,11 @@ export function worldFromSave(p) {
   w.mercs = Array.isArray(p.mercs) ? p.mercs.filter(m => WEAPONS[m?.gun]).slice(0, MERC.most) : [];
   progFromSave(w, p.prog);
   questsFromSave(w, p.quests);
+  w.found = cleanFound(p.found);
+  w.graves = Array.isArray(p.graves) ? p.graves.filter(g => Array.isArray(g) && Number.isInteger(g[0]) && Number.isInteger(g[1])).slice(-8).map(g => [g[0], g[1]]) : [];
   for (const k of SLOTS) {
     const it = p.gear?.[k];
-    if (Array.isArray(it) && itemOf(it[0])?.kind === 'gear' && itemOf(it[0]).wear === slotKind(k)) w.gear[k] = { key: it[0], n: 1, g: cleanGear(it[1]) || { r: 'normal', name: itemOf(it[0]).name, stats: {}, ilvl: 1 } };
+    if (Array.isArray(it) && itemOf(it[0])?.kind === 'gear' && itemOf(it[0]).wear === slotKind(k)) w.gear[k] = { key: it[0], n: 1, g: cleanGear(it[1]) || { r: 'basic', name: itemOf(it[0]).name, stats: {}, ilvl: 1 } };
   }
   return w;
 }
@@ -274,7 +412,10 @@ export function hold(s) {
   }
   const { slot, item } = inHand(s);
   if (item?.kind === 'weapon') {
-    const id = item.weapon, def = WEAPONS[id], key = item.ammo === 'self' ? item.key : item.ammo;
+    // (A dropped weapon with affixes of its own: gear.js. The game asks for it through weaponFor.)
+    const id = item.weapon, def = weaponWith(id, slot.g?.stats), key = item.ammo === 'self' ? item.key : item.ammo;
+    if (w.own?.slot !== slot || w.own.g !== slot.g) w.own = { slot, g: slot.g, fn: slot.g ? x => (x === id ? def : null) : null };
+    s.weaponOverride = w.own.fn;
     let inv = s.weapons[id];
     if (!a || a.slot !== slot || a.weapon !== id || !inv) {
       // (Another gun in hand: a reload under way is lost.)
@@ -290,6 +431,7 @@ export function hold(s) {
   } else {
     if (a) { s.weapons = {}; s.reloadTimer = 0; s.reloading = null; }
     w.ammo = null;
+    s.weaponOverride = null;
     s.current = 'Hands';
     s.held = item ? heldLook(item) : null;
   }
@@ -548,14 +690,7 @@ function fell(game, tx, ty) {
 }
 
 // What's in a supply crate: [key, least, most, weight].
-const LOOT = [
-  ['bullets', 40, 120, 8], ['shells', 10, 30, 4], ['rockets', 3, 8, 2], ['arrows', 20, 40, 2], ['fuel', 80, 160, 1],
-  ['torch', 6, 14, 5], ['iron_ore', 6, 14, 4], ['gold_ore', 3, 8, 2], ['coal', 6, 16, 4], ['glass', 10, 20, 2], ['metal', 4, 10, 2],
-  ['copper_bar', 3, 8, 3], ['iron_bar', 2, 6, 3], ['gold_bar', 1, 4, 2],
-  ['Magnum', 1, 1, 2], ['Uzi', 1, 1, 2], ['MP5K', 1, 1, 2], ['M4', 1, 1, 2], ['AK47', 1, 1, 2], ['Shotgun', 1, 1, 2],
-  ['Longbow', 1, 1, 1], ['SR', 1, 1, 1], ['Bazooka', 1, 1, 1], ['GrenadeLauncher', 1, 1, 1], ['Flamer', 1, 1, 1],
-  ['ClusterBomb', 2, 4, 2], ['Dynamite', 2, 4, 2], ['Mine', 2, 5, 2], ['Sheep', 1, 2, 1], ['NinjaRope', 1, 1, 1], ['iron_pickaxe', 1, 1, 1],
-];
+const LOOT = CRATE_LOOT;
 const LOOT_WEIGHT = LOOT.reduce((n, l) => n + l[3], 0);
 
 /** A supply crate broken open: three or four things fly out. */
@@ -749,6 +884,7 @@ function interact(game, s) {
   const w = s.world, t = w.target, world = game.world;
   if (!t?.near) return false;
   const id = world.tile(t.tx, t.ty);
+  if (id === K.GRAVE) return openGrave(game, s, t.tx, t.ty);
   if (id === K.CHEST) {
     if (!mayChange(world, s, t.tx, t.ty)) return notYours(game, s, t.tx, t.ty) || true;
     chestAt(world, t.tx, t.ty);
@@ -909,7 +1045,7 @@ export function equip(game, s, i) {
   if (!it || it.kind !== 'gear') return null;
   const where = it.wear === 'ring' ? (!w.gear.ring1 ? 'ring1' : !w.gear.ring2 ? 'ring2' : 'ring1') : it.wear;
   const was = w.gear[where];
-  w.gear[where] = { key: sl.key, n: 1, g: sl.g || { r: 'normal', name: it.name, stats: {}, ilvl: 1 } };
+  w.gear[where] = { key: sl.key, n: 1, g: sl.g || { r: 'basic', name: it.name, stats: {}, ilvl: 1 } };
   w.inv.slots[i] = was;
   w.inv.version++;
   w.gearV++;
@@ -987,6 +1123,9 @@ export function worldTick(game) {
     if (!s.world) continue;
     if (s.world.talk) talkTick(game, s);
     regenTick(game, s);
+    // (What's come into their hands, found: the codex.)
+    const fk = `${s.world.inv.version}|${s.world.gearV || 0}`;
+    if (game.tick % 20 === 5 && s.world.foundAt !== fk && !game.mirror) { s.world.foundAt = fk; scanFound(s); }
   }
   // The chunks round everyone made ready: those not made yet, a couple each update (nearest
   // first: making one takes a millisecond or so, and a whole new column at once stutters).
@@ -1029,6 +1168,9 @@ function magmaBurns(game) {
 
 // ---- The mode -------------------------------------------------------------------------------------
 
+// (Hitting back with thorns, once: not thorns against thorns forever.)
+let thorny = false;
+
 // (How likely each monster is to drop a piece of gear: gear.js. A named one always does, and better.)
 const GEAR_CHANCE = { zombie: 0.025, skeleton: 0.05, brute: 0.2 };
 
@@ -1042,8 +1184,12 @@ function dropGear(game, victim, by, x, y) {
   const seed = dropSeed(world.gen.seed + game.tick, victim.id, Math.floor(victim.x));
   // (Named monsters: rare at least. The story's: something special.)
   const special = victim.name === 'The Ember King' ? ['unique', 'ember_crown'] : victim.name === 'The Warden' ? ['unique', 'warden'] : null;
-  const piece = special ? rollGear(seed, ilvl, mf, special[0], special[1]) : rollGear(seed, ilvl, mf + (champ ? 150 : 0), champ && game.rng() < 0.5 ? 'rare' : null);
+  // (Now and then a weapon with affixes of its own instead.)
+  const weapon = !special && game.rng() < 0.3;
+  const piece = special ? rollGear(seed, ilvl, mf, special[0], special[1]) : rollGear(seed, ilvl, mf + (champ ? 150 : 0), champ && game.rng() < 0.5 ? 'rare' : null, null, weapon);
   dropItem(game, piece.key, 1, x, y, (game.rng() - 0.5) * 3, -2.5, 0, piece.g);
+  // (The Ember King: his maul too.)
+  if (victim.name === 'The Ember King') { const maul = rollGear(seed + 1, 30, 0, 'unique', 'embermaul', true); dropItem(game, maul.key, 1, x, y, 1.5, -3, 0, maul.g); }
 }
 
 /** The rules a world plays by (modes.js lists it; it isn't in the menus' list of modes). */
@@ -1067,7 +1213,7 @@ export const worldMode = {
     const world = game.world;
     if (!world) return;
     // (Quests drop rewards that don't fit at your feet, and put lost things in chests.)
-    setQuestHooks({ drop: (g, key, n, x, y) => dropItem(g, key, n, x, y, 0, -2, 30), chestAt });
+    setQuestHooks({ drop: (g, key, n, x, y, gear) => dropItem(g, key, n, x, y, 0, -2, 30, gear || null), chestAt });
     world.drops ||= [];
     world.claims ||= new Map();
     world.protect = (tx, ty) => !!world.gen?.townProtecting(tx, ty) || (world.claims.size > 0 && !!claimAt(world, tx, ty));
@@ -1107,11 +1253,22 @@ export const worldMode = {
     // (Harder hitting with the Marksman and Brawler perks and gear: progress.js. Less taken with
     // armour, and fire resistance against magma and burning: gear.js.)
     let dmg = attacker?.world ? amount * damageScale(attacker, weapon) : amount;
+    const as = attacker?.world?.gear ? gearStats(attacker) : null;
+    // (A critical hit: twice the damage.)
+    if (as?.crit && game.rng() * 100 < as.crit) { dmg *= 2; game.fx?.sparks?.(target.x, target.y - 14, 0, -1); }
     if (target?.world?.gear) {
       const st = gearStats(target);
       if (st.armor) dmg *= 1 - armorCut(st.armor);
       if (st.fire && (weapon === 'Magma' || !attacker && target.burnTicks > 0)) dmg *= 1 - Math.min(90, st.fire) / 100;
+      // (Thorns: whoever hits them up close is hurt back.)
+      if (st.thorns && attacker && attacker !== target && attacker.alive && !thorny && Math.hypot(attacker.x - target.x, attacker.y - target.y) < 80) {
+        thorny = true;
+        damage(game, attacker, st.thorns, target, 'Thorns');
+        thorny = false;
+      }
     }
+    // (Life leech: some of the damage done heals the one who did it.)
+    if (as?.leech && attacker.alive) attacker.health = Math.min(attacker.maxHealth, attacker.health + dmg * as.leech / 100);
     return dmg;
   },
   /** Dev mode flies (devmode.js); else the game moves them. */
@@ -1119,7 +1276,7 @@ export const worldMode = {
   /** Monsters don't hurt monsters; nor mercenaries the one who hired them; players each other only with PvP on. */
   canHurt(game, attacker, target) { return foes(game.world, attacker, target); },
 
-  /** Killed: a monster drops coins and loot; a player drops half their coins (they keep the rest, and their things). */
+  /** Killed: a monster drops coins and loot; a player leaves a grave with what they lose in it (bury). */
   onKill(game, victim, killer) {
     const x = victim.x, y = victim.y - 10;
     const drop = (key, n) => dropItem(game, key, n, x, y, (game.rng() - 0.5) * 3, -2 - game.rng() * 1.5);
@@ -1138,10 +1295,8 @@ export const worldMode = {
       }
       raidKill(game, victim, by);
     }
-    else if (victim.world) {
-      const lose = Math.floor(victim.world.inv.count('coins') / 2);
-      if (lose > 0) { victim.world.inv.remove('coins', lose); dropItem(game, 'coins', lose, x, y, 0, -2, 90); }
-    }
+    // (A player: what they lose goes in a grave, where they died.)
+    else if (victim.world) bury(game, victim);
   },
   // (G throws what's in hand: worldInput. Saying there's a drop makes the key mean that.)
   drop() {},

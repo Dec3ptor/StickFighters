@@ -6,7 +6,7 @@ import { itemOf } from './items.js';
 import { drawIcon } from './worldrender.js';
 import { WEAPONS } from '../weapons.js';
 import { drawWeapon } from '../sprites.js';
-import { itemColor } from './iteminfo.js';
+import { itemColor, itemDetails } from './iteminfo.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
@@ -113,11 +113,13 @@ export class TradeScreen {
     this.root.querySelector('[data-their-ok]').textContent = v.theirs.ok ? '✓ accepted' : '';
     if (document.activeElement !== this.coinsEl) this.coinsEl.value = String(v.mine.coins || 0);
     this.root.querySelector('[data-their-coins]').textContent = v.theirs.coins ? `and ${v.theirs.coins} coins` : '';
-    const row = ([key, n]) => { const it = itemOf(key); return `<div class="trade-item"><canvas width="32" height="22" data-key="${esc(key)}"></canvas><span style="color:${itemColor(it)}">${esc(it?.name ?? key)}</span>${n > 1 ? ` <small>× ${n}</small>` : ''}</div>`; };
+    // (Gear shows what it is: its own name in its rarity's colour, and its card when pointed at.)
+    const tip = (it, g) => { const d = it && g ? itemDetails(it, 1, g) : null; return d ? `${d.name}\n${d.lines.join('\n')}` : it?.name ?? ''; };
+    const row = ([key, n, , g]) => { const it = itemOf(key); return `<div class="trade-item" title="${esc(tip(it, g))}"><canvas width="32" height="22" data-key="${esc(key)}"></canvas><span style="color:${itemColor(it, g)}">${esc(g?.name ?? it?.name ?? key)}</span>${n > 1 ? ` <small>× ${n}</small>` : ''}</div>`; };
     this.mineEl.innerHTML = v.mine.items.length ? v.mine.items.map(row).join('') : '<p class="muted-note">Nothing yet</p>';
     this.theirsEl.innerHTML = v.theirs.items.length ? v.theirs.items.map(row).join('') : '<p class="muted-note">Nothing yet</p>';
     const on = new Set(v.mine.items.map(x => x[2]));
-    this.bagEl.innerHTML = inv.slots.map((s, i) => (s && itemOf(s.key)?.kind !== 'quest' && s.key !== 'coins' ? `<button type="button" class="trade-slot${on.has(i) ? ' on' : ''}" data-slot="${i}" title="${esc(itemOf(s.key)?.name ?? s.key)}"><canvas width="32" height="22" data-key="${esc(s.key)}"></canvas><small>${s.n > 1 ? s.n : ''}</small></button>` : '')).join('');
+    this.bagEl.innerHTML = inv.slots.map((s, i) => (s && itemOf(s.key)?.kind !== 'quest' && s.key !== 'coins' ? `<button type="button" class="trade-slot${on.has(i) ? ' on' : ''}" data-slot="${i}" title="${esc(tip(itemOf(s.key), s.g))}"${s.g ? ` style="border-color:${itemColor(itemOf(s.key), s.g)}"` : ''}><canvas width="32" height="22" data-key="${esc(s.key)}"></canvas><small>${s.n > 1 ? s.n : ''}</small></button>` : '')).join('');
     for (const cv of this.root.querySelectorAll('canvas[data-key]')) paint(cv, itemOf(cv.dataset.key));
   }
 

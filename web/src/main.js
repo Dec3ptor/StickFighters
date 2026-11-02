@@ -42,7 +42,7 @@ import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
 import { TileWorld } from './world/tileworld.js';
 import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT, genOf } from './world/worldsave.js';
-import { playerToSave, worldFromSave, dropItem, chestAt, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, rehire, REACH, crafted } from './world/worldplay.js';
+import { playerToSave, worldFromSave, dropItem, chestAt, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, DEATH_RULES, rehire, REACH, crafted } from './world/worldplay.js';
 import { craft, stationsNear } from './world/crafting.js';
 import { itemOf } from './world/items.js';
 import { InventoryScreen } from './world/inventoryui.js';
@@ -931,7 +931,7 @@ async function newWorld() {
   const seed = typed ? seedOf(typed) : (Math.random() * 2 ** 31) | 0;
   const n = (state.worldList?.length || 0) + 1;
   try {
-    const rec = await createWorld({ name: $('worldName').value.trim() || `World ${n}`, seed });
+    const rec = await createWorld({ name: $('worldName').value.trim() || `World ${n}`, seed, death: $('worldDeath').value });
     $('worldName').value = '';
     $('worldSeed').value = '';
     startWorld(rec);
@@ -957,6 +957,9 @@ async function startWorld(rec, { online = false } = {}) {
   useOwnRules();
   const world = new TileWorld({ seed: rec.seed, name: rec.name, saved, gen: genOf(rec) });
   chestsFromSave(world, rec.chests);
+  gravesFromSave(world, rec.graves);
+  // (What's lost on dying: in a grave. Worlds from before it was asked: the bag.)
+  world.death = DEATH_RULES.includes(rec.death) ? rec.death : 'bag';
   claimsFromSave(world, rec.claims);
   world.time = Number.isFinite(rec.time) ? rec.time : 0;
   // (What the towns' shops have sold today.)
@@ -1025,6 +1028,7 @@ function saveWorldNow(last = false) {
   // (Hosted: the players in it keep their things too.)
   w.sync?.saveAll();
   w.rec.chests = chestsToSave(w.game.world);
+  w.rec.graves = gravesToSave(w.game.world);
   w.rec.claims = claimsToSave(w.game.world);
   w.rec.time = Math.round(w.game.world.time || 0);
   w.rec.towns = w.game.world.townState || {};

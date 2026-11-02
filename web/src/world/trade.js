@@ -10,7 +10,7 @@ import { hash3 } from './noise.js';
 import { dayOf } from './monsters.js';
 import { WEAPONS } from '../weapons.js';
 import { buyScale, sellScale } from './progress.js';
-import { gearValue } from './gear.js';
+import { gearValue, rollGear, rarityOf } from './gear.js';
 
 // ---- What things are worth -----------------------------------------------------------------------------
 
@@ -167,6 +167,19 @@ export function stockOf(world, f, city = false) {
     const n = bundleOf(key), have = 1 + Math.floor(roll(seed, f, day, i, 2) * most) + (city ? 1 : 0);
     out.push({ key, n, price: Math.max(1, Math.round(valueOf(key) * n * markup)), left: Math.max(0, have - (bought[key] || 0)) });
   });
+  // (Gear, rolled for the day: gear.js. The smith sells armour, the gunsmith weapons with affixes
+  // of their own, the market rings and amulets, the general store a piece of anything. Never
+  // legendary, set or unique: those are found.)
+  const gearKinds = { smith: ['head', 'body', 'hands', 'waist', 'feet'], gunsmith: ['weapon'], trader: ['ring', 'amulet'], merchant: [null] }[f.role];
+  if (gearKinds) {
+    const n = { smith: 3, gunsmith: 2, trader: 2, merchant: 1 }[f.role] + (city ? 1 : 0), ilvl = (city ? 10 : 4) + (day % 5);
+    for (let i = 0; i < n; i++) {
+      const h = hash3(seed, f.k * 97 + f.bi, day * 31 + i * 7 + 900), x = (h >>> 8) / 16777216;
+      const rar = x < 0.3 ? 'basic' : x < 0.75 ? 'magic' : x < 0.95 ? 'rare' : 'epic';
+      const p = rollGear(h, ilvl, 0, rar, null, false, gearKinds[(h >>> 3) % gearKinds.length]), key = `gear${i}`;
+      out.push({ key: p.key, n: 1, price: Math.max(1, Math.round(gearWorth(p.key, p.g) * markup * 1.2)), left: (bought[key] || 0) ? 0 : 1, g: p.g, slot: key });
+    }
+  }
   // (Now and then, something rare: dearer.)
   if (shop.rare) {
     shop.rare.forEach(([key, most], i) => {
@@ -191,12 +204,18 @@ export function offerFor(role, key, n = 1, scale = 1) {
 /** Whether shop `role` deals in `key` at all (never coins, nor what's carried for a quest). */
 export const buysAny = (role, key) => { const shop = SHOPS[role], it = itemOf(key); return !!(shop && it && key !== 'coins' && it.kind !== 'quest' && shop.buys(it)); };
 
+/** What a piece of gear (gear.js), or a weapon with affixes (worth what the weapon is, more the rarer), is worth. */
+export function gearWorth(key, g) {
+  if (itemOf(key)?.kind !== 'weapon') return gearValue(key, g);
+  return Math.round(Math.max(20, valueOf(key)) * ({ basic: 1, magic: 1.5, rare: 2.2, epic: 3, legendary: 4.5, set: 3, unique: 6 }[rarityOf(g?.r)] || 1));
+}
+
 /** What a shop pays for what's in a slot (n of it; a piece of gear by what it is: gear.js). */
 export function offerForSlot(role, slot, n = slot?.n || 1, scale = 1) {
   if (!slot || !buysAny(role, slot.key)) return 0;
   if (!slot.g) return offerFor(role, slot.key, n, scale);
   const shop = SHOPS[role], it = itemOf(slot.key), rate = shop.rateFor?.(it) ?? shop.rate;
-  return Math.floor(gearValue(slot.key, slot.g) * rate * scale);
+  return Math.floor(gearWorth(slot.key, slot.g) * rate * scale);
 }
 
 /** A price as player s pays it (progress.js's Haggler perk: less). */
@@ -206,22 +225,23 @@ export const priceFor = (price, s) => Math.max(1, Math.round(price * buyScale(s)
  * Buy a bundle of `key` from one of the townsfolk (f), for player s (their things: s.world.inv).
  * Returns what to tell them.
  */
-export function buy(world, s, f, key, city = false) {
-  const inv = s.world.inv, stock = stockOf(world, f, city), o = stock?.find(x => x.key === key);
+export function buy(world, s, f, key, city = false, slot = null) {
+  const inv = s.world.inv, stock = stockOf(world, f, city), o = stock?.find(x => (slot ? x.slot === slot : x.key === key && !x.g));
   if (!o) return "They don't have that";
   if (o.left <= 0) return 'Sold out (till tomorrow)';
   const price = priceFor(o.price, s);
   if (inv.count('coins') < price) return `You need ${price} coins`;
-  if (inv.room(key) < o.n) return 'You have no room for it';
+  if (o.g ? !inv.slots.includes(null) : inv.room(key) < o.n) return 'You have no room for it';
   inv.remove('coins', price);
   const was = inv.slots.slice();
-  inv.add(key, o.n);
+  // (A piece of gear: that very piece.)
+  if (o.g) inv.addGear(o.key, o.g); else inv.add(key, o.n);
   // (A gun comes loaded.)
   const def = WEAPONS[key];
   if (def?.mag) inv.slots.forEach((sl, j) => { if (sl && !was[j] && sl.key === key) sl.mag = def.mag; });
   const st = townState(world, f.town), b = st.bought[f.key] ||= {};
-  b[key] = (b[key] || 0) + 1;
-  return `Bought ${o.n > 1 ? `${o.n} × ` : ''}${itemOf(key).name} for ${price} coins`;
+  b[o.slot || key] = (b[o.slot || key] || 0) + 1;
+  return `Bought ${o.n > 1 ? `${o.n} × ` : ''}${o.g?.name || itemOf(key).name} for ${price} coins`;
 }
 
 /** Sell what's in slot i (all: the whole stack, else one) to one of the townsfolk (f). Returns what to tell them. */

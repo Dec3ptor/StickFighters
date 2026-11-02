@@ -517,6 +517,19 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
       g.beginPath(); g.moveTo(x + 1.5, y + 9.5); g.lineTo(x + 14.5, y + 9.5); g.stroke();
       g.fillStyle = classic ? INK : '#e0c060'; g.fillRect(x + 7, y + 8, 2, 3);
       break;
+    case 'grave':
+      // A mound of earth, and a headstone with a cross on it.
+      g.fillStyle = classic ? '#fff' : '#5a4636';
+      g.beginPath(); g.ellipse(x + 8, y + 16, 7.5, 3, 0, Math.PI, 0); g.fill();
+      if (classic) { g.strokeStyle = INK; g.lineWidth = 1; g.stroke(); }
+      g.fillStyle = col;
+      g.beginPath();
+      g.moveTo(x + 3.5, y + 15); g.lineTo(x + 3.5, y + 6.5); g.arc(x + 8, y + 6.5, 4.5, Math.PI, 0); g.lineTo(x + 12.5, y + 15); g.closePath();
+      g.fill();
+      g.strokeStyle = line; g.lineWidth = 1; g.stroke();
+      g.strokeStyle = classic ? INK : '#55545a'; g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(x + 8, y + 4.5); g.lineTo(x + 8, y + 12); g.moveTo(x + 5.5, y + 7); g.lineTo(x + 10.5, y + 7); g.stroke();
+      break;
     case 'bed':
       // A frame, a pillow and a blanket.
       g.fillStyle = classic ? '#fff' : '#7a5634';

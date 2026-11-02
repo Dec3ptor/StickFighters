@@ -116,6 +116,9 @@ function upgraded(def, up) {
  * Defuse mode's shop sells it (s.shop: a magazine and spare ammo, weapons.js `cs`).
  */
 export function weaponFor(s, id) {
+  // (A world's dropped weapon, with affixes of its own: world/gear.js.)
+  const own = s?.weaponOverride?.(id);
+  if (own) return own;
   const def = WEAPONS[id];
   if (s?.shop && def?.cs) return shopWeapon(def);
   const up = s?.mods?.[id];

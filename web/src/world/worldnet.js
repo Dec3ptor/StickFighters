@@ -24,6 +24,7 @@ import { talkView, talkDo } from './talk.js';
 import { progOf, spendPoint, applyProgress } from './progress.js';
 import { questsOf, dropQuest } from './quests.js';
 import { socialOptions, socialDo, tradeView, offerTrade, acceptTrade, cancelTrade, shareQuest } from './social.js';
+import { cleanFound } from './codex.js';
 
 const LAYERS = ['fg', 'bg', 'shape'];
 const CHUNKS_PER_MESSAGE = 40;
@@ -133,7 +134,7 @@ export class WorldHost {
     const m = w.mine, last = w.got[w.got.length - 1];
     // (Their level and quests too: progress.js, quests.js. And who has work for them.)
     const pr = progOf(s), qs = questsOf(s), xg = w.xpGot?.at(-1);
-    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}|${w.gearV || 0}`;
+    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}|${w.gearV || 0}|${(w.graves || []).join(';')}|${w.foundV || 0}`;
     if (key !== ws.inv) {
       ws.inv = key;
       p.link.send({
@@ -144,8 +145,11 @@ export class WorldHost {
         quests: { list: qs.list, track: qs.track, done: qs.done.size }, marks: w.marks || [],
         xpGot: (w.xpGot || []).map(x => [x.n, x.why, x.tick]), levelUp: w.levelUp || null, raid: w.raidInfo || null,
         gear: Object.fromEntries(SLOTS.map(k => [k, w.gear?.[k] ? [w.gear[k].key, w.gear[k].g] : null])),
-        got2: w.got.map(g => [g.r || null, g.name || null]),
+        got2: w.got.map(g => [g.r || null, g.name || null]), graves: w.graves || [],
+        // (What they've found, for the codex: only when it's more.)
+        found: ws.foundV !== (w.foundV || 0) ? w.found || [] : undefined,
       }, true);
+      ws.foundV = w.foundV || 0;
     }
     // Playing together (social.js): another player right clicked on (what you can do with them),
     // a trade (when it changes, or ends), their party (as it changes).
@@ -345,6 +349,8 @@ export class WorldClient {
         w.slot2 = Number.isInteger(d.slot2) && d.slot2 >= 0 && d.slot2 < HOTBAR ? d.slot2 : -1;
         if (typeof d.brush === 'string') w.brush = d.brush;
         w.home = d.home || null;
+        if (Array.isArray(d.found)) w.found = cleanFound(d.found);
+        w.graves = Array.isArray(d.graves) ? d.graves.filter(g => Array.isArray(g) && Number.isInteger(g[0]) && Number.isInteger(g[1])).slice(-8) : [];
         w.mine = d.mine && Number.isFinite(d.mine.dmg) ? d.mine : null;
         if (d.mine) w.mine.at = game.tick;
         w.got = (Array.isArray(d.got) ? d.got : []).map((g, i) => [g, d.got2?.[i]]).filter(([g]) => Array.isArray(g) && itemOf(g[0])).map(([[key, n, tick], extra]) => ({ key, n: n | 0, tick: Number(tick) || 0, ...(extra?.[0] ? { r: String(extra[0]), name: String(extra[1] || '') } : {}) }));
