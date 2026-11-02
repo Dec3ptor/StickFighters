@@ -57,6 +57,8 @@ export class TileWorld {
     this.builtCount = 1; // (so explosions break blocks: Game.carve)
     // Soldiers walk up a block's height without jumping (physics.js).
     this.stepUp = TILE;
+    // The time (updates since the world began: monsters.js has the day and night).
+    this.time = 0;
     this.version = 0;
     this.edits = [];
     this.editCount = 0;

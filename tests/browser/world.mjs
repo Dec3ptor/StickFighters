@@ -173,6 +173,27 @@ check(again.dirt === afterDig, 'your things kept');
 check(Math.abs(again.x - where.x) < 2 && Math.abs(again.y - where.y) < 20, `back where you were (${JSON.stringify(where)} -> ${again.x},${again.y})`);
 const keptChest = await page.evaluate(async ([tx, ty]) => (await import('./src/world/worldplay.js')).chestAt(window.stickSoldiers.state.game.world, tx, ty)?.count('glass') ?? -1, report.chest.at);
 check(keptChest === 30, `the chest kept its things (${keptChest})`);
+
+// 4b. Night falls: the light dims, a monster comes for you and a mercenary is hired.
+await page.evaluate(async () => {
+  const M = await import('./src/world/monsters.js');
+  const { state } = window.stickSoldiers, g = state.game, me = state.me;
+  g.world.time = M.DAY_TICKS * 0.75;
+  me.health = me.maxHealth = 100000;
+  const tx = Math.floor(me.x / 16) + 10;
+  M.spawnMonster(g, 'skeleton', tx * 16 + 8, g.world.surface(tx) * 16 - 13);
+  M.hireMerc(g, me);
+});
+await page.waitForTimeout(2500);
+const night = await page.evaluate(() => {
+  const { state, renderer } = window.stickSoldiers, g = state.game;
+  return { sky: renderer.worldView?.lit?.sky, npcs: g.soldiers.filter(s => s.npc).map(s => `${s.npc.kind}:${s.alive}`) };
+});
+report.night = night;
+check(night.sky === 4, `moonlight at night (${night.sky})`);
+check(night.npcs.includes('merc:true'), `a mercenary with you (${night.npcs})`);
+await page.screenshot({ path: `${outDir}/world-night.png` });
+
 await page.keyboard.press('Escape');
 await page.click('#quit');
 await page.waitForSelector('#worldList .world-card');

@@ -22,6 +22,7 @@ import { css } from './color.js';
 import { GameMap } from '../map.js';
 import { paintMap } from '../maptiles.js';
 import { WorldView, drawDrops, drawTarget } from '../world/worldrender.js';
+import { nightness } from '../world/monsters.js';
 import { TILE, BLOCKS, MAGMA, FURNACE } from '../world/blocks.js';
 
 export // After a quality or map change, how long (ms) before the frame rate says anything about the quality.
@@ -33,6 +34,28 @@ function lowest(map) {
   let b = -Infinity;
   for (const s of map.solids) if (s.b > b) b = s.b;
   return Number.isFinite(b) ? b : map.bounds.bottom;
+}
+
+// Stars in a world's night sky: where each is on the screen (0-1 across and down) and how bright.
+const STARS = (() => {
+  let r = 12345;
+  const rnd = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
+  return Array.from({ length: 90 }, () => [rnd(), rnd() * 0.6, 0.4 + rnd() * 0.6, rnd() < 0.15 ? 1.6 : 1]);
+})();
+
+/** A world at night: the sky darkened (n: 0 by day to 1 at night), and the stars out. */
+function drawNight(ctx, r, n) {
+  if (n <= 0) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = `rgba(4,7,22,${(0.78 * n).toFixed(3)})`;
+  ctx.fillRect(0, 0, r.pw, r.ph);
+  ctx.fillStyle = '#ffffff';
+  const d = r.dpr || 1;
+  for (const [x, y, a, size] of STARS) {
+    ctx.globalAlpha = a * n;
+    ctx.fillRect(x * r.pw, y * r.ph, size * d, size * d);
+  }
+  ctx.globalAlpha = 1;
 }
 
 // The colour of the light a glowing block gives (its ore's colour, or its own).
@@ -214,6 +237,7 @@ export class RemasteredRenderer extends Renderer {
     this.lineW = Math.max(1.1, 1.3 / this.scale);
 
     look.backdrop.draw(ctx, this, look.ground, dt, this.quality === 'high' ? 0 : theme.vignette);
+    if (world) drawNight(ctx, this, nightness(world.time || 0));
     ctx.setTransform(s, 0, 0, s, tx, ty);
     this.lights.clear();
     // Fog of war: what's out of sight is worked out now, and darkened after the world is drawn.

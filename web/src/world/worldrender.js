@@ -11,6 +11,7 @@ import { WORLD_H } from './worldgen.js';
 import { hash3 } from './noise.js';
 import { itemOf } from './items.js';
 import { REACH, shapeTiles, canPlace, inHand } from './worldplay.js';
+import { skyLevel } from './monsters.js';
 
 export const PATCH = 16;                 // tiles across a picture
 const PP = PATCH * TILE;                 // its size in the world (px)
@@ -698,16 +699,17 @@ export class WorldView {
     const x0 = Math.floor(v.l / TILE) - m, y0 = Math.max(0, Math.floor(v.t / TILE) - m);
     const w = Math.ceil((v.r - v.l) / TILE) + 2 * m, h = Math.min(WORLD_H - y0, Math.ceil((v.b - v.t) / TILE) + 2 * m);
     let lit = this.lit, all = false;
+    const sky = skyLevel(world.time || 0);
     const moved = !lit || x0 < lit.x0 || y0 < lit.y0 || x0 + w > lit.x0 + lit.w || y0 + h > lit.y0 + lit.h;
-    if (moved || lit.version !== world.version || lit.dark !== dark) {
+    if (moved || lit.version !== world.version || lit.dark !== dark || lit.sky !== sky) {
       const X0 = x0 - 6, Y0 = Math.max(0, y0 - 6), W = w + 12, H = Math.min(WORLD_H - Y0, h + 12);
-      const base = lightBox(world, X0, Y0, W, H, lit?.base, 15, lit?.solid);
+      const base = lightBox(world, X0, Y0, W, H, lit?.base, sky, lit?.solid);
       const c = lit?.canvas || document.createElement('canvas');
       if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
       const g = c.getContext('2d');
       lit = this.lit = {
         x0: X0, y0: Y0, w: W, h: H, base, solid: lightBox.solid, data: lit?.data?.length >= W * H ? lit.data : new Uint8Array(W * H),
-        version: world.version, dark, canvas: c, g, img: lit?.img?.width === W && lit.img.height === H ? lit.img : g.createImageData(W, H),
+        version: world.version, dark, sky, canvas: c, g, img: lit?.img?.width === W && lit.img.height === H ? lit.img : g.createImageData(W, H),
         glowKey: null, glow: null, fresh: true,
       };
       all = true;
@@ -716,7 +718,7 @@ export class WorldView {
     const src = this.glowSrc ||= [];
     src.length = 0;
     for (const s of game.soldiers) {
-      if (!s.alive || s.spectating) continue;
+      if (!s.alive || s.spectating || s.npc?.kind === 'monster') continue;
       const tx = Math.floor(s.x / TILE) - lit.x0, ty = Math.floor((s.y - 8) / TILE) - lit.y0;
       if (tx >= 0 && ty >= 0 && tx < lit.w && ty < lit.h) src.push(tx, ty);
     }
@@ -848,6 +850,29 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
     ctx.fill();
     ctx.strokeStyle = INK;
     ctx.stroke();
+    return;
+  }
+  if (it.key === 'coins') {
+    // A little pile of gold coins.
+    for (const [cx, cy] of [[0.38, 0.62], [0.62, 0.62], [0.5, 0.4]]) {
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.arc(x + w * cx, y + w * cy, w * 0.22, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#8a6a10';
+      ctx.stroke();
+    }
+    return;
+  }
+  if (it.kind === 'contract') {
+    // A rolled paper, sealed.
+    ctx.fillStyle = c;
+    ctx.fillRect(x + w * 0.2, y + w * 0.15, w * 0.6, w * 0.7);
+    ctx.strokeStyle = INK;
+    ctx.strokeRect(x + w * 0.2, y + w * 0.15, w * 0.6, w * 0.7);
+    ctx.beginPath();
+    for (let i = 0; i < 3; i++) { ctx.moveTo(x + w * 0.3, y + w * (0.3 + i * 0.13)); ctx.lineTo(x + w * 0.7, y + w * (0.3 + i * 0.13)); }
+    ctx.stroke();
+    ctx.fillStyle = '#c8282e';
+    ctx.beginPath(); ctx.arc(x + w * 0.62, y + w * 0.74, w * 0.1, 0, Math.PI * 2); ctx.fill();
     return;
   }
   if (it.key === 'coal') {

@@ -10,6 +10,7 @@ import { Inventory, itemOf, HOTBAR } from './items.js';
 import { WORLD_H, CHUNK } from './worldgen.js';
 import { MOTION, BODY } from '../config.js';
 import { WEAPONS } from '../weapons.js';
+import { monstersTick, armNpc, sideOf, isMonster, monsterLoot, hireMerc, mercsOf, MERC } from './monsters.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -84,12 +85,13 @@ export function worldState(inv = Inventory.starting()) {
   };
 }
 
-/** A soldier's world state as saved (worldsave.js): their things, and where they were. */
-export function playerToSave(s) {
+/** A soldier's world state as saved (worldsave.js): their things, where they were, their mercenaries. */
+export function playerToSave(s, game = null) {
   const w = s.world;
   return {
     inv: w.inv.toJSON(), slot: w.slot, brush: w.brush, home: w.home || null,
     x: s.alive ? Math.round(s.x) : null, y: s.alive ? Math.round(s.y) : null,
+    mercs: game ? mercsOf(game, s).map(m => ({ gun: m.npc.gun })) : [],
   };
 }
 
@@ -102,7 +104,15 @@ export function worldFromSave(p) {
   if (Number.isFinite(p.home?.x) && Number.isFinite(p.home?.y)) w.home = { x: p.home.x, y: p.home.y };
   // (Back where they were, the first time they spawn.)
   if (Number.isFinite(p.x) && Number.isFinite(p.y)) w.resume = { x: p.x, y: p.y };
+  // (Their mercenaries, hired again when they're back: rehire.)
+  w.mercs = Array.isArray(p.mercs) ? p.mercs.filter(m => WEAPONS[m?.gun]).slice(0, MERC.most) : [];
   return w;
+}
+
+/** A player's mercenaries, as saved, hired again (they appear beside them). */
+export function rehire(game, s) {
+  for (const m of s.world?.mercs || []) hireMerc(game, s, m.gun);
+  if (s.world) s.world.mercs = [];
 }
 
 /**
@@ -136,7 +146,7 @@ function heldLook(it) {
     const type = it.tool === 'pick' ? 'pickaxe' : it.tool === 'axe' ? 'axe' : 'mallet';
     l = { kind: 'melee', look: { type, length: 13, color: it.handle, head: it.color } };
   } else if (it.key === 'torch') l = { kind: 'build', look: { type: 'torch' } };
-  else if (it.kind === 'block' || it.kind === 'wall' || it.kind === 'ammo' || it.kind === 'material') {
+  else if (it.kind === 'block' || it.kind === 'wall' || it.kind === 'ammo' || it.kind === 'material' || it.kind === 'contract') {
     l = { kind: 'build', look: { type: 'block', color: it.color || '#888', dark: it.dark || '#555' } };
   } else l = WEAPONS.Hands;
   LOOKS.set(it.key, l);
@@ -660,7 +670,18 @@ export function worldInput(game, s, inp) {
   w.prevAlt = alt;
 
   let fire = inp.fire;
-  if (item?.kind === 'tool') {
+  if (item?.kind === 'contract') {
+    if (inp.fire && !w.prevFire) {
+      if (mercsOf(game, s).length >= MERC.most) game.notify(s, `You can have ${MERC.most} mercenaries at a time`);
+      else {
+        w.inv.remove(item.key, 1);
+        const m = hireMerc(game, s);
+        game.notify(s, `${m.name} has joined you`);
+        game.sound('spawn', s.x, s.y, s.id);
+      }
+    }
+    fire = false;
+  } else if (item?.kind === 'tool') {
     if (item.tool === 'hammer') { if (hammer(game, s, item, inp)) fire = false; }
     else if (inp.fire && dig(game, s, item, inp)) fire = false;
   } else if (item && (item.kind === 'block' || item.kind === 'wall')) {
@@ -683,6 +704,8 @@ export function worldInput(game, s, inp) {
 export function worldTick(game) {
   updateDrops(game);
   const world = game.world;
+  world.time = (world.time || 0) + 1;
+  monstersTick(game);
   if (game.tick % 20 === 0) {
     const R = CHUNK * TILE;
     for (const s of game.soldiers) {
@@ -709,6 +732,7 @@ export const worldMode = {
   mapLoadout: false,
   limit: 'none',
   streaks: false,
+  callouts: false,
   classes: false,
 
   /** A world's game begins: blasts drop some of what they break (and crates spill open). */
@@ -726,23 +750,45 @@ export const worldMode = {
   },
 
   setup(game, s) {
-    s.world ||= worldState();
-    // (The number keys pick hotbar slots: worldInput.)
-    s.slotChoice = i => (i < HOTBAR ? `#${i}` : null);
+    // Monsters and mercenaries (monsters.js): their own weapon, no things of their own.
+    s.npc = s.profile?.npc ? { ...s.profile.npc } : null;
+    if (!s.npc) {
+      s.world ||= worldState();
+      // (The number keys pick hotbar slots: worldInput.)
+      s.slotChoice = i => (i < HOTBAR ? `#${i}` : null);
+    }
     // (Nothing switches weapons by itself: the hotbar decides.)
     s.selectBest = () => {};
   },
 
   spawnLoadout(game, s) {
+    if (s.npc) { armNpc(s); s.npc.spawned = true; return; }
     s.weapons = {};
     hold(s);
   },
 
   damage(game, amount) { return amount; },
-  onKill() {},
+  /** Monsters don't hurt monsters; nor mercenaries the one who hired them, or each other. */
+  canHurt(game, attacker, target) { return sideOf(attacker) !== sideOf(target); },
+
+  /** Killed: a monster drops coins and loot; a player drops half their coins (they keep the rest, and their things). */
+  onKill(game, victim) {
+    const x = victim.x, y = victim.y - 10;
+    const drop = (key, n) => dropItem(game, key, n, x, y, (game.rng() - 0.5) * 3, -2 - game.rng() * 1.5);
+    if (isMonster(victim)) monsterLoot(game, victim, drop);
+    else if (victim.world) {
+      const lose = Math.floor(victim.world.inv.count('coins') / 2);
+      if (lose > 0) { victim.world.inv.remove('coins', lose); dropItem(game, 'coins', lose, x, y, 0, -2, 90); }
+    }
+  },
   // (G throws what's in hand: worldInput. Saying there's a drop makes the key mean that.)
   drop() {},
-  canRespawn() { return true; },
+  /** Players always come back; a monster or mercenary only appears the once (a mercenary beside whoever hired them). */
+  canRespawn(game, s) {
+    if (!s.npc) return true;
+    if (s.npc.spawned) return false;
+    return s.npc.kind !== 'merc' || game.soldiers.some(o => o.id === s.npc.owner && o.alive && !o.npc);
+  },
   winner() { return null; },
 
   /**
@@ -751,6 +797,11 @@ export const worldMode = {
    * blocks built there since.)
    */
   spawnPoint(game, s) {
+    if (s.npc?.kind === 'monster') return s.npc.spawnAt;
+    if (s.npc?.kind === 'merc') {
+      const o = game.soldiers.find(x => x.id === s.npc.owner);
+      return safeSpot(game.world, o.x - o.facing * 24, o.y);
+    }
     const w = s.world, p = w?.resume || w?.home || game.map.spawns[0];
     if (w) w.resume = null;
     return safeSpot(game.world || game.map, p.x, p.y);

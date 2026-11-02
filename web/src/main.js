@@ -42,7 +42,7 @@ import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
 import { TileWorld } from './world/tileworld.js';
 import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT } from './world/worldsave.js';
-import { playerToSave, worldFromSave, dropItem, chestAt, chestsToSave, chestsFromSave, REACH } from './world/worldplay.js';
+import { playerToSave, worldFromSave, dropItem, chestAt, chestsToSave, chestsFromSave, rehire, REACH } from './world/worldplay.js';
 import { craft, stationsNear } from './world/crafting.js';
 import { itemOf } from './world/items.js';
 import { InventoryScreen } from './world/inventoryui.js';
@@ -936,11 +936,13 @@ async function startWorld(rec) {
   useOwnRules();
   const world = new TileWorld({ seed: rec.seed, name: rec.name, saved });
   chestsFromSave(world, rec.chests);
+  world.time = Number.isFinite(rec.time) ? rec.time : 0;
   const game = new Game({ world, mode: 'world', speed: state.settings.speed, options: { destruction: true, crates: 'off', streaks: false }, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
   const me = game.addSoldier({ name: playerName(), isBot: false, team: 0, skin: prefs.skin }, new PlayerController(input, () => renderer, playerOptions));
   me.world = worldFromSave(rec.player);
   me.respawnTimer = 1;
+  rehire(game, me);
   state.mode = 'offline';
   rec.played = Date.now();
   state.world = { rec, game, savedAt: performance.now() };
@@ -959,8 +961,9 @@ function saveWorldNow(last = false) {
   if (last) state.world = null;
   w.savedAt = performance.now();
   const me = w.game.soldiers.find(s => s.world && !s.isBot);
-  if (me) w.rec.player = playerToSave(me);
+  if (me) w.rec.player = playerToSave(me, w.game);
   w.rec.chests = chestsToSave(w.game.world);
+  w.rec.time = Math.round(w.game.world.time || 0);
   w.rec.played = Date.now();
   const chunks = w.game.world.takeDirty();
   return saveWorld(w.rec, chunks).catch(err => {

@@ -28,6 +28,8 @@ export function soldierBox(s) {
 export function canHurt(game, attacker, target) {
   if (!target.alive) return false;
   if (!attacker || attacker === target) return true;
+  // (The mode can say: worlds keep monsters off each other, mercenaries off whoever hired them.)
+  if (game.rules.canHurt) return game.rules.canHurt(game, attacker, target);
   return !(game.rules.teams && attacker.team === target.team);
 }
 

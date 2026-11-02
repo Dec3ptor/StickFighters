@@ -8,6 +8,7 @@ import { BLOCKS, WALLS, TILE, AIR, NO_WALL, shade } from './blocks.js';
 import { WORLD_H } from './worldgen.js';
 import { inHand, BRUSH_NAMES } from './worldplay.js';
 import { drawIcon } from './worldrender.js';
+import { clock, dayOf, isNight, nightness } from './monsters.js';
 import { keyShort, slotAction, keyLabel } from '../keys.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
@@ -39,6 +40,7 @@ export function heldBar(me) {
     const what = item.tool === 'hammer' ? 'shapes blocks, takes down walls' : item.tool === 'axe' ? 'fells trees' : `tier ${item.tier}`;
     return [1, 'ammo', `${item.name}  ·  ${what}`];
   }
+  if (item.kind === 'contract') return [1, 'ammo', `${item.name}  ${n}  ·  click: hire a mercenary`];
   return [1, 'ammo', `${item.name}  ${slot.n > 1 ? slot.n : ''}`.trim()];
 }
 
@@ -130,7 +132,8 @@ function drawWhere(ctx, game, me, W) {
   const from = Math.round((x - world.spawns[0].x) / TILE);
   const where = deep > 2 ? `${deep} blocks down` : 'on the surface';
   const along = from === 0 ? 'where the world starts' : `${Math.abs(from)} ${from < 0 ? 'west' : 'east'}`;
-  const line = text(`w${col.biome.name}|${where}|${along}`, () => `${col.biome.name}  ·  ${where}  ·  ${along}`);
+  const time = `Day ${dayOf(world.time || 0)}, ${clock(world.time || 0)}${isNight(world.time || 0) ? ' (night)' : ''}`;
+  const line = text(`w${col.biome.name}|${where}|${along}|${time}`, () => `${col.biome.name}  ·  ${where}  ·  ${along}  ·  ${time}`);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   // (On a pale panel: it's often dark underground.)
@@ -178,6 +181,8 @@ function drawMiniMap(ctx, game, me, W, H) {
     }
     mm.world = world; mm.at = game.tick; mm.tx = ctr; mm.ty = cty;
     const px = mm.img.data, { blocks, walls } = mm.colors, X0 = ctr - MAP_W / 2, Y0 = cty - MAP_H / 2;
+    // (The sky darker at night.)
+    const n = nightness(world.time || 0), sky = SKY.map((c, i) => Math.round(c + (NIGHT_SKY[i] - c) * n));
     for (let j = 0; j < MAP_H; j++) {
       const ty = Y0 + j;
       for (let i = 0; i < MAP_W; i++) {
@@ -188,7 +193,7 @@ function drawMiniMap(ctx, game, me, W, H) {
           if (world.has(tx >> 5, ty >> 5)) c = blocks[world.tile(tx, ty)] || walls[world.wall(tx, ty)];
           else { px[o + 3] = 0; continue; }
         }
-        if (!c) c = ty < (world.gen.column(tx).surf) ? SKY : CAVE;
+        if (!c) c = ty < (world.gen.column(tx).surf) ? sky : CAVE;
         px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = 255;
       }
     }
@@ -206,6 +211,14 @@ function drawMiniMap(ctx, game, me, W, H) {
       ctx.imageSmoothingEnabled = smooth;
     }
   }
+  // Who else is about: monsters red, mercenaries blue, other players white.
+  for (const o of game.soldiers) {
+    if (!o.alive || o === me) continue;
+    const ox = Math.floor(o.x / TILE) - mm.tx + MAP_W / 2, oy = Math.floor(o.y / TILE) - mm.ty + MAP_H / 2;
+    if (ox < 0 || ox >= MAP_W || oy < 0 || oy >= MAP_H) continue;
+    ctx.fillStyle = o.npc?.kind === 'monster' ? '#ff3b2f' : o.npc?.kind === 'merc' ? '#3d7ff0' : '#ffffff';
+    ctx.fillRect(x0 + ox * MAP_SCALE - 1.5, y0 + oy * MAP_SCALE - 2, 3, 3);
+  }
   // You, in the middle (and where the world starts, if it's on the map).
   ctx.fillStyle = '#e02020';
   ctx.fillRect(x0 + (ctr - mm.tx + MAP_W / 2) * MAP_SCALE - 2, y0 + (cty - mm.ty + MAP_H / 2) * MAP_SCALE - 3, 4, 5);
@@ -219,4 +232,4 @@ function drawMiniMap(ctx, game, me, W, H) {
   ctx.lineWidth = 1;
   ctx.strokeRect(x0 - 0.5, y0 - 0.5, w + 1, h + 1);
 }
-const SKY = [156, 203, 232], CAVE = [26, 22, 20];
+const SKY = [156, 203, 232], NIGHT_SKY = [22, 30, 56], CAVE = [26, 22, 20];

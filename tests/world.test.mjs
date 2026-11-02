@@ -17,7 +17,9 @@ import { lightBox, SOLDIER_GLOW } from '../web/src/world/worldrender.js';
 import { packBytes, unpackBytes, createWorld, saveWorld, loadChunks, listWorlds, deleteWorld, exportWorld, importWorld, worldName } from '../web/src/world/worldsave.js';
 import { seedOf } from '../web/src/world/noise.js';
 import { RECIPES, STATIONS, stationsNear, timesCanMake, craft } from '../web/src/world/crafting.js';
-import { chestAt, chestsToSave, chestsFromSave } from '../web/src/world/worldplay.js';
+import { chestAt, chestsToSave, chestsFromSave, rehire } from '../web/src/world/worldplay.js';
+import { DAY_TICKS, hourOf, clock, skyLevel, isNight, nightness, dayOf, spawnMonster, isMonster, isMerc, mercsOf } from '../web/src/world/monsters.js';
+import { canHurt } from '../web/src/combat.js';
 
 const id = key => BLOCK_BY_KEY.get(key).id;
 
@@ -611,4 +613,100 @@ test('furniture stands on the floor; chests keep things (and spill them when bro
   assert.ok(!me.alive);
   untilAlive(game, me);
   assert.ok(Math.abs(me.x - ((tx + 5) * TILE + 8)) < 1, `back at the bed (${me.x})`);
+});
+
+// ---- Day and night, monsters, mercenaries -----------------------------------------------------------------
+
+test('day and night: the clock, the daylight, when it\'s night', () => {
+  assert.equal(hourOf(0), 6, 'a world starts at six in the morning');
+  assert.equal(clock(0), '06:00');
+  assert.equal(clock(DAY_TICKS / 4), '12:00');
+  assert.equal(skyLevel(DAY_TICKS / 4), 15, 'full daylight at noon');
+  assert.equal(skyLevel(DAY_TICKS * 0.75), 4, 'moonlight at midnight');
+  assert.ok(isNight(DAY_TICKS * 0.75) && !isNight(DAY_TICKS / 4));
+  assert.ok(nightness(DAY_TICKS * (13 / 24)) > 0 && nightness(DAY_TICKS * (13 / 24)) < 1, 'dusk in between');
+  assert.equal(dayOf(0), 1);
+  assert.equal(dayOf(DAY_TICKS), 2);
+  // The world's clock goes on with the game.
+  const { world, game } = play();
+  const t = world.time;
+  run(game, 30);
+  assert.equal(world.time, t + 30);
+});
+
+test('monsters come at night (not by day), go for you, and drop coins; you drop half of yours', () => {
+  const night = play(77);
+  night.world.time = DAY_TICKS * 0.75;
+  untilAlive(night.game, night.me);
+  let hurt = false, seen = 0;
+  for (let i = 0; i < 60 * 30; i++) {
+    night.game.update();
+    seen = Math.max(seen, night.game.soldiers.filter(isMonster).length);
+    if (night.me.lastHurtBy && isMonster(night.me.lastHurtBy)) hurt = true;
+  }
+  assert.ok(seen >= 1, 'monsters came');
+  assert.ok(hurt, 'and hurt the player');
+  // By day, on the surface: none.
+  const day = play(77);
+  day.world.time = DAY_TICKS / 4;
+  untilAlive(day.game, day.me);
+  run(day.game, 60 * 20);
+  assert.equal(day.game.soldiers.filter(isMonster).length, 0, 'none by day on the surface');
+  // A monster killed: coins (picked up). Killed by one: half of yours dropped.
+  const { world, game, me } = play();
+  arena(world);
+  untilAlive(game, me);
+  run(game, 20);
+  const m = spawnMonster(game, 'zombie', me.x + 40, me.y);
+  run(game, 2);
+  assert.ok(m.alive && isMonster(m));
+  game.kill(m, me, 'Shotgun');
+  run(game, 120);
+  assert.ok(me.world.inv.count('coins') >= 2, `coins from the zombie (${me.world.inv.count('coins')})`);
+  me.world.inv.add('coins', 100 - me.world.inv.count('coins'));
+  game.kill(me, null, 'Claws');
+  assert.equal(me.world.inv.count('coins'), 50, 'half kept');
+  assert.ok(world.drops.some(d => d.key === 'coins' && d.n === 50), 'half dropped where you died');
+});
+
+test('monsters leave monsters alone; mercenaries follow whoever hired them, shoot monsters, and never them', () => {
+  const { world, game, me, ctl } = play();
+  arena(world);
+  untilAlive(game, me);
+  run(game, 20);
+  const a = spawnMonster(game, 'zombie', me.x + 200, me.y), b = spawnMonster(game, 'skeleton', me.x + 260, me.y);
+  run(game, 2);
+  assert.ok(!canHurt(game, a, b) && canHurt(game, a, me) && canHurt(game, me, a), 'monsters are on their own side');
+  // Hired with a contract (used like a weapon).
+  me.world.inv.add('merc_contract', 1);
+  me.world.inv.move(slotOf(me, 'merc_contract'), 8);
+  ctl.script = { move: 0, switchTo: '#8' };
+  game.update();
+  ctl.script = { move: 0, fire: true, firePressed: true, aim: 0, aimDist: 100 };
+  game.update();
+  ctl.script = { move: 0 };
+  run(game, 5);
+  const merc = mercsOf(game, me)[0];
+  assert.ok(merc && merc.alive && isMerc(merc), 'a mercenary hired');
+  assert.equal(me.world.inv.count('merc_contract'), 0, 'the contract used');
+  assert.ok(!canHurt(game, merc, me) && !canHurt(game, me, merc) && canHurt(game, merc, a), 'on your side');
+  // It shoots the monsters.
+  for (let i = 0; i < 60 * 25 && (a.alive || b.alive); i++) game.update();
+  assert.ok(!a.alive && !b.alive, 'the mercenary killed both monsters');
+  assert.ok(merc.frags >= 1);
+  // It follows: you walk off, it comes after you.
+  ctl.script = { move: 1 };
+  run(game, 120);
+  ctl.script = { move: 0 };
+  run(game, 120);
+  assert.ok(Math.abs(merc.x - me.x) < 12 * TILE, `following (${Math.round(Math.abs(merc.x - me.x) / TILE)} tiles away)`);
+  // Kept with your things, hired again when you come back.
+  const saved = playerToSave(me, game);
+  assert.equal(saved.mercs.length, 1);
+  const other = play();
+  other.me.world = worldFromSave(saved);
+  rehire(other.game, other.me);
+  untilAlive(other.game, other.me);
+  run(other.game, 5);
+  assert.equal(mercsOf(other.game, other.me).filter(s => s.alive).length, 1, 'your mercenary back with you');
 });

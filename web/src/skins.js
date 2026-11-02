@@ -15,7 +15,9 @@ export const SKINS = [
   { id: 'cowboy', name: 'Cowboy', blurb: 'A wide-brimmed hat with a band in your colour.' },
   { id: 'knight', name: 'Knight', blurb: 'A steel helm with a plume in your colour.' },
 ];
-const IDS = new Set(SKINS.map(s => s.id));
+// Worlds' monsters' looks (world/monsters.js: not ones to pick in Settings).
+export const MONSTER_SKINS = ['zombie', 'skeleton', 'brute'];
+const IDS = new Set([...SKINS.map(s => s.id), ...MONSTER_SKINS]);
 
 /** Whether a skin id is one of them. */
 export const isSkin = id => typeof id === 'string' && IDS.has(id);
@@ -24,7 +26,7 @@ export const isSkin = id => typeof id === 'string' && IDS.has(id);
 export const skinFor = (s, own) => (s.skin && s.skin !== 'auto' && IDS.has(s.skin) ? s.skin : own);
 
 /** Each skin's own colour, in free-for-all in the original (no team colours there). */
-export const SKIN_ACCENT = { classic: '#111111', soldier: '#3d7ff0', ninja: '#c8282e', robot: '#25b8e0', cowboy: '#c8282e', knight: '#c8282e' };
+export const SKIN_ACCENT = { classic: '#111111', soldier: '#3d7ff0', ninja: '#c8282e', robot: '#25b8e0', cowboy: '#c8282e', knight: '#c8282e', zombie: '#4f7a34', skeleton: '#d8d4c8', brute: '#8a2a1a' };
 
 const HAT = '#6b4423', HAT_DARK = '#4a2e17', STEEL = '#b9c2cb', METAL = '#9aa4ae', SKIN_TONE = '#f0d2b0';
 
@@ -41,6 +43,45 @@ export function drawSkinHead(ctx, h, skin, facing, o) {
   ctx.strokeStyle = o.ink;
   ctx.lineWidth = o.lw;
   switch (skin) {
+    case 'zombie': {
+      // Green, with dark eyes and a slack mouth.
+      ctx.fillStyle = '#8db36a';
+      ctx.beginPath(); ctx.arc(h.x, h.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = o.ink;
+      ctx.fillRect(h.x + f * 0.4 - 0.7, h.y - 1.6, 1.4, 1.4);
+      ctx.fillRect(h.x + f * 2.4 - 0.7, h.y - 1.3, 1.4, 1.4);
+      ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(h.x + f * 0.2, h.y + 1.6); ctx.lineTo(h.x + f * 2.9, h.y + 1.1); ctx.stroke();
+      break;
+    }
+    case 'skeleton': {
+      // A skull: pale, with dark eye sockets and teeth.
+      ctx.fillStyle = '#f2efe6';
+      ctx.beginPath(); ctx.arc(h.x, h.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = o.ink;
+      ctx.beginPath(); ctx.arc(h.x + f * 0.5, h.y - 0.8, 1.1, 0, Math.PI * 2); ctx.arc(h.x + f * 2.6, h.y - 0.6, 1, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      for (let i = 0; i < 3; i++) { const tx = h.x + f * (0.6 + i * 0.9); ctx.moveTo(tx, h.y + 1.4); ctx.lineTo(tx, h.y + 2.6); }
+      ctx.stroke();
+      break;
+    }
+    case 'brute': {
+      // Big, red, horned, scowling.
+      const R = r * 1.25;
+      ctx.fillStyle = '#b5523a';
+      ctx.beginPath();
+      ctx.moveTo(h.x - R * 0.6, h.y - R * 0.6); ctx.lineTo(h.x - R * 0.9, h.y - R * 1.5); ctx.lineTo(h.x - R * 0.15, h.y - R * 0.9);
+      ctx.moveTo(h.x + R * 0.6, h.y - R * 0.6); ctx.lineTo(h.x + R * 0.9, h.y - R * 1.5); ctx.lineTo(h.x + R * 0.15, h.y - R * 0.9);
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(h.x, h.y, R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = o.ink;
+      ctx.lineWidth = 0.9;
+      ctx.beginPath(); ctx.moveTo(h.x + f * 0.2, h.y - 2.2); ctx.lineTo(h.x + f * 2.6, h.y - 1.2); ctx.stroke();
+      ctx.fillStyle = '#ffd040';
+      ctx.fillRect(h.x + f * 1.6 - 0.6, h.y - 1, 1.2, 1.2);
+      break;
+    }
     case 'ninja': {
       // A mask over the whole head, the eyes showing through a slit, a headband with its ends flying.
       ctx.fillStyle = o.mask || o.ink;

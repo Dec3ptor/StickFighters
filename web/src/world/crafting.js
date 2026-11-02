@@ -92,6 +92,7 @@ recipe('PetrolBomb', 3, [['glass', 3], ['coal', 3]], 'gunsmith');
 recipe('Dynamite', 3, [['coal', 4], ['sand', 2]], 'gunsmith');
 recipe('Mine', 2, [['iron_bar', 2], ['coal', 2]], 'gunsmith');
 recipe('Teleport', 1, [['crystal_ore', 5], ['gold_bar', 2]], 'gunsmith');
+recipe('merc_contract', 1, [['coins', 60], ['gold_bar', 1]], 'gunsmith');
 
 export const RECIPES = R;
 

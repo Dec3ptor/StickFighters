@@ -65,6 +65,8 @@ export function onStreakKill(game, victim, killer, weapon, opts = {}) {
   victim.multi = 0;
   if (victim.jugger > 0) endJugger(game, victim, false);
   if (!killer || killer === victim) return;
+  // (A mode can do without them: worlds' monsters aren't a match's kills.)
+  if (game.rules.callouts === false) return;
 
   const news = []; // [priority, sound]
   const t = game.tick;

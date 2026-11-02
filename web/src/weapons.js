@@ -449,6 +449,19 @@ export const WEAPONS = {
     look: { type: 'none' },
     bot: { near: 0, far: 18, score: 1, value: 0 },
   },
+  // Worlds' monsters (world/monsters.js): a zombie's claws, a brute's club.
+  Claws: {
+    name: 'Claws', short: 'Claws', slot: 10, kind: 'melee', hidden: true,
+    rof: 45, reach: 20, arc: 0.3, damage: 10, knock: 3, lift: 1, ammo: Infinity, sound: 'punch',
+    look: { type: 'none' },
+    bot: { near: 0, far: 20, score: 1, value: 0 },
+  },
+  BruteClub: {
+    name: 'Club', short: 'Club', slot: 10, kind: 'melee', hidden: true,
+    rof: 55, reach: 28, arc: 0.2, damage: 40, knock: 8, lift: 3, ammo: Infinity, sound: 'sledge',
+    look: { type: 'sledge', length: 15, color: '#5c3f22' },
+    bot: { near: 0, far: 28, score: 2, value: 0 },
+  },
   Builder: {
     name: 'Builder', short: 'Builder', slot: 9, kind: 'build', hidden: true, tool: true,
     rof: 24, ammo: 6, maxAmmo: 6, sound: 'build', semi: true,

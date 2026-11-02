@@ -32,6 +32,10 @@ item('coal', 'Coal', 'material', { color: '#202020' });
 item('copper_bar', 'Copper bar', 'material', { color: '#d07a3a' });
 item('iron_bar', 'Iron bar', 'material', { color: '#c9ccd2' });
 item('gold_bar', 'Gold bar', 'material', { color: '#f2c230' });
+// Coins: what monsters drop (and half of what you carry, when you die): mercenaries are hired with them.
+item('coins', 'Coins', 'material', { color: '#f2c230' });
+// A mercenary's contract: used (like a weapon), it hires one, who follows you and shoots monsters.
+item('merc_contract', 'Mercenary contract', 'contract', { stack: 10, color: '#e8dcc0' });
 
 // Tools. power: damage a hit does to a block (a block's `hard` is how many basic hits it
 // takes); every: updates between hits (at full speed); tier: the hardest blocks it can mine.
