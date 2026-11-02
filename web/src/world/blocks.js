@@ -139,6 +139,20 @@ export const DIAMOND = def('diamond_ore', 'Diamond', { hard: 14, resist: 16, tie
 // ---- A grave (worldplay.js): where a player died, with what they lost in it. Nothing breaks it:
 // right clicked, it gives its things back (to whoever it was, or, after a while, to anyone).
 export const GRAVE = def('grave', 'Grave', { solid: false, clear: true, hard: 1, tier: 9, resist: 1e9, drop: null, light: 3, color: '#8d8b86', pattern: 'grave' });
+// ---- Storage (worldplay.js). An ender chest: each player's own things, the same in every ender
+// chest anywhere. Shulker boxes: chests that keep what's in them when they're picked up.
+export const ENDER_CHEST = def('ender_chest', 'Ender chest', furniture({ hard: 8, tier: 2, resist: 40, light: 4, color: '#1d2a2e', pattern: 'ender' }));
+const shulker = (key, name, color) => def(key, name, furniture({ hard: 2, resist: 8, color, pattern: 'shulker' }));
+export const SHULKER_BOX = shulker('shulker_box', 'Shulker box', '#9a6ab8');
+export const RED_SHULKER_BOX = shulker('red_shulker_box', 'Red shulker box', '#c0392b');
+export const BLUE_SHULKER_BOX = shulker('blue_shulker_box', 'Blue shulker box', '#2f62ee');
+export const GREEN_SHULKER_BOX = shulker('green_shulker_box', 'Green shulker box', '#1f9c4c');
+export const YELLOW_SHULKER_BOX = shulker('yellow_shulker_box', 'Yellow shulker box', '#e0b020');
+/** The shulker boxes. */
+export const SHULKER_BOXES = new Set([SHULKER_BOX, RED_SHULKER_BOX, BLUE_SHULKER_BOX, GREEN_SHULKER_BOX, YELLOW_SHULKER_BOX]);
+// ---- A waystone (waystones.js): stood by, it takes you to any other waystone in the world.
+export const WAYSTONE = def('waystone', 'Waystone', furniture({ hard: 10, tier: 1, resist: 60, light: 7, color: '#8a93a6', pattern: 'waystone' }));
+
 /** The gem blocks (they glint). */
 export const GEMS = new Set([RUBY, SAPPHIRE, EMERALD, TOPAZ, AMETHYST, DIAMOND]);
 

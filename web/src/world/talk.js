@@ -272,7 +272,7 @@ export function talkDo(game, s, d) {
       s.health = s.maxHealth || 150;
       s.burnTicks = 0;
       // (You'll come back here, if you die.)
-      w.home = { x: f.at.x * TILE + TILE / 2, y: (f.at.y + 1) * TILE - BODY.bottom - 1 };
+      w.home = { x: f.at.x * TILE + TILE / 2, y: (f.at.y + 1) * TILE - BODY.bottom - 1, inn: true };
       // (Playing alone at night: you sleep till morning.)
       const h = hourOf(game.world.time || 0), alone = game.soldiers.filter(o => o.world && !o.npc).length <= 1;
       if (alone && (h >= 19 || h < 6)) {

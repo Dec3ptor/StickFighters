@@ -6,7 +6,7 @@
 
 import * as K from './blocks.js';
 import { BLOCKS, SOLID, PLATFORMS, TILE, AIR, NO_WALL } from './blocks.js';
-import { Inventory, itemOf, HOTBAR, CRATE_LOOT } from './items.js';
+import { Inventory, itemOf, HOTBAR, CRATE_LOOT, boxDetails } from './items.js';
 import { WORLD_H, CHUNK } from './worldgen.js';
 import { MOTION, BODY } from '../config.js';
 import { WEAPONS } from '../weapons.js';
@@ -24,6 +24,8 @@ import { raidsTick, raidKill, raidersLeft } from './raids.js';
 import { SLOTS, slotKind, gearStats, armorCut, rollGear, dropSeed, dropLevel, RARITY, weaponWith } from './gear.js';
 import { cleanGear } from './items.js';
 import { scanFound, cleanFound } from './codex.js';
+import { useBed, sleepInput, sleepTick, wake, homeOf } from './sleep.js';
+import { addWaystone, removeWaystone, waystoneMenu } from './waystones.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -93,13 +95,45 @@ function notYours(game, s, tx, ty) {
 export const CHEST_SIZE = 30;
 const chestKey = (tx, ty) => `${tx},${ty}`;
 
-/** The things in the chest at (tx, ty) (made empty the first time it's looked in), or null if there's no chest there. */
+/** Whether block `id` keeps things in the world: a chest, or a shulker box (an ender chest's are each player's own). */
+export const isContainer = id => id === K.CHEST || K.SHULKER_BOXES.has(id);
+
+/**
+ * The things in the chest (or shulker box) at (tx, ty) (made empty the first time it's looked
+ * in), or null if there's none there. (A shulker box won't take a shulker box.)
+ */
 export function chestAt(world, tx, ty) {
-  if (world.tile(tx, ty) !== K.CHEST) return null;
+  const id = world.tile(tx, ty);
+  if (!isContainer(id)) return null;
   const chests = world.chests ||= new Map(), k = chestKey(tx, ty);
   let c = chests.get(k);
   if (!c) chests.set(k, c = new Inventory(CHEST_SIZE));
+  c.refuse = K.SHULKER_BOXES.has(id) ? noBoxes : null;
   return c;
+}
+const noBoxes = key => !!itemOf(key)?.box;
+
+/**
+ * What player s sees opening the thing at (tx, ty): a chest's or a shulker box's things, or
+ * their own ender chest's (the same in every ender chest), or null.
+ */
+export function boxFor(game, s, tx, ty) {
+  if (game.world.tile(tx, ty) === K.ENDER_CHEST) return s?.world ? (s.world.ender ||= new Inventory(CHEST_SIZE)) : null;
+  return chestAt(game.world, tx, ty);
+}
+
+/** What kind of thing's open at (tx, ty), and what it's called: { kind ('chest', 'shulker', 'ender'), name }. */
+export function boxKind(world, tx, ty) {
+  const id = world.tile(tx, ty);
+  return id === K.ENDER_CHEST ? { kind: 'ender', name: 'Your ender chest' } : K.SHULKER_BOXES.has(id) ? { kind: 'shulker', name: BLOCKS[id].name } : { kind: 'chest', name: 'The chest' };
+}
+
+/** A shulker box at (tx, ty) broken: it drops whole, with what's in it (an empty one: just the box). */
+function dropShulker(game, tx, ty, id, x, y) {
+  const k = chestKey(tx, ty), inv = game.world.chests?.get(k), key = BLOCKS[id].key;
+  game.world.chests?.delete(k);
+  const full = inv?.slots.some(Boolean);
+  dropItem(game, key, 1, x, y, (game.rng() - 0.5) * 2, -2, 0, full ? boxDetails(key, inv.slots) : null);
 }
 
 /** A world's chests as saved: [[tx, ty, things], ...] (the empty ones, and any whose chest is gone, left out). */
@@ -107,7 +141,7 @@ export function chestsToSave(world) {
   const out = [];
   for (const [k, inv] of world.chests || []) {
     const [tx, ty] = k.split(',').map(Number);
-    if (inv.slots.some(Boolean) && world.tile(tx, ty) === K.CHEST) out.push([tx, ty, inv.toJSON()]);
+    if (inv.slots.some(Boolean) && isContainer(world.tile(tx, ty))) out.push([tx, ty, inv.toJSON()]);
   }
   return out;
 }
@@ -131,6 +165,54 @@ function spillChest(game, tx, ty) {
     if (!s) continue;
     dropItem(game, s.key, s.n, tx * TILE + 8, ty * TILE + 4, (game.rng() - 0.5) * 3, -2, 0, s.g || null);
   }
+}
+
+// ---- Going home, and putting things away ------------------------------------------------------------
+
+/** How long a recall scroll takes to read (updates, keeping still). */
+export const RECALL_TICKS = 180;
+
+/** A recall scroll read to the end: one used up, and player s (and their mercenaries) home: their bed, an inn, or where the world starts. */
+export function recallHome(game, s) {
+  const w = s.world;
+  if (w.inv.remove('recall_scroll', 1) < 1) return;
+  const home = homeOf(game, s), p = safeSpot(game.world, (home || game.world.spawns[0]).x, (home || game.world.spawns[0]).y);
+  game.fx?.sparks?.(s.x, s.y - 14, 0, -1);
+  s.body.x = p.x; s.body.y = p.y; s.body.vx = s.body.vy = 0;
+  for (const m of game.soldiers) if (m.alive && m.npc?.kind === 'merc' && m.npc.owner === s.id) { m.body.x = p.x - s.facing * 20; m.body.y = p.y; m.body.vx = m.body.vy = 0; }
+  game.sound('respawnItem', p.x, p.y);
+  game.notify(s, home ? 'Home again' : 'Back where the world starts (you have no bed)');
+}
+
+/**
+ * Player s's bag put away into the chests near them (and shulker boxes) that have some of the same
+ * things already: as much as fits (not what's in the hotbar, coins, gear or what's for quests).
+ * Returns what to tell them.
+ */
+export function stackToChests(game, s) {
+  const world = game.world, inv = s.world.inv, cx = Math.floor(s.x / TILE), cy = Math.floor((s.y - 8) / TILE);
+  const boxes = [];
+  for (let dy = -6; dy <= 6; dy++) {
+    for (let dx = -8; dx <= 8; dx++) {
+      const tx = cx + dx, ty = cy + dy;
+      if (isContainer(world.tile(tx, ty)) && mayChange(world, s, tx, ty)) boxes.push(chestAt(world, tx, ty));
+    }
+  }
+  let moved = 0;
+  const into = new Set();
+  for (let i = HOTBAR; i < inv.slots.length; i++) {
+    for (const b of boxes) {
+      const sl = inv.slots[i];
+      if (!sl || sl.key === 'coins' || sl.g || itemOf(sl.key)?.kind === 'quest') break;
+      if (b.refuse?.(sl.key) || !b.slots.some(o => o?.key === sl.key)) continue;
+      const had = sl.n;
+      Inventory.send(inv, i, b, 0);
+      const left = inv.slots[i] === sl ? sl.n : 0;
+      if (left < had) { moved += had - left; into.add(b); }
+    }
+  }
+  if (moved) game.sound('pickup', s.x, s.y, s.id);
+  return moved ? `Put ${moved} thing${moved > 1 ? 's' : ''} away, in ${into.size} chest${into.size > 1 ? 's' : ''} that had some already` : boxes.length ? 'Nothing to put away: no chest near has any of what\'s in your bag' : 'No chests near enough';
 }
 
 // ---- Graves ----------------------------------------------------------------------------------------
@@ -290,6 +372,8 @@ export function playerToSave(s, game = null) {
     prog: progToSave(s), quests: questsToSave(s),
     gear: Object.fromEntries(SLOTS.map(k => [k, w.gear?.[k] ? [w.gear[k].key, w.gear[k].g] : null])),
     graves: w.graves || [], found: w.found || [],
+    // (Their ender chest's things: the same in every ender chest.)
+    ender: w.ender?.slots.some(Boolean) ? w.ender.toJSON() : null,
   };
 }
 
@@ -300,7 +384,12 @@ export function worldFromSave(p) {
   w.slot = Math.max(0, Math.min(HOTBAR - 1, p.slot | 0));
   w.slot2 = Number.isInteger(p.slot2) && p.slot2 >= 0 && p.slot2 < HOTBAR ? p.slot2 : -1;
   if (BRUSHES.includes(p.brush)) w.brush = p.brush;
-  if (Number.isFinite(p.home?.x) && Number.isFinite(p.home?.y)) w.home = { x: p.home.x, y: p.home.y };
+  if (Number.isFinite(p.home?.x) && Number.isFinite(p.home?.y)) {
+    w.home = { x: p.home.x, y: p.home.y };
+    // (A bed's tile, to check it's still there; an inn's rest.)
+    if (Number.isInteger(p.home.tx) && Number.isInteger(p.home.ty)) { w.home.tx = p.home.tx; w.home.ty = p.home.ty; }
+    if (p.home.inn) w.home.inn = true;
+  }
   // (Back where they were, the first time they spawn.)
   if (Number.isFinite(p.x) && Number.isFinite(p.y)) w.resume = { x: p.x, y: p.y };
   // (Their mercenaries, hired again when they're back: rehire.)
@@ -308,6 +397,7 @@ export function worldFromSave(p) {
   progFromSave(w, p.prog);
   questsFromSave(w, p.quests);
   w.found = cleanFound(p.found);
+  if (Array.isArray(p.ender)) w.ender = Inventory.from(p.ender, CHEST_SIZE);
   w.graves = Array.isArray(p.graves) ? p.graves.filter(g => Array.isArray(g) && Number.isInteger(g[0]) && Number.isInteger(g[1])).slice(-8).map(g => [g[0], g[1]]) : [];
   for (const k of SLOTS) {
     const it = p.gear?.[k];
@@ -602,6 +692,8 @@ export function breakBlock(game, tx, ty, by = null) {
   } else {
     world.setTile(tx, ty, AIR);
     if (id === K.LOOT_CRATE) openCrate(game, x, y);
+    // (A shulker box: picked up whole, what's in it kept in it.)
+    else if (K.SHULKER_BOXES.has(id)) dropShulker(game, tx, ty, id, x, y);
     else if (b.drop) {
       dropItem(game, b.drop, 1, x, y);
       // Mined by a player: experience for ore and gems (and, with the Prospector perk, now and
@@ -615,6 +707,7 @@ export function breakBlock(game, tx, ty, by = null) {
     }
     if (id === K.CHEST) spillChest(game, tx, ty);
     if (id === K.CLAIM_FLAG) world.claims?.delete(`${tx},${ty}`);
+    if (id === K.WAYSTONE) removeWaystone(world, tx, ty);
   }
   game.sound(b.wood ? 'thunk' : 'smash', x, y);
   game.fx?.rubble?.(x, y, 6);
@@ -631,9 +724,11 @@ function settle(game, tx, ty) {
     const b = BLOCKS[id];
     if (DOORS.has(id)) { breakBlock(game, x, y); continue; }
     world.setTile(x, y, AIR);
-    if (b.drop) dropItem(game, b.drop, 1, x * TILE + TILE / 2, y * TILE + TILE / 2);
+    if (K.SHULKER_BOXES.has(id)) dropShulker(game, x, y, id, x * TILE + TILE / 2, y * TILE + TILE / 2);
+    else if (b.drop) dropItem(game, b.drop, 1, x * TILE + TILE / 2, y * TILE + TILE / 2);
     if (id === K.CHEST) spillChest(game, x, y);
     if (id === K.CLAIM_FLAG) world.claims?.delete(`${x},${y}`);
+    if (id === K.WAYSTONE) removeWaystone(world, x, y);
     settle(game, x, y);
   }
 }
@@ -773,7 +868,21 @@ function placeOne(game, s, it, tx, ty) {
     const bottom = doorSpot(game, tx, ty);
     for (let y = bottom - 2; y <= bottom; y++) world.setTile(tx, y, K.DOOR);
   } else world.setTile(tx, ty, it.block);
-  w.inv.remove(it.key, 1);
+  if (it.box) {
+    // (A shulker box: the one in hand, what's in it put in the box put down.)
+    const i = [w.slot, w.slot2].find(j => j >= 0 && w.inv.slots[j]?.key === it.key) ?? w.inv.slots.findIndex(sl => sl?.key === it.key);
+    const sl = w.inv.slots[i];
+    w.inv.slots[i] = null;
+    w.inv.version++;
+    world.chests?.delete(chestKey(tx, ty));
+    if (sl?.g?.box?.length) {
+      const inv = chestAt(world, tx, ty);
+      inv.slots.fill(null);
+      sl.g.box.slice(0, CHEST_SIZE).forEach((e, j) => { inv.slots[j] = e[3] ? { key: e[0], n: e[1], mag: e[2] || undefined, g: e[3] } : e[2] > 0 ? { key: e[0], n: e[1], mag: e[2] } : { key: e[0], n: e[1] }; });
+      inv.version++;
+    }
+  } else w.inv.remove(it.key, 1);
+  if (it.block === K.WAYSTONE) game.notify(s, `${addWaystone(world, tx, ty, s.name).name}: right click it to go to any other waystone`);
   if (it.block === K.CLAIM_FLAG) {
     (world.claims ||= new Map()).set(`${tx},${ty}`, { tx, ty, owner: s.name });
     game.notify(s, `Your base: nobody else can build, dig or open chests within ${CLAIM_R} blocks of the flag`);
@@ -885,17 +994,23 @@ function interact(game, s) {
   if (!t?.near) return false;
   const id = world.tile(t.tx, t.ty);
   if (id === K.GRAVE) return openGrave(game, s, t.tx, t.ty);
-  if (id === K.CHEST) {
-    if (!mayChange(world, s, t.tx, t.ty)) return notYours(game, s, t.tx, t.ty) || true;
-    chestAt(world, t.tx, t.ty);
+  // (A waystone: where it can take you, to choose: waystones.js.)
+  if (id === K.WAYSTONE) {
+    w.wayMenu = waystoneMenu(game, s, t.tx, t.ty);
+    game.sound('click', t.tx * TILE + 8, t.ty * TILE + 8, s.id);
+    return true;
+  }
+  if (isContainer(id) || id === K.ENDER_CHEST) {
+    // (Someone's base: not their chests. An ender chest's things are your own, anywhere.)
+    if (id !== K.ENDER_CHEST && !mayChange(world, s, t.tx, t.ty)) return notYours(game, s, t.tx, t.ty) || true;
+    boxFor(game, s, t.tx, t.ty);
     w.openChest = { tx: t.tx, ty: t.ty };
     game.sound('click', t.tx * TILE + 8, t.ty * TILE + 8, s.id);
     return true;
   }
   if (id === K.BED) {
-    w.home = { x: t.tx * TILE + TILE / 2, y: (t.ty + 1) * TILE - BODY.bottom - 1 };
-    game.notify(s, 'You\'ll come back here, at your bed');
-    game.sound('click', t.tx * TILE + 8, t.ty * TILE + 8, s.id);
+    // (Where you'll come back; at night, you sleep: sleep.js.)
+    useBed(game, s, t.tx, t.ty);
     return true;
   }
   if (!DOORS.has(id)) return false;
@@ -915,6 +1030,9 @@ export function worldInput(game, s, inp) {
   const w = s.world;
   if (!w || !s.alive) return inp;
   if (game.mirror) return mirrorInput(game, s, inp);
+  // (Asleep in a bed: kept there, till they move: sleep.js.)
+  if (w.sleep) inp = sleepInput(game, s, inp);
+  if (w.sleep) return inp;
   // The hotbar: slots by number ('#n': see setup), or along with the wheel and Q / E.
   if (typeof inp.switchTo === 'string' && inp.switchTo[0] === '#') w.slot = Math.max(0, Math.min(HOTBAR - 1, Number(inp.switchTo.slice(1)) || 0));
   else if (typeof inp.switchTo === 'string' && inp.switchTo[0] === '%') setRightHand(game, s, inp.switchTo.slice(1));
@@ -996,6 +1114,13 @@ function useItem(game, s, item, inp, pressed) {
   let fire = inp.fire;
   if (item?.kind === 'food') {
     if (pressed) eat(game, s, item);
+    fire = false;
+  } else if (item?.kind === 'scroll') {
+    if (pressed && !w.recall) {
+      w.recall = { at: game.tick, x: s.x, y: s.y };
+      game.notify(s, 'You read the scroll... (keep still)');
+      game.sound('click', s.x, s.y, s.id);
+    }
     fire = false;
   } else if (item?.kind === 'contract') {
     if (pressed) {
@@ -1110,6 +1235,7 @@ export function worldTick(game) {
   townsfolkTick(game);
   questsTick(game);
   raidsTick(game);
+  sleepTick(game);
   // (Each player's party and the raid near them, as their HUD shows it: worked out now and then.)
   if (game.tick % 30 === 11) {
     const raid = world.raid, t = raid && world.gen.townIn(raid.k);
@@ -1123,6 +1249,12 @@ export function worldTick(game) {
     if (!s.world) continue;
     if (s.world.talk) talkTick(game, s);
     regenTick(game, s);
+    // (A recall scroll being read: three seconds keeping still, then home.)
+    const rc = s.world.recall;
+    if (rc && !game.mirror) {
+      if (!s.alive || Math.hypot(s.x - rc.x, s.y - rc.y) > 12) { s.world.recall = null; game.notify(s, 'The scroll\'s magic fades: you moved'); }
+      else if (game.tick - rc.at >= RECALL_TICKS) { s.world.recall = null; recallHome(game, s); }
+    }
     // (What's come into their hands, found: the codex.)
     const fk = `${s.world.inv.version}|${s.world.gearV || 0}`;
     if (game.tick % 20 === 5 && s.world.foundAt !== fk && !game.mirror) { s.world.foundAt = fk; scanFound(s); }
@@ -1226,6 +1358,9 @@ export const worldMode = {
       const b = BLOCKS[id], x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
       if (id === K.LOOT_CRATE) openCrate(game, x, y);
       else if (id === K.CHEST) { dropItem(game, 'chest', 1, x, y); spillChest(game, tx, ty); }
+      else if (K.SHULKER_BOXES.has(id)) dropShulker(game, tx, ty, id, x, y);
+      else if (id === K.ENDER_CHEST) dropItem(game, 'ender_chest', 1, x, y);
+      else if (id === K.WAYSTONE) { dropItem(game, 'waystone', 1, x, y); removeWaystone(world, tx, ty); }
       else if (id === K.TRUNK) dropItem(game, 'wood', 1, x, y);
       else if ((id === K.LEAVES || id === K.JUNGLE_LEAVES) && game.rng() < 0.04) dropItem(game, 'apple', 1, x, y, (game.rng() - 0.5) * 2, -1.5);
       else if (b.drop && game.rng() < (b.natural ? 0.3 : 0.6)) dropItem(game, b.drop, 1, x, y, (game.rng() - 0.5) * 3, -2);
@@ -1255,6 +1390,9 @@ export const worldMode = {
   /** (Nothing hurts a player in dev mode, nor any of the townsfolk but guards: townsfolk.js.) */
   damage(game, amount, attacker, target, weapon) {
     if (target?.world?.dev || (isFolk(target) && !target.npc.guard)) return 0;
+    // (Hurt in bed: awake, at once. Reading a recall scroll: it's spoilt.)
+    if (target?.world?.sleep && amount > 0) wake(game, target, 'Something woke you!');
+    if (target?.world?.recall && amount > 0) { target.world.recall = null; game.notify(target, 'The scroll\'s magic fades: you were hurt'); }
     // (Harder hitting with the Marksman and Brawler perks and gear: progress.js. Less taken with
     // armour, and fire resistance against magma and burning: gear.js.)
     let dmg = attacker?.world ? amount * damageScale(attacker, weapon) : amount;
@@ -1324,7 +1462,8 @@ export const worldMode = {
       const o = game.soldiers.find(x => x.id === s.npc.owner);
       return safeSpot(game.world, o.x - o.facing * 24, o.y);
     }
-    const w = s.world, p = w?.resume || w?.home || game.map.spawns[0];
+    // (A bed that's gone: where the world starts, and they're told: sleep.js.)
+    const w = s.world, p = w?.resume || homeOf(game, s) || game.map.spawns[0];
     if (w) w.resume = null;
     return safeSpot(game.world || game.map, p.x, p.y);
   },

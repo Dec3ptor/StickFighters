@@ -42,7 +42,8 @@ import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
 import { TileWorld } from './world/tileworld.js';
 import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT, genOf } from './world/worldsave.js';
-import { playerToSave, worldFromSave, dropItem, chestAt, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, DEATH_RULES, rehire, REACH, crafted } from './world/worldplay.js';
+import { playerToSave, worldFromSave, dropItem, chestAt, boxFor, boxKind, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, DEATH_RULES, rehire, REACH, crafted, stackToChests } from './world/worldplay.js';
+import { warp, waystonesToSave, waystonesFromSave } from './world/waystones.js';
 import { craft, stationsNear } from './world/crafting.js';
 import { itemOf } from './world/items.js';
 import { InventoryScreen } from './world/inventoryui.js';
@@ -958,6 +959,7 @@ async function startWorld(rec, { online = false } = {}) {
   const world = new TileWorld({ seed: rec.seed, name: rec.name, saved, gen: genOf(rec) });
   chestsFromSave(world, rec.chests);
   gravesFromSave(world, rec.graves);
+  waystonesFromSave(world, rec.waystones);
   // (What's lost on dying: in a grave. Worlds from before it was asked: the bag.)
   world.death = DEATH_RULES.includes(rec.death) ? rec.death : 'bag';
   claimsFromSave(world, rec.claims);
@@ -1029,6 +1031,7 @@ function saveWorldNow(last = false) {
   w.sync?.saveAll();
   w.rec.chests = chestsToSave(w.game.world);
   w.rec.graves = gravesToSave(w.game.world);
+  w.rec.waystones = waystonesToSave(w.game.world);
   w.rec.claims = claimsToSave(w.game.world);
   w.rec.time = Math.round(w.game.world.time || 0);
   w.rec.towns = w.game.world.townState || {};
@@ -1056,6 +1059,8 @@ async function importWorldFile(file) {
 let invScreen = null;
 const getInventory = () => (invScreen ||= new InventoryScreen($('inventory'), {
   drop: i => dropFromInventory(i), craft: (r, times) => craftItem(r, times), close: () => closeInventory(),
+  // (Your bag into the chests near you that have some of the same: worldplay.js.)
+  stack: () => { const g = state.game, me = state.me; if (g?.world && me?.world) localNote(stackToChests(g, me)); },
 }));
 
 /**
@@ -1183,6 +1188,13 @@ function playerPick(view, op) {
   const g = state.game, me = state.me;
   closePlayerMenu();
   if (!g?.world || !me?.world || !view) return;
+  // (A waystone's list: going there: waystones.js.)
+  if (view.kind === 'waystone') {
+    if (state.mode === 'client') state.net?.client?.link.send({ t: 'wop', op: 'warp', from: view.id, to: op }, true);
+    else { const text = warp(g, me, view.id, op); if (text) localNote(text); }
+    audio.play('click');
+    return;
+  }
   if (state.mode === 'client') state.net?.client?.link.send({ t: 'wop', op: 'social', id: view.id, act: op }, true);
   else { const o = g.soldiers.find(x => x.id === view.id), text = o && socialDo(g, me, o, op); if (text) localNote(text); }
   audio.play('click');
@@ -2155,13 +2167,16 @@ function frame(now) {
   if (hudR !== renderer) renderer.classButton = hudR.classButton;
   // A world: kept every minute (and when it's paused or left); the inventory screen up to date.
   if (state.world && !state.paused && now - state.world.savedAt > 60000) saveWorldNow();
+  // (A waystone right clicked, playing here: where it can take you.)
+  if (g.world && me.world?.wayMenu) { const v = me.world.wayMenu; me.world.wayMenu = null; showPlayerMenu(v); }
   if (g.world && me.world?.openChest) {
-    const c = me.world.openChest, inv = chestAt(g.world, c.tx, c.ty);
+    // (A chest, a shulker box, or your own ender chest: worldplay.js.)
+    const c = me.world.openChest, inv = boxFor(g, me, c.tx, c.ty);
     me.world.openChest = null;
-    if (inv) openInventory({ inv, tx: c.tx, ty: c.ty });
+    if (inv) openInventory({ inv, tx: c.tx, ty: c.ty, ...boxKind(g.world, c.tx, c.ty) });
   }
   const chest = invScreen?.open && invScreen.chest;
-  if (chest && (!me.alive || !chestAt(g.world, chest.tx, chest.ty) || Math.hypot(chest.tx * 16 + 8 - me.x, chest.ty * 16 + 8 - me.y) > REACH * 1.5)) closeInventory();
+  if (chest && state.mode !== 'client' && (!me.alive || !boxFor(g, me, chest.tx, chest.ty) || Math.hypot(chest.tx * 16 + 8 - me.x, chest.ty * 16 + 8 - me.y) > REACH * 1.5)) closeInventory();
   if (invScreen?.open) invScreen.refresh();
   // Talking to townsfolk (here: in someone else's world, the host says when it begins and ends).
   if (g.world && state.mode !== 'client') {

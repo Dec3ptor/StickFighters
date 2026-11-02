@@ -28,7 +28,7 @@ export class PlayerMenu {
 
   show(view) {
     this.view = view;
-    this.root.innerHTML = `<div class="buy-head"><h2>${esc(view.name)}</h2><span class="muted-note">Level ${view.level}</span>
+    this.root.innerHTML = `<div class="buy-head"><h2>${esc(view.name)}</h2><span class="muted-note">${esc(view.sub ?? `Level ${view.level}`)}</span>
       <button type="button" class="buy-close" data-close>Close <kbd>Esc</kbd></button></div>
       <div class="talk-options">${view.options.map((o, i) => `<button type="button" class="talk-opt" data-op="${o.op}"><kbd>${i + 1}</kbd> ${esc(o.label)}</button>`).join('')}</div>`;
     this.root.classList.remove('hidden');

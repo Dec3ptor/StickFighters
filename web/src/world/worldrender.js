@@ -517,6 +517,36 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
       g.beginPath(); g.moveTo(x + 1.5, y + 9.5); g.lineTo(x + 14.5, y + 9.5); g.stroke();
       g.fillStyle = classic ? INK : '#e0c060'; g.fillRect(x + 7, y + 8, 2, 3);
       break;
+    case 'ender':
+      // A box of dark stone, its lid's latch a green eye, purple flecks glowing in it.
+      g.fillStyle = col;
+      g.fillRect(x + 1, y + 5, 14, 11);
+      g.strokeStyle = classic ? INK : '#5a3a7a'; g.lineWidth = 1;
+      g.strokeRect(x + 1.5, y + 5.5, 13, 10);
+      g.beginPath(); g.moveTo(x + 1.5, y + 9.5); g.lineTo(x + 14.5, y + 9.5); g.stroke();
+      if (!classic) { g.fillStyle = 'rgba(190,110,255,0.55)'; g.fillRect(x + 3, y + 7, 1.5, 1.5); g.fillRect(x + 11, y + 12, 1.5, 1.5); g.fillRect(x + 5, y + 13, 1, 1); }
+      g.fillStyle = classic ? INK : '#3fe0a0';
+      g.beginPath(); g.arc(x + 8, y + 9.5, 1.8, 0, Math.PI * 2); g.fill();
+      break;
+    case 'shulker':
+      // A box with a shell of a lid, in its colour, a little face peeping out between them.
+      g.fillStyle = col;
+      g.fillRect(x + 1, y + 4, 14, 12);
+      if (!classic) { g.fillStyle = tint(b.color, 1.2); g.fillRect(x + 1, y + 4, 14, 5); }
+      g.strokeStyle = line; g.lineWidth = 1;
+      g.strokeRect(x + 1.5, y + 4.5, 13, 11);
+      g.beginPath(); g.moveTo(x + 1.5, y + 9.5); g.lineTo(x + 14.5, y + 9.5); g.stroke();
+      g.fillStyle = classic ? INK : '#f4eab0';
+      g.fillRect(x + 6, y + 9, 4, 1.6);
+      break;
+    case 'waystone':
+      // A standing stone, a glowing rune carved in it.
+      g.fillStyle = col;
+      g.beginPath(); g.moveTo(x + 3.5, y + 16); g.lineTo(x + 4.5, y + 2.5); g.lineTo(x + 8, y); g.lineTo(x + 11.5, y + 2.5); g.lineTo(x + 12.5, y + 16); g.closePath(); g.fill();
+      g.strokeStyle = line; g.lineWidth = 1; g.stroke();
+      g.strokeStyle = classic ? INK : '#7ef0ff'; g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(x + 8, y + 3.5); g.lineTo(x + 8, y + 12.5); g.moveTo(x + 5.5, y + 6); g.lineTo(x + 10.5, y + 10); g.moveTo(x + 10.5, y + 6); g.lineTo(x + 5.5, y + 10); g.stroke();
+      break;
     case 'grave':
       // A mound of earth, and a headstone with a cross on it.
       g.fillStyle = classic ? '#fff' : '#5a4636';

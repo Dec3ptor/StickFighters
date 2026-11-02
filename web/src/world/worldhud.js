@@ -34,6 +34,8 @@ export function drawWorldHud(r, ctx, game, me, W, H, opts = {}) {
   if (me.world?.marks?.length) drawMarks(r, ctx, game, me, W, H);
   if (me.alive && me.world?.quests?.list.length) drawQuestPointer(r, ctx, game, me, W, H);
   if (me.alive && me.world?.graves?.length) drawGravePointer(r, ctx, game, me, W, H);
+  if (me.alive && me.world?.sleep) drawSleep(ctx, game, me, W, H);
+  else if (me.world) me.world.sleepSeen = null;
   if (me.alive && me.world) { drawHotbar(ctx, me, W, H); drawXpBar(ctx, game, me, W, H); }
   if (me.world?.quests?.list.length) drawTracker(ctx, game, me, W);
   if (me.world?.levelUp) drawLevelUp(ctx, game, me, W, H);
@@ -170,6 +172,36 @@ function drawQuestPointer(r, ctx, game, me, W, H) {
   for (const g of q.goals) if ((place = goalPlace(me, g))) break;
   if (questReady(me, q)) { const to = turnInTo(q); place = to ? { x: to.x, y: to.y } : null; }
   if (place) pointAt(r, ctx, game, place, W, H, '#ffe36e');
+}
+
+/** Asleep in a bed (sleep.js): the screen darkens, Zs rise, and online, how many are asleep. */
+function drawSleep(ctx, game, me, W, H) {
+  const w = me.world, now = performance.now();
+  if (w.sleepSeen == null) w.sleepSeen = now;
+  const t = (now - w.sleepSeen) / 1000, k = Math.min(1, t / 1.2);
+  ctx.save();
+  ctx.setTransform?.(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = `rgba(4,6,16,${(0.72 * k).toFixed(3)})`;
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // (Zs drifting up, one after another.)
+  for (let i = 0; i < 3; i++) {
+    const p = (t * 0.45 + i / 3) % 1;
+    ctx.globalAlpha = k * Math.sin(p * Math.PI);
+    ctx.fillStyle = '#e8ecff';
+    ctx.font = `bold ${Math.round(22 + p * 20)}px ${FONT}`;
+    ctx.fillText('Z', W / 2 + 30 + p * 40 + i * 6, H / 2 - 40 - p * 70);
+  }
+  ctx.globalAlpha = k;
+  ctx.fillStyle = '#e8ecff';
+  ctx.font = `bold 20px ${FONT}`;
+  ctx.fillText('Sleeping...', W / 2, H / 2 + 10);
+  const n = w.sleep.n ?? game.world?.asleep?.n, of = w.sleep.of ?? game.world?.asleep?.of;
+  ctx.font = `13px ${FONT}`;
+  ctx.fillStyle = '#b8c0dc';
+  ctx.fillText(of > 1 ? `${n} of ${of} asleep: when everyone is, the night goes by · move to get up` : 'Move to get up', W / 2, H / 2 + 36);
+  ctx.restore();
 }
 
 /** Your nearest grave (worldplay.js's bury): a pale arrow to it, and its name over it. */

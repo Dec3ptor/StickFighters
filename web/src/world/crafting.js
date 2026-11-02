@@ -27,6 +27,14 @@ recipe('ladder', 2, [['planks', 3]]);
 recipe('plank_wall', 4, [['planks', 1]], 'workbench');
 recipe('door', 1, [['planks', 6]], 'workbench');
 recipe('chest', 1, [['planks', 8]], 'workbench');
+// (Storage: an ender chest, everywhere the same, and shulker boxes, to carry chests' worth: worldplay.js.)
+recipe('ender_chest', 1, [['obsidian', 8], ['amethyst', 1]], 'anvil');
+recipe('shulker_box', 1, [['chest', 1], ['gold_bar', 2], ['amethyst', 1]], 'anvil');
+recipe('red_shulker_box', 1, [['chest', 1], ['gold_bar', 2], ['ruby', 1]], 'anvil');
+recipe('blue_shulker_box', 1, [['chest', 1], ['gold_bar', 2], ['sapphire', 1]], 'anvil');
+recipe('green_shulker_box', 1, [['chest', 1], ['gold_bar', 2], ['emerald', 1]], 'anvil');
+recipe('yellow_shulker_box', 1, [['chest', 1], ['gold_bar', 2], ['topaz', 1]], 'anvil');
+recipe('waystone', 1, [['stone_bricks', 12], ['emerald', 1], ['gold_bar', 2]], 'anvil');
 recipe('bed', 1, [['planks', 15]], 'workbench');
 recipe('claim_flag', 1, [['planks', 10], ['stone', 20]], 'workbench');
 recipe('furnace', 1, [['stone', 20], ['wood', 4], ['torch', 3]], 'workbench');

@@ -16,7 +16,8 @@ import { TileWorld } from './tileworld.js';
 import { Inventory, HOTBAR, itemOf } from './items.js';
 import { packBytes, unpackBytes } from './worldsave.js';
 import { RECIPES, craft, stationsNear } from './crafting.js';
-import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, claimsToSave, claimsFromSave, REACH, setRightHand, crafted, equip, unequip } from './worldplay.js';
+import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, boxFor, boxKind, claimsToSave, claimsFromSave, REACH, setRightHand, crafted, equip, unequip, stackToChests } from './worldplay.js';
+import { warp } from './waystones.js';
 import { SLOTS } from './gear.js';
 import { cleanGear } from './items.js';
 import { mercsOf } from './monsters.js';
@@ -134,7 +135,7 @@ export class WorldHost {
     const m = w.mine, last = w.got[w.got.length - 1];
     // (Their level and quests too: progress.js, quests.js. And who has work for them.)
     const pr = progOf(s), qs = questsOf(s), xg = w.xpGot?.at(-1);
-    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}|${w.gearV || 0}|${(w.graves || []).join(';')}|${w.foundV || 0}`;
+    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}|${w.gearV || 0}|${(w.graves || []).join(';')}|${w.foundV || 0}|${w.sleep ? `z${this.game.world.asleep?.n}/${this.game.world.asleep?.of}` : ''}`;
     if (key !== ws.inv) {
       ws.inv = key;
       p.link.send({
@@ -146,6 +147,7 @@ export class WorldHost {
         xpGot: (w.xpGot || []).map(x => [x.n, x.why, x.tick]), levelUp: w.levelUp || null, raid: w.raidInfo || null,
         gear: Object.fromEntries(SLOTS.map(k => [k, w.gear?.[k] ? [w.gear[k].key, w.gear[k].g] : null])),
         got2: w.got.map(g => [g.r || null, g.name || null]), graves: w.graves || [],
+        sleep: w.sleep ? { since: w.sleep.since, n: this.game.world.asleep?.n || 1, of: this.game.world.asleep?.of || 1 } : null,
         // (What they've found, for the codex: only when it's more.)
         found: ws.foundV !== (w.foundV || 0) ? w.found || [] : undefined,
       }, true);
@@ -153,6 +155,8 @@ export class WorldHost {
     }
     // Playing together (social.js): another player right clicked on (what you can do with them),
     // a trade (when it changes, or ends), their party (as it changes).
+    // (A waystone right clicked: where it can take them, as a player's menu is shown.)
+    if (w.wayMenu) { p.link.send({ t: 'social', view: w.wayMenu }, true); w.wayMenu = null; }
     if (w.social) {
       const o = this.game.soldiers.find(x => x.id === w.social.id);
       if (o?.world) p.link.send({ t: 'social', view: { id: o.id, name: o.name, level: progOf(o).level, options: socialOptions(this.game, s, o) } }, true);
@@ -175,12 +179,12 @@ export class WorldHost {
       ws.talk = tkey;
     }
     if (ws.chest) {
-      const inv = chestAt(this.game.world, ws.chest.tx, ws.chest.ty);
+      const inv = boxFor(this.game, s, ws.chest.tx, ws.chest.ty);
       const far = !s.alive || Math.hypot(ws.chest.tx * 16 + 8 - s.x, ws.chest.ty * 16 + 8 - s.y) > REACH * 1.5;
       if (!inv || far) { p.link.send({ t: 'chest', close: true }, true); ws.chest = null; }
       else if (inv.version !== ws.chestV) {
         ws.chestV = inv.version;
-        p.link.send({ t: 'chest', tx: ws.chest.tx, ty: ws.chest.ty, slots: inv.toJSON() }, true);
+        p.link.send({ t: 'chest', tx: ws.chest.tx, ty: ws.chest.ty, slots: inv.toJSON(), ...boxKind(this.game.world, ws.chest.tx, ws.chest.ty) }, true);
       }
     }
   }
@@ -193,7 +197,7 @@ export class WorldHost {
     ws.ops = ws.ops.filter(t => now - t < 1000);
     if (ws.ops.length >= OPS_PER_SECOND) return;
     ws.ops.push(now);
-    const chest = ws.chest && chestAt(g.world, ws.chest.tx, ws.chest.ty);
+    const chest = ws.chest && boxFor(g, s, ws.chest.tx, ws.chest.ty);
     const box = b => (b === 'chest' ? chest : b === 'me' ? w.inv : null);
     const at = a => (Array.isArray(a) && box(a[0]) && Number.isInteger(a[1]) && a[1] >= 0 && a[1] < box(a[0]).slots.length ? [box(a[0]), a[1]] : null);
     switch (d.op) {
@@ -207,6 +211,8 @@ export class WorldHost {
         break;
       }
       case 'sort': w.inv.sortBag(); break;
+      case 'stack': g.notify(s, stackToChests(g, s)); break;
+      case 'warp': { const text = warp(g, s, d.from, d.to); if (text) g.notify(s, text); break; }
       case 'take-all': if (chest) Inventory.sendAll(chest, w.inv, 0, HOTBAR); break;
       case 'put-all': if (chest) Inventory.sendAll(w.inv, chest, HOTBAR, 0); break;
       case 'drop': {
@@ -350,6 +356,8 @@ export class WorldClient {
         if (typeof d.brush === 'string') w.brush = d.brush;
         w.home = d.home || null;
         if (Array.isArray(d.found)) w.found = cleanFound(d.found);
+        // (Asleep: the host keeps them in bed; here, the screen goes dark.)
+        w.sleep = d.sleep && typeof d.sleep === 'object' ? { since: w.sleep?.since ?? Date.now(), n: d.sleep.n | 0, of: d.sleep.of | 0 } : null;
         w.graves = Array.isArray(d.graves) ? d.graves.filter(g => Array.isArray(g) && Number.isInteger(g[0]) && Number.isInteger(g[1])).slice(-8) : [];
         w.mine = d.mine && Number.isFinite(d.mine.dmg) ? d.mine : null;
         if (d.mine) w.mine.at = game.tick;
@@ -376,7 +384,8 @@ export class WorldClient {
       }
       case 'chest':
         if (d.close) { this.onChest?.(null); break; }
-        this.onChest?.({ inv: Object.assign(Inventory.from(d.slots, 30), { version: ++this.version }), tx: d.tx | 0, ty: d.ty | 0 });
+        // (What it is, from the block there: a chest, a shulker box (which won't take one), an ender chest.)
+        this.onChest?.({ inv: Object.assign(Inventory.from(d.slots, 30), { version: ++this.version }), tx: d.tx | 0, ty: d.ty | 0, kind: ['chest', 'shulker', 'ender'].includes(d.kind) ? d.kind : 'chest', name: String(d.name || 'Chest').slice(0, 40) });
         break;
       case 'claims': if (game.world) claimsFromSave(game.world, d.list); break;
       case 'talk': this.onTalk?.(d.close || !d.view || typeof d.view !== 'object' ? null : d.view); break;

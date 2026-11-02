@@ -24,7 +24,7 @@ const RAW = {
   magma: 1, obsidian: 2, kimberlite: 1, coal: 0.8, copper_ore: 1, iron_ore: 1.5, silver_ore: 2.5, gold_ore: 3.5,
   crystal_ore: 6, ember_ore: 8,
   amethyst: 20, topaz: 28, emerald: 40, sapphire: 48, ruby: 60, diamond: 150,
-  apple: 1.5, healing_potion: 18, greater_potion: 45,
+  apple: 1.5, healing_potion: 18, greater_potion: 45, recall_scroll: 30,
   // (Weapons nobody can make: found in crates.)
   BananaBomb: 12, HolyHandGrenade: 60, Skunk: 10, Sheep: 12, SuperSheep: 25, OldWoman: 15, MadCow: 25, AirStrike: 60,
   NapalmStrike: 70, ConcreteDonkey: 150, Earthquake: 100, Kamikaze: 15, FirePunch: 40,
@@ -123,7 +123,7 @@ export const SHOPS = {
       ['amethyst', 0.6, 2], ['topaz', 0.5, 2], ['emerald', 0.4, 1], ['sapphire', 0.35, 1], ['ruby', 0.3, 1], ['diamond', 0.15, 1],
       ['silver_bar', 0.6, 4], ['gold_bar', 0.6, 4], ['crystal_ore', 0.4, 4], ['ember_ore', 0.3, 3], ['stained_glass', 0.5, 4],
       ['roof_tiles', 0.4, 4], ['snow_bricks', 0.3, 4], ['sandstone_bricks', 0.3, 4], ['obsidian', 0.3, 3], ['Teleport', 0.2, 1],
-      ['Sheep', 0.2, 2], ['greater_potion', 0.25, 1],
+      ['Sheep', 0.2, 2], ['greater_potion', 0.25, 1], ['recall_scroll', 0.4, 2],
     ],
     rare: [['crystal_pickaxe', 1], ['MagicBullet', 1], ['Minigun', 1], ['HolyHandGrenade', 1], ['SuperSheep', 1], ['MadCow', 1], ['diamond', 1], ['ConcreteDonkey', 1]],
   },
@@ -133,7 +133,7 @@ export const SHOPS = {
   },
   healer: {
     name: 'Temple', markup: 1.15, rate: 0.5, buys: it => it.key === 'mushroom' || it.key === 'cactus' || it.look === 'potion',
-    sells: [['healing_potion', 1, 5], ['greater_potion', 0.6, 2], ['apple', 0.6, 4], ['stew', 0.5, 3]],
+    sells: [['healing_potion', 1, 5], ['greater_potion', 0.6, 2], ['apple', 0.6, 4], ['stew', 0.5, 3], ['recall_scroll', 0.8, 3]],
   },
   farmer: {
     name: 'Farm', markup: 1.15, rate: 0.5, buys: it => ['wheat', 'mushroom', 'cactus', 'apple', 'wood'].includes(it.key),

@@ -8,7 +8,7 @@
 //          'quest' (carried for a quest: quests.js), 'gear' (worn: gear.js; each piece its own, slot.g)
 //   stack  how many fit in a slot
 
-import { BLOCKS, WALLS, BLOCK_BY_KEY } from './blocks.js';
+import { BLOCKS, WALLS, BLOCK_BY_KEY, SHULKER_BOXES } from './blocks.js';
 import { WEAPONS } from '../weapons.js';
 import { BASES, rarityOf } from './gear.js';
 
@@ -23,6 +23,8 @@ for (const b of BLOCKS) {
   if (b.key === 'air' || b.drop !== b.key) continue;
   if (['loot_crate', 'bedrock', 'door_open'].includes(b.key)) continue;
   item(b.key, b.name, 'block', { block: b.id, color: b.ore || b.color, dark: b.dark, pattern: b.pattern });
+  // (A shulker box: one to a slot, with what's in it kept in the slot: slot.g.box.)
+  if (SHULKER_BOXES.has(b.id)) Object.assign(I.get(b.key), { stack: 1, box: true });
 }
 // (Mining a tree gives wood, which is built with as logs.)
 item('wood', 'Wood', 'block', { block: BLOCK_BY_KEY.get('log').id, color: '#8a6238', dark: '#5c3f22', pattern: 'rings' });
@@ -59,6 +61,9 @@ for (const [key, name, color] of [
 // Gear (gear.js): worn on the head, body or feet, rings and amulets. Each piece is one of a kind
 // (its rarity, name and affixes kept in its slot: slot.g), so they don't stack.
 for (const [key, b] of Object.entries(BASES)) item(key, b.name, 'gear', { stack: 1, wear: b.kind, color: b.color });
+// A recall scroll: read (a click, either hand), after a few moments it takes you home (your bed, an
+// inn you rested at, or where the world starts): worldplay.js. Sold at temples and markets.
+item('recall_scroll', 'Recall scroll', 'scroll', { stack: 20, color: '#e8dcc0' });
 // Coins: what monsters drop (and half of what you carry, when you die): mercenaries are hired with them.
 item('coins', 'Coins', 'material', { color: '#f2c230' });
 // A mercenary's contract: used (like a weapon), it hires one, who follows you and shoots monsters.
@@ -112,7 +117,7 @@ export const CRATE_LOOT = [
   ['Longbow', 1, 1, 1], ['SR', 1, 1, 1], ['Bazooka', 1, 1, 1], ['GrenadeLauncher', 1, 1, 1], ['Flamer', 1, 1, 1],
   ['ClusterBomb', 2, 4, 2], ['Dynamite', 2, 4, 2], ['Mine', 2, 5, 2], ['Sheep', 1, 2, 1], ['NinjaRope', 1, 1, 1], ['iron_pickaxe', 1, 1, 1],
   // (The rarest: only ever found in crates.)
-  ['Skunk', 1, 2, 0.6], ['OldWoman', 1, 1, 0.4], ['AirStrike', 1, 1, 0.4], ['NapalmStrike', 1, 1, 0.3], ['Earthquake', 1, 1, 0.2], ['Kamikaze', 1, 1, 0.4],
+  ['recall_scroll', 1, 2, 1], ['Skunk', 1, 2, 0.6], ['OldWoman', 1, 1, 0.4], ['AirStrike', 1, 1, 0.4], ['NapalmStrike', 1, 1, 0.3], ['Earthquake', 1, 1, 0.2], ['Kamikaze', 1, 1, 0.4],
 ];
 
 export const ITEMS = I;
@@ -135,7 +140,24 @@ export function cleanGear(g) {
   for (const [k, v] of Object.entries(g.stats || {})) if (/^[a-z]{2,6}$/.test(k) && Number.isFinite(v)) out.stats[k] = Math.max(-100, Math.min(500, Math.round(v)));
   if (typeof g.set === 'string') out.set = g.set.slice(0, 24);
   if (typeof g.unique === 'string') out.unique = g.unique.slice(0, 24);
+  // (A shulker box's things: [[key, n, mag, g]], none of them shulker boxes.)
+  if (Array.isArray(g.box)) {
+    out.box = [];
+    for (const e of g.box.slice(0, 40)) {
+      const it = Array.isArray(e) && typeof e[0] === 'string' ? itemOf(e[0]) : null;
+      if (!it || it.box) continue;
+      const n = Math.max(1, Math.min(it.stack, e[1] | 0)), sub = e[3] ? cleanGear(e[3]) : null;
+      out.box.push(sub ? [e[0], n, e[2] | 0, sub] : (e[2] | 0) > 0 ? [e[0], n, e[2] | 0] : [e[0], n]);
+    }
+  }
   return out;
+}
+
+/** A shulker box's slot details (g) for things `slots` (an inventory's): its name says how many. */
+export function boxDetails(key, slots) {
+  const box = slots.filter(Boolean).map(s => (s.g ? [s.key, s.n, s.mag || 0, s.g] : s.mag > 0 ? [s.key, s.n, s.mag] : [s.key, s.n]));
+  const n = box.reduce((t, e) => t + e[1], 0);
+  return { r: 'basic', name: `${itemOf(key)?.name ?? 'Shulker box'} (${n} thing${n === 1 ? '' : 's'})`, stats: {}, ilvl: 1, box };
 }
 
 /** A player's things: HOTBAR + BAG slots, each null or { key, n } (a gun's also has mag: rounds in its magazine; gear, g). */
@@ -290,6 +312,8 @@ export class Inventory {
     if (a === b) { a.move(i, j); return; }
     const A = a.slots[i], Bs = b.slots[j];
     if (!A) return;
+    // (What one won't take, it doesn't: a shulker box in a shulker box.)
+    if (b.refuse?.(A.key) || (Bs && a.refuse?.(Bs.key))) return;
     const it = itemOf(A.key);
     if (Bs && Bs.key === A.key && (it?.stack ?? 1) > 1) {
       const k = Math.min(A.n, it.stack - Bs.n);
@@ -309,7 +333,7 @@ export class Inventory {
    */
   static send(a, i, b, from = 0) {
     const s = a.slots[i];
-    if (!s || a === b) return;
+    if (!s || a === b || b.refuse?.(s.key)) return;
     const it = itemOf(s.key);
     if ((it?.stack ?? 1) > 1) {
       for (const o of b.slots) {

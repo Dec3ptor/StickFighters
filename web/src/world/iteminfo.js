@@ -72,6 +72,12 @@ export function itemDetails(it, n = 1, g = null) {
     const plain = itemDetails(it, n, null);
     return { ...plain, name: g.name, color: itemColor(it, g), lines: [...gearLines(it.key, g), ...plain.lines], worth: `Worth about ${Math.round(valueOf(it.key) * ({ magic: 1.5, rare: 2.2, epic: 3, legendary: 4.5, unique: 6 }[g.r] || 1))} coins` };
   }
+  // (A shulker box with things in it: what's in it.)
+  if (it.box && g?.box?.length) {
+    const plain = itemDetails(it, n, null);
+    const held = g.box.slice(0, 8).map(([k, m, , sg]) => `${m > 1 ? `${m} × ` : ''}${sg?.name || itemOf(k)?.name || k}`);
+    return { ...plain, name: g.name, lines: ['Holds:', ...held, ...(g.box.length > 8 ? [`and ${g.box.length - 8} more`] : []), 'Put it down to open it; picked up, it keeps them'], worth: plain.worth };
+  }
   switch (cat) {
     case 'weapon': {
       const d = WEAPONS[it.weapon];

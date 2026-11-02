@@ -191,6 +191,9 @@ export class Renderer {
     // (The point followed, and the mouse's offset from the middle of the screen, in the map's units:
     // kept with the camera, so a new renderer (Settings) carries on from them.)
     if (c.fx == null) { c.fx = c.x; c.fy = c.y; c.lx = c.ly = 0; }
+    // (Somewhere else altogether, as after a waystone or coming back far away: there at once,
+    // rather than sweeping across everything between, which in a world means drawing it all.)
+    if (Math.abs(fx - c.fx) > 1600 || Math.abs(fy - 20 - c.fy) > 1200) { c.fx = fx; c.fy = fy - 20; }
     const k = catchUp(follow, dt);
     c.fx = lerp(c.fx, fx, k);
     c.fy = lerp(c.fy, fy - 20, k);

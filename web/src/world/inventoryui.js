@@ -29,8 +29,9 @@ export class InventoryScreen {
    * root: the screen's element. drop(i): throw slot i's stack; craft(recipe, times): make it;
    * close(): it was closed.
    */
-  constructor(root, { drop, craft, close }) {
+  constructor(root, { drop, craft, close, stack = null }) {
     this.root = root;
+    this.onStack = stack;
     this.onDrop = drop;
     this.onCraft = craft;
     this.onClose = close;
@@ -68,7 +69,7 @@ export class InventoryScreen {
           <h3 class="inv-label">Bag</h3>
           ${grid('me', HOTBAR, BAG)}
           <div class="inv-chest hidden" data-chest>
-            <h3 class="inv-label">Chest
+            <h3 class="inv-label"><span data-chest-name>Chest</span>
               <button type="button" class="small" data-act="take-all">Take all</button>
               <button type="button" class="small" data-act="put-all">Put all in</button>
             </h3>
@@ -77,6 +78,7 @@ export class InventoryScreen {
           <div class="inv-actions">
             <button type="button" data-act="drop">Drop</button>
             <button type="button" data-act="sort">Sort the bag</button>
+            <button type="button" data-act="stack" title="What's in your bag into the chests near you that have some of it already">Stack into chests</button>
             <span class="buy-foot">Click a stack, then where it goes &middot; right click: split it &middot; shift-click: send it across &middot; a number key: into that hotbar slot &middot; R under the hotbar: what right click uses (or hold <kbd data-hand-key>X</kbd> and press its number)</span>
           </div>
         </div>
@@ -135,6 +137,11 @@ export class InventoryScreen {
       if (this.remote) this.remote({ op: 'sort' }); else this.inv?.sortBag();
       this.refresh(true);
     });
+    this.root.querySelector('[data-act="stack"]').addEventListener('click', () => {
+      this.picked = null;
+      if (this.remote) this.remote({ op: 'stack' }); else this.onStack?.();
+      this.refresh(true);
+    });
     this.root.querySelector('[data-act="take-all"]').addEventListener('click', () => { if (this.remote) this.remote({ op: 'take-all' }); else this.everything(this.chest?.inv, this.inv); });
     this.root.querySelector('[data-act="put-all"]').addEventListener('click', () => { if (this.remote) this.remote({ op: 'put-all' }); else this.everything(this.inv, this.chest?.inv, HOTBAR); });
     this.root.querySelector('[data-only]').addEventListener('change', () => this.refresh(true));
@@ -170,7 +177,8 @@ export class InventoryScreen {
     this.chest = chest;
     this.picked = null;
     this.chestEl.classList.toggle('hidden', !chest);
-    this.root.querySelector('h2').textContent = chest ? 'Your things, and the chest' : 'Your things';
+    this.chestEl.querySelector('[data-chest-name]').textContent = chest?.kind === 'ender' ? 'Ender chest (yours, the same in every one)' : chest?.kind === 'shulker' ? `${chest.name} (picked up, it keeps what's in it)` : 'Chest';
+    this.root.querySelector('h2').textContent = chest ? `Your things, and ${chest.kind === 'ender' ? 'your ender chest' : chest.kind === 'shulker' ? `the ${(chest.name || 'shulker box').toLowerCase()}` : 'the chest'}` : 'Your things';
     for (const k of this.root.querySelectorAll('[data-inv-key]')) k.textContent = keyLabel('inventory');
     for (const k of this.root.querySelectorAll('[data-hand-key]')) k.textContent = keyLabel('hand2');
     this.root.classList.remove('hidden');
