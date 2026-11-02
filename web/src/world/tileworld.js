@@ -45,6 +45,7 @@ export class TileWorld {
     this.genVersion = gen || (towns ? 2 : 1);
     this.gen = new WorldGen(this.seed, { gen: this.genVersion, noTowns });
     this.towns = this.gen.towns;
+    this.noTowns = !!noTowns;
     this.chunks = new Map();
     this.saved = saved instanceof Map ? saved : new Map(Object.entries(saved || {}).map(([k, v]) => [Number(k), v]));
     this.bounds = { left: -HALF_W * TILE, top: 0, right: HALF_W * TILE, bottom: WORLD_H * TILE };
@@ -116,6 +117,57 @@ export class TileWorld {
 
   /** True if chunk (cx, cy) has been made already (without making it). */
   has(cx, cy) { return this.chunks.has(chunkKey(cx, cy)); }
+
+  // ---- Making chunks off the game's thread (in a page: genworker.js) ----------------------------
+
+  /**
+   * A worker to make chunks before they're wanted (url: genworker.js's address), off the game's
+   * thread: making one takes half a millisecond or so, some a few. Where there are no workers
+   * (or it fails), chunks are made here as ever, when they're first wanted.
+   */
+  startWorker(url) {
+    if (this.worker || typeof Worker === 'undefined') return false;
+    try { this.worker = new Worker(url, { type: 'module' }); } catch { this.worker = null; return false; }
+    this.pending = new Set();
+    this.worker.onmessage = e => this.adopt(e.data);
+    this.worker.onerror = () => this.stopWorker();
+    this.worker.postMessage({ init: true, seed: this.seed, gen: this.genVersion, noTowns: this.noTowns });
+    return true;
+  }
+
+  stopWorker() {
+    this.worker?.terminate();
+    this.worker = null;
+    this.pending?.clear();
+  }
+
+  /**
+   * Chunks wanted soon ([cx, cy], nearest first), asked of the worker: those not made yet, asked
+   * for already, or kept (changed by players: made from what's kept instead). False with no worker.
+   */
+  ask(list) {
+    if (!this.worker) return false;
+    const out = [];
+    for (const [cx, cy] of list) {
+      const k = chunkKey(cx, cy);
+      if (cy < 0 || cy >= CHUNKS_Y || this.chunks.has(k) || this.pending.has(k) || this.saved.has(k)) continue;
+      this.pending.add(k);
+      out.push([cx, cy]);
+    }
+    if (out.length) this.worker.postMessage({ want: out });
+    return true;
+  }
+
+  /** A chunk the worker made: taken, unless it's been made here meanwhile (or is kept changed). */
+  adopt(d) {
+    if (!d || !Number.isInteger(d.cx) || !Number.isInteger(d.cy)) return;
+    const k = chunkKey(d.cx, d.cy), n = CHUNK * CHUNK;
+    this.pending?.delete(k);
+    if (this.chunks.has(k) || this.saved.has(k) || d.fg?.length !== n || d.bg?.length !== n || d.shape?.length !== n) return;
+    const c = new Chunk(d.cx, d.cy);
+    c.fg = d.fg; c.bg = d.bg; c.shape = d.shape;
+    this.chunks.set(k, c);
+  }
 
   /** The block at tile (tx, ty): air above the world, bedrock below it. */
   tile(tx, ty) {

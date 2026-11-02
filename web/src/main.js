@@ -621,8 +621,9 @@ function enterMatch(game, me) {
 }
 
 function endMatch(to = state.returnTo) {
-  // A world: kept as it is now (and the soldier's things and where they are).
+  // A world: kept as it is now (and the soldier's things and where they are). Its chunk maker stopped.
   if (state.world) saveWorldNow(true);
+  state.game?.world?.stopWorker?.();
   closeInventory();
   closeTalk();
   closeJournal();

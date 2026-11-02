@@ -891,3 +891,32 @@ test('dev mode: flies through the ground, wipes out any block, builds for nothin
   ctl.script = { move: 0 }; run(game, 120);
   assert.ok(me.body.onGround, 'off again: falls and stands');
 });
+
+test('chunks made off the game\'s thread: asked for once, taken as made (just what the game would make), never over what\'s kept', async () => {
+  const { WorldGen } = await import('../web/src/world/worldgen.js');
+  const world = new TileWorld({ seed: 31337, name: 'Worker', gen: 3 });
+  // (No workers here: a stand-in that keeps what's asked.)
+  const asked = [];
+  world.worker = { postMessage: m => { if (m.want) asked.push(...m.want); }, terminate() {} };
+  world.pending = new Set();
+  world.saved.set(chunkKey(5, 6), { fg: new Uint8Array(1024).fill(K.STONE), bg: new Uint8Array(1024), shape: new Uint8Array(1024) });
+  assert.equal(world.ask([[1, 5], [2, 5], [1, 5], [5, 6], [3, -1]]), true);
+  assert.deepEqual(asked, [[1, 5], [2, 5]], 'each once; none kept, none outside the world');
+  world.ask([[1, 5]]);
+  assert.equal(asked.length, 2, 'not asked again while it\'s coming');
+  // Made elsewhere, from the same seed: taken.
+  const g = new WorldGen(31337, { gen: 3 }), made = cx => { const fg = new Uint8Array(1024), bg = new Uint8Array(1024), shape = new Uint8Array(1024); g.fillChunk(cx, 5, fg, bg, shape); return { cx, cy: 5, fg, bg, shape }; };
+  world.adopt(made(1));
+  assert.ok(world.has(1, 5) && !world.pending.has(chunkKey(1, 5)));
+  const same = new TileWorld({ seed: 31337, name: 'Here', gen: 3 }).chunk(1, 5);
+  assert.deepEqual([...world.chunk(1, 5).fg], [...same.fg], 'just what the game would have made');
+  // Made here first (wanted at once): what comes after is let go.
+  const here = world.chunk(2, 5);
+  world.adopt(made(2));
+  assert.equal(world.chunk(2, 5), here);
+  // Kept (changed by players): never replaced.
+  world.adopt({ cx: 5, cy: 6, fg: new Uint8Array(1024), bg: new Uint8Array(1024), shape: new Uint8Array(1024) });
+  assert.equal(world.tile(5 * 32, 6 * 32), K.STONE);
+  world.stopWorker();
+  assert.equal(world.ask([[9, 5]]), false, 'stopped: made here again');
+});

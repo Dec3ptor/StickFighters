@@ -1282,8 +1282,17 @@ export function worldTick(game) {
       for (let y = Math.max(0, cy - 2); y <= Math.min(WORLD_H / CHUNK - 1, cy + 2); y++) {
         for (let x = cx - 3 + Math.min(0, way); x <= cx + 3 + Math.max(0, way); x++) if (!world.has(x, y)) want.push([x, y, (x - cx) ** 2 + (y - cy) ** 2]);
       }
+      // (With a worker: the sky above too, down to the ground, where the light looks for where daylight stops.)
+      if (world.worker) {
+        for (let x = cx - 3 + Math.min(0, way); x <= cx + 3 + Math.max(0, way); x++) {
+          const ground = Math.floor(world.gen.surfaceAt(x * CHUNK + CHUNK / 2) / CHUNK);
+          for (let y = 0; y < Math.min(cy - 2, ground + 1); y++) if (!world.has(x, y)) want.push([x, y, 50 + (x - cx) ** 2 + (y - cy) ** 2]);
+        }
+      }
     }
     want.sort((a, b) => b[2] - a[2]);
+    // (With a worker: all of them asked of it, nearest first, and none made here.)
+    if (world.ask?.(want.slice().reverse())) want.length = 0;
   }
   const t0 = performance.now();
   for (let i = 0; want.length && i < 2 && (i === 0 || performance.now() - t0 < 1); i++) { const c = want.pop(); world.chunk(c[0], c[1]); }
@@ -1362,6 +1371,9 @@ export const worldMode = {
     setQuestHooks({ drop: (g, key, n, x, y, gear) => dropItem(g, key, n, x, y, 0, -2, 30, gear || null), chestAt });
     world.drops ||= [];
     world.claims ||= new Map();
+    // (In a page: chunks made off the game's thread, before they're wanted: genworker.js. Its address
+    // carries this one's release, as every module's does: tools/stamp.mjs.)
+    if (typeof window !== 'undefined' && world.startWorker) world.startWorker(new URL(`./genworker.js${new URL(import.meta.url).search}`, import.meta.url));
     world.protect = (tx, ty) => !!world.gen?.townProtecting(tx, ty) || (world.claims.size > 0 && !!claimAt(world, tx, ty));
     world.onBreak = (tx, ty, id) => {
       const b = BLOCKS[id], x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
