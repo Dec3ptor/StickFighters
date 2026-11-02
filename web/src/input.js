@@ -44,6 +44,7 @@ export class Input {
     // the time between two game updates still counts.)
     this.mouse = { x: 0, y: 0, left: false, right: false, moved: false, clicked: false, rightClicked: false };
     this.wheel = 0;
+    this.devZoom = 0; // (the wheel in a world's dev mode: steps in, + , or out, -)
     this.enabled = false;
     // The mouse locked to the game (the browser's pointer lock): its cursor is hidden and
     // only the game gets the mouse, which moves the crosshair by how far the mouse moves.
@@ -333,10 +334,14 @@ export class PlayerController {
     // Next weapon, to start with) it switches weapons.
     const using = !!game.rules.useHere?.(game, s);
     inp.use = k.held('use') && !!game.rules.useHere;
-    if (k.took('prev')) { if (second) inp.switchTo = '%-'; else inp.cycle = -1; }
+    // (In a world's dev mode the wheel zooms: main.js takes devZoom.)
+    const dev = !!s.world?.dev;
+    const prev = k.took('prev');
+    if (prev) { if (dev && prev === 'WheelUp') k.devZoom += 1; else if (second) inp.switchTo = '%-'; else inp.cycle = -1; }
     else {
       const next = k.took('next');
-      if (next && !(using && keysFor('use').includes(next))) { if (second) inp.switchTo = '%+'; else inp.cycle = 1; }
+      if (next && dev && next === 'WheelDown') k.devZoom -= 1;
+      else if (next && !(using && keysFor('use').includes(next))) { if (second) inp.switchTo = '%+'; else inp.cycle = 1; }
     }
     k.wheel = 0;
     return inp;

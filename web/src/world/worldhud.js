@@ -10,6 +10,7 @@ import { inHand, rightHand, BRUSH_NAMES, claimAt } from './worldplay.js';
 import { drawIcon } from './worldrender.js';
 import { clock, dayOf, isNight, nightness } from './monsters.js';
 import { keyShort, slotAction, keyLabel } from '../keys.js';
+import { devLines } from './devmode.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 export const HOT_SIZE = 46;
@@ -25,6 +26,24 @@ export function drawWorldHud(r, ctx, game, me, W, H) {
   if (me.world) drawGot(ctx, game, me, H);
   drawWhere(ctx, game, me, W);
   drawMiniMap(ctx, game, me, W, H);
+  if (me.world?.dev) drawDev(ctx, me, r.zoomScale || 1);
+}
+
+/** Dev mode's card (devmode.js): what it's set to, and its keys. */
+function drawDev(ctx, me, zoom) {
+  const lines = devLines(me, zoom);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = `12px ${FONT}`;
+  let w = 0;
+  for (const l of lines) w = Math.max(w, ctx.measureText(l).width);
+  ctx.fillStyle = 'rgba(255,255,255,0.78)';
+  ctx.fillRect(8, 52, w + 20, lines.length * 17 + 10);
+  for (let i = 0; i < lines.length; i++) {
+    ctx.font = i === 0 ? `bold 12px ${FONT}` : `12px ${FONT}`;
+    ctx.fillStyle = i === 0 ? '#333' : '#666';
+    ctx.fillText(lines[i], 18, 66 + i * 17);
+  }
 }
 
 /** The bar for what's in your hand (hud.js's status row, right side): [fill, kind, label], or null. */

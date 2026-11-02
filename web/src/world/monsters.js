@@ -120,6 +120,8 @@ export function monstersTick(game) {
     if (near > GONE || (!night && outside && s.npc.type === 'zombie' && near > 30)) game.removeSoldier(s);
   }
   for (const s of game.soldiers) if (isMerc(s) && !s.alive && s.npc.spawned && game.tick - (s.npc.diedAt ?? game.tick) > 180) game.removeSoldier(s);
+  // (Dev mode can say none come.)
+  if (world.devQuiet) return;
   // Come: near each player, where it's dark (at night outside; underground, always).
   for (const p of players) {
     const ptx = Math.floor(p.x / TILE), pty = Math.floor(p.y / TILE);

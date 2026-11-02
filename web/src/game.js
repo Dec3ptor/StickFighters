@@ -471,7 +471,8 @@ export class Game {
       if (s.destructHold >= SELF_DESTRUCT_TICKS) { this.selfDestruct(s); return; }
     } else s.destructHold = 0;
 
-    s.move(move, this.map);
+    // (A mode can move a soldier its own way: a world's dev mode flies.)
+    if (!this.rules.moveSoldier?.(this, s, input)) s.move(move, this.map);
     const b = s.body;
     if (b.bounced) this.sound('bounce', s.x, s.y);
     if (b.landed > MOTION.landSound) { this.sound('land', s.x, s.y); this.noise(s.x, s.y, 220, s); }

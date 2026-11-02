@@ -42,6 +42,7 @@ export const ACTIONS = [
   { id: 'scores', name: 'Scoreboard (hold)', group: 'Interface', keys: ['Tab'] },
   { id: 'chat', name: 'Chat (online)', group: 'Interface', keys: ['Enter', 'KeyT'] },
   { id: 'mute', name: 'Mute sound', group: 'Interface', keys: ['KeyM'] },
+  { id: 'devMode', name: 'Dev mode (your own worlds): fly, zoom, dig out anything', group: 'Interface', keys: ['Backquote'], press: true },
   { id: 'freeCam', name: 'Spectating: free camera, or back to following', group: 'Interface', keys: ['Space'] },
 ];
 const BY_ID = new Map(ACTIONS.map(a => [a.id, a]));

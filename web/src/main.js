@@ -48,6 +48,7 @@ import { itemOf } from './world/items.js';
 import { InventoryScreen } from './world/inventoryui.js';
 import { WorldHost, WorldClient } from './world/worldnet.js';
 import { seedOf } from './world/noise.js';
+import { setDev, devKey } from './world/devmode.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1968,6 +1969,12 @@ function frame(now) {
     !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open;
   const ax = free ? free.x : lerp(view.prevX ?? view.x, view.x, alpha) + (view.drawDX || 0);
   const ay = free ? free.y : lerp(view.prevY ?? view.y, view.y, alpha) + (view.drawDY || 0);
+  // (A world's dev mode: the wheel, or + and -, zoom a long way out and back in.)
+  if (me.world?.dev) {
+    if (input.devZoom) state.devZoom = Math.max(0.08, Math.min(3, (state.devZoom || 1) * Math.pow(1.2, input.devZoom)));
+    renderer.zoomScale = state.devZoom || 1;
+  } else renderer.zoomScale = 1;
+  input.devZoom = 0;
   renderer.updateCamera(g, ax, ay, state.menuOpen || watchMode ? null : input.mouse, sniping, dt, sights ? aimZoomNow() : 1);
   const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
@@ -2138,6 +2145,15 @@ function confirmKill(now) {
   }
 }
 
+/** A world's dev mode (devmode.js), on or off: in your own worlds (alone, or hosting), not someone else's. */
+function toggleDev() {
+  const g = state.game, me = state.me;
+  if (!g?.world || !me?.world) return;
+  if (state.mode === 'client') { localNote("Dev mode is for your own worlds (played alone, or hosted)"); return; }
+  state.devZoom = 1;
+  setDev(g, me, !me.world.dev);
+}
+
 /**
  * A press of one of the keys main.js reads itself (Settings, Controls: buy, change class, chat,
  * mute), mid-match with no menu open. Returns whether it was one.
@@ -2147,6 +2163,12 @@ function pressMenuKey(key) {
   if (!g || state.menuOpen || state.chatOpen) return false;
   if (isKey('buy', key) && g.rules.buyItem) { openBuy(); return true; }
   if (isKey('inventory', key) && g.world) { openInventory(); return true; }
+  if (isKey('devMode', key) && g.world) { toggleDev(); return true; }
+  if (g.world && state.me?.world?.dev) {
+    if (key === 'Equal' || key === 'NumpadAdd') { input.devZoom += 1; return true; }
+    if (key === 'Minus' || key === 'NumpadSubtract') { input.devZoom -= 1; return true; }
+    if (devKey(g, state.me, key)) return true;
+  }
   if (isKey('changeClass', key) && g.classesOn && !g.over) {
     if (!state.me.alive) openPicker();
     else localNote(`Change class while waiting to respawn (${keyLabel('changeClass')}), or from the menu (Esc)`);

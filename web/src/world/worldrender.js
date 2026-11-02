@@ -819,7 +819,9 @@ export class WorldView {
       if (!p || p.stale || p.res !== res) {
         // (Over this frame's budget: what was there before, if anything, until it's drawn again;
         // where there's nothing yet, a while longer.)
-        const over = painted > 0 && performance.now() - start > (p ? PAINT_MS : PAINT_MS * 3);
+        // (Zoomed far out, as dev mode can be, there's much more to draw: a bigger share of each frame for it.)
+        const budget = (r.zoomScale ?? 1) < 0.5 ? PAINT_MS * 3 : PAINT_MS;
+        const over = painted > 0 && performance.now() - start > (p ? budget : budget * 3);
         if (over && !p) continue;
         if (!over) {
           p = this.paint(world, Math.floor(key / 64) - 1048576, key % 64, res, p);

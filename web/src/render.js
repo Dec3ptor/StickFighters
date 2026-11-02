@@ -91,6 +91,8 @@ export class Renderer {
     this.canvas = canvas;
     this.ctx = ctx;
     this.cam = { x: 0, y: 0, zoom: 1 };
+    // (A world's dev mode zooms a long way out, and in: main.js sets it.)
+    this.zoomScale = 1;
     this.shake = 0;
     this.resize();
     this.onResize = () => this.resize();
@@ -182,7 +184,7 @@ export class Renderer {
     const f = dt / (1000 / 60);
     const ease = k => 1 - Math.pow(1 - k, f);
     const c = this.cam;
-    const zoomTarget = sniping ? 0.72 : sights;
+    const zoomTarget = (sniping ? 0.72 : sights) * this.zoomScale;
     c.zoom = lerp(c.zoom, zoomTarget, ease(0.12));
     // (Settled: exactly there, so the map's tiles can be made for it.)
     if (Math.abs(c.zoom - zoomTarget) < 0.001) c.zoom = zoomTarget;
@@ -352,7 +354,8 @@ export class Renderer {
 
   /** Over a world, once everything in it is drawn: the dark underground, and the block the crosshair's on. */
   drawWorldOver(game, viewer) {
-    this.worldView?.drawLight(this, game, 0.72);
+    // (Dev mode can light everything.)
+    if (!viewer?.world?.dev?.lights) this.worldView?.drawLight(this, game, 0.72);
     drawTarget(this.ctx, game, viewer, 'classic');
   }
 

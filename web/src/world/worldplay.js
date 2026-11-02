@@ -13,6 +13,7 @@ import { WEAPONS } from '../weapons.js';
 import { monstersTick, armNpc, foes, isMonster, monsterLoot, hireMerc, mercsOf, MERC } from './monsters.js';
 import { setDoor, pushDoor, doorsTick, soldierIn } from './doors.js';
 import { damage } from '../combat.js';
+import { devFly, devInput } from './devmode.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -745,6 +746,11 @@ export function worldInput(game, s, inp) {
   inp = { ...inp, switchTo: null, cycle: 0 };
   hold(s);
   if (w.cool > 0) w.cool -= 1;
+  // (Dev mode, devmode.js: wipes out and builds its own way.)
+  if (w.dev) {
+    const isBlocks = it => it && (it.kind === 'block' || it.kind === 'wall'), l = inHand(s).item, r = rightHand(s).item;
+    return devInput(game, s, inp, isBlocks(l) ? l : isBlocks(r) ? r : null);
+  }
   w.target = targetOf(s, inp);
   // (Hits on a block stop counting a while after you stop hitting it.)
   if (w.mine && game.tick - w.mine.at > 150) w.mine = null;
@@ -953,7 +959,10 @@ export const worldMode = {
     hold(s);
   },
 
-  damage(game, amount) { return amount; },
+  /** (Nothing hurts a player in dev mode.) */
+  damage(game, amount, attacker, target) { return target?.world?.dev ? 0 : amount; },
+  /** Dev mode flies (devmode.js); else the game moves them. */
+  moveSoldier(game, s, inp) { return devFly(game, s, inp); },
   /** Monsters don't hurt monsters; nor mercenaries the one who hired them; players each other only with PvP on. */
   canHurt(game, attacker, target) { return foes(game.world, attacker, target); },
 

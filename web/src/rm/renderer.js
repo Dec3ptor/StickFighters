@@ -380,7 +380,8 @@ export class RemasteredRenderer extends Renderer {
 
     if (world) this.drawWorldScenery(ctx, dt);
     else look.backdrop.draw(ctx, this, look.ground, dt, this.quality === 'high' ? 0 : theme.vignette);
-    if (world) drawNight(ctx, this, nightness(world.time || 0));
+    const allLit = !!viewer?.world?.dev?.lights;
+    if (world && !allLit) drawNight(ctx, this, nightness(world.time || 0));
     ctx.setTransform(s, 0, 0, s, tx, ty);
     this.lights.clear();
     // Fog of war: what's out of sight is worked out now, and darkened after the world is drawn.
@@ -406,7 +407,7 @@ export class RemasteredRenderer extends Renderer {
     this.drawBuildGhost(game, viewer);
 
     // A world: dark underground (the glows and flashes go over it).
-    if (world) this.worldView.drawLight(this, game, 0.86);
+    if (world && !allLit) this.worldView.drawLight(this, game, 0.86);
     if (this.quality !== 'low') this.lights.draw(ctx, this.view);
     if (theme.dark && this.quality === 'high') this.lights.drawDarkness(this, theme.dark);
     else if (theme.dark) {

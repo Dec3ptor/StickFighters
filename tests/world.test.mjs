@@ -843,3 +843,36 @@ test('magma burns whoever touches it, and sets them alight', () => {
   run(game, 150);
   assert.ok(z.health < z.maxHealth, `the zombie burns (${z.health})`);
 });
+
+test('dev mode: flies through the ground, wipes out any block, builds for nothing, takes no harm, goes places', async () => {
+  const { setDev, devKey } = await import('../web/src/world/devmode.js');
+  const { damage } = await import('../web/src/combat.js');
+  const { world, game, me, ctl } = play();
+  untilAlive(game, me);
+  run(game, 100);
+  setDev(game, me, true);
+  const y0 = me.y;
+  ctl.script = { crouch: true }; run(game, 60);
+  assert.ok(me.y > y0 + 10 * TILE, `flew down through the ground (${Math.round((me.y - y0) / TILE)} blocks)`);
+  ctl.script = { move: 1, sprint: true }; run(game, 30);
+  // Bedrock goes too, a brush at a time.
+  const tx = Math.floor(me.x / TILE) + 3, ty = Math.floor(me.y / TILE);
+  world.setTile(tx, ty, K.BEDROCK);
+  const aim = { aim: Math.atan2((ty + 0.5) * TILE - me.shoulderY, (tx + 0.5) * TILE - me.shoulderX), aimDist: Math.hypot((ty + 0.5) * TILE - me.shoulderY, (tx + 0.5) * TILE - me.shoulderX) };
+  ctl.script = { fire: true, ...aim }; run(game, 2);
+  assert.equal(world.tile(tx, ty), K.AIR, 'bedrock wiped out');
+  const planks = me.world.inv.count('planks');
+  ctl.script = { switchTo: `#${slotOf(me, 'planks')}` }; run(game, 1);
+  ctl.script = { alt: true, ...aim }; run(game, 2);
+  assert.equal(world.tile(tx, ty), id('planks'), 'built');
+  assert.equal(me.world.inv.count('planks'), planks, 'for nothing');
+  damage(game, me, 1000, null, 'M4', {});
+  assert.ok(me.alive, 'nothing hurts');
+  devKey(game, me, 'KeyH');
+  assert.ok(Math.abs(me.x - world.spawns[0].x) < 1, 'back at the start');
+  devKey(game, me, 'KeyV');
+  assert.equal(world.devQuiet, true, 'monsters off');
+  setDev(game, me, false);
+  ctl.script = { move: 0 }; run(game, 120);
+  assert.ok(me.body.onGround, 'off again: falls and stands');
+});
