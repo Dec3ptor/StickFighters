@@ -21,6 +21,8 @@ import { questEvent, questsTick, questsToSave, questsFromSave, setQuestHooks } f
 import { valueOf } from './trade.js';
 import { playerAt, shareKill, partyView } from './social.js';
 import { raidsTick, raidKill, raidersLeft } from './raids.js';
+import { SLOTS, slotKind, gearStats, armorCut, rollGear, dropSeed, dropLevel, RARITY } from './gear.js';
+import { cleanGear } from './items.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -126,7 +128,7 @@ function spillChest(game, tx, ty) {
   game.world.chests.delete(k);
   for (const s of inv.slots) {
     if (!s) continue;
-    dropItem(game, s.key, s.n, tx * TILE + 8, ty * TILE + 4, (game.rng() - 0.5) * 3, -2);
+    dropItem(game, s.key, s.n, tx * TILE + 8, ty * TILE + 4, (game.rng() - 0.5) * 3, -2, 0, s.g || null);
   }
 }
 
@@ -137,6 +139,8 @@ export function worldState(inv = Inventory.starting()) {
   return {
     inv, slot: 0, slot2: -1, brush: 'single', target: null, mine: null, cool: 0, drag: null, ammo: null,
     prevFire: false, prevAlt: false, altDone: false, got: [], warned: null,
+    // What's worn (gear.js): each slot null or { key, n: 1, g }.
+    gear: Object.fromEntries(SLOTS.map(k => [k, null])), gearV: 0,
   };
 }
 
@@ -147,8 +151,9 @@ export function playerToSave(s, game = null) {
     inv: w.inv.toJSON(), slot: w.slot, slot2: w.slot2, brush: w.brush, home: w.home || null,
     x: s.alive ? Math.round(s.x) : null, y: s.alive ? Math.round(s.y) : null,
     mercs: game ? mercsOf(game, s).map(m => ({ gun: m.npc.gun })) : [],
-    // (Their level and perks, and their quests: progress.js, quests.js.)
+    // (Their level and perks, and their quests: progress.js, quests.js. What they wear: gear.js.)
     prog: progToSave(s), quests: questsToSave(s),
+    gear: Object.fromEntries(SLOTS.map(k => [k, w.gear?.[k] ? [w.gear[k].key, w.gear[k].g] : null])),
   };
 }
 
@@ -166,6 +171,10 @@ export function worldFromSave(p) {
   w.mercs = Array.isArray(p.mercs) ? p.mercs.filter(m => WEAPONS[m?.gun]).slice(0, MERC.most) : [];
   progFromSave(w, p.prog);
   questsFromSave(w, p.quests);
+  for (const k of SLOTS) {
+    const it = p.gear?.[k];
+    if (Array.isArray(it) && itemOf(it[0])?.kind === 'gear' && itemOf(it[0]).wear === slotKind(k)) w.gear[k] = { key: it[0], n: 1, g: cleanGear(it[1]) || { r: 'normal', name: itemOf(it[0]).name, stats: {}, ilvl: 1 } };
+  }
   return w;
 }
 
@@ -288,16 +297,19 @@ export function hold(s) {
 
 // ---- Things on the ground --------------------------------------------------------------------------
 
-/** Put n of `key` on the ground at (x, y) (thrown with speed vx, vy; delay: updates before it can be picked up). */
-export function dropItem(game, key, n, x, y, vx = 0, vy = -1.5, delay = 0) {
+/**
+ * Put n of `key` on the ground at (x, y) (thrown with speed vx, vy; delay: updates before it can be
+ * picked up; g: a piece of gear's details, gear.js: each piece lies on its own).
+ */
+export function dropItem(game, key, n, x, y, vx = 0, vy = -1.5, delay = 0, g = null) {
   const world = game.world;
   if (!itemOf(key) || n <= 0) return null;
   const drops = world.drops ||= [];
   // (Next to the same thing lying still: one pile.)
-  for (const d of drops) {
-    if (d.key === key && !delay && Math.abs(d.x - x) < 12 && Math.abs(d.y - y) < 12 && d.rest) { d.n += n; return d; }
+  if (!g) for (const d of drops) {
+    if (d.key === key && !d.g && !delay && Math.abs(d.x - x) < 12 && Math.abs(d.y - y) < 12 && d.rest) { d.n += n; return d; }
   }
-  const d = { key, n, x, y, px: x, py: y, vx: vx * MOTION.timeScale, vy: vy * MOTION.timeScale, age: 0, delay, rest: false };
+  const d = { key, n, x, y, px: x, py: y, vx: vx * MOTION.timeScale, vy: vy * MOTION.timeScale, age: 0, delay, rest: false, g };
   drops.push(d);
   if (drops.length > MAX_DROPS) drops.splice(0, drops.length - MAX_DROPS);
   return d;
@@ -321,16 +333,17 @@ function updateDrops(game) {
       for (const s of game.soldiers) {
         if (!s.alive || !s.world) continue;
         const dx = s.x - d.x, dy = s.y - 8 - d.y, dd = dx * dx + dy * dy;
-        if (dd < best && s.world.inv.room(d.key) > 0) { best = dd; to = s; }
+        if (dd < best && (d.g ? s.world.inv.slots.includes(null) : s.world.inv.room(d.key) > 0)) { best = dd; to = s; }
       }
     }
     if (to) {
       const dx = to.x - d.x, dy = to.y - 8 - d.y, dist = Math.sqrt(dx * dx + dy * dy) || 1;
       if (dist < 12) {
-        const left = to.world.inv.add(d.key, d.n);
+        // (A piece of gear: into a slot of its own.)
+        const left = d.g ? (to.world.inv.addGear(d.key, d.g) ? 0 : d.n) : to.world.inv.add(d.key, d.n);
         const took = d.n - left;
         if (took > 0) {
-          gotItem(game, to, d.key, took);
+          gotItem(game, to, d.key, took, d.g);
           d.n = left;
         }
         if (d.n <= 0) continue;
@@ -366,12 +379,12 @@ function updateDrops(game) {
   drops.length = n;
 }
 
-/** Something picked up: a sound for its owner, and a line on their screen (the HUD's list). */
-function gotItem(game, s, key, n) {
+/** Something picked up: a sound for its owner, and a line on their screen (the HUD's list; gear: its name and rarity). */
+function gotItem(game, s, key, n, g = null) {
   game.sound('pickup', s.x, s.y, s.id);
   const got = s.world.got, last = got[got.length - 1];
-  if (last && last.key === key && game.tick - last.tick < 90) { last.n += n; last.tick = game.tick; }
-  else got.push({ key, n, tick: game.tick });
+  if (!g && last && !last.r && last.key === key && game.tick - last.tick < 90) { last.n += n; last.tick = game.tick; }
+  else got.push(g ? { key, n, tick: game.tick, r: g.r, name: g.name } : { key, n, tick: game.tick });
   if (got.length > 8) got.shift();
 }
 
@@ -553,6 +566,12 @@ function openCrate(game, x, y) {
     for (const l of LOOT) { r -= l[3]; if (r <= 0) { pick = l; break; } }
     const [key, lo, hi] = pick;
     dropItem(game, key, lo + Math.floor(game.rng() * (hi - lo + 1)), x, y - 4, (game.rng() - 0.5) * 4, -2 - game.rng() * 2);
+  }
+  // (Now and then a piece of gear, as good as how deep it was: gear.js.)
+  if (game.rng() < 0.35) {
+    const depth = Math.max(0, Math.floor(y / TILE) - game.world.gen.surfaceAt(Math.floor(x / TILE)));
+    const piece = rollGear(dropSeed(game.world.gen.seed + game.tick, Math.floor(x), Math.floor(y)), dropLevel(depth, 'skeleton', 1), 0);
+    dropItem(game, piece.key, 1, x, y - 4, (game.rng() - 0.5) * 4, -2.5, 0, piece.g);
   }
   game.sound('respawnItem', x, y);
 }
@@ -792,7 +811,7 @@ export function worldInput(game, s, inp) {
     const i = w.slot, slot = w.inv.slots[i];
     if (slot) {
       const taken = w.inv.take(i);
-      dropItem(game, taken.key, taken.n, s.x + s.facing * 8, s.y - 14, s.facing * 3, -2, 60);
+      dropItem(game, taken.key, taken.n, s.x + s.facing * 8, s.y - 14, s.facing * 3, -2, 60, taken.g || null);
       hold(s);
     }
   }
@@ -879,6 +898,36 @@ export function crafted(game, s, r, made) {
   if (xp > 0) giveXp(game, s, xp, `made ${itemOf(r.key)?.name ?? r.key}`);
   countStat(s, 'crafted', n);
   questEvent(game, s, { type: 'craft', key: r.key, n });
+}
+
+/**
+ * Player s puts on the piece of gear in slot i of their things (gear.js): where it's worn, swapped
+ * with what was there (a ring: the empty ring finger, else the first). Returns what to tell them.
+ */
+export function equip(game, s, i) {
+  const w = s.world, sl = w?.inv.slots[i], it = sl && itemOf(sl.key);
+  if (!it || it.kind !== 'gear') return null;
+  const where = it.wear === 'ring' ? (!w.gear.ring1 ? 'ring1' : !w.gear.ring2 ? 'ring2' : 'ring1') : it.wear;
+  const was = w.gear[where];
+  w.gear[where] = { key: sl.key, n: 1, g: sl.g || { r: 'normal', name: it.name, stats: {}, ilvl: 1 } };
+  w.inv.slots[i] = was;
+  w.inv.version++;
+  w.gearV++;
+  applyProgress(s);
+  game.sound('click', s.x, s.y, s.id);
+  return `Wearing ${w.gear[where].g.name}`;
+}
+
+/** Player s takes off what's worn in `slot` (into their things, if there's room). */
+export function unequip(game, s, slot) {
+  const w = s.world, it = w?.gear?.[slot];
+  if (!it) return null;
+  if (!w.inv.addGear(it.key, it.g)) return 'No room in your things';
+  w.gear[slot] = null;
+  w.gearV++;
+  applyProgress(s);
+  game.sound('click', s.x, s.y, s.id);
+  return `Took off ${it.g.name}`;
 }
 
 /** Eat (or drink) one of `item` (food: items.js): it heals. Not at full health. */
@@ -980,6 +1029,23 @@ function magmaBurns(game) {
 
 // ---- The mode -------------------------------------------------------------------------------------
 
+// (How likely each monster is to drop a piece of gear: gear.js. A named one always does, and better.)
+const GEAR_CHANCE = { zombie: 0.025, skeleton: 0.05, brute: 0.2 };
+
+/** Gear dropped by a monster killed (by: the player who killed it, their magic find). */
+function dropGear(game, victim, by, x, y) {
+  const champ = victim.npc.champion, chance = champ ? 1 : GEAR_CHANCE[victim.npc.type] || 0;
+  if (game.rng() >= chance) return;
+  const world = game.world, depth = Math.floor(victim.y / TILE) - world.gen.surfaceAt(Math.floor(victim.x / TILE));
+  const mf = by ? gearStats(by).mf || 0 : 0, level = by?.world?.prog?.level || 1;
+  const ilvl = dropLevel(depth, victim.npc.type, level) + (champ ? 4 : 0);
+  const seed = dropSeed(world.gen.seed + game.tick, victim.id, Math.floor(victim.x));
+  // (Named monsters: rare at least. The story's: something special.)
+  const special = victim.name === 'The Ember King' ? ['unique', 'ember_crown'] : victim.name === 'The Warden' ? ['unique', 'warden'] : null;
+  const piece = special ? rollGear(seed, ilvl, mf, special[0], special[1]) : rollGear(seed, ilvl, mf + (champ ? 150 : 0), champ && game.rng() < 0.5 ? 'rare' : null);
+  dropItem(game, piece.key, 1, x, y, (game.rng() - 0.5) * 3, -2.5, 0, piece.g);
+}
+
 /** The rules a world plays by (modes.js lists it; it isn't in the menus' list of modes). */
 export const worldMode = {
   name: 'World',
@@ -1038,8 +1104,15 @@ export const worldMode = {
   /** (Nothing hurts a player in dev mode, nor any of the townsfolk but guards: townsfolk.js.) */
   damage(game, amount, attacker, target, weapon) {
     if (target?.world?.dev || (isFolk(target) && !target.npc.guard)) return 0;
-    // (Harder hitting with the Marksman and Brawler perks: progress.js.)
-    return attacker?.world ? amount * damageScale(attacker, weapon) : amount;
+    // (Harder hitting with the Marksman and Brawler perks and gear: progress.js. Less taken with
+    // armour, and fire resistance against magma and burning: gear.js.)
+    let dmg = attacker?.world ? amount * damageScale(attacker, weapon) : amount;
+    if (target?.world?.gear) {
+      const st = gearStats(target);
+      if (st.armor) dmg *= 1 - armorCut(st.armor);
+      if (st.fire && (weapon === 'Magma' || !attacker && target.burnTicks > 0)) dmg *= 1 - Math.min(90, st.fire) / 100;
+    }
+    return dmg;
   },
   /** Dev mode flies (devmode.js); else the game moves them. */
   moveSoldier(game, s, inp) { return devFly(game, s, inp); },
@@ -1054,6 +1127,7 @@ export const worldMode = {
     const by = killer?.world ? killer : killer?.npc?.kind === 'merc' ? game.soldiers.find(o => o.id === killer.npc.owner && o.world) : null;
     if (isMonster(victim)) {
       monsterLoot(game, victim, drop, by ? lootScale(by) : 1);
+      dropGear(game, victim, by, x, y);
       if (by) {
         const champion = victim.npc.champion, xp = champion ? KILL_XP.champion : KILL_XP[victim.npc.type] || 10;
         giveXp(game, by, xp, victim.name);

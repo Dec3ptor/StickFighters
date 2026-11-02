@@ -16,7 +16,9 @@ import { TileWorld } from './tileworld.js';
 import { Inventory, HOTBAR, itemOf } from './items.js';
 import { packBytes, unpackBytes } from './worldsave.js';
 import { RECIPES, craft, stationsNear } from './crafting.js';
-import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, claimsToSave, claimsFromSave, REACH, setRightHand, crafted } from './worldplay.js';
+import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, claimsToSave, claimsFromSave, REACH, setRightHand, crafted, equip, unequip } from './worldplay.js';
+import { SLOTS } from './gear.js';
+import { cleanGear } from './items.js';
 import { mercsOf } from './monsters.js';
 import { talkView, talkDo } from './talk.js';
 import { progOf, spendPoint, applyProgress } from './progress.js';
@@ -131,7 +133,7 @@ export class WorldHost {
     const m = w.mine, last = w.got[w.got.length - 1];
     // (Their level and quests too: progress.js, quests.js. And who has work for them.)
     const pr = progOf(s), qs = questsOf(s), xg = w.xpGot?.at(-1);
-    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}`;
+    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}|${w.gearV || 0}`;
     if (key !== ws.inv) {
       ws.inv = key;
       p.link.send({
@@ -141,6 +143,8 @@ export class WorldHost {
         prog: { xp: pr.xp, level: pr.level, points: pr.points, perks: pr.perks, stats: pr.stats, deepest: pr.seen.deepest, towns: pr.seen.towns.length },
         quests: { list: qs.list, track: qs.track, done: qs.done.size }, marks: w.marks || [],
         xpGot: (w.xpGot || []).map(x => [x.n, x.why, x.tick]), levelUp: w.levelUp || null, raid: w.raidInfo || null,
+        gear: Object.fromEntries(SLOTS.map(k => [k, w.gear?.[k] ? [w.gear[k].key, w.gear[k].g] : null])),
+        got2: w.got.map(g => [g.r || null, g.name || null]),
       }, true);
     }
     // Playing together (social.js): another player right clicked on (what you can do with them),
@@ -204,7 +208,7 @@ export class WorldHost {
       case 'drop': {
         const a = at(['me', d.i]);
         const t = a && w.inv.take(a[1]);
-        if (t) dropItem(g, t.key, t.n, s.x + s.facing * 8, s.y - 14, s.facing * 3, -2, 60);
+        if (t) dropItem(g, t.key, t.n, s.x + s.facing * 8, s.y - 14, s.facing * 3, -2, 60, t.g || null);
         break;
       }
       case 'craft': {
@@ -233,6 +237,9 @@ export class WorldHost {
       case 'taccept': { const text = acceptTrade(g, s); if (text && text !== 'Traded') g.notify(s, text); break; }
       case 'tcancel': cancelTrade(g, s); break;
       case 'qshare': if (typeof d.id === 'string') { const text = shareQuest(g, s, d.id); if (text) g.notify(s, text); } break;
+      // (Gear: worn, or taken off. gear.js.)
+      case 'equip': if (Number.isInteger(d.i)) equip(g, s, d.i); break;
+      case 'unequip': if (SLOTS.includes(d.slot)) { const text = unequip(g, s, d.slot); if (text && !text.startsWith('Took')) g.notify(s, text); } break;
       // (The inventory screen's right hand buttons: what right click uses.)
       case 'hand': {
         const i = d.slot;
@@ -319,7 +326,7 @@ export class WorldClient {
         const dd = (o.x - d.x) ** 2 + (o.y - d.y) ** 2;
         if (dd < best) { best = dd; from = o; }
       }
-      next.push({ key: d.key, n: d.n, x: d.x, y: d.y, px: from ? from.x : d.x, py: from ? from.y : d.y, rest: d.rest });
+      next.push({ key: d.key, n: d.n, x: d.x, y: d.y, px: from ? from.x : d.x, py: from ? from.y : d.y, rest: d.rest, r: d.r || null });
     }
     world.drops = next;
   }
@@ -340,7 +347,13 @@ export class WorldClient {
         w.home = d.home || null;
         w.mine = d.mine && Number.isFinite(d.mine.dmg) ? d.mine : null;
         if (d.mine) w.mine.at = game.tick;
-        w.got = (Array.isArray(d.got) ? d.got : []).filter(g => Array.isArray(g) && itemOf(g[0])).map(([key, n, tick]) => ({ key, n: n | 0, tick: Number(tick) || 0 }));
+        w.got = (Array.isArray(d.got) ? d.got : []).map((g, i) => [g, d.got2?.[i]]).filter(([g]) => Array.isArray(g) && itemOf(g[0])).map(([[key, n, tick], extra]) => ({ key, n: n | 0, tick: Number(tick) || 0, ...(extra?.[0] ? { r: String(extra[0]), name: String(extra[1] || '') } : {}) }));
+        // What we wear (gear.js), as the host has it.
+        if (d.gear && typeof d.gear === 'object') {
+          w.gear = Object.fromEntries(SLOTS.map(k => { const it = d.gear[k]; return [k, Array.isArray(it) && itemOf(it[0])?.kind === 'gear' ? { key: it[0], n: 1, g: cleanGear(it[1]) } : null]; }));
+          w.gearV = (w.gearV || 0) + 1;
+          applyProgress(me);
+        }
         // Our level and quests, as the host has them (and our health by them).
         if (d.prog && typeof d.prog === 'object') {
           const p = d.prog;

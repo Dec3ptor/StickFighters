@@ -8,7 +8,8 @@ import { itemOf } from './items.js';
 import { WEAPONS } from '../weapons.js';
 import { drawWeapon } from '../sprites.js';
 import { drawIcon } from './worldrender.js';
-import { offerFor, buysAny } from './trade.js';
+import { offerForSlot, buysAny } from './trade.js';
+import { itemColor } from './iteminfo.js';
 import { sellScale } from './progress.js';
 import { rewardText } from './questui.js';
 import { drawSkinHead, TUNICS } from '../skins.js';
@@ -164,14 +165,14 @@ export class TalkScreen {
     const haggle = sellScale(this.me);
     inv.slots.forEach((s, i) => {
       if (!s || !buysAny(shop.role, s.key)) return;
-      const one = offerFor(shop.role, s.key, 1, haggle), all = offerFor(shop.role, s.key, s.n, haggle);
+      const one = offerForSlot(shop.role, s, 1, haggle), all = offerForSlot(shop.role, s, s.n, haggle);
       rows.push({ i, s, one, all });
     });
     this.sellEl.innerHTML = rows.length ? rows.map(r => {
       const it = itemOf(r.s.key);
       return `<button type="button" class="talk-row" data-sell="${r.i}" ${r.all > 0 ? '' : 'disabled'} title="Click: sell one · shift-click: sell all ${r.s.n}">
         <canvas width="40" height="28" aria-hidden="true"></canvas>
-        <span class="talk-item">${esc(it.name)}${r.s.n > 1 ? ` <small>× ${r.s.n}</small>` : ''}</span>
+        <span class="talk-item"${r.s.g ? ` style="color:${itemColor(it, r.s.g)}"` : ''}>${esc(r.s.g?.name || it.name)}${r.s.n > 1 ? ` <small>× ${r.s.n}</small>` : ''}</span>
         <span class="talk-price">${r.one > 0 ? r.one : '–'}</span>
         <span class="talk-left">${r.s.n > 1 ? `all: ${r.all}` : ''}</span>
       </button>`;

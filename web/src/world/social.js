@@ -179,7 +179,7 @@ export function acceptTrade(game, s) {
   // (Each side's things taken out first, checked, then each given the other's; anything off, nothing happens.)
   const take = (who, o) => {
     const inv = who.world.inv, out = [];
-    for (const [i, n] of o.slots) { const sl = inv.slots[i]; if (!sl || sl.n < n) return null; out.push({ key: sl.key, n, mag: sl.mag }); }
+    for (const [i, n] of o.slots) { const sl = inv.slots[i]; if (!sl || sl.n < n) return null; out.push({ key: sl.key, n, mag: sl.mag, g: sl.g || null }); }
     if (inv.count('coins') < o.coins) return null;
     return out;
   };
@@ -188,16 +188,16 @@ export function acceptTrade(game, s) {
   // Room: each side's things, after giving theirs away.
   const after = (who, give, get, coinsOut, coinsIn) => {
     const inv = Inventory.from(who.world.inv.toJSON(), who.world.inv.slots.length);
-    for (const g of give) inv.remove(g.key, g.n);
+    for (const g of give) { if (g.g) { const j = inv.slots.findIndex(x => x?.key === g.key && x.g); if (j >= 0) inv.slots[j] = null; } else inv.remove(g.key, g.n); }
     inv.remove('coins', coinsOut);
-    for (const g of get) if (inv.add(g.key, g.n)) return false;
+    for (const g of get) if (g.g ? !inv.addGear(g.key, g.g) : inv.add(g.key, g.n)) return false;
     return !inv.add('coins', coinsIn);
   };
   if (!after(a, ga, gb, oa.coins, ob.coins) || !after(b, gb, ga, ob.coins, oa.coins)) { for (const o of Object.values(t.offers)) o.ok = false; t.v++; return 'One of you hasn\'t the room'; }
   const swap = (from, to, give, coins) => {
     for (const [i, n] of (from === a ? oa : ob).slots) from.world.inv.take(i, n);
     from.world.inv.remove('coins', coins);
-    for (const g of give) to.world.inv.add(g.key, g.n);
+    for (const g of give) { if (g.g) to.world.inv.addGear(g.key, g.g); else to.world.inv.add(g.key, g.n); }
     to.world.inv.add('coins', coins);
   };
   swap(a, b, ga, oa.coins);

@@ -5,11 +5,12 @@
 // Items go by key (text), which saved worlds keep: 'dirt', 'pickaxe', 'M4', 'bullets'...
 //   kind   'block' (places a block), 'wall' (a wall behind), 'tool' (pick, axe, hammer),
 //          'weapon' (one of WEAPONS), 'ammo', 'material', 'food' (eaten: heals), 'contract',
-//          'quest' (carried for a quest: quests.js)
+//          'quest' (carried for a quest: quests.js), 'gear' (worn: gear.js; each piece its own, slot.g)
 //   stack  how many fit in a slot
 
 import { BLOCKS, WALLS, BLOCK_BY_KEY } from './blocks.js';
 import { WEAPONS } from '../weapons.js';
+import { BASES } from './gear.js';
 
 export const HOTBAR = 10;
 export const BAG = 30;
@@ -55,6 +56,9 @@ for (const [key, name, color] of [
   ['map_scrap', 'Torn map', '#e8dcc0'], ['tools', 'Bag of tools', '#8a8f96'], ['reply', 'Folded reply', '#e6dcc0'],
   ['seal', 'Ancient seal', '#c46a2a'], ['ember_key', 'Ember key', '#ff7a2a'],
 ]) item(key, name, 'quest', { stack: 20, color });
+// Gear (gear.js): worn on the head, body or feet, rings and amulets. Each piece is one of a kind
+// (its rarity, name and affixes kept in its slot: slot.g), so they don't stack.
+for (const [key, b] of Object.entries(BASES)) item(key, b.name, 'gear', { stack: 1, wear: b.kind, color: b.color });
 // Coins: what monsters drop (and half of what you carry, when you die): mercenaries are hired with them.
 item('coins', 'Coins', 'material', { color: '#f2c230' });
 // A mercenary's contract: used (like a weapon), it hires one, who follows you and shoots monsters.
@@ -112,7 +116,17 @@ export const STARTING_KIT = [
   ['workbench', 1],
 ];
 
-/** A player's things: HOTBAR + BAG slots, each null or { key, n } (a gun's also has mag: rounds in its magazine). */
+/** A piece of gear's details from a save or the network: only what there should be. */
+export function cleanGear(g) {
+  if (!g || typeof g !== 'object') return null;
+  const out = { r: ['normal', 'magic', 'rare', 'set', 'unique'].includes(g.r) ? g.r : 'normal', name: String(g.name || '').slice(0, 48), stats: {}, ilvl: Math.max(1, Math.min(60, g.ilvl | 0 || 1)) };
+  for (const [k, v] of Object.entries(g.stats || {})) if (/^[a-z]{2,6}$/.test(k) && Number.isFinite(v)) out.stats[k] = Math.max(-100, Math.min(500, Math.round(v)));
+  if (typeof g.set === 'string') out.set = g.set.slice(0, 24);
+  if (typeof g.unique === 'string') out.unique = g.unique.slice(0, 24);
+  return out;
+}
+
+/** A player's things: HOTBAR + BAG slots, each null or { key, n } (a gun's also has mag: rounds in its magazine; gear, g). */
 export class Inventory {
   constructor(size = HOTBAR + BAG) {
     this.slots = new Array(size).fill(null);
@@ -168,7 +182,7 @@ export class Inventory {
     return took;
   }
 
-  /** Take n out of slot i. Returns { key, n } taken, or null. */
+  /** Take n out of slot i. Returns { key, n } taken (and g, a piece of gear's), or null. */
   take(i, n = Infinity) {
     const s = this.slots[i];
     if (!s) return null;
@@ -176,7 +190,16 @@ export class Inventory {
     s.n -= k;
     if (s.n <= 0) this.slots[i] = null;
     this.version++;
-    return { key: s.key, n: k };
+    return s.g ? { key: s.key, n: k, g: s.g } : { key: s.key, n: k };
+  }
+
+  /** Put a piece of gear in (key: its base, g: its rarity, name and affixes: gear.js), in the first empty slot. Returns false if there's no room. */
+  addGear(key, g) {
+    const i = this.slots.indexOf(null);
+    if (i < 0) return false;
+    this.slots[i] = { key, n: 1, g };
+    this.version++;
+    return true;
   }
 
   /** Swap slots a and b (or put a's stack onto b's, if they're the same thing). */
@@ -228,16 +251,16 @@ export class Inventory {
 
   /** The bag put in order (tools and guns first, then blocks...), stacks of the same thing joined. */
   sortBag() {
-    const order = { quest: 0, tool: 1, weapon: 2, ammo: 3, food: 4, block: 5, wall: 6, material: 7 };
+    const order = { quest: 0, gear: 1, tool: 2, weapon: 3, ammo: 4, food: 5, block: 6, wall: 7, material: 8 };
     const items = this.slots.slice(HOTBAR).filter(Boolean);
     const joined = [];
     for (const s of items) {
       const it = itemOf(s.key);
       let left = s.n;
-      if (it && s.mag == null) {
+      if (it && s.mag == null && !s.g) {
         for (const o of joined) {
           if (left <= 0) break;
-          if (o.key === s.key && o.mag == null && o.n < it.stack) { const k = Math.min(left, it.stack - o.n); o.n += k; left -= k; }
+          if (o.key === s.key && o.mag == null && !o.g && o.n < it.stack) { const k = Math.min(left, it.stack - o.n); o.n += k; left -= k; }
         }
       }
       if (left > 0) joined.push({ ...s, n: left });
@@ -248,7 +271,7 @@ export class Inventory {
     this.version++;
   }
 
-  toJSON() { return this.slots.map(s => (!s ? null : s.mag > 0 ? [s.key, s.n, s.mag] : [s.key, s.n])); }
+  toJSON() { return this.slots.map(s => (!s ? null : s.g ? [s.key, s.n, s.mag || 0, s.g] : s.mag > 0 ? [s.key, s.n, s.mag] : [s.key, s.n])); }
 
   /** Slot i's stack of `a` onto slot j of `b` (the same inventory or another, a chest's): swapped, or onto a stack of the same thing. */
   static moveBetween(a, i, b, j) {
@@ -307,6 +330,8 @@ export class Inventory {
         if (Array.isArray(s) && typeof s[0] === 'string' && Number.isFinite(s[1]) && s[1] > 0) {
           inv.slots[i] = { key: s[0], n: Math.floor(s[1]) };
           if (Number.isFinite(s[2]) && s[2] > 0) inv.slots[i].mag = Math.floor(s[2]);
+          // (A piece of gear: what it is, as rolled: gear.js.)
+          if (s[3] && typeof s[3] === 'object') inv.slots[i].g = cleanGear(s[3]);
         }
       }
     }

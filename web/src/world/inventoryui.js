@@ -16,7 +16,9 @@ import { drawIcon } from './worldrender.js';
 import { RECIPES, STATIONS, STATION_NAMES, stationsNear, timesCanMake, madeFrom } from './crafting.js';
 import { keyLabel, isKey, keyOf } from '../keys.js';
 import { setRightHand } from './worldplay.js';
-import { itemDetails, categoryOf } from './iteminfo.js';
+import { itemDetails, categoryOf, itemColor } from './iteminfo.js';
+import { SLOTS, SLOT_NAMES, slotKind, gearStats, armorCut, STATS, RARITY } from './gear.js';
+import { equip, unequip } from './worldplay.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 // The order recipes are listed in: by hand first, then by station.
@@ -58,6 +60,8 @@ export class InventoryScreen {
       </div>
       <div class="inv-cols">
         <div class="inv-main">
+          <h3 class="inv-label">Worn <span class="inv-gear-sum" data-gear-sum></span></h3>
+          <div class="inv-gear" data-gear>${SLOTS.map(k => `<button type="button" class="inv-slot inv-worn" data-worn="${k}" title="${SLOT_NAMES[k]}"><canvas width="64" height="40" aria-hidden="true"></canvas><span class="inv-wlabel">${SLOT_NAMES[k]}</span></button>`).join('')}</div>
           <h3 class="inv-label">Hotbar</h3>
           ${grid('me', 0, HOTBAR)}
           <div class="inv-grid inv-hands" data-hands>${Array.from({ length: HOTBAR }, (_, i) => `<button type="button" class="inv-hand" data-hand="${i}" title="Right click uses this (click again: nothing)">R</button>`).join('')}</div>
@@ -83,16 +87,30 @@ export class InventoryScreen {
           <div class="craft-list" data-recipes>${RECIPES.map(r => this.recipeRow(r)).join('')}</div>
         </div>
       </div>`;
-    this.slots = [...this.root.querySelectorAll('.inv-slot')];
+    this.slots = [...this.root.querySelectorAll('.inv-slot[data-box]')];
     for (const b of this.slots) {
       const box = b.dataset.box, i = +b.dataset.slot;
       b.addEventListener('click', e => this.click(box, i, e.shiftKey));
-      b.addEventListener('contextmenu', e => { e.preventDefault(); this.split(box, i); });
+      // (Right click: a stack split in two; a piece of gear, worn.)
+      b.addEventListener('contextmenu', e => { e.preventDefault(); if (box === 'me' && itemOf(this.inv?.slots[i]?.key)?.kind === 'gear') this.wear(i); else this.split(box, i); });
       b.addEventListener('mouseenter', e => { this.hover = { box, i }; this.describe(box, i); this.tipFor(this.box(box)?.slots[i], e); });
       b.addEventListener('mousemove', e => this.moveTip(e));
       b.addEventListener('mouseleave', () => { this.hover = null; this.hideTip(); });
       b.addEventListener('focus', () => this.describe(box, i));
     }
+    // What's worn: click to take it off (or, with a piece of gear picked up, to wear that).
+    this.worn = [...this.root.querySelectorAll('[data-worn]')];
+    for (const b of this.worn) {
+      const slot = b.dataset.worn;
+      b.addEventListener('click', () => {
+        const p = this.picked, it = p?.box === 'me' && itemOf(this.inv?.slots[p.i]?.key);
+        if (it?.kind === 'gear' && it.wear === slotKind(slot)) { this.wear(p.i); this.picked = null; } else this.takeOff(slot);
+      });
+      b.addEventListener('mouseenter', e => this.tipFor(this.me?.world?.gear?.[slot], e));
+      b.addEventListener('mousemove', e => this.moveTip(e));
+      b.addEventListener('mouseleave', () => this.hideTip());
+    }
+    this.gearSumEl = this.root.querySelector('[data-gear-sum]');
     this.rows = new Map();
     for (const row of this.root.querySelectorAll('.craft-row')) {
       const r = RECIPES[+row.dataset.recipe];
@@ -198,6 +216,21 @@ export class InventoryScreen {
     this.refresh(true);
   }
 
+  /** Wear the piece of gear in our slot i (gear.js). */
+  wear(i) {
+    if (this.remote) this.remote({ op: 'equip', i }); else if (this.game) equip(this.game, this.me, i);
+    this.hideTip();
+    this.refresh(true);
+  }
+
+  /** Take off what's worn in `slot`. */
+  takeOff(slot) {
+    if (!this.me?.world?.gear?.[slot]) return;
+    if (this.remote) this.remote({ op: 'unequip', slot }); else if (this.game) unequip(this.game, this.me, slot);
+    this.hideTip();
+    this.refresh(true);
+  }
+
   split(box, i) {
     this.picked = null;
     if (this.remote) this.remote({ op: 'split', a: [box, i] }); else this.box(box)?.split(i);
@@ -221,7 +254,7 @@ export class InventoryScreen {
   tipFor(stack, e) {
     const it = stack && itemOf(stack.key);
     if (!it) { this.hideTip(); return; }
-    const d = itemDetails(it, stack.n || 1);
+    const d = itemDetails(it, stack.n || 1, stack.g || null);
     this.tipEl.innerHTML = `<div class="tip-name" style="color:${d.color}">${esc(d.name)}${stack.n > 1 ? ` <small>× ${stack.n}</small>` : ''}</div>
       <div class="tip-kind">${esc(d.kind)}</div>
       ${d.lines.map(l => `<div class="tip-line">${esc(l)}</div>`).join('')}
@@ -237,7 +270,8 @@ export class InventoryScreen {
     const box = this.root.getBoundingClientRect(), w = this.tipEl.offsetWidth, h = this.tipEl.offsetHeight;
     let x = e.clientX - box.left + 18, y = e.clientY - box.top + 14;
     if (x + w > box.width - 6) x = e.clientX - box.left - w - 14;
-    if (y + h > this.root.scrollHeight - 6) y = Math.max(6, e.clientY - box.top - h - 10);
+    // (Kept inside what's to be seen of the screen: above the mouse if it won't fit below.)
+    if (y + h > this.root.clientHeight - 6) y = Math.max(6, Math.min(e.clientY - box.top - h - 10, this.root.clientHeight - h - 6));
     this.tipEl.style.left = `${Math.max(6, x)}px`;
     this.tipEl.style.top = `${y + this.root.scrollTop}px`;
   }
@@ -249,7 +283,7 @@ export class InventoryScreen {
     const inv = this.inv, me = this.me;
     if (!inv || !this.game?.world) return;
     const near = stationsNear(this.game.world, me.x, me.y - 8, this.near);
-    const seen = `${inv.version}|${this.chest?.inv.version ?? ''}|${[...near].join()}|${me.world.slot}|${me.world.slot2}|${this.picked ? `${this.picked.box}${this.picked.i}` : ''}|${this.onlyEl.checked}|${this.findEl.value}`;
+    const seen = `${inv.version}|${this.chest?.inv.version ?? ''}|${[...near].join()}|${me.world.slot}|${me.world.slot2}|${this.picked ? `${this.picked.box}${this.picked.i}` : ''}|${this.onlyEl.checked}|${this.findEl.value}|${me.world.gearV || 0}`;
     if (!force && seen === this.seen) return;
     this.seen = seen;
     for (const b of this.slots) {
@@ -264,11 +298,26 @@ export class InventoryScreen {
       if (b.dataset.look === look) continue;
       b.dataset.look = look;
       b.dataset.cat = it ? categoryOf(it) : '';
+      // (Gear: a border in its rarity's colour.)
+      b.style.borderColor = s?.g ? RARITY[s.g.r]?.color || '' : '';
       b.querySelector('.inv-n').textContent = s && (s.n > 1 || it?.kind === 'block') ? String(s.n) : s?.mag != null ? `${s.mag}` : '';
       const cv = b.querySelector('canvas');
       cv.classList.toggle('ink', it?.kind === 'weapon');
       paint(cv, it);
     }
+    // What's worn, and what it all gives.
+    const gear = me.world.gear || {};
+    for (const b of this.worn) {
+      const w = gear[b.dataset.worn], it = w && itemOf(w.key);
+      b.classList.toggle('empty', !w);
+      b.style.borderColor = w?.g ? RARITY[w.g.r]?.color || '' : '';
+      const look = w ? `${w.key}|${w.g?.name}` : '';
+      if (b.dataset.look !== look) { b.dataset.look = look; paint(b.querySelector('canvas'), it); b.title = w ? w.g?.name || it.name : SLOT_NAMES[b.dataset.worn]; }
+    }
+    const st = gearStats(me), parts = [];
+    if (st.armor) parts.push(`${st.armor} armour (${Math.round(armorCut(st.armor) * 100)}% less damage)`);
+    for (const k of ['hp', 'gun', 'melee', 'dig', 'mf', 'coin', 'xp', 'regen', 'fire']) if (st[k]) parts.push(STATS[k].show(st[k]));
+    this.gearSumEl.textContent = parts.length ? parts.join(' · ') : 'Right click a piece of gear to wear it';
     for (const h of this.hands) {
       const i = +h.dataset.hand;
       h.classList.toggle('on', i === me.world.slot2);

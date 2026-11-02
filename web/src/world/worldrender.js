@@ -1022,10 +1022,11 @@ export function drawDrops(ctx, game, look, alpha = 1, view = null) {
     const it = itemOf(d.key);
     if (!it || (view && (d.x < view.l || d.x > view.r || d.y < view.t || d.y > view.b))) continue;
     const x = d.px + (d.x - d.px) * alpha, y = d.py + (d.y - d.py) * alpha - 5 + (d.rest ? Math.sin((t + d.x) * 0.08) * 1.2 : 0);
-    if (isPrecious(it)) {
+    const rar = d.g?.r || d.r || null;
+    if (isPrecious(it, rar)) {
       const pulse = 0.5 + 0.5 * Math.sin((t + d.x) * 0.12);
       ctx.globalAlpha = 0.25 + 0.35 * pulse;
-      ctx.fillStyle = itemColor(it);
+      ctx.fillStyle = itemColor(it, rar);
       ctx.beginPath(); ctx.arc(x, y, 7 + pulse * 2, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = 1;
     }
@@ -1148,6 +1149,7 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
     return;
   }
   if (it.kind === 'food') { drawFoodIcon(ctx, it, x, y, w); return; }
+  if (it.kind === 'gear') { drawGearIcon(ctx, it, x, y, w); return; }
   if (it.kind === 'quest') {
     // A bundle tied with string (a letter: a folded sheet with a seal).
     ctx.fillStyle = c;
@@ -1174,6 +1176,39 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
   ctx.fillStyle = '#444';
   ctx.fillRect(x + w * 0.05, y + w * 0.4, w * 0.9, w * 0.22);
   ctx.fillRect(x + w * 0.2, y + w * 0.55, w * 0.15, w * 0.3);
+}
+
+/** Gear's icons (gear.js): a helmet, a coat, boots, a ring, an amulet, in its base's colour. */
+function drawGearIcon(ctx, it, x, y, w) {
+  const c = it.color;
+  ctx.fillStyle = c;
+  ctx.strokeStyle = INK;
+  ctx.beginPath();
+  switch (it.wear) {
+    case 'head':
+      if (it.key === 'circlet') { ctx.moveTo(x + w * 0.1, y + w * 0.7); ctx.lineTo(x + w * 0.1, y + w * 0.35); ctx.lineTo(x + w * 0.3, y + w * 0.55); ctx.lineTo(x + w * 0.5, y + w * 0.25); ctx.lineTo(x + w * 0.7, y + w * 0.55); ctx.lineTo(x + w * 0.9, y + w * 0.35); ctx.lineTo(x + w * 0.9, y + w * 0.7); }
+      else { ctx.arc(x + w * 0.5, y + w * 0.6, w * 0.38, Math.PI, 0); ctx.lineTo(x + w * 0.95, y + w * 0.75); ctx.lineTo(x + w * 0.05, y + w * 0.75); }
+      break;
+    case 'body':
+      ctx.moveTo(x + w * 0.3, y + w * 0.1); ctx.lineTo(x + w * 0.05, y + w * 0.3); ctx.lineTo(x + w * 0.18, y + w * 0.45); ctx.lineTo(x + w * 0.25, y + w * 0.4); ctx.lineTo(x + w * 0.25, y + w * 0.92);
+      ctx.lineTo(x + w * 0.75, y + w * 0.92); ctx.lineTo(x + w * 0.75, y + w * 0.4); ctx.lineTo(x + w * 0.82, y + w * 0.45); ctx.lineTo(x + w * 0.95, y + w * 0.3); ctx.lineTo(x + w * 0.7, y + w * 0.1); ctx.lineTo(x + w * 0.5, y + w * 0.22);
+      break;
+    case 'feet':
+      ctx.moveTo(x + w * 0.25, y + w * 0.1); ctx.lineTo(x + w * 0.55, y + w * 0.1); ctx.lineTo(x + w * 0.55, y + w * 0.6); ctx.lineTo(x + w * 0.92, y + w * 0.72); ctx.lineTo(x + w * 0.92, y + w * 0.9); ctx.lineTo(x + w * 0.25, y + w * 0.9);
+      break;
+    case 'ring':
+      ctx.arc(x + w * 0.5, y + w * 0.6, w * 0.3, 0, Math.PI * 2);
+      ctx.moveTo(x + w * 0.66, y + w * 0.6); ctx.arc(x + w * 0.5, y + w * 0.6, w * 0.16, 0, Math.PI * 2, true);
+      ctx.fill('evenodd'); ctx.stroke();
+      ctx.fillStyle = '#d8342c'; ctx.beginPath(); ctx.arc(x + w * 0.5, y + w * 0.26, w * 0.1, 0, Math.PI * 2); ctx.fill();
+      return;
+    default:
+      ctx.moveTo(x + w * 0.2, y + w * 0.1); ctx.quadraticCurveTo(x + w * 0.5, y + w * 0.55, x + w * 0.8, y + w * 0.1); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + w * 0.5, y + w * 0.66, w * 0.22, 0, Math.PI * 2);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
 }
 
 /** Food and potions' icons (items.js: their look). */

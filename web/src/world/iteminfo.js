@@ -8,16 +8,17 @@ import { itemOf } from './items.js';
 import { WEAPONS } from '../weapons.js';
 import { RECIPES, STATION_NAMES, madeFrom } from './crafting.js';
 import { valueOf, SHOPS, offerFor } from './trade.js';
+import { RARITY, gearLines, gearValue } from './gear.js';
 
 /** Each kind of thing's colour (bright: they're shown on dark panels). */
 export const CATEGORY_COLORS = {
   coins: '#ffd23f', gem: '#d08cff', potion: '#ff6f8e', food: '#f4b06a', weapon: '#ffb347', tool: '#7cc0ff', ammo: '#e8cf7a',
-  contract: '#f2e3b3', bar: '#e4e8ef', ore: '#d6ae84', block: '#ececec', wall: '#bdbdbd', material: '#dccdaa', quest: '#ffe36e',
+  contract: '#f2e3b3', bar: '#e4e8ef', ore: '#d6ae84', block: '#ececec', wall: '#bdbdbd', material: '#dccdaa', quest: '#ffe36e', gear: '#f0f0f0',
 };
 /** What each kind is called. */
 const CATEGORY_NAMES = {
   coins: 'Money', gem: 'Gem', potion: 'Potion', food: 'Food', weapon: 'Weapon', tool: 'Tool', ammo: 'Ammunition', contract: 'Contract',
-  bar: 'Metal bar', ore: 'Ore', block: 'Block', wall: 'Wall', material: 'Material', quest: 'Quest item',
+  bar: 'Metal bar', ore: 'Ore', block: 'Block', wall: 'Wall', material: 'Material', quest: 'Quest item', gear: 'Gear',
 };
 
 /** The kind of thing an item is (for its colour). */
@@ -26,19 +27,26 @@ export function categoryOf(it) {
   if (it.key === 'coins') return 'coins';
   if (it.gem) return 'gem';
   if (it.kind === 'food') return it.look === 'potion' ? 'potion' : 'food';
-  if (it.kind === 'weapon' || it.kind === 'tool' || it.kind === 'ammo' || it.kind === 'contract' || it.kind === 'wall' || it.kind === 'quest') return it.kind;
+  if (it.kind === 'weapon' || it.kind === 'tool' || it.kind === 'ammo' || it.kind === 'contract' || it.kind === 'wall' || it.kind === 'quest' || it.kind === 'gear') return it.kind;
   if (it.key.endsWith('_bar')) return 'bar';
   if (it.key.endsWith('_ore') || it.key === 'coal' || it.key === 'kimberlite') return 'ore';
   if (it.kind === 'block') return 'block';
   return 'material';
 }
 
-/** An item's colour (by its key or the item). */
-export const itemColor = it => CATEGORY_COLORS[categoryOf(typeof it === 'string' ? itemOf(it) : it)] || '#dddddd';
+/** An item's colour (by its key or the item; a piece of gear: its rarity's, gear.js, given its details or just its rarity). */
+export function itemColor(it, g = null) {
+  if (g) return RARITY[typeof g === 'string' ? g : g.r]?.color || RARITY.normal.color;
+  return CATEGORY_COLORS[categoryOf(typeof it === 'string' ? itemOf(it) : it)] || '#dddddd';
+}
 
-/** Whether an item is worth making a fuss of: it glows where it lies, and it's said big as it's picked up. */
-export function isPrecious(it) {
+/** What a stack's called on screen: its name, or a piece of gear's own ("Hale Iron helm of Mending"). */
+export const stackName = (it, g = null) => g?.name || it?.name || '';
+
+/** Whether an item is worth making a fuss of: it glows where it lies, and it's said big as it's picked up. (Gear: magic or better.) */
+export function isPrecious(it, g = null) {
   if (!it) return false;
+  if (g) return (typeof g === 'string' ? g : g.r) !== 'normal';
   const c = categoryOf(it);
   return c === 'gem' || c === 'potion' || c === 'weapon' || c === 'coins' || c === 'quest' || valueOf(it.key) >= 15;
 }
@@ -50,9 +58,14 @@ const round = v => (v >= 10 ? Math.round(v) : v >= 1 ? Math.round(v * 10) / 10 :
  * An item's details: { name, kind (what kind of thing, in words), color, lines (what it does),
  * worth (what it's worth, in words, or ''), made (how it's made, or '') }. n: how many there are.
  */
-export function itemDetails(it, n = 1) {
+export function itemDetails(it, n = 1, g = null) {
   const cat = categoryOf(it), lines = [];
   let kind = CATEGORY_NAMES[cat];
+  // (Gear: what it is and what it gives, its rarity's colour, its worth: gear.js.)
+  if (cat === 'gear') {
+    const v = gearValue(it.key, g);
+    return { name: g?.name || it.name, kind: `Gear · worn on the ${it.wear === 'ring' ? 'finger' : it.wear === 'amulet' ? 'neck' : it.wear} · right click to wear it`, color: itemColor(it, g || 'normal'), lines: gearLines(it.key, g), worth: v ? `Worth about ${v} coins` : '', made: '' };
+  }
   switch (cat) {
     case 'weapon': {
       const d = WEAPONS[it.weapon];

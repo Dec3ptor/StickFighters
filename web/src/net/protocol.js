@@ -11,8 +11,9 @@ import { WEAPONS } from '../weapons.js';
 import { CLASS_IDS, UPGRADE_IDS } from '../classes.js';
 import { REWARD_IDS } from '../streaks.js';
 import { ITEMS } from '../world/items.js';
+import { RARITIES } from '../world/gear.js';
 
-export const PROTOCOL = 22;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 23;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -262,7 +263,8 @@ export function encodeWorld(game) {
     for (const d of drops) {
       w.u16(ITEM_INDEX.get(d.key)); w.u16(clampU16(d.n));
       w.f32(d.x); w.f32(d.y);
-      w.u8(d.rest ? 1 : 0);
+      // (Bit 0: lying still; bits 1-3: a piece of gear's rarity, gear.js, for its name's colour.)
+      w.u8((d.rest ? 1 : 0) | ((d.g ? RARITIES.indexOf(d.g.r) + 1 : 0) << 1));
     }
   }
   return w.done();
@@ -428,8 +430,8 @@ export function decodeSnapshot(data) {
     const world = snap.world = { time: r.u32(), drops: [] };
     const nd = r.u8();
     for (let i = 0; i < nd; i++) {
-      const key = ITEM_KEYS[r.u16()], n = r.u16(), x = r.f32(), y = r.f32(), rest = !!(r.u8() & 1);
-      if (key) world.drops.push({ key, n, x, y, rest });
+      const key = ITEM_KEYS[r.u16()], n = r.u16(), x = r.f32(), y = r.f32(), flags = r.u8(), rest = !!(flags & 1), rar = RARITIES[((flags >> 1) & 7) - 1] || null;
+      if (key) world.drops.push(rar ? { key, n, x, y, rest, r: rar } : { key, n, x, y, rest });
     }
   }
   return snap;

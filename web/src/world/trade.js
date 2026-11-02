@@ -10,6 +10,7 @@ import { hash3 } from './noise.js';
 import { dayOf } from './monsters.js';
 import { WEAPONS } from '../weapons.js';
 import { buyScale, sellScale } from './progress.js';
+import { gearValue } from './gear.js';
 
 // ---- What things are worth -----------------------------------------------------------------------------
 
@@ -95,7 +96,7 @@ export const SHOPS = {
     rare: [['merc_contract', 1], ['iron_pickaxe', 1], ['stained_glass', 3]],
   },
   smith: {
-    name: 'Smithy', markup: 1.2, rate: 0.5, buys: it => it.kind === 'tool' || BAR.has(it.key) || ORE.has(it.key) || isMelee(it) || it.key === 'metal',
+    name: 'Smithy', markup: 1.2, rate: 0.5, buys: it => it.kind === 'tool' || BAR.has(it.key) || ORE.has(it.key) || isMelee(it) || it.key === 'metal' || (it.kind === 'gear' && it.wear !== 'ring' && it.wear !== 'amulet'),
     sells: [
       ['copper_bar', 1, 6], ['iron_bar', 1, 6], ['silver_bar', 0.6, 3], ['gold_bar', 0.5, 3], ['pickaxe', 0.6, 1], ['iron_pickaxe', 0.7, 1],
       ['gold_pickaxe', 0.3, 1], ['axe', 0.6, 1], ['hammer', 0.6, 1], ['anvil', 0.5, 1], ['furnace', 0.6, 1], ['Knife', 0.6, 1],
@@ -190,6 +191,14 @@ export function offerFor(role, key, n = 1, scale = 1) {
 /** Whether shop `role` deals in `key` at all (never coins, nor what's carried for a quest). */
 export const buysAny = (role, key) => { const shop = SHOPS[role], it = itemOf(key); return !!(shop && it && key !== 'coins' && it.kind !== 'quest' && shop.buys(it)); };
 
+/** What a shop pays for what's in a slot (n of it; a piece of gear by what it is: gear.js). */
+export function offerForSlot(role, slot, n = slot?.n || 1, scale = 1) {
+  if (!slot || !buysAny(role, slot.key)) return 0;
+  if (!slot.g) return offerFor(role, slot.key, n, scale);
+  const shop = SHOPS[role], it = itemOf(slot.key), rate = shop.rateFor?.(it) ?? shop.rate;
+  return Math.floor(gearValue(slot.key, slot.g) * rate * scale);
+}
+
 /** A price as player s pays it (progress.js's Haggler perk: less). */
 export const priceFor = (price, s) => Math.max(1, Math.round(price * buyScale(s)));
 
@@ -224,11 +233,11 @@ export function sell(world, s, f, i, all = false) {
   // (Cheap things: as many as make a coin, at least.)
   let n = all ? sl.n : 1;
   const k = sellScale(s);
-  if (!all) while (n < sl.n && offerFor(f.role, sl.key, n, k) < 1) n++;
-  const pay = offerFor(f.role, sl.key, n, k);
+  if (!all) while (n < sl.n && offerForSlot(f.role, sl, n, k) < 1) n++;
+  const pay = offerForSlot(f.role, sl, n, k);
   if (pay < 1) return `Not worth anything to them${all ? '' : ' (sell the whole stack: shift-click)'}`;
   if (inv.room('coins') < pay && n < sl.n) return 'You have no room for the coins';
   inv.take(i, n);
   inv.add('coins', pay);
-  return `Sold ${n > 1 ? `${n} × ` : ''}${it.name} for ${pay} coin${pay === 1 ? '' : 's'}`;
+  return `Sold ${n > 1 ? `${n} × ` : ''}${sl.g?.name || it.name} for ${pay} coin${pay === 1 ? '' : 's'}`;
 }

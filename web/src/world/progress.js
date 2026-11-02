@@ -8,6 +8,7 @@
 // sends it with their things.
 
 import { WEAPONS } from '../weapons.js';
+import { gearStats } from './gear.js';
 
 /** The highest level there is. */
 export const MAX_LEVEL = 50;
@@ -47,8 +48,8 @@ export function progOf(s) {
 /** A perk's rank for player s (0: none). */
 export const perkRank = (s, id) => (s?.world?.prog?.perks?.[id] | 0);
 
-/** Player s's full health, by their level and perks. */
-export const maxHealthOf = s => BASE_HEALTH + (progOf(s).level - 1) * HEALTH_PER_LEVEL + perkRank(s, 'tough') * 12;
+/** Player s's full health, by their level, perks and gear (gear.js). */
+export const maxHealthOf = s => BASE_HEALTH + (progOf(s).level - 1) * HEALTH_PER_LEVEL + perkRank(s, 'tough') * 12 + (gearStats(s).hp || 0);
 
 /** Player s's health as their level and perks say (a level up heals the difference). */
 export function applyProgress(s) {
@@ -71,6 +72,8 @@ export function giveXp(game, s, n, why = '') {
   if (!s?.world || n <= 0) return;
   const p = progOf(s);
   if (p.level >= MAX_LEVEL) return;
+  // (More with gear "of the Fox": gear.js.)
+  n *= 1 + (gearStats(s).xp || 0) / 100;
   p.xp += Math.round(n);
   let up = 0;
   while (p.level < MAX_LEVEL && p.xp >= xpToNext(p.level)) {
@@ -107,23 +110,23 @@ export function spendPoint(s, id) {
 
 /** How much more damage attacker s does with `weapon` (their perks: 1 is none). */
 export function damageScale(s, weapon) {
-  if (!s?.world?.prog) return 1;
-  const melee = WEAPONS[weapon]?.kind === 'melee';
-  return melee ? 1 + perkRank(s, 'brawler') * 0.1 : 1 + perkRank(s, 'marksman') * 0.06;
+  if (!s?.world) return 1;
+  const melee = WEAPONS[weapon]?.kind === 'melee', g = gearStats(s);
+  return melee ? 1 + perkRank(s, 'brawler') * 0.1 + (g.melee || 0) / 100 : 1 + perkRank(s, 'marksman') * 0.06 + (g.gun || 0) / 100;
 }
-/** How much faster player s digs. */
-export const digScale = s => 1 + perkRank(s, 'miner') * 0.12;
+/** How much faster player s digs (perks and gear). */
+export const digScale = s => 1 + perkRank(s, 'miner') * 0.12 + (gearStats(s).dig || 0) / 100;
 /** What shops' prices are for player s (buying: less, selling: more). */
 export const buyScale = s => 1 - perkRank(s, 'haggler') * 0.04;
 export const sellScale = s => 1 + perkRank(s, 'haggler') * 0.04;
-/** More coins (and loot) from monsters killed by player s. */
-export const lootScale = s => 1 + perkRank(s, 'scavenger') * 0.15;
+/** More coins (and loot) from monsters killed by player s (perks and gear). */
+export const lootScale = s => 1 + perkRank(s, 'scavenger') * 0.15 + (gearStats(s).coin || 0) / 100;
 /** The chance of twice the ore or gem from a block. */
 export const doubleOreChance = s => perkRank(s, 'prospector') * 0.08;
 
 /** Each update (worldplay.js): the Second wind perk heals a player out of a fight. */
 export function regenTick(game, s) {
-  const r = perkRank(s, 'regen');
+  const r = perkRank(s, 'regen') + (s.world?.gear ? gearStats(s).regen || 0 : 0);
   if (!r || !s.alive || game.tick % 120 !== s.id % 120) return;
   if (game.tick - (s.lastHurtTick ?? -1e9) < 300 || s.health >= s.maxHealth) return;
   s.health = Math.min(s.maxHealth, s.health + r);

@@ -387,6 +387,14 @@ html[data-game="remastered"] .inv-coins { color: #f2c230; }
 .craft-find input[type="search"] { flex: 1 1 140px; min-width: 0; padding: 4px 8px; font-size: 13px; }
 .craft-find .craft-only { margin: 0; }
 
+/* ---- Worlds: what's worn (gear) ---- */
+.inv-gear { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; max-width: 60%; }
+.inv-worn .inv-wlabel { position: absolute; left: 3px; top: 1px; font-size: 9px; color: var(--muted); pointer-events: none; }
+.inv-worn.empty canvas { opacity: 0; }
+.inv-gear-sum { font-weight: normal; text-transform: none; letter-spacing: 0; color: #2f6fdb; margin-left: 6px; }
+html[data-game="remastered"] .inv-gear-sum { color: #8fc4ff; }
+.inv-slot[data-cat="gear"] { --cat: #f0f0f0; }
+
 /* ---- Worlds: talking to townsfolk (right click on them) ---- */
 .buy.talk { width: min(820px, calc(100vw - 24px)); }
 .talk-head { align-items: center; }

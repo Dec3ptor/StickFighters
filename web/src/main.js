@@ -1225,7 +1225,7 @@ function dropFromInventory(i) {
   if (!g?.world || !me?.world || !me.alive) return;
   if (state.mode === 'client') { state.net?.client?.link.send({ t: 'wop', op: 'drop', i }, true); return; }
   const taken = me.world.inv.take(i);
-  if (taken) dropItem(g, taken.key, taken.n, me.x + me.facing * 8, me.y - 14, me.facing * 3, -2, 60);
+  if (taken) dropItem(g, taken.key, taken.n, me.x + me.facing * 8, me.y - 14, me.facing * 3, -2, 60, taken.g || null);
 }
 
 /** The class picker (C while waiting to respawn, or the pause menu's Change class). */

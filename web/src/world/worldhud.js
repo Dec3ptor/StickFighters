@@ -12,8 +12,9 @@ import { clock, dayOf, isNight, nightness } from './monsters.js';
 import { keyShort, slotAction, keyLabel } from '../keys.js';
 import { devLines } from './devmode.js';
 import { folkAt } from './talk.js';
-import { itemColor, isPrecious } from './iteminfo.js';
+import { itemColor, isPrecious, stackName } from './iteminfo.js';
 import { xpToNext, MAX_LEVEL } from './progress.js';
+import { RARITY } from './gear.js';
 import { goalText, goalPlace, goalMet, questReady, turnInTo } from './quests.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
@@ -394,8 +395,9 @@ function drawGot(ctx, game, me, W, H) {
     if (age > GOT_LIFE) continue;
     const it = itemOf(g.key);
     if (!it) continue;
-    const big = isPrecious(it), color = itemColor(it), have = me.world.inv.count(g.key);
-    const name = text(`gn${g.n}${g.key}`, () => `+${g.n}  ${it.name}`), total = have > g.n ? text(`gt${have}`, () => `(${have})`) : '';
+    // (Gear: its own name, in its rarity's colour.)
+    const big = isPrecious(it, g.r), color = itemColor(it, g.r), have = g.r ? 0 : me.world.inv.count(g.key);
+    const name = text(`gn${g.n}${g.key}${g.name || ''}`, () => (g.name ? g.name : `+${g.n}  ${it.name}`)), total = have > g.n ? text(`gt${have}`, () => `(${have})`) : '';
     ctx.font = `bold ${big ? 15 : 13}px ${FONT}`;
     const nw = ctx.measureText(name).width;
     ctx.font = `12px ${FONT}`;
@@ -456,7 +458,9 @@ function drawDropNames(r, ctx, game, me, W, H, all) {
   for (const { d, sx, sy, pointed } of list) {
     const it = itemOf(d.key);
     if (!it) continue;
-    const label = text(`dn${d.n}${d.key}`, () => (d.n > 1 ? `${it.name} × ${d.n}` : it.name));
+    // (Gear: its own name and its rarity's colour; online, only its rarity comes with it.)
+    const rar = d.g?.r || d.r || null;
+    const label = text(`dn${d.n}${d.key}${d.g?.name || rar || ''}`, () => (d.g ? d.g.name : rar ? `${RARITY[rar]?.name ?? ''} ${it.name}` : d.n > 1 ? `${it.name} × ${d.n}` : it.name));
     const w = ctx.measureText(label).width + 12, h = 17;
     let x = sx - w / 2, y = sy - 14 * Math.max(1, k * 0.5) - h;
     for (let tries = 0; tries < 8; tries++) {
@@ -465,10 +469,10 @@ function drawDropNames(r, ctx, game, me, W, H, all) {
       y = hit.y - h - 2;
     }
     placed.push({ x, y, w, h });
-    const color = itemColor(it);
+    const color = itemColor(it, rar);
     ctx.fillStyle = pointed ? 'rgba(40,44,56,0.92)' : 'rgba(16,18,24,0.74)';
     ctx.fillRect(x, y, w, h);
-    if (pointed || isPrecious(it)) { ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); }
+    if (pointed || isPrecious(it, rar)) { ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); }
     ctx.fillStyle = color;
     ctx.fillText(label, sx, y + h / 2 + 1);
   }
