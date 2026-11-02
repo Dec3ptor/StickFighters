@@ -195,6 +195,18 @@ check(!!town, 'a village beside the start');
 if (town) {
   await page.evaluate(t => { const me = window.stickSoldiers.state.me; me.body.x = t.from * 16 + 8; me.body.y = (t.door[1] + 1) * 16 - 13; me.body.vx = me.body.vy = 0; }, town);
   await page.waitForTimeout(800);
+  // (The townsfolk walk through doors too: they're held still, out of the doorway, and the door shut.)
+  await page.evaluate(async t => {
+    const D = await import('./src/world/doors.js');
+    const g = window.stickSoldiers.state.game;
+    for (const s of g.soldiers.filter(o => o.npc?.kind === 'townsfolk')) {
+      g.controllers.get(s).wait = 1e6;
+      if (Math.abs(s.x - (t.door[0] * 16 + 8)) < 40) { s.body.x = (t.door[0] + 4) * 16 + 8; s.body.vx = 0; }
+    }
+    await new Promise(r => setTimeout(r, 200));
+    D.setDoor(g, t.door[0], t.door[1], false);
+  }, town);
+  await page.waitForTimeout(300);
   const doorNow = () => page.evaluate(d => window.stickSoldiers.state.game.world.tile(d[0], d[1]), town.door);
   const shut = await doorNow();
   await page.keyboard.down('KeyD');

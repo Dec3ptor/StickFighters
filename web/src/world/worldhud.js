@@ -12,6 +12,7 @@ import { clock, dayOf, isNight, nightness } from './monsters.js';
 import { keyShort, slotAction, keyLabel } from '../keys.js';
 import { devLines } from './devmode.js';
 import { folkAt } from './talk.js';
+import { itemColor, isPrecious } from './iteminfo.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 export const HOT_SIZE = 46;
@@ -21,11 +22,15 @@ const GOT_LIFE = 240; // (updates a line of what you picked up stays)
 /** The hotbar's scale for a screen W wide (smaller on narrow screens). */
 const hotScale = W => Math.min(1, (W - 24) / (HOTBAR * HOT_SIZE + (HOTBAR - 1) * HOT_GAP));
 
-/** Everything world mode adds to the HUD (r: the renderer; W, H: the screen in CSS pixels). */
-export function drawWorldHud(r, ctx, game, me, W, H) {
+/**
+ * Everything world mode adds to the HUD (r: the renderer; W, H: the screen in CSS pixels;
+ * opts.showItems: the key's held that names everything on the ground).
+ */
+export function drawWorldHud(r, ctx, game, me, W, H, opts = {}) {
+  if (game.world.drops?.length) drawDropNames(r, ctx, game, me, W, H, !!opts.showItems);
   if (me.alive && me.world) drawHotbar(ctx, me, W, H);
   if (me.alive && me.world && !me.world.dev) drawTalkHint(ctx, game, me, W, H);
-  if (me.world) drawGot(ctx, game, me, H);
+  if (me.world) drawGot(ctx, game, me, W, H);
   drawWhere(ctx, game, me, W);
   drawMiniMap(ctx, game, me, W, H);
   if (me.world?.dev) drawDev(ctx, me, r.zoomScale || 1);
@@ -157,28 +162,96 @@ function drawHotbar(ctx, me, W, H) {
 
 // ---- What you picked up --------------------------------------------------------------------------
 
-function drawGot(ctx, game, me, H) {
+function drawGot(ctx, game, me, W, H) {
   const got = me.world.got;
   if (!got.length) return;
-  ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.font = `bold 12px ${FONT}`;
+  // (Over the map, on the right: the newest at the bottom, sliding in.)
+  const right = W - 12, bottom = H - 30 - MAP_H * MAP_SCALE - 14;
   let row = 0;
-  for (let i = got.length - 1; i >= 0 && row < 6; i--) {
+  for (let i = got.length - 1; i >= 0 && row < 7; i--) {
     const g = got[i], age = game.tick - g.tick;
     if (age > GOT_LIFE) continue;
-    const it = itemOf(g.key), line = text(`g${g.n}${g.key}`, () => `+${g.n} ${it?.name ?? g.key}`);
-    ctx.globalAlpha = Math.min(1, (GOT_LIFE - age) / 40);
-    const y = H - 24 - row * 18;
-    // (On a pale panel: it's often dark underground.)
-    ctx.fillStyle = 'rgba(255,255,255,0.78)';
-    ctx.fillRect(8, y - 8, 30 + ctx.measureText(line).width, 16);
-    if (it) drawIcon(ctx, it, 12, y - 6, 12, false, true);
-    ctx.fillStyle = '#222';
-    ctx.fillText(line, 30, y);
+    const it = itemOf(g.key);
+    if (!it) continue;
+    const big = isPrecious(it), color = itemColor(it), have = me.world.inv.count(g.key);
+    const name = text(`gn${g.n}${g.key}`, () => `+${g.n}  ${it.name}`), total = have > g.n ? text(`gt${have}`, () => `(${have})`) : '';
+    ctx.font = `bold ${big ? 15 : 13}px ${FONT}`;
+    const nw = ctx.measureText(name).width;
+    ctx.font = `12px ${FONT}`;
+    const tw = total ? ctx.measureText(total).width + 10 : 0;
+    const h = big ? 30 : 26, w = 44 + nw + tw + 10;
+    const slide = Math.max(0, 1 - age / 10), x = right - w + slide * 40, y = bottom - row * (h + 4) - h;
+    ctx.globalAlpha = Math.min(1, (GOT_LIFE - age) / 40) * (1 - slide * 0.6);
+    // A dark panel, a bar in the thing's colour, its picture, what and how many (and how many you have now).
+    ctx.fillStyle = 'rgba(16,18,24,0.78)';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, 4, h);
+    if (big && age < 30) { ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 1, w - 2, h - 2); }
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillRect(x + 9, y + 3, h - 6, h - 6);
+    drawIcon(ctx, it, x + 11, y + 5, h - 10, false, true);
+    ctx.textAlign = 'left';
+    ctx.font = `bold ${big ? 15 : 13}px ${FONT}`;
+    ctx.fillStyle = color;
+    ctx.fillText(name, x + 14 + h - 6, y + h / 2 + 1);
+    if (total) {
+      ctx.font = `12px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillText(total, x + 14 + h - 6 + nw + 10, y + h / 2 + 1);
+    }
     row++;
   }
   ctx.globalAlpha = 1;
+}
+
+/**
+ * The names of things lying on the ground: those near you (and the one under the crosshair), or
+ * with the key held, everything on the screen. On dark labels in their colour, stacked so they
+ * don't cover each other.
+ */
+const placed = [];
+function drawDropNames(r, ctx, game, me, W, H, all) {
+  const drops = game.world.drops, k = r.scale, cx = r.cam.x, cy = r.cam.y;
+  const t = me.world?.target, near = 9 * TILE;
+  const list = [];
+  for (const d of drops) {
+    if (d.n <= 0 || !d.rest) continue;
+    const sx = W / 2 + (d.x - cx) * k, sy = H / 2 + (d.y - cy) * k;
+    if (sx < -40 || sx > W + 40 || sy < -20 || sy > H + 20) continue;
+    const pointed = t && Math.abs(t.x - d.x) < 10 && Math.abs(t.y - d.y) < 10;
+    const dist = Math.hypot(d.x - me.x, d.y - me.y);
+    if (!all && !pointed && dist > near) continue;
+    list.push({ d, sx, sy, dist, pointed });
+  }
+  if (!list.length) return;
+  list.sort((a, b) => a.dist - b.dist);
+  list.length = Math.min(list.length, all ? 40 : 12);
+  // (The nearest placed first; the rest go above them where they'd overlap.)
+  placed.length = 0;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold 12px ${FONT}`;
+  for (const { d, sx, sy, pointed } of list) {
+    const it = itemOf(d.key);
+    if (!it) continue;
+    const label = text(`dn${d.n}${d.key}`, () => (d.n > 1 ? `${it.name} × ${d.n}` : it.name));
+    const w = ctx.measureText(label).width + 12, h = 17;
+    let x = sx - w / 2, y = sy - 14 * Math.max(1, k * 0.5) - h;
+    for (let tries = 0; tries < 8; tries++) {
+      const hit = placed.find(p => x < p.x + p.w && x + w > p.x && y < p.y + p.h && y + h > p.y);
+      if (!hit) break;
+      y = hit.y - h - 2;
+    }
+    placed.push({ x, y, w, h });
+    const color = itemColor(it);
+    ctx.fillStyle = pointed ? 'rgba(40,44,56,0.92)' : 'rgba(16,18,24,0.74)';
+    ctx.fillRect(x, y, w, h);
+    if (pointed || isPrecious(it)) { ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); }
+    ctx.fillStyle = color;
+    ctx.fillText(label, sx, y + h / 2 + 1);
+  }
 }
 
 // ---- Where you are -------------------------------------------------------------------------------

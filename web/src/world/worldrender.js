@@ -12,6 +12,7 @@ import { hash3 } from './noise.js';
 import { itemOf } from './items.js';
 import { REACH, shapeTiles, canPlace, inHand, rightHand } from './worldplay.js';
 import { skyLevel } from './monsters.js';
+import { itemColor, isPrecious } from './iteminfo.js';
 
 export const PATCH = 16;                 // tiles across a picture
 const PP = PATCH * TILE;                 // its size in the world (px)
@@ -1012,7 +1013,7 @@ export class WorldView {
 
 // ---- What's drawn over the world each frame ------------------------------------------------------
 
-/** Things lying on the ground (small, bobbing). */
+/** Things lying on the ground (bobbing; precious things glow, pulsing, in their colour: iteminfo.js). */
 export function drawDrops(ctx, game, look, alpha = 1, view = null) {
   const drops = game.world?.drops;
   if (!drops?.length) return;
@@ -1020,8 +1021,15 @@ export function drawDrops(ctx, game, look, alpha = 1, view = null) {
   for (const d of drops) {
     const it = itemOf(d.key);
     if (!it || (view && (d.x < view.l || d.x > view.r || d.y < view.t || d.y > view.b))) continue;
-    const x = d.px + (d.x - d.px) * alpha, y = d.py + (d.y - d.py) * alpha - 4 + (d.rest ? Math.sin((t + d.x) * 0.08) * 1.2 : 0);
-    drawIcon(ctx, it, x - 4, y - 4, 8, classic);
+    const x = d.px + (d.x - d.px) * alpha, y = d.py + (d.y - d.py) * alpha - 5 + (d.rest ? Math.sin((t + d.x) * 0.08) * 1.2 : 0);
+    if (isPrecious(it)) {
+      const pulse = 0.5 + 0.5 * Math.sin((t + d.x) * 0.12);
+      ctx.globalAlpha = 0.25 + 0.35 * pulse;
+      ctx.fillStyle = itemColor(it);
+      ctx.beginPath(); ctx.arc(x, y, 7 + pulse * 2, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    drawIcon(ctx, it, x - 5, y - 5, 10, classic);
   }
 }
 

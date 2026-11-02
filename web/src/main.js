@@ -2040,7 +2040,7 @@ function frame(now) {
     // (A moment on the final picture, without the HUD, before the replay of the winning kill.)
     replay: g.over && !!g.finalKill && !state.replayTried,
     killMark: killK >= 0 && killK < 1 && !state.menuOpen && !watchMode ? { x: input.mouse.x, y: input.mouse.y, k: killK } : null,
-    showScores: input.held('scores') && !state.chatOpen, watching, chat: state.chat,
+    showScores: input.held('scores') && !state.chatOpen, showItems: input.held('showItems') && !state.chatOpen, watching, chat: state.chat,
     spectating: me.spectating ? { free: !!free, target: watching } : null,
     online: state.mode !== 'offline',
     hostId: state.mode === 'host' ? me.id : state.mode === 'client' ? g.soldiers.find(s => !s.isBot && !s.remote)?.id : null,

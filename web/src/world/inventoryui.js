@@ -4,9 +4,10 @@
 //
 // Click a stack to pick it up and click a slot to put it there (swapping with what's there, or
 // onto a stack of the same thing); right click splits a stack in two; shift-click sends it
-// across (between the hotbar and the bag, or between you and the chest). Drop throws the stack
-// picked up; Sort puts the bag in order. Click a recipe to make it (shift-click: five times).
-// Hover over anything to see what it is.
+// across (between the hotbar and the bag, or between you and the chest); a number key puts what
+// the mouse is over in that hotbar slot. Drop throws the stack picked up; Sort puts the bag in
+// order. Click a recipe to make it (shift-click: five times); type to find one. Hover over
+// anything for a card of what it is: what it does, what it's worth, what it's made from.
 
 import { HOTBAR, BAG, itemOf, Inventory } from './items.js';
 import { WEAPONS } from '../weapons.js';
@@ -15,6 +16,7 @@ import { drawIcon } from './worldrender.js';
 import { RECIPES, STATIONS, STATION_NAMES, stationsNear, timesCanMake, madeFrom } from './crafting.js';
 import { keyLabel, isKey, keyOf } from '../keys.js';
 import { setRightHand } from './worldplay.js';
+import { itemDetails, categoryOf } from './iteminfo.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 // The order recipes are listed in: by hand first, then by station.
@@ -50,6 +52,7 @@ export class InventoryScreen {
     this.root.innerHTML = `
       <div class="buy-head">
         <h2>Your things</h2>
+        <span class="inv-coins" data-coins></span>
         <span class="inv-what" data-what></span>
         <button type="button" class="buy-close" data-close>Close <kbd data-inv-key>I</kbd></button>
       </div>
@@ -70,12 +73,13 @@ export class InventoryScreen {
           <div class="inv-actions">
             <button type="button" data-act="drop">Drop</button>
             <button type="button" data-act="sort">Sort the bag</button>
-            <span class="buy-foot">Click a stack, then where it goes &middot; right click: split it &middot; shift-click: send it across &middot; R under the hotbar: what right click uses (or hold <kbd data-hand-key>X</kbd> and press its number)</span>
+            <span class="buy-foot">Click a stack, then where it goes &middot; right click: split it &middot; shift-click: send it across &middot; a number key: into that hotbar slot &middot; R under the hotbar: what right click uses (or hold <kbd data-hand-key>X</kbd> and press its number)</span>
           </div>
         </div>
+        <div class="inv-tip hidden" data-tip></div>
         <div class="inv-craft">
           <h3 class="inv-label">Crafting <span class="craft-near" data-near></span></h3>
-          <label class="craft-only"><input type="checkbox" data-only> Only what I can make now</label>
+          <div class="craft-find"><input type="search" data-find placeholder="Find a recipe…" spellcheck="false" aria-label="Find a recipe"><label class="craft-only"><input type="checkbox" data-only> Only what I can make now</label></div>
           <div class="craft-list" data-recipes>${RECIPES.map(r => this.recipeRow(r)).join('')}</div>
         </div>
       </div>`;
@@ -84,7 +88,9 @@ export class InventoryScreen {
       const box = b.dataset.box, i = +b.dataset.slot;
       b.addEventListener('click', e => this.click(box, i, e.shiftKey));
       b.addEventListener('contextmenu', e => { e.preventDefault(); this.split(box, i); });
-      b.addEventListener('mouseenter', () => this.describe(box, i));
+      b.addEventListener('mouseenter', e => { this.hover = { box, i }; this.describe(box, i); this.tipFor(this.box(box)?.slots[i], e); });
+      b.addEventListener('mousemove', e => this.moveTip(e));
+      b.addEventListener('mouseleave', () => { this.hover = null; this.hideTip(); });
       b.addEventListener('focus', () => this.describe(box, i));
     }
     this.rows = new Map();
@@ -95,7 +101,9 @@ export class InventoryScreen {
       cv.classList.toggle('ink', itemOf(r.key).kind === 'weapon');
       paint(cv, itemOf(r.key));
       row.addEventListener('click', e => { this.onCraft(r, e.shiftKey ? 5 : 1); this.refresh(true); });
-      row.addEventListener('mouseenter', () => { this.whatEl.textContent = `${itemOf(r.key).name}${r.n > 1 ? ` × ${r.n}` : ''}: ${madeFrom(r)}${r.at ? `, at a ${STATION_NAMES[r.at].toLowerCase()}` : ', by hand'}`; });
+      row.addEventListener('mouseenter', e => { this.whatEl.textContent = `${itemOf(r.key).name}${r.n > 1 ? ` × ${r.n}` : ''}: ${madeFrom(r)}${r.at ? `, at a ${STATION_NAMES[r.at].toLowerCase()}` : ', by hand'}`; this.tipFor({ key: r.key, n: r.n }, e); });
+      row.addEventListener('mousemove', e => this.moveTip(e));
+      row.addEventListener('mouseleave', () => this.hideTip());
     }
     this.root.querySelector('[data-close]').addEventListener('click', () => this.onClose());
     this.root.querySelector('[data-act="drop"]').addEventListener('click', () => {
@@ -112,6 +120,12 @@ export class InventoryScreen {
     this.root.querySelector('[data-act="take-all"]').addEventListener('click', () => { if (this.remote) this.remote({ op: 'take-all' }); else this.everything(this.chest?.inv, this.inv); });
     this.root.querySelector('[data-act="put-all"]').addEventListener('click', () => { if (this.remote) this.remote({ op: 'put-all' }); else this.everything(this.inv, this.chest?.inv, HOTBAR); });
     this.root.querySelector('[data-only]').addEventListener('change', () => this.refresh(true));
+    this.findEl = this.root.querySelector('[data-find]');
+    this.findEl.addEventListener('input', () => this.refresh(true));
+    // (Typing in it: the keys are its own, not the game's or the screen's.)
+    this.findEl.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') { this.findEl.value = ''; this.findEl.blur(); this.refresh(true); } });
+    this.tipEl = this.root.querySelector('[data-tip]');
+    this.coinsEl = this.root.querySelector('[data-coins]');
     this.hands = [...this.root.querySelectorAll('[data-hand]')];
     for (const b of this.hands) b.addEventListener('click', () => this.setHand(+b.dataset.hand));
     this.whatEl = this.root.querySelector('[data-what]');
@@ -149,6 +163,8 @@ export class InventoryScreen {
     this.root.classList.add('hidden');
     this.picked = null;
     this.chest = null;
+    this.hover = null;
+    this.hideTip();
   }
 
   get inv() { return this.me?.world?.inv; }
@@ -201,12 +217,39 @@ export class InventoryScreen {
     this.whatEl.textContent = it ? `${it.name}${s.n > 1 ? ` × ${s.n}` : ''}${whatFor(it)}` : '';
   }
 
+  /** The card for a stack ({ key, n }) the mouse is over (e: the mouse event, for where). */
+  tipFor(stack, e) {
+    const it = stack && itemOf(stack.key);
+    if (!it) { this.hideTip(); return; }
+    const d = itemDetails(it, stack.n || 1);
+    this.tipEl.innerHTML = `<div class="tip-name" style="color:${d.color}">${esc(d.name)}${stack.n > 1 ? ` <small>× ${stack.n}</small>` : ''}</div>
+      <div class="tip-kind">${esc(d.kind)}</div>
+      ${d.lines.map(l => `<div class="tip-line">${esc(l)}</div>`).join('')}
+      ${d.worth ? `<div class="tip-worth">${esc(d.worth)}</div>` : ''}
+      ${d.made ? `<div class="tip-made">${esc(d.made)}</div>` : ''}`;
+    this.tipEl.classList.remove('hidden');
+    this.moveTip(e);
+  }
+
+  /** The card beside the mouse (inside the screen). */
+  moveTip(e) {
+    if (!e || this.tipEl.classList.contains('hidden')) return;
+    const box = this.root.getBoundingClientRect(), w = this.tipEl.offsetWidth, h = this.tipEl.offsetHeight;
+    let x = e.clientX - box.left + 18, y = e.clientY - box.top + 14;
+    if (x + w > box.width - 6) x = e.clientX - box.left - w - 14;
+    if (y + h > this.root.scrollHeight - 6) y = Math.max(6, e.clientY - box.top - h - 10);
+    this.tipEl.style.left = `${Math.max(6, x)}px`;
+    this.tipEl.style.top = `${y + this.root.scrollTop}px`;
+  }
+
+  hideTip() { this.tipEl?.classList.add('hidden'); }
+
   /** Bring the slots and the recipes up to date (only when something's changed, unless `force`). */
   refresh(force = false) {
     const inv = this.inv, me = this.me;
     if (!inv || !this.game?.world) return;
     const near = stationsNear(this.game.world, me.x, me.y - 8, this.near);
-    const seen = `${inv.version}|${this.chest?.inv.version ?? ''}|${[...near].join()}|${me.world.slot}|${me.world.slot2}|${this.picked ? `${this.picked.box}${this.picked.i}` : ''}|${this.onlyEl.checked}`;
+    const seen = `${inv.version}|${this.chest?.inv.version ?? ''}|${[...near].join()}|${me.world.slot}|${me.world.slot2}|${this.picked ? `${this.picked.box}${this.picked.i}` : ''}|${this.onlyEl.checked}|${this.findEl.value}`;
     if (!force && seen === this.seen) return;
     this.seen = seen;
     for (const b of this.slots) {
@@ -220,7 +263,7 @@ export class InventoryScreen {
       b.classList.toggle('empty', !s);
       if (b.dataset.look === look) continue;
       b.dataset.look = look;
-      b.title = it ? `${it.name}${whatFor(it)}` : '';
+      b.dataset.cat = it ? categoryOf(it) : '';
       b.querySelector('.inv-n').textContent = s && (s.n > 1 || it?.kind === 'block') ? String(s.n) : s?.mag != null ? `${s.mag}` : '';
       const cv = b.querySelector('canvas');
       cv.classList.toggle('ink', it?.kind === 'weapon');
@@ -233,12 +276,15 @@ export class InventoryScreen {
     }
     // The recipes: what can be made now first, then what's short of something, then what needs a station not here.
     this.nearEl.textContent = near.size ? `at ${[...near].map(n => STATION_NAMES[n]).join(', ')}` : 'by hand (stand near a crafting station for more)';
-    const only = this.onlyEl.checked, order = [];
+    const coins = inv.count('coins');
+    this.coinsEl.textContent = `${coins} coin${coins === 1 ? '' : 's'}`;
+    const only = this.onlyEl.checked, find = this.findEl.value.trim().toLowerCase(), order = [];
     for (const r of RECIPES) {
       const row = this.rows.get(r), times = timesCanMake(inv, r, near), here = !r.at || near.has(r.at);
       row.classList.toggle('can', times > 0);
       row.classList.toggle('away', !here);
-      row.classList.toggle('hidden', only && times === 0);
+      const found = !find || itemOf(r.key).name.toLowerCase().includes(find) || r.of.some(([k]) => itemOf(k)?.name.toLowerCase().includes(find));
+      row.classList.toggle('hidden', (only && times === 0) || !found);
       row.disabled = times === 0;
       row.title = times > 0 ? `Make ${times > 1 ? `(up to ${times} times; shift-click: five)` : ''}` : !here ? `Needs a ${STATION_NAMES[r.at].toLowerCase()} near you` : `Needs ${madeFrom(r)}`;
       order.push([times > 0 ? 0 : here ? 1 : 2, AT_ORDER.indexOf(r.at), r.id, row]);
@@ -254,6 +300,19 @@ export class InventoryScreen {
   /** A key while the screen is open: true if it was the screen's. */
   key(code) {
     if (code === 'Escape' || isKey('inventory', keyOf(code))) { this.onClose(); return true; }
+    // A number: what the mouse is over, into that hotbar slot (swapped with what's there).
+    const m = /^Digit(\d)$/.exec(code);
+    if (m && this.hover && this.box(this.hover.box)?.slots[this.hover.i]) {
+      const to = (+m[1] + 9) % 10;
+      const { box, i } = this.hover;
+      if (box === 'me' && i === to) return true;
+      if (this.remote) this.remote({ op: 'move', a: [box, i], b: ['me', to] });
+      else moveBetween(this.box(box), i, this.inv, to);
+      this.picked = null;
+      this.refresh(true);
+      this.tipFor(this.box(box)?.slots[i], null);
+      return true;
+    }
     return false;
   }
 }

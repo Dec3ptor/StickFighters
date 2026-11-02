@@ -117,7 +117,7 @@ export function drawHud(r, game, me, opts = {}) {
   const standings = standingsOf(game);
   // (Defuse: your money where the scores go; Tab shows everyone. A world: what you've picked
   // up there, where you are at the top, and a map of what's round you.)
-  if (game.world) drawWorldHud(r, ctx, game, me, W, H);
+  if (game.world) drawWorldHud(r, ctx, game, me, W, H, opts);
   else if (game.mode === 'defuse' && game.modeState) drawMoney(ctx, game, me, W, H);
   else drawScores(ctx, game, me, H, standings);
   drawFeed(ctx, game, W, opts.chat);

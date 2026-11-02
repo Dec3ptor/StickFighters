@@ -348,7 +348,7 @@ html[data-game="remastered"] .craft-row.can { box-shadow: inset 3px 0 0 #7ee07a;
 .inv-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; }
 .inv-slot { position: relative; aspect-ratio: 1; padding: 0; display: flex; align-items: center; justify-content: center; font-weight: normal; }
 .inv-slot canvas { width: 80%; height: auto; pointer-events: none; }
-.inv-slot .inv-n { position: absolute; right: 3px; bottom: 1px; font-size: 11px; font-weight: bold; pointer-events: none; }
+.inv-slot .inv-n { position: absolute; right: 3px; bottom: 5px; font-size: 11px; font-weight: bold; pointer-events: none; }
 .inv-slot kbd { position: absolute; left: 2px; top: 2px; font-size: 9px; padding: 0 3px; pointer-events: none; }
 .inv-slot.empty { opacity: 0.6; }
 .inv-slot.in-hand { box-shadow: inset 0 0 0 2px #f2c230; }
@@ -366,6 +366,26 @@ html[data-game="remastered"] .inv .inv-slot.picked { outline-color: #f2c230; }
 /* (Blocks keep their colours on Remastered's dark glass; only guns, drawn in ink, are turned light.) */
 html[data-game="remastered"] .buy.inv canvas { filter: none; }
 html[data-game="remastered"] .buy.inv canvas.ink, html[data-game="remastered"] .buy.talk canvas.ink { filter: invert(0.88) hue-rotate(180deg); }
+
+/* ---- Worlds: the inventory's coins, item cards, kinds of things, finding a recipe ---- */
+.inv-coins { font-weight: bold; color: #b8860b; white-space: nowrap; }
+.inv-coins::before { content: '● '; color: #f2c230; }
+html[data-game="remastered"] .inv-coins { color: #f2c230; }
+.inv-tip { position: absolute; z-index: 5; width: 270px; padding: 9px 11px; pointer-events: none; background: rgba(16, 18, 24, 0.95); color: #eef2f7; border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); font-size: 12.5px; line-height: 1.4; }
+.inv-tip .tip-name { font-size: 15px; font-weight: bold; }
+.inv-tip .tip-name small { font-weight: normal; color: #c8ccd4; }
+.inv-tip .tip-kind { color: #9aa5b4; margin-bottom: 4px; }
+.inv-tip .tip-line::before { content: '· '; color: #9aa5b4; }
+.inv-tip .tip-worth { margin-top: 5px; color: #f2c230; }
+.inv-tip .tip-made { margin-top: 3px; color: #9aa5b4; font-size: 11.5px; }
+.inv-slot[data-cat]:not([data-cat=""])::after { content: ''; position: absolute; left: 3px; right: 3px; bottom: 2px; height: 3px; border-radius: 2px; background: var(--cat, transparent); pointer-events: none; }
+.inv-slot[data-cat="coins"] { --cat: #e0b020; } .inv-slot[data-cat="gem"] { --cat: #a052ea; } .inv-slot[data-cat="potion"] { --cat: #e0304c; }
+.inv-slot[data-cat="food"] { --cat: #e08a3a; } .inv-slot[data-cat="weapon"] { --cat: #e08a1a; } .inv-slot[data-cat="tool"] { --cat: #3a8ae0; }
+.inv-slot[data-cat="ammo"] { --cat: #c8a040; } .inv-slot[data-cat="bar"] { --cat: #9aa4b2; } .inv-slot[data-cat="ore"] { --cat: #a0784c; }
+.inv-slot[data-cat="contract"] { --cat: #c8b070; }
+.craft-find { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0 0 6px; }
+.craft-find input[type="search"] { flex: 1 1 140px; min-width: 0; padding: 4px 8px; font-size: 13px; }
+.craft-find .craft-only { margin: 0; }
 
 /* ---- Worlds: talking to townsfolk (right click on them) ---- */
 .buy.talk { width: min(820px, calc(100vw - 24px)); }

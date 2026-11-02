@@ -363,7 +363,7 @@ function gotItem(game, s, key, n) {
   const got = s.world.got, last = got[got.length - 1];
   if (last && last.key === key && game.tick - last.tick < 90) { last.n += n; last.tick = game.tick; }
   else got.push({ key, n, tick: game.tick });
-  if (got.length > 6) got.shift();
+  if (got.length > 8) got.shift();
 }
 
 // ---- Digging ---------------------------------------------------------------------------------------

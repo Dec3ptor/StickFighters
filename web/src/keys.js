@@ -33,7 +33,7 @@ export const ACTIONS = [
   })),
   { id: 'use', name: 'Plant or defuse the bomb (hold, Defuse)', group: 'Actions', keys: ['KeyE'] },
   { id: 'buy', name: 'Buy menu (Defuse)', group: 'Actions', keys: ['KeyB'] },
-  { id: 'inventory', name: 'Your things (worlds)', group: 'Actions', keys: ['KeyI'] },
+  { id: 'inventory', name: 'Inventory: your things, crafting (worlds)', group: 'Actions', keys: ['KeyB', 'KeyI'] },
   { id: 'gadget', name: 'Gadget, or drop your gun or the bomb (Defuse)', group: 'Actions', keys: ['KeyG'], press: true },
   { id: 'streak', name: 'Use a kill streak reward', group: 'Actions', keys: ['KeyX'], press: true },
   { id: 'streakPick', name: 'Pick which kill streak reward', group: 'Actions', keys: ['KeyZ'], press: true },
@@ -42,6 +42,7 @@ export const ACTIONS = [
   { id: 'scores', name: 'Scoreboard (hold)', group: 'Interface', keys: ['Tab'] },
   { id: 'chat', name: 'Chat (online)', group: 'Interface', keys: ['Enter', 'KeyT'] },
   { id: 'mute', name: 'Mute sound', group: 'Interface', keys: ['KeyM'] },
+  { id: 'showItems', name: 'Show the names of everything lying on the ground (hold, worlds)', group: 'Interface', keys: ['Alt'] },
   { id: 'devMode', name: 'Dev mode (your own worlds): fly, zoom, dig out anything', group: 'Interface', keys: ['Backquote'], press: true },
   { id: 'freeCam', name: 'Spectating: free camera, or back to following', group: 'Interface', keys: ['Space'] },
 ];
@@ -50,8 +51,9 @@ const BY_ID = new Map(ACTIONS.map(a => [a.id, a]));
 export const MAX_KEYS = 4;
 // Actions that may share a key: E plants or defuses where you can, and switches weapons anywhere
 // else; Space jumps, and spectating, switches to the free camera; X uses a kill streak reward,
-// and in a world (no kill streaks) is the right hand's.
-const SHARED = [['use', 'next'], ['freeCam', 'jump'], ['hand2', 'streak']];
+// and in a world (no kill streaks) is the right hand's; B is Defuse's buy menu, and in a world
+// (nothing to buy that way) your inventory.
+const SHARED = [['use', 'next'], ['freeCam', 'jump'], ['hand2', 'streak'], ['buy', 'inventory']];
 const shares = (a, b) => SHARED.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
 
 /**
