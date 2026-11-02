@@ -36,13 +36,15 @@ export class Chunk {
 export class TileWorld {
   /**
    * seed: the world's seed. saved: chunks as saved ({ key: { fg, bg, shape } }, chunkKey),
-   * used in place of the seed's. towns: whether it has towns (worlds made before them don't).
+   * used in place of the seed's. gen: the generator's version it was made with (worldgen.js:
+   * 2 has towns, 3 ores in veins; worlds keep theirs). towns: true, an older way to say 2.
    */
-  constructor({ seed = 1, name = 'World', saved = null, towns = false } = {}) {
+  constructor({ seed = 1, name = 'World', saved = null, towns = false, gen = 0 } = {}) {
     this.seed = seed | 0;
     this.name = name;
-    this.towns = !!towns;
-    this.gen = new WorldGen(this.seed, { towns: this.towns });
+    this.genVersion = gen || (towns ? 2 : 1);
+    this.towns = this.genVersion >= 2;
+    this.gen = new WorldGen(this.seed, { gen: this.genVersion });
     this.chunks = new Map();
     this.saved = saved instanceof Map ? saved : new Map(Object.entries(saved || {}).map(([k, v]) => [Number(k), v]));
     this.bounds = { left: -HALF_W * TILE, top: 0, right: HALF_W * TILE, bottom: WORLD_H * TILE };

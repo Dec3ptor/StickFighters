@@ -72,12 +72,15 @@ export async function getWorld(id) {
 
 /** A new world (kept straight away): { id, name, seed, created, played, player }. */
 /**
- * Which version of the world generator a world is made with: 2 has towns (towns.js). Worlds
- * made before keep the land they were made with (towns would cut through what's been built).
+ * Which version of the world generator a world is made with: 2 has towns (towns.js), 3 ores in
+ * veins and nodes, gems, diamond pipes and geodes (worldgen.js). Worlds made before keep the land
+ * they were made with (what's new would cut through what's been built, or move what's been seen).
  */
-export const WORLD_GEN = 2;
+export const WORLD_GEN = 3;
+/** A world's generator version (from its record: 1 if it has none). */
+export const genOf = rec => Math.max(1, Math.min(WORLD_GEN, rec?.gen | 0 || 1));
 /** Whether a world (its record) has towns. */
-export const hasTowns = rec => (rec?.gen | 0) >= 2;
+export const hasTowns = rec => genOf(rec) >= 2;
 
 export async function createWorld({ name, seed }) {
   const now = Date.now();

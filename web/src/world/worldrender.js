@@ -300,6 +300,17 @@ function marks(g, b, x, y, h, classic, grid, k) {
       if (grid.fg[k - W] === K.DOOR && grid.fg[k + W] === K.DOOR) { g.fillStyle = classic ? INK : '#e0c060'; g.fillRect(x + TILE - 6, y + 7, 2, 2); }
       break;
     }
+    case 'gem': {
+      // Crystals poking out of the rock: faceted, in the gem's colour, with a glint (in both games).
+      for (let i = 0; i < 3; i++) {
+        const cx = x + 3.5 + ((h >>> (i * 6)) & 7) + i * 1.5, cy = y + 4 + ((h >>> (i * 6 + 3)) & 7), s = 2.1 + ((h >>> (20 + i)) & 1) * 0.9;
+        g.fillStyle = b.ore;
+        g.beginPath(); g.moveTo(cx, cy - s); g.lineTo(cx + s * 0.75, cy); g.lineTo(cx, cy + s); g.lineTo(cx - s * 0.75, cy); g.closePath(); g.fill();
+        g.strokeStyle = classic ? INK : 'rgba(0,0,0,0.45)'; g.lineWidth = 0.6; g.stroke();
+        g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(cx - 0.7, cy - s * 0.55, 1.1, 1.1);
+      }
+      break;
+    }
     case 'cobble':
       // Rounded stones set in mortar (two layouts, by the tile).
       g.strokeStyle = ink;
@@ -855,6 +866,18 @@ export class WorldView {
     const g = this.glows, world = game.world, t = performance.now() / 1000;
     let n = 0;
     for (let i = 0; i < g.length && n < 800; i += 4) {
+      if (K.GEMS.has(g[i + 3])) {
+        // A gem's glint: now and then, a little star on it.
+        const gh = hash3(9, g[i], g[i + 1]), tw = Math.sin(t * (1.3 + (gh & 7) / 10) + (gh & 255));
+        if (tw > 0.9) {
+          const k = (tw - 0.9) * 10, sx = g[i] - 4 + (gh >>> 8) % 8, sy = g[i + 1] - 4 + (gh >>> 12) % 8;
+          ctx.globalAlpha = k;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(sx - 2.5 * k, sy - 0.5, 5 * k, 1);
+          ctx.fillRect(sx - 0.5, sy - 2.5 * k, 1, 5 * k);
+        }
+        continue;
+      }
       if (g[i + 3] !== K.MAGMA) continue;
       n++;
       const x = g[i] - TILE / 2, y = g[i + 1] - TILE / 2, tx = x / TILE, ty = y / TILE, h = hash3(3, tx, ty);

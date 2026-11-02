@@ -126,6 +126,19 @@ export const BARREL = def('barrel', 'Barrel', furniture({ hard: 2, resist: 4, wo
 export const SIGN = def('sign', 'Sign', furniture({ hard: 1, resist: 2, wood: true, color: '#a87a48', pattern: 'sign' }));
 export const POST = def('post', 'Wooden post', { solid: false, hard: 2, resist: 3, wood: true, clear: true, color: '#7a5634', pattern: 'post' });
 
+// ---- Ores in veins and nodes, gems and diamonds (worlds made since: worldgen.js's oreVeins) ---------
+export const SILVER = def('silver_ore', 'Silver ore', { hard: 7, resist: 9, tier: 1, color: '#7c7f86', pattern: 'ore', ore: '#dfe4ec', natural: true });
+const gem = (key, name, drop, ore) => def(key, name, { hard: 9, resist: 10, tier: 2, drop, color: '#4f535c', pattern: 'gem', ore, light: 2, natural: true });
+export const RUBY = gem('ruby_ore', 'Ruby', 'ruby', '#e0213c');
+export const SAPPHIRE = gem('sapphire_ore', 'Sapphire', 'sapphire', '#2f62ee');
+export const EMERALD = gem('emerald_ore', 'Emerald', 'emerald', '#1fc45c');
+export const TOPAZ = gem('topaz_ore', 'Topaz', 'topaz', '#f2a81e');
+export const AMETHYST = gem('amethyst_ore', 'Amethyst', 'amethyst', '#a052ea');
+export const KIMBERLITE = def('kimberlite', 'Kimberlite', { hard: 8, resist: 12, tier: 2, color: '#3e4a56', pattern: 'cracks', natural: true });
+export const DIAMOND = def('diamond_ore', 'Diamond', { hard: 14, resist: 16, tier: 3, drop: 'diamond', color: '#3e4a56', pattern: 'gem', ore: '#c4f6ff', light: 4, natural: true });
+/** The gem blocks (they glint). */
+export const GEMS = new Set([RUBY, SAPPHIRE, EMERALD, TOPAZ, AMETHYST, DIAMOND]);
+
 export const BLOCKS = B;
 export const BLOCK_BY_KEY = new Map(B.map(b => [b.key, b]));
 export const blockId = key => BLOCK_BY_KEY.get(key)?.id ?? AIR;

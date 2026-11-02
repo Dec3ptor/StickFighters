@@ -32,6 +32,14 @@ item('coal', 'Coal', 'material', { color: '#202020' });
 item('copper_bar', 'Copper bar', 'material', { color: '#d07a3a' });
 item('iron_bar', 'Iron bar', 'material', { color: '#c9ccd2' });
 item('gold_bar', 'Gold bar', 'material', { color: '#f2c230' });
+item('silver_bar', 'Silver bar', 'material', { color: '#dfe4ec' });
+// Gems (mined from their nodes deep down, diamonds from kimberlite pipes): worth a lot, to traders and smiths.
+item('ruby', 'Ruby', 'material', { color: '#e0213c', gem: true });
+item('sapphire', 'Sapphire', 'material', { color: '#2f62ee', gem: true });
+item('emerald', 'Emerald', 'material', { color: '#1fc45c', gem: true });
+item('topaz', 'Topaz', 'material', { color: '#f2a81e', gem: true });
+item('amethyst', 'Amethyst', 'material', { color: '#a052ea', gem: true });
+item('diamond', 'Diamond', 'material', { color: '#c4f6ff', gem: true });
 // Coins: what monsters drop (and half of what you carry, when you die): mercenaries are hired with them.
 item('coins', 'Coins', 'material', { color: '#f2c230' });
 // A mercenary's contract: used (like a weapon), it hires one, who follows you and shoots monsters.
@@ -43,6 +51,7 @@ item('pickaxe', 'Copper pickaxe', 'tool', { stack: 1, tool: 'pick', power: 1, ev
 item('iron_pickaxe', 'Iron pickaxe', 'tool', { stack: 1, tool: 'pick', power: 1.6, every: 12, tier: 2, color: '#c9ccd2', handle: '#7a5634' });
 item('gold_pickaxe', 'Gold pickaxe', 'tool', { stack: 1, tool: 'pick', power: 2.3, every: 11, tier: 3, color: '#f2c230', handle: '#5c3f22' });
 item('crystal_pickaxe', 'Crystal pickaxe', 'tool', { stack: 1, tool: 'pick', power: 3.2, every: 9, tier: 4, color: '#5ee0ff', handle: '#3a2c48' });
+item('diamond_pickaxe', 'Diamond pickaxe', 'tool', { stack: 1, tool: 'pick', power: 4.4, every: 8, tier: 5, color: '#c4f6ff', handle: '#2a2a34' });
 item('axe', 'Copper axe', 'tool', { stack: 1, tool: 'axe', power: 1.2, every: 15, tier: 1, color: '#d07a3a', handle: '#7a5634' });
 item('hammer', 'Builder\'s hammer', 'tool', { stack: 1, tool: 'hammer', power: 1.5, every: 12, tier: 1, color: '#8a8f96', handle: '#7a5634' });
 

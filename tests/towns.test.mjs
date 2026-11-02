@@ -174,3 +174,40 @@ test("towns' blocks: players can make them, and lanterns need something to hang 
   breakBlock(game, x, y - 1);
   assert.equal(world.tile(x, y), K.AIR, 'it falls when the block above goes');
 });
+
+test('ores in veins and nodes, gems, diamonds in kimberlite pipes, hollow geodes: in worlds made since', async () => {
+  const counts = gen => {
+    const w = new TileWorld({ seed: 777, gen }), c = {};
+    for (let cx = -14; cx < 14; cx++) for (let cy = 0; cy < 16; cy++) for (const id of w.chunk(cx, cy).fg) c[id] = (c[id] || 0) + 1;
+    return { w, c };
+  };
+  const old = counts(2), now = counts(3);
+  for (const id of [K.SILVER, K.RUBY, K.SAPPHIRE, K.EMERALD, K.TOPAZ, K.AMETHYST, K.KIMBERLITE, K.DIAMOND]) {
+    assert.ok(!old.c[id], `${K.BLOCKS[id].key}: not in a world made before`);
+    assert.ok(now.c[id] > 0, `${K.BLOCKS[id].key}: in a world made since (${now.c[id]})`);
+  }
+  // About as much of the common ores as before (veins, not more of it).
+  for (const id of [K.COAL, K.COPPER, K.GOLD]) {
+    const r = now.c[id] / old.c[id];
+    assert.ok(r > 0.5 && r < 2, `${K.BLOCKS[id].key}: ${old.c[id]} -> ${now.c[id]}`);
+  }
+  // Every diamond is in a pipe of kimberlite; geodes are hollow inside.
+  const w = now.w, g = w.gen;
+  let diamonds = 0, hollow = 0;
+  for (let x = -14 * 32; x < 14 * 32; x++) {
+    for (let y = 290; y < 470; y++) {
+      if (w.tile(x, y) === K.DIAMOND) {
+        diamonds++;
+        let rock = 0;
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (w.tile(x + dx, y + dy) === K.KIMBERLITE) rock++;
+        assert.ok(rock >= 3, `diamond at (${x}, ${y}) in kimberlite`);
+      }
+      if (y > 362 && g.geode(x, y) === -2) { hollow++; assert.ok(!K.SOLID[w.tile(x, y)], `inside a geode at (${x}, ${y}): open (mushrooms grow there)`); }
+    }
+  }
+  assert.ok(diamonds > 0 && hollow > 0, `diamonds ${diamonds}, geode insides ${hollow}`);
+  // Gems give gems; a diamond pickaxe can be made from diamonds.
+  assert.equal(K.BLOCKS[K.DIAMOND].drop, 'diamond');
+  assert.equal(itemOf('diamond_pickaxe').tier, 5);
+  assert.ok(RECIPES.some(r => r.key === 'diamond_pickaxe' && r.of.some(([k]) => k === 'diamond')));
+});

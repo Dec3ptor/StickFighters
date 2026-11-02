@@ -18,6 +18,11 @@ export const DEEP = 360;            // slate from here down
 export const UNDERWORLD = 468;      // basalt and magma from here down
 
 const REGION = 320, JITTER = 96, BLEND = 40;
+// Worlds made since veins (oreVeins): diamond pipes and geodes, how high they come, and the gems.
+const PIPE_CELL = 420, PIPE_TOP = 290, GEODE_TOP = 360, HOLLOW = -2;
+const GEM_ORES = [K.RUBY, K.SAPPHIRE, K.EMERALD, K.TOPAZ, K.AMETHYST];
+// How thick each kind's veins are (how near nothing their noise must be).
+const VEIN = { coal: 0.045, copper: 0.04, iron: 0.044, silver: 0.038, gold: 0.026 };
 
 /**
  * The biomes. climate: 0 cold, 1 mild, 2 hot (neighbours tend to share one). Heights are in
@@ -39,10 +44,16 @@ const BY_CLIMATE = [[6, 2, 6], [0, 1, 1, 2, 0], [3, 4, 5, 3]];
 const RUIN_CELL = 240, CABIN_W = 160, CABIN_H = 96;
 
 export class WorldGen {
-  /** towns: whether the world has towns (towns.js): worlds made before them keep their land as it was. */
-  constructor(seed, { towns = false } = {}) {
+  /**
+   * gen: the version of the generator the world was made with (worldsave.js's WORLD_GEN): 1 the
+   * first; 2 has towns (towns.js); 3 ores in veins and nodes, gems, diamond pipes and geodes.
+   * Worlds keep the land they were made with. (towns: true, an older way to say 2.)
+   */
+  constructor(seed, { towns = false, gen = 0 } = {}) {
     this.seed = seed | 0;
-    this.towns = !!towns;
+    this.version = gen || (towns ? 2 : 1);
+    this.towns = this.version >= 2;
+    this.veins = this.version >= 3;
     this.townPlans = new Map(); // region -> its town (or null)
     this.townRasters = new Map(); // town id -> its blocks (a few kept)
     this.columns = new Map(); // x -> column (kept for a while: chunks above and below ask too)
@@ -172,6 +183,8 @@ export class WorldGen {
     const depth = y - surf;
     if (depth < 3 || y >= WORLD_H - 6) return false;
     if (town && depth < TOWN_BELOW + 8) return false;
+    // (Geodes, deep down, are hollow inside: oreVeins has their shells.)
+    if (this.veins && y > GEODE_TOP && this.geode(x, y) === HOLLOW) return true;
     // (Not right under where everyone starts.)
     if (depth < 24 && x > this.spawnX - 40 && x < this.spawnX + 40) return false;
     const s = this.seed;
@@ -226,6 +239,7 @@ export class WorldGen {
 
   /** An ore at (x, y) in rock `base` (stone, slate or basalt), or the rock as it is. */
   ore(x, y, depth, base) {
+    if (this.veins) return this.oreVeins(x, y, depth, base);
     const s = this.seed;
     if (base === K.BASALT) return y > UNDERWORLD + 6 && noise2(s + 46, x / 4.2, y / 4.2) > 0.52 ? K.EMBER : base;
     if (base !== K.STONE && base !== K.SLATE) return base;
@@ -235,6 +249,71 @@ export class WorldGen {
     if (depth > 6 && y < 340 && noise2(s + 42, x / 5.4, y / 5.4) > 0.47) return K.COPPER;
     if (depth > 3 && y < 300 && noise2(s + 41, x / 5, y / 5) > 0.44) return K.COAL;
     return base;
+  }
+
+  /**
+   * Ores, in worlds made since veins: coal in long flat seams; copper, iron, silver and gold in
+   * winding veins (each at its depths, where the rock's rich: a slow noise); gold nuggets and gems
+   * (ruby, sapphire, emerald, topaz, amethyst) in small nodes deep down; diamonds in kimberlite
+   * pipes rising from the deep; geodes (crystal shells lined with amethyst) near the bottom;
+   * ember ore in the underworld's basalt.
+   */
+  oreVeins(x, y, depth, base) {
+    const s = this.seed;
+    if (base === K.BASALT) return y > UNDERWORLD + 6 && noise2(s + 46, x / 4.2, y / 4.2) > 0.52 ? K.EMBER : base;
+    if (base !== K.STONE && base !== K.SLATE) return base;
+    if (y > PIPE_TOP) { const p = this.pipe(x, y); if (p) return p; }
+    if (y > GEODE_TOP) { const g = this.geode(x, y); if (g) return g; }
+    if (y > 300) {
+      const n = this.node(x, y, 26, 0.24, 1, 1.9, 301);
+      if (n) return GEM_ORES[n % GEM_ORES.length];
+    }
+    if (y > 250 && this.node(x, y, 17, 0.18, 0.8, 1.6, 302)) return K.GOLD;
+    // (Where each kind runs: two slow fields, each ore rich in its own part of them.)
+    const a = noise2(s + 140, x / 52, y / 36), b = noise2(s + 146, x / 62, y / 42);
+    if (y > 270 && b > 0.5 && Math.abs(noise2(s + 145, x / 18, y / 24)) < VEIN.gold) return K.GOLD;
+    if (y > 200 && a > 0.42 && Math.abs(noise2(s + 144, x / 20, y / 30)) < VEIN.silver) return K.SILVER;
+    if (depth > 26 && (a < -0.4 || b < -0.4) && Math.abs(noise2(s + 143, x / 22, y / 22)) < VEIN.iron) return K.IRON;
+    if (depth > 6 && y < 300 && b > 0.32 && Math.abs(noise2(s + 142, x / 26, y / 18)) < VEIN.copper) return K.COPPER;
+    if (depth > 3 && y < 300 && a > 0.28 && Math.abs(noise2(s + 141, x / 34, y / 11)) < VEIN.coal) return K.COAL;
+    return base;
+  }
+
+  /**
+   * A node of ore at (x, y), in rock split into cells `cell` tiles across: each has one (chance p),
+   * r0 to r1 tiles across, somewhere in it. Returns a number from its cell's hash (what it's of), or 0.
+   */
+  node(x, y, cell, p, r0, r1, salt) {
+    const cx = Math.floor(x / cell), cy = Math.floor(y / cell), h = hash3(this.seed + salt, cx, cy);
+    if ((h & 1023) / 1024 >= p) return 0;
+    const pad = Math.ceil(r1) + 1, span = cell - 2 * pad;
+    const nx = cx * cell + pad + ((h >>> 10) % span), ny = cy * cell + pad + ((h >>> 17) % span);
+    const r = r0 + (((h >>> 24) & 15) / 15) * (r1 - r0), dx = x - nx, dy = (y - ny) * 1.2, d2 = dx * dx + dy * dy;
+    if (d2 > r * r || (d2 > (r - 0.7) * (r - 0.7) && rand3(this.seed + salt, x, y) < 0.35)) return 0;
+    return (h >>> 4) + 1;
+  }
+
+  /**
+   * A diamond pipe: kimberlite in a column rising from the deep, narrowing as it goes up, a
+   * diamond here and there in it (more, deeper). One in some stretches PIPE_CELL tiles across.
+   */
+  pipe(x, y) {
+    const k = Math.floor(x / PIPE_CELL), h = hash3(this.seed, k, 351);
+    if ((h & 255) >= 140) return 0;
+    const top = PIPE_TOP + 20 + ((h >>> 8) % 70);
+    if (y < top) return 0;
+    const px = k * PIPE_CELL + 30 + ((h >>> 16) % (PIPE_CELL - 60)) + fbm1(this.seed + 352, y / 26, 2) * 5;
+    if (Math.abs(x - px) > 1.5 + (y - top) / 36) return 0;
+    return rand3(this.seed + 353, x, y) < 0.025 + (y - top) / 6000 ? K.DIAMOND : K.KIMBERLITE;
+  }
+
+  /** A geode at (x, y): HOLLOW inside, its lining of amethyst, its crystal shell; else 0. */
+  geode(x, y) {
+    const cell = 44, cx = Math.floor(x / cell), cy = Math.floor(y / cell), h = hash3(this.seed, cx, cy + 361);
+    if ((h & 255) >= 70) return 0;
+    const r = 3.4 + ((h >>> 8) & 7) / 3.5, nx = cx * cell + 8 + ((h >>> 12) % (cell - 16)), ny = cy * cell + 8 + ((h >>> 20) % (cell - 16));
+    const d = Math.hypot(x - nx, (y - ny) * 1.1);
+    return d > r ? 0 : d > r - 1 ? K.CRYSTAL : d > r - 1.9 ? K.AMETHYST : HOLLOW;
   }
 
   /** The wall behind (x, y) underground. */
