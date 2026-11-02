@@ -71,9 +71,17 @@ export async function getWorld(id) {
 }
 
 /** A new world (kept straight away): { id, name, seed, created, played, player }. */
+/**
+ * Which version of the world generator a world is made with: 2 has towns (towns.js). Worlds
+ * made before keep the land they were made with (towns would cut through what's been built).
+ */
+export const WORLD_GEN = 2;
+/** Whether a world (its record) has towns. */
+export const hasTowns = rec => (rec?.gen | 0) >= 2;
+
 export async function createWorld({ name, seed }) {
   const now = Date.now();
-  const rec = { id: newId(), name: worldName(name), seed: seed | 0, created: now, played: now, player: null, format: 1 };
+  const rec = { id: newId(), name: worldName(name), seed: seed | 0, created: now, played: now, player: null, format: 1, gen: WORLD_GEN };
   await saveWorld(rec, []);
   return rec;
 }
@@ -171,7 +179,7 @@ export async function exportWorld(id) {
   if (!rec) throw new Error('That world is gone');
   const chunks = await loadChunks(id);
   const data = {
-    kind: FILE_KIND, format: 1, name: rec.name, seed: rec.seed, created: rec.created, played: rec.played, player: rec.player, chests: rec.chests || [], claims: rec.claims || [], players: rec.players || {}, pvp: rec.pvp !== false, time: rec.time || 0,
+    kind: FILE_KIND, format: 1, gen: rec.gen | 0 || 1, name: rec.name, seed: rec.seed, created: rec.created, played: rec.played, player: rec.player, chests: rec.chests || [], claims: rec.claims || [], players: rec.players || {}, pvp: rec.pvp !== false, time: rec.time || 0,
     chunks: [...chunks].map(([k, c]) => [k, packBytes(c.fg), packBytes(c.bg), packBytes(c.shape)]),
   };
   const file = `${rec.name.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'world'}${FILE_EXT}`;
@@ -198,7 +206,7 @@ export async function importWorld(text) {
     id: newId(), name, seed: data.seed | 0, created: Number(data.created) || Date.now(), played: Date.now(),
     player: data.player && typeof data.player === 'object' ? data.player : null, chests: Array.isArray(data.chests) ? data.chests : [], claims: Array.isArray(data.claims) ? data.claims : [],
     players: data.players && typeof data.players === 'object' && !Array.isArray(data.players) ? data.players : {}, pvp: data.pvp !== false,
-    time: Number.isFinite(data.time) ? data.time : 0, format: 1,
+    time: Number.isFinite(data.time) ? data.time : 0, format: 1, gen: Math.max(1, Math.min(WORLD_GEN, data.gen | 0 || 1)),
   };
   await saveWorld(rec, chunks);
   return rec;

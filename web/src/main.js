@@ -41,7 +41,7 @@ import { DEFAULT_GROUPS, CHOICE_KEYS, defaultRows, changedDefaults, gameDefaults
 import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
 import { TileWorld } from './world/tileworld.js';
-import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT } from './world/worldsave.js';
+import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT, hasTowns } from './world/worldsave.js';
 import { playerToSave, worldFromSave, dropItem, chestAt, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, rehire, REACH } from './world/worldplay.js';
 import { craft, stationsNear } from './world/crafting.js';
 import { itemOf } from './world/items.js';
@@ -942,7 +942,7 @@ async function startWorld(rec, { online = false } = {}) {
   catch (err) { show('loading', false); showMenu(); toast(`Couldn't load that world: ${err?.message || err}`); return; }
   // Our own numbers (Settings, Developer), camera and aiming zoom: a world's played offline.
   useOwnRules();
-  const world = new TileWorld({ seed: rec.seed, name: rec.name, saved });
+  const world = new TileWorld({ seed: rec.seed, name: rec.name, saved, towns: hasTowns(rec) });
   chestsFromSave(world, rec.chests);
   claimsFromSave(world, rec.claims);
   world.time = Number.isFinite(rec.time) ? rec.time : 0;

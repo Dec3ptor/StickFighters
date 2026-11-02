@@ -11,6 +11,7 @@ import { WORLD_H, CHUNK } from './worldgen.js';
 import { MOTION, BODY } from '../config.js';
 import { WEAPONS } from '../weapons.js';
 import { monstersTick, armNpc, foes, isMonster, monsterLoot, hireMerc, mercsOf, MERC } from './monsters.js';
+import { setDoor, pushDoor, doorsTick, soldierIn } from './doors.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -23,9 +24,9 @@ const DROP_LIFE = 5 * 60 * 60; // things on the ground go after five minutes (at
 const MAX_DROPS = 400;
 
 // Plants and the like: broken by anything, put in the way of nothing (building replaces them).
-const SOFT = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.VINE]);
+const SOFT = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.VINE, K.WHEAT]);
 // What needs something to stand on (or hang from) and goes when it's taken away.
-const NEEDS_GROUND = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.MUSHROOM, K.CACTUS]);
+const NEEDS_GROUND = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.MUSHROOM, K.CACTUS, K.WHEAT]);
 const DOORS = new Set([K.DOOR, K.DOOR_OPEN]);
 const LEAF = new Set([K.LEAVES, K.PINE_LEAVES, K.JUNGLE_LEAVES, K.VINE]);
 
@@ -42,9 +43,11 @@ export function claimAt(world, tx, ty) {
 
 const sameName = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 
-/** Whether soldier s may change tile (tx, ty) (dig, build, open a chest): not in someone else's base. */
+/** Whether soldier s may change tile (tx, ty) (dig, build, open a chest): not in a town, nor someone else's base. */
 export function mayChange(world, s, tx, ty) {
-  if (!s || !world.claims?.size) return true;
+  if (!s) return true;
+  if (world.gen?.townProtecting(tx, ty)) return false;
+  if (!world.claims?.size) return true;
   const c = claimAt(world, tx, ty);
   return !c || sameName(c.owner, s.name);
 }
@@ -62,12 +65,12 @@ export function claimsFromSave(world, list) {
   }
 }
 
-/** Tell s it's someone else's base (once in a while, not for every click). */
+/** Tell s it's a town, or someone else's base (once in a while, not for every click). */
 function notYours(game, s, tx, ty) {
-  const c = claimAt(game.world, tx, ty);
+  const town = game.world.gen?.townProtecting(tx, ty), c = town ? null : claimAt(game.world, tx, ty);
   if (s.world && game.tick - (s.world.toldClaim || -1e9) > 90) {
     s.world.toldClaim = game.tick;
-    game.notify(s, `That's ${c?.owner ?? 'someone'}'s base`);
+    game.notify(s, town ? `You can't dig or build in ${town.name}` : `That's ${c?.owner ?? 'someone'}'s base`);
   }
   return false;
 }
@@ -426,12 +429,25 @@ function supported(world, x, y, id) {
   if (NEEDS_GROUND.has(id)) return SOLID[world.tile(x, y + 1)] || (id === K.CACTUS && world.tile(x, y + 1) === K.CACTUS) || (id === K.CACTUS && (world.tile(x - 1, y) === K.CACTUS || world.tile(x + 1, y) === K.CACTUS));
   if (id === K.VINE) return world.tile(x, y - 1) === K.VINE || SOLID[world.tile(x, y - 1)] || LEAF.has(world.tile(x, y - 1));
   if (id === K.TORCH) return SOLID[world.tile(x, y + 1)] || SOLID[world.tile(x - 1, y)] || SOLID[world.tile(x + 1, y)] || world.wall(x, y) !== NO_WALL;
+  if (id === K.LANTERN || id === K.BANNER || id === K.FENCE) return hangsOrStands(world, x, y, id);
   if (DOORS.has(id)) {
     let bottom = y;
     while (DOORS.has(world.tile(x, bottom + 1))) bottom++;
     return SOLID[world.tile(x, bottom + 1)];
   }
   return true;
+}
+
+/**
+ * What lanterns, banners and fences need: a lantern hangs from a block or platform above, or
+ * stands on a block or a post; a banner hangs from a block above or a wall behind; a fence
+ * stands on the ground, or another fence.
+ */
+function hangsOrStands(world, x, y, id) {
+  const above = world.tile(x, y - 1), below = world.tile(x, y + 1);
+  if (id === K.FENCE) return !!(SOLID[below] || PLATFORMS[below]) || below === K.FENCE || below === K.POST;
+  if (id === K.BANNER) return !!(SOLID[above] || PLATFORMS[above]) || world.wall(x, y) !== NO_WALL;
+  return !!(SOLID[above] || PLATFORMS[above] || SOLID[below]) || below === K.FENCE || below === K.POST || world.wall(x, y) !== NO_WALL;
 }
 
 /** A tree cut at (tx, ty): everything above comes down (the trunk and its crown) as wood. */
@@ -498,6 +514,7 @@ export function canPlace(game, it, tx, ty) {
   if (id === K.DOOR) return doorSpot(game, tx, ty) != null;
   if (SOLID[id] && soldierIn(game, tx, ty, ty)) return false;
   if (id === K.TORCH) return SOLID[world.tile(tx, ty + 1)] || SOLID[world.tile(tx - 1, ty)] || SOLID[world.tile(tx + 1, ty)] || world.wall(tx, ty) !== NO_WALL;
+  if (id === K.LANTERN || id === K.BANNER || id === K.FENCE) return hangsOrStands(world, tx, ty, id);
   if (NEEDS_GROUND.has(id)) return SOLID[world.tile(tx, ty + 1)];
   // (Furniture stands on the floor, or a platform.)
   if (BLOCKS[id].furniture) return !!(SOLID[world.tile(tx, ty + 1)] || PLATFORMS[world.tile(tx, ty + 1)]);
@@ -522,16 +539,6 @@ function doorSpot(game, tx, ty) {
   return null;
 }
 
-/** True if a living soldier is in tiles (tx, ty0..ty1). */
-function soldierIn(game, tx, ty0, ty1) {
-  const l = tx * TILE, r = l + TILE, t = ty0 * TILE, b = (ty1 + 1) * TILE;
-  for (const s of game.soldiers) {
-    if (!s.alive) continue;
-    const bd = s.body, top = bd.crouching ? BODY.crouchTop : BODY.top;
-    if (bd.x + BODY.halfW > l && bd.x - BODY.halfW < r && bd.y + BODY.bottom > t && bd.y + top < b) return true;
-  }
-  return false;
-}
 
 /** Put one of the soldier's `it` at (tx, ty). Returns true if it went in. */
 function placeOne(game, s, it, tx, ty) {
@@ -677,13 +684,7 @@ function interact(game, s) {
     return true;
   }
   if (!DOORS.has(id)) return false;
-  let top = t.ty, bottom = t.ty;
-  while (DOORS.has(world.tile(t.tx, top - 1))) top--;
-  while (DOORS.has(world.tile(t.tx, bottom + 1))) bottom++;
-  const open = id === K.DOOR;
-  if (!open && soldierIn(game, t.tx, top, bottom)) return true;
-  for (let y = top; y <= bottom; y++) world.setTile(t.tx, y, open ? K.DOOR_OPEN : K.DOOR);
-  game.sound(open ? 'click' : 'thunk', t.tx * TILE + 8, (top + bottom + 1) * TILE / 2);
+  setDoor(game, t.tx, t.ty, id === K.DOOR);
   return true;
 }
 
@@ -709,6 +710,8 @@ export function worldInput(game, s, inp) {
   w.target = targetOf(s, inp);
   // (Hits on a block stop counting a while after you stop hitting it.)
   if (w.mine && game.tick - w.mine.at > 150) w.mine = null;
+  // Walking into a closed door opens it (doors.js: it shuts again behind you).
+  if (inp.move && !inp.crouch) pushDoor(game, s, Math.sign(inp.move));
   const { item } = inHand(s);
   // R: the next brush (holding blocks).
   if (inp.reload && item && (item.kind === 'block' || item.kind === 'wall')) {
@@ -784,6 +787,7 @@ function mirrorInput(game, s, inp) {
 /** The world's part in each update: things on the ground, and the chunks around everyone made ready. */
 export function worldTick(game) {
   updateDrops(game);
+  doorsTick(game);
   const world = game.world;
   world.time = (world.time || 0) + 1;
   monstersTick(game);
@@ -822,7 +826,7 @@ export const worldMode = {
     if (!world) return;
     world.drops ||= [];
     world.claims ||= new Map();
-    world.protect = (tx, ty) => world.claims.size > 0 && !!claimAt(world, tx, ty);
+    world.protect = (tx, ty) => !!world.gen?.townProtecting(tx, ty) || (world.claims.size > 0 && !!claimAt(world, tx, ty));
     world.onBreak = (tx, ty, id) => {
       const b = BLOCKS[id], x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
       if (id === K.LOOT_CRATE) openCrate(game, x, y);

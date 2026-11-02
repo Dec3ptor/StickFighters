@@ -86,7 +86,7 @@ export class WorldHost {
   /** What the welcome says about the world. */
   info() {
     const w = this.game.world;
-    return { seed: w.seed, name: w.name, time: Math.floor(w.time || 0), pvp: w.pvp !== false, claims: claimsToSave(w) };
+    return { seed: w.seed, name: w.name, towns: !!w.towns, time: Math.floor(w.time || 0), pvp: w.pvp !== false, claims: claimsToSave(w) };
   }
 
   /** Each update: the blocks changed go to every player's backlog; the bases, when they change, to everyone. */
@@ -217,7 +217,7 @@ export class WorldClient {
   /** The host's world (from its welcome), made here from its seed and the chunks it's sent. */
   makeWorld(m) {
     const info = m.world || {};
-    const world = new TileWorld({ seed: info.seed | 0, name: String(info.name || 'World').slice(0, 32), saved: this.saved });
+    const world = new TileWorld({ seed: info.seed | 0, name: String(info.name || 'World').slice(0, 32), saved: this.saved, towns: info.towns === true });
     world.time = Number(info.time) || 0;
     world.pvp = info.pvp !== false;
     claimsFromSave(world, info.claims);

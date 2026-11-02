@@ -38,6 +38,23 @@ recipe('snow_bricks', 1, [['snow', 2]], 'workbench');
 recipe('sandstone_bricks', 1, [['sandstone', 2]], 'workbench');
 recipe('stone_brick_wall', 4, [['stone_bricks', 1]], 'workbench');
 recipe('brick_wall', 4, [['bricks', 1]], 'workbench');
+recipe('cobblestone', 2, [['stone', 2]], 'workbench');
+recipe('timber', 2, [['wood', 1]], 'workbench');
+recipe('thatch', 4, [['wheat', 2]], 'workbench');
+recipe('post', 2, [['wood', 1]], 'workbench');
+recipe('fence', 4, [['planks', 2]], 'workbench');
+recipe('table', 1, [['planks', 6]], 'workbench');
+recipe('chair', 1, [['planks', 4]], 'workbench');
+recipe('bookshelf', 1, [['planks', 8], ['wood', 2]], 'workbench');
+recipe('barrel', 1, [['planks', 6], ['iron_bar', 1]], 'workbench');
+recipe('sign', 1, [['planks', 3]], 'workbench');
+recipe('banner', 1, [['wheat', 4], ['planks', 1]], 'workbench');
+recipe('awning', 4, [['wheat', 3], ['planks', 1]], 'workbench');
+recipe('plaster_wall', 4, [['plaster', 1]], 'workbench');
+recipe('timber_wall', 4, [['plaster', 1], ['timber', 1]], 'workbench');
+recipe('log_wall', 4, [['wood', 1]], 'workbench');
+recipe('cobble_wall', 4, [['cobblestone', 1]], 'workbench');
+recipe('mud_brick_wall', 4, [['mud_bricks', 1]], 'workbench');
 recipe('glass_wall', 4, [['glass', 1]], 'workbench');
 recipe('sandstone_brick_wall', 4, [['sandstone_bricks', 1]], 'workbench');
 
@@ -48,6 +65,10 @@ recipe('gold_bar', 1, [['gold_ore', 3]], 'furnace');
 recipe('glass', 1, [['sand', 2]], 'furnace');
 recipe('bricks', 1, [['clay', 2]], 'furnace');
 recipe('stone_bricks', 1, [['stone', 2]], 'furnace');
+recipe('roof_tiles', 4, [['clay', 2]], 'furnace');
+recipe('plaster', 2, [['sand', 1], ['stone', 1]], 'furnace');
+recipe('mud_bricks', 1, [['mud', 2]], 'furnace');
+recipe('stained_glass', 4, [['glass', 4], ['crystal_ore', 1]], 'furnace');
 
 // ---- Anvil ----
 recipe('pickaxe', 1, [['copper_bar', 9], ['wood', 3]], 'anvil');
@@ -63,6 +84,7 @@ recipe('Knife', 1, [['iron_bar', 4]], 'anvil');
 recipe('Sledgehammer', 1, [['iron_bar', 12], ['wood', 4]], 'anvil');
 recipe('BattleAxe', 1, [['iron_bar', 10], ['gold_bar', 2], ['wood', 3]], 'anvil');
 recipe('NinjaRope', 1, [['iron_bar', 6], ['planks', 4]], 'anvil');
+recipe('lantern', 2, [['iron_bar', 1], ['glass', 1], ['torch', 1]], 'anvil');
 
 // ---- Gunsmith's bench ----
 recipe('bullets', 30, [['copper_bar', 1], ['coal', 1]], 'gunsmith');

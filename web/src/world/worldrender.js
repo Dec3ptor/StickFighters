@@ -6,7 +6,7 @@
 // the crosshair's block: what you'd dig, and what you'd build (a whole shape, dragged out).
 
 import * as K from './blocks.js';
-import { BLOCKS, WALLS, SOLID, CLEAR, LIGHT, TILE, AIR, NO_WALL, SHAPES, shade } from './blocks.js';
+import { BLOCKS, WALLS, SOLID, PLATFORMS, CLEAR, LIGHT, TILE, AIR, NO_WALL, SHAPES, shade } from './blocks.js';
 import { WORLD_H } from './worldgen.js';
 import { hash3 } from './noise.js';
 import { itemOf } from './items.js';
@@ -134,7 +134,23 @@ function drawWall(g, x, y, wall, classic, tx, ty) {
   if (w.key.includes('brick')) { g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(x, y + 7, TILE, 1); g.fillRect(x + ((ty & 1) ? 4 : 11), y, 1, 7); g.fillRect(x + ((ty & 1) ? 11 : 4), y + 8, 1, 8); }
   else if (w.key.includes('plank')) { g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(x, y + 5, TILE, 1); g.fillRect(x, y + 11, TILE, 1); }
   else if (w.key === 'glass_wall') { g.fillStyle = 'rgba(255,255,255,0.2)'; g.fillRect(x + 3, y + 2, 2, 10); }
+  else if (w.key === 'log_wall') { g.fillStyle = 'rgba(0,0,0,0.24)'; g.fillRect(x, y + 7, TILE, 1.5); g.fillRect(x, y + 15, TILE, 1); g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(x, y + 1, TILE, 2); }
+  else if (w.key === 'timber_wall') {
+    // Plaster between dark beams: posts and rails every few blocks, braces across some.
+    g.fillStyle = '#5e3f25';
+    if ((tx & 3) === 0) g.fillRect(x, y, 3, TILE);
+    if ((ty & 3) === 0) g.fillRect(x, y, TILE, 3);
+    if (((tx >> 2) + (ty >> 2)) & 1 && (tx & 3) === (ty & 3)) { g.strokeStyle = '#5e3f25'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(x, y); g.lineTo(x + TILE, y + TILE); g.stroke(); }
+  } else if (w.key === 'cobble_wall') { g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 0.8; for (const [cx, cy, rx, ry] of COBBLES[(tx + ty) & 1]) { g.beginPath(); g.ellipse(x + cx, y + cy, rx, ry, 0, 0, Math.PI * 2); g.stroke(); } }
 }
+
+// Stones in cobblestone (two layouts: [x, y, half-width, half-height]), stained glass's colours, books' bindings.
+const COBBLES = [
+  [[4, 4, 3.2, 2.6], [11.5, 3.5, 3.4, 2.4], [3.5, 11, 2.8, 3], [10.5, 11.5, 3.8, 2.8]],
+  [[3.5, 3.5, 2.6, 2.4], [10, 4.5, 4, 3], [5, 11.5, 3.8, 2.8], [12.5, 12, 2.6, 2.6]],
+];
+const STAINED = ['#b8323a', '#3a6ab8', '#d8b030', '#3a9a5a'];
+const BOOKS = ['#8a2c2c', '#2c4a8a', '#2c7a4a', '#8a6a2c', '#5a2c7a'];
 
 /** A solid block: its shape, filled; its marks; the edges where it meets the open (to edges). */
 function drawBlock(g, grid, k, x, y, id, classic, tx, ty, edges) {
@@ -284,6 +300,49 @@ function marks(g, b, x, y, h, classic, grid, k) {
       if (grid.fg[k - W] === K.DOOR && grid.fg[k + W] === K.DOOR) { g.fillStyle = classic ? INK : '#e0c060'; g.fillRect(x + TILE - 6, y + 7, 2, 2); }
       break;
     }
+    case 'cobble':
+      // Rounded stones set in mortar (two layouts, by the tile).
+      g.strokeStyle = ink;
+      g.lineWidth = 0.8;
+      for (const [cx, cy, rx, ry] of COBBLES[h & 1]) { g.beginPath(); g.ellipse(x + cx, y + cy, rx, ry, 0, 0, Math.PI * 2); g.stroke(); }
+      break;
+    case 'shingles':
+      // Rows of tiles, each row overlapping the one below.
+      g.fillStyle = ink;
+      for (let row = 0; row < 3; row++) {
+        const ry = y + 5 + row * 5;
+        g.fillRect(x, ry, TILE, 1);
+        for (let i = row & 1 ? 2 : 5; i < TILE; i += 6) g.fillRect(x + i, ry - 4, 1, 4);
+      }
+      if (!classic) { g.fillStyle = 'rgba(255,255,255,0.13)'; for (let row = 0; row < 3; row++) g.fillRect(x, y + 1 + row * 5, TILE, 1); }
+      break;
+    case 'thatch':
+      // Straw, laid in bundles.
+      g.strokeStyle = ink;
+      g.lineWidth = 0.8;
+      g.beginPath();
+      for (let i = 1; i < TILE; i += 3) {
+        const j = (h >>> i) & 1;
+        g.moveTo(x + i, y + 1 + j); g.lineTo(x + i + 1, y + 7 + j);
+        g.moveTo(x + i + 1, y + 9 - j); g.lineTo(x + i, y + 15);
+      }
+      g.stroke();
+      break;
+    case 'timber':
+      // A dark beam: its grain, and a peg.
+      g.fillStyle = ink;
+      g.fillRect(x + 4, y + 2 + (h & 3), 1, 9);
+      g.fillRect(x + 10, y + 5 + ((h >>> 3) & 3), 1, 8);
+      g.fillStyle = classic ? INK : tint(b.color, 1.4);
+      g.fillRect(x + 7, y + 7, 2, 2);
+      break;
+    case 'stained':
+      // Coloured panes, leaded.
+      if (!classic) for (let i = 0; i < 4; i++) { g.fillStyle = STAINED[(h >>> (i * 2)) & 3]; g.fillRect(x + 1 + (i & 1) * 7, y + 1 + (i >> 1) * 7, 7, 7); }
+      g.strokeStyle = classic ? INK : '#2a2230';
+      g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x + 8, y); g.lineTo(x + 8, y + TILE); g.moveTo(x, y + 8); g.lineTo(x + TILE, y + 8); g.stroke();
+      break;
     case 'crate':
       g.strokeStyle = classic ? INK : '#3a2c14';
       g.lineWidth = 1;
@@ -471,6 +530,110 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
       g.fillRect(x, y, 4, TILE);
       g.strokeStyle = classic ? INK : tint(b.color, 0.55); g.lineWidth = 1;
       g.strokeRect(x + 0.5, y + 0.5, 3, TILE - 1);
+      break;
+    case 'post':
+      // A wooden post (walked past).
+      g.fillStyle = col; g.fillRect(x + 5, y, 6, TILE);
+      g.strokeStyle = line; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x + 5.5, y); g.lineTo(x + 5.5, y + TILE); g.moveTo(x + 10.5, y); g.lineTo(x + 10.5, y + TILE); g.stroke();
+      if (!classic) { g.fillStyle = 'rgba(255,255,255,0.16)'; g.fillRect(x + 6.5, y, 1.5, TILE); }
+      break;
+    case 'fence': {
+      // A post, with rails along to the fences either side.
+      const l = grid.fg[k - 1] === K.FENCE, r = grid.fg[k + 1] === K.FENCE;
+      g.fillStyle = col;
+      if (l || r) { const a = l ? x : x + 7, z = r ? x + TILE : x + 9; g.fillRect(a, y + 5, z - a, 2); g.fillRect(a, y + 10, z - a, 2); }
+      g.fillRect(x + 6, y + 1, 4, TILE - 1);
+      g.strokeStyle = line; g.lineWidth = 1;
+      g.strokeRect(x + 6.5, y + 1.5, 3, TILE - 2);
+      if (l || r) { const a = l ? x : x + 7, z = r ? x + TILE : x + 9; g.beginPath(); g.moveTo(a, y + 5); g.lineTo(z, y + 5); g.moveTo(a, y + 12); g.lineTo(z, y + 12); g.stroke(); }
+      break;
+    }
+    case 'lantern': {
+      // A lamp in an iron frame: on a chain under a ceiling, else standing.
+      const hangs = SOLID[grid.fg[k - W]] || PLATFORMS[grid.fg[k - W]];
+      g.strokeStyle = classic ? INK : '#3a3430'; g.lineWidth = 1;
+      if (hangs) { g.beginPath(); g.moveTo(x + 8, y); g.lineTo(x + 8, y + 5); g.stroke(); }
+      const top = hangs ? y + 5 : y + 7;
+      g.fillStyle = '#ffd070'; g.fillRect(x + 5, top, 6, 7);
+      g.fillStyle = '#fff4c0'; g.fillRect(x + 6.5, top + 1.5, 3, 4);
+      g.fillStyle = classic ? INK : '#3a3430';
+      g.fillRect(x + 4, top - 1, 8, 1.5); g.fillRect(x + 4.5, top + 7, 7, 1.5);
+      g.strokeRect(x + 5.5, top + 0.5, 5, 6.5);
+      break;
+    }
+    case 'awning':
+      // Striped cloth, its edge scalloped.
+      for (let i = 0; i < 4; i++) {
+        g.fillStyle = classic ? (i & 1 ? '#fff' : '#e2e2e2') : i & 1 ? '#f2ead8' : b.color;
+        g.fillRect(x + i * 4, y, 4, 5);
+        g.beginPath(); g.arc(x + i * 4 + 2, y + 5, 2, 0, Math.PI); g.fill();
+      }
+      g.strokeStyle = line; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x, y + 0.5); g.lineTo(x + TILE, y + 0.5); g.stroke();
+      break;
+    case 'banner':
+      // A cloth hanging from a rod, with an emblem.
+      g.fillStyle = classic ? INK : '#5c4a3a'; g.fillRect(x + 2, y + 1, 12, 1.5);
+      g.fillStyle = classic ? '#fff' : b.color;
+      g.beginPath(); g.moveTo(x + 4, y + 2.5); g.lineTo(x + 12, y + 2.5); g.lineTo(x + 12, y + 15); g.lineTo(x + 8, y + 12); g.lineTo(x + 4, y + 15); g.closePath(); g.fill();
+      g.strokeStyle = line; g.lineWidth = 1; g.stroke();
+      g.fillStyle = classic ? INK : '#f2c230';
+      g.beginPath(); g.arc(x + 8, y + 7, 2, 0, Math.PI * 2); g.fill();
+      break;
+    case 'crops':
+      // Wheat: stalks with ears of grain.
+      g.strokeStyle = classic ? INK : '#8a9a3a'; g.lineWidth = 1;
+      g.beginPath();
+      for (let i = 0; i < 3; i++) { const sx = x + 3 + i * 5; g.moveTo(sx, y + TILE); g.lineTo(sx + (i - 1), y + 6); }
+      g.stroke();
+      for (let i = 0; i < 3; i++) {
+        const sx = x + 3 + i * 5 + (i - 1), sy = y + 1 + ((h >>> i) & 1);
+        g.fillStyle = classic ? '#fff' : b.color; g.fillRect(sx - 1.5, sy, 3, 6);
+        if (classic) { g.strokeStyle = INK; g.strokeRect(sx - 1.5, sy, 3, 6); }
+      }
+      break;
+    case 'table':
+      g.fillStyle = col;
+      g.fillRect(x, y + 7, TILE, 2.5); g.fillRect(x + 2, y + 9, 2, 7); g.fillRect(x + 12, y + 9, 2, 7);
+      g.strokeStyle = line; g.lineWidth = 1;
+      g.strokeRect(x + 0.5, y + 7.5, TILE - 1, 2);
+      g.beginPath(); g.moveTo(x + 2.5, y + 10); g.lineTo(x + 2.5, y + 16); g.moveTo(x + 13.5, y + 10); g.lineTo(x + 13.5, y + 16); g.stroke();
+      break;
+    case 'chair':
+      g.fillStyle = col;
+      g.fillRect(x + 4, y + 2, 2, 14); g.fillRect(x + 4, y + 9, 8, 2); g.fillRect(x + 10, y + 11, 2, 5);
+      g.strokeStyle = line; g.lineWidth = 0.8;
+      g.strokeRect(x + 4.5, y + 2.5, 1, 13); g.strokeRect(x + 4.5, y + 9.5, 7, 1); g.strokeRect(x + 10.5, y + 11.5, 1, 4);
+      break;
+    case 'bookshelf':
+      // Shelves of books, in many colours.
+      g.fillStyle = col; g.fillRect(x + 1, y, 14, TILE);
+      for (let row = 0; row < 3; row++) {
+        for (let i = 0; i < 4; i++) {
+          const v = (h >>> (row * 8 + i * 2)) & 3;
+          g.fillStyle = classic ? (v & 1 ? '#fff' : '#d8d8d8') : BOOKS[(v + row + i) % BOOKS.length];
+          g.fillRect(x + 2.5 + i * 3, y + 1.5 + row * 5 + (v === 3 ? 1 : 0), 2.2, v === 3 ? 3 : 4);
+        }
+      }
+      g.strokeStyle = line; g.lineWidth = 1;
+      g.strokeRect(x + 1.5, y + 0.5, 13, TILE - 1);
+      g.beginPath(); g.moveTo(x + 1.5, y + 5.5); g.lineTo(x + 14.5, y + 5.5); g.moveTo(x + 1.5, y + 10.5); g.lineTo(x + 14.5, y + 10.5); g.stroke();
+      break;
+    case 'barrel':
+      g.fillStyle = col;
+      g.beginPath(); g.moveTo(x + 4, y + 3); g.quadraticCurveTo(x + 2, y + 9.5, x + 4, y + 16); g.lineTo(x + 12, y + 16); g.quadraticCurveTo(x + 14, y + 9.5, x + 12, y + 3); g.closePath(); g.fill();
+      g.strokeStyle = line; g.lineWidth = 1; g.stroke();
+      g.fillStyle = classic ? INK : '#3a3430';
+      g.fillRect(x + 3, y + 6, 10, 1.2); g.fillRect(x + 3, y + 12.5, 10, 1.2);
+      break;
+    case 'sign':
+      // A board on a post.
+      g.fillStyle = classic ? INK : '#5c4a3a'; g.fillRect(x + 7, y + 9, 2, 7);
+      g.fillStyle = col; g.fillRect(x + 1, y + 3, 14, 7);
+      g.strokeStyle = line; g.lineWidth = 1; g.strokeRect(x + 1.5, y + 3.5, 13, 6);
+      g.fillStyle = classic ? '#9a9a9a' : tint(b.color, 0.5);
+      g.fillRect(x + 4, y + 5.5, 8, 1); g.fillRect(x + 4, y + 7.5, 6, 1);
       break;
     default:
       g.fillStyle = col; g.fillRect(x + 4, y + 4, 8, 8);

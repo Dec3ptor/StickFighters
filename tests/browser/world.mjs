@@ -51,6 +51,15 @@ async function aimAt(page, dx, dy) {
   return want;
 }
 const tileAt = (page, tx, ty) => page.evaluate(([tx, ty]) => window.stickSoldiers.state.game.world.tile(tx, ty), [tx, ty]);
+/** Of the spots (dx, dy from the tile under the soldier's feet) given, the first that's empty with a floor under it (furniture goes there). */
+const floorSpot = (page, spots) => page.evaluate(async spots => {
+  const K = await import('./src/world/blocks.js');
+  const { state } = window.stickSoldiers, w = state.game.world, me = state.me;
+  const fx = Math.floor(me.x / 16), fy = Math.floor((me.y + 12) / 16);
+  // (Plants are built over; furniture needs a solid floor.)
+  const empty = id => id === K.AIR || id === K.TALL_GRASS || id === K.FLOWER || id === K.DEAD_BUSH;
+  return spots.find(([dx, dy]) => empty(w.tile(fx + dx, fy + dy)) && K.SOLID[w.tile(fx + dx, fy + dy + 1)]) || spots[0];
+}, spots);
 
 // 1. A new world, from the Worlds tab.
 const page = await open('game=original&renderer=canvas');
@@ -118,7 +127,7 @@ const bench = await page.evaluate(() => window.stickSoldiers.state.me.world.inv.
 await page.evaluate(i => window.stickSoldiers.state.me.world.inv.move(i, 9), bench);
 await page.keyboard.press('Digit0');
 await page.waitForTimeout(100);
-const benchAt = await aimAt(page, -2, -1);
+const benchAt = await aimAt(page, ...await floorSpot(page, [[-2, -1], [-2, -2], [-2, 0], [-1, -2]]));
 await page.mouse.down(); await page.waitForTimeout(80); await page.mouse.up();
 await page.waitForTimeout(150);
 const WORKBENCH = await page.evaluate(async () => (await import('./src/world/blocks.js')).WORKBENCH);
@@ -135,10 +144,11 @@ const chestSlot = await page.evaluate(() => window.stickSoldiers.state.me.world.
 await page.evaluate(i => window.stickSoldiers.state.me.world.inv.move(i, 9), chestSlot);
 await page.keyboard.press('Digit0');
 await page.waitForTimeout(100);
-const chestAtTile = await aimAt(page, -3, -1);
+const chestSpot = await floorSpot(page, [[-3, -1], [-3, -2], [-3, 0], [-4, -1], [-4, -2]]);
+const chestAtTile = await aimAt(page, ...chestSpot);
 await page.mouse.down(); await page.waitForTimeout(80); await page.mouse.up();
 await page.waitForTimeout(150);
-await aimAt(page, -3, -1);
+await aimAt(page, ...chestSpot);
 await page.mouse.down({ button: 'right' }); await page.waitForTimeout(80); await page.mouse.up({ button: 'right' });
 await page.waitForFunction(() => window.stickSoldiers.inventory?.open && window.stickSoldiers.inventory.chest, null, { timeout: 5000 }).catch(() => {});
 check(await page.evaluate(() => !!window.stickSoldiers.inventory?.chest), 'the chest opened with a right click');
@@ -173,6 +183,36 @@ check(again.dirt === afterDig, 'your things kept');
 check(Math.abs(again.x - where.x) < 2 && Math.abs(again.y - where.y) < 20, `back where you were (${JSON.stringify(where)} -> ${again.x},${again.y})`);
 const keptChest = await page.evaluate(async ([tx, ty]) => (await import('./src/world/worldplay.js')).chestAt(window.stickSoldiers.state.game.world, tx, ty)?.count('glass') ?? -1, report.chest.at);
 check(keptChest === 30, `the chest kept its things (${keptChest})`);
+
+// 4a. The village beside the start (towns.js): into one of its houses (its door opens as you
+// walk into it, and shuts behind you), where nobody can dig.
+const town = await page.evaluate(() => {
+  const g = window.stickSoldiers.state.game.world.gen, t = g.townIn(g.spawnRegion);
+  const b = t?.buildings.find(b => ['house', 'elder', 'shop'].includes(b.kind) && b.base === t.level);
+  return t && b && { name: t.name, level: t.level, door: [b.x0, b.base - 1], from: b.x0 - 3 };
+});
+check(!!town, 'a village beside the start');
+if (town) {
+  await page.evaluate(t => { const me = window.stickSoldiers.state.me; me.body.x = t.from * 16 + 8; me.body.y = (t.door[1] + 1) * 16 - 13; me.body.vx = me.body.vy = 0; }, town);
+  await page.waitForTimeout(800);
+  const doorNow = () => page.evaluate(d => window.stickSoldiers.state.game.world.tile(d[0], d[1]), town.door);
+  const shut = await doorNow();
+  await page.keyboard.down('KeyD');
+  await page.waitForFunction(d => window.stickSoldiers.state.me.x > (d[0] + 2) * 16, town.door, { timeout: 5000 }).catch(() => {});
+  await page.keyboard.up('KeyD');
+  const inside = await page.evaluate(d => window.stickSoldiers.state.me.x > (d[0] + 1) * 16, town.door);
+  await page.waitForTimeout(1500);
+  const shutAgain = await doorNow();
+  const safe = await page.evaluate(async t => {
+    const W = await import('./src/world/worldplay.js');
+    const { state } = window.stickSoldiers;
+    return !W.mayChange(state.game.world, state.me, t.door[0] + 2, t.level);
+  }, town);
+  report.town = { ...town, shut, inside, shutAgain, safe };
+  check(inside && shut === shutAgain && shut !== 0, `walked into a house in ${town.name} through its door, which shut behind (${JSON.stringify(report.town)})`);
+  check(safe, 'no digging in a town');
+  await page.screenshot({ path: `${outDir}/world-town.png` });
+}
 
 // 4b. Night falls: the light dims, a monster comes for you and a mercenary is hired.
 await page.evaluate(async () => {

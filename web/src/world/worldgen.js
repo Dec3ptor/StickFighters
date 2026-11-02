@@ -8,6 +8,7 @@
 
 import { hash3, rand3, noise2, fbm1, fbm2 } from './noise.js';
 import * as K from './blocks.js';
+import { planTown, buildTown, TOWN_RAMP, BELOW as TOWN_BELOW } from './towns.js';
 
 export const CHUNK = 32;            // tiles each side of a chunk
 export const WORLD_H = 512;         // tiles from the top of the sky to the bottom of the bedrock
@@ -38,10 +39,16 @@ const BY_CLIMATE = [[6, 2, 6], [0, 1, 1, 2, 0], [3, 4, 5, 3]];
 const RUIN_CELL = 240, CABIN_W = 160, CABIN_H = 96;
 
 export class WorldGen {
-  constructor(seed) {
+  /** towns: whether the world has towns (towns.js): worlds made before them keep their land as it was. */
+  constructor(seed, { towns = false } = {}) {
     this.seed = seed | 0;
+    this.towns = !!towns;
+    this.townPlans = new Map(); // region -> its town (or null)
+    this.townRasters = new Map(); // town id -> its blocks (a few kept)
     this.columns = new Map(); // x -> column (kept for a while: chunks above and below ask too)
     this.spawnRegion = this.regionAt(0);
+    // (With towns, the region where everyone starts is always wide: room for its village beside the start.)
+    this.wideStart = this.towns;
     // Everyone starts in the middle of the plains there: well away from the next biome's hills.
     this.spawnX = Math.floor((this.edge(this.spawnRegion) + this.edge(this.spawnRegion + 1)) / 2);
   }
@@ -49,7 +56,14 @@ export class WorldGen {
   // ---- Biomes and the surface --------------------------------------------------------------
 
   /** Where region k starts (tiles). */
-  edge(k) { return k * REGION + Math.floor((rand3(this.seed, k, 3) - 0.5) * 2 * JITTER); }
+  edge(k) {
+    const e = k * REGION + Math.floor((rand3(this.seed, k, 3) - 0.5) * 2 * JITTER);
+    if (this.wideStart) {
+      if (k === this.spawnRegion) return Math.min(e, k * REGION - 50);
+      if (k === this.spawnRegion + 1) return Math.max(e, k * REGION + 50);
+    }
+    return e;
+  }
 
   /** The region column x is in. */
   regionAt(x) {
@@ -91,23 +105,43 @@ export class WorldGen {
     }
   }
 
-  /** Column x: { surf (the top ground tile's row), biome, soilDepth }, worked out once. */
+  /**
+   * The land's own height at column x (tiles above the usual surface), before any town levels
+   * it: the biome's hills, rising and falling slowly with the whole land, and near an edge the
+   * neighbouring biome's leaning in (half each right at the edge).
+   */
+  naturalHeight(x, k = this.regionAt(x)) {
+    const land = fbm1(this.seed + 99, x / 1400, 3) * 16;
+    let h = this.height(this.regionBiome(k), x) + land;
+    const dl = x - this.edge(k), dr = this.edge(k + 1) - 1 - x;
+    if (dl < BLEND) h = mix(this.height(this.regionBiome(k - 1), x) + land, h, 0.5 + 0.5 * dl / BLEND);
+    else if (dr < BLEND) h = mix(this.height(this.regionBiome(k + 1), x) + land, h, 0.5 + 0.5 * dr / BLEND);
+    return h;
+  }
+
+  /** The ground's row for height h (and back). */
+  surfaceRow(h) { return Math.max(24, Math.min(DEEP - 40, SURFACE - Math.round(h))); }
+  heightOfRow(row) { return SURFACE - row; }
+
+  /** Column x: { surf (the top ground tile's row), biome, soilDepth, town (if it's in one, or on its ramps) }, worked out once. */
   column(x) {
     let c = this.columns.get(x);
     if (c) return c;
     const k = this.regionAt(x), b = this.regionBiome(k);
     const start = this.edge(k), end = this.edge(k + 1);
-    // (The whole land rises and falls slowly too, whatever the biome.)
-    let h = this.height(b, x) + fbm1(this.seed + 99, x / 1400, 3) * 16;
-    // Near an edge, the neighbouring biome's ground leans in: half each right at the edge.
-    const dl = x - start, dr = end - 1 - x;
-    const land = fbm1(this.seed + 99, x / 1400, 3) * 16;
-    if (dl < BLEND) h = mix(this.height(this.regionBiome(k - 1), x) + land, h, 0.5 + 0.5 * dl / BLEND);
-    else if (dr < BLEND) h = mix(this.height(this.regionBiome(k + 1), x) + land, h, 0.5 + 0.5 * dr / BLEND);
+    let h = this.naturalHeight(x, k);
+    // A town levels the land under it, which comes to its level over the ramps either side.
+    let town = this.townIn(k);
+    if (town && x >= town.x0 - TOWN_RAMP && x <= town.x1 + TOWN_RAMP) {
+      if (x < town.x0) h = mix(h, town.h, (x - (town.x0 - TOWN_RAMP)) / TOWN_RAMP);
+      else if (x > town.x1) h = mix(h, town.h, (town.x1 + TOWN_RAMP - x) / TOWN_RAMP);
+      else h = town.h;
+    } else town = null;
     // Biomes meet along a ragged line, not a straight one.
+    const dl = x - start, dr = end - 1 - x;
     const own = dl < 3 && rand3(this.seed, x, 9) < 0.5 ? this.regionBiome(k - 1) : dr < 3 && rand3(this.seed, x, 9) < 0.5 ? this.regionBiome(k + 1) : b;
-    const surf = Math.max(24, Math.min(DEEP - 40, SURFACE - Math.round(h)));
-    c = { surf, biome: own, soilDepth: own.soilDepth + (hash3(this.seed, x, 13) % 3) };
+    const surf = this.surfaceRow(h);
+    c = { surf, biome: own, soilDepth: own.soilDepth + (hash3(this.seed, x, 13) % 3), town };
     if (this.columns.size > 6000) this.columns.clear();
     this.columns.set(x, c);
     return c;
@@ -133,10 +167,11 @@ export class WorldGen {
 
   // ---- Underground ---------------------------------------------------------------------------
 
-  /** True if (x, y) is in a cave or tunnel. surf: the column's surface row. */
-  cave(x, y, surf) {
+  /** True if (x, y) is in a cave or tunnel. surf: the column's surface row; town: the town it's in (none close under one). */
+  cave(x, y, surf, town = null) {
     const depth = y - surf;
     if (depth < 3 || y >= WORLD_H - 6) return false;
+    if (town && depth < TOWN_BELOW + 8) return false;
     // (Not right under where everyone starts.)
     if (depth < 24 && x > this.spawnX - 40 && x < this.spawnX + 40) return false;
     const s = this.seed;
@@ -219,6 +254,7 @@ export class WorldGen {
     if (x !== cell * 5 + 1 + (hash3(this.seed, cell, 51) % 3)) return null;
     const col = this.column(x), b = col.biome;
     if (rand3(this.seed, cell, 52) >= b.trees) return null;
+    if (col.town && x >= col.town.x0 - 6 && x <= col.town.x1 + 6) return null;
     if (x > -6 && x < 6) return null; // (room to land where everyone starts)
     const surf = col.surf;
     if (Math.abs(this.surfaceAt(x - 1) - surf) > 1 || Math.abs(this.surfaceAt(x + 1) - surf) > 1) return null;
@@ -264,6 +300,7 @@ export class WorldGen {
     if (rand3(s, k, 61) > 0.5) return null;
     const w = 9 + (hash3(s, k, 62) % 5), x0 = k * RUIN_CELL + 30 + (hash3(s, k, 63) % (RUIN_CELL - 60 - w));
     if (x0 < 20 && x0 + w > -20) return null; // (not on top of where everyone starts)
+    if (this.towns && (this.townAtX(x0 - 6) || this.townAtX(x0 + w + 6))) return null; // (nor in a town)
     const col = this.column(x0 + (w >> 1)), b = col.biome;
     if (!['plains', 'forest', 'desert', 'snow', 'badlands'].includes(b.key)) return null;
     let lo = Infinity, hi = -Infinity;
@@ -329,10 +366,60 @@ export class WorldGen {
     return [K.AIR, K.PLANK_WALL];
   }
 
+  // ---- Towns (towns.js) --------------------------------------------------------------------------
+
+  /** Region k's town, or null (worked out once). */
+  townIn(k) {
+    if (!this.towns) return null;
+    let t = this.townPlans.get(k);
+    if (t === undefined) {
+      t = planTown(this, k);
+      if (this.townPlans.size > 64) this.townPlans.clear();
+      this.townPlans.set(k, t);
+    }
+    return t;
+  }
+
+  /** The town whose land (its level part, or the ramps either side) column x is in, or null. */
+  townAtX(x) {
+    const t = this.townIn(this.regionAt(x));
+    return t && x >= t.x0 - TOWN_RAMP && x <= t.x1 + TOWN_RAMP ? t : null;
+  }
+
+  /** The town within `margin` tiles of column x (across), or null. */
+  townNear(x, margin = 0) {
+    const t = this.townIn(this.regionAt(x));
+    return t && x >= t.x0 - margin && x <= t.x1 + margin ? t : null;
+  }
+
+  /** The town protecting tile (x, y) from being dug, built on or blasted, or null. */
+  townProtecting(x, y) {
+    const t = this.townNear(x, 1);
+    return t && y >= t.top && y <= t.bottom ? t : null;
+  }
+
+  /** Town t's blocks (towns.js's raster), made the first time they're asked for (a few are kept). */
+  townRaster(t) {
+    let R = this.townRasters.get(t.id);
+    if (!R) {
+      R = buildTown(this.seed, t);
+      if (this.townRasters.size >= 6) this.townRasters.delete(this.townRasters.keys().next().value);
+      this.townRasters.set(t.id, R);
+    }
+    return R;
+  }
+
+  /** The block town t puts at (x, y), or -1 (the land's own). */
+  townBlock(t, x, y) {
+    if (y < t.top || y > t.bottom) return -1;
+    const R = this.townRaster(t), j = R.at(x, y);
+    return j < 0 ? -1 : R.fg[j];
+  }
+
   // ---- A whole chunk ------------------------------------------------------------------------------
 
-  /** Fill chunk (cx, cy)'s tiles: fg (blocks), bg (walls), shape (all full to start with). */
-  fillChunk(cx, cy, fg, bg) {
+  /** Fill chunk (cx, cy)'s tiles: fg (blocks), bg (walls), shape (all full to start with: towns' roofs slope). */
+  fillChunk(cx, cy, fg, bg, shape = null) {
     const x0 = cx * CHUNK, y0 = cy * CHUNK, s = this.seed;
     fg.fill(K.AIR);
     bg.fill(K.NO_WALL);
@@ -346,7 +433,7 @@ export class WorldGen {
         if (y < col.surf) continue;
         const depth = y - col.surf;
         if (depth >= 2) bg[i] = this.naturalWall(y, col);
-        if (this.cave(x, y, col.surf)) continue;
+        if (this.cave(x, y, col.surf, col.town)) continue;
         let b = this.rock(x, y, col);
         if (b === K.STONE || b === K.SLATE || b === K.BASALT) b = this.ore(x, y, depth, b);
         fg[i] = b;
@@ -359,6 +446,18 @@ export class WorldGen {
           const [b, w] = this.structureTile(st, x, y), i = (y - y0) * CHUNK + (x - x0);
           if (b >= 0) fg[i] = b;
           if (w >= 0) bg[i] = w;
+        }
+      }
+    }
+    // A town (towns.js) over the ground: its blocks, walls and roofs' shapes.
+    const town = this.towns ? this.townAtX(x0) || this.townAtX(x0 + CHUNK - 1) : null;
+    if (town && y0 <= town.bottom && y0 + CHUNK - 1 >= town.top) {
+      const R = this.townRaster(town);
+      for (let y = Math.max(y0, R.y0); y <= Math.min(y0 + CHUNK - 1, R.y1); y++) {
+        for (let x = Math.max(x0, R.x0); x <= Math.min(x0 + CHUNK - 1, R.x1); x++) {
+          const j = R.at(x, y), i = (y - y0) * CHUNK + (x - x0);
+          if (R.fg[j] >= 0) { fg[i] = R.fg[j]; if (shape) shape[i] = R.sh[j]; }
+          if (R.bg[j] >= 0) bg[i] = R.bg[j];
         }
       }
     }
@@ -381,9 +480,11 @@ export class WorldGen {
       const x = x0 + lx;
       if (x < -HALF_W || x >= HALF_W) continue;
       const col = this.column(x), b = col.biome;
+      const inTown = col.town && x >= col.town.x0 && x <= col.town.x1;
       for (let ly = 0; ly < CHUNK; ly++) {
         const y = y0 + ly, i = ly * CHUNK + lx;
         if (fg[i] !== K.AIR) continue;
+        if (inTown && y < col.surf + 4) continue;
         const below = ly < CHUNK - 1 ? fg[i + CHUNK] : this.groundTile(x, y + 1);
         if (y === col.surf - 1 && below === b.top) {
           const r = rand3(s, x, 81);
@@ -403,7 +504,8 @@ export class WorldGen {
   groundTile(x, y) {
     if (y < 0 || y >= WORLD_H) return y < 0 ? K.AIR : K.BEDROCK;
     const col = this.column(x);
-    if (y < col.surf || this.cave(x, y, col.surf)) return K.AIR;
+    if (col.town && this.towns) { const v = this.townBlock(col.town, x, y); if (v >= 0) return v; }
+    if (y < col.surf || this.cave(x, y, col.surf, col.town)) return K.AIR;
     for (const st of this.structuresIn(x, y, x, y)) { const [b] = this.structureTile(st, x, y); if (b >= 0) return b; }
     const b = this.rock(x, y, col);
     return b === K.STONE || b === K.SLATE || b === K.BASALT ? this.ore(x, y, y - col.surf, b) : b;

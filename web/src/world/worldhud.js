@@ -134,8 +134,11 @@ function drawWhere(ctx, game, me, W) {
   const along = from === 0 ? 'where the world starts' : `${Math.abs(from)} ${from < 0 ? 'west' : 'east'}`;
   const time = `Day ${dayOf(world.time || 0)}, ${clock(world.time || 0)}${isNight(world.time || 0) ? ' (night)' : ''}`;
   const c = world.claims?.size ? claimAt(world, tx, ty) : null;
-  const base = c ? (c.owner.toLowerCase() === String(me.name).toLowerCase() ? 'your base' : `${c.owner}'s base`) : '';
+  // (In a town: its name, and it's said on the screen as you come into it.)
+  const town = deep < 14 ? world.gen.townNear(tx, 2) : null;
+  const base = town ? `${town.name} (${town.kind})` : c ? (c.owner.toLowerCase() === String(me.name).toLowerCase() ? 'your base' : `${c.owner}'s base`) : '';
   const line = text(`w${col.biome.name}|${where}|${along}|${time}|${base}`, () => `${base ? `${base}  ·  ` : ''}${col.biome.name}  ·  ${where}  ·  ${along}  ·  ${time}`);
+  if (town !== arrival.town) { arrival.town = town; arrival.at = town ? performance.now() : 0; }
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   // (On a pale panel: it's often dark underground.)
@@ -149,6 +152,30 @@ function drawWhere(ctx, game, me, W) {
   ctx.font = `12px ${FONT}`;
   ctx.fillStyle = '#666';
   ctx.fillText(line, W / 2, 33);
+  drawArrival(ctx, W);
+}
+
+// Coming into a town: its name across the screen a moment, fading.
+const arrival = { town: null, at: 0 };
+const ARRIVAL_MS = 3200;
+function drawArrival(ctx, W) {
+  const t = arrival.town, age = performance.now() - arrival.at;
+  if (!t || age > ARRIVAL_MS) return;
+  const a = Math.min(1, age / 300, (ARRIVAL_MS - age) / 700);
+  ctx.globalAlpha = Math.max(0, a);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // (On a pale panel, as the rest of the HUD: the WebGL renderer's text has no outlines.)
+  ctx.font = `bold 30px ${FONT}`;
+  const bw = Math.max(220, ctx.measureText(t.name).width + 60);
+  ctx.fillStyle = 'rgba(255,255,255,0.78)';
+  ctx.fillRect(W / 2 - bw / 2, 70, bw, 62);
+  ctx.fillStyle = '#333';
+  ctx.fillText(t.name, W / 2, 93);
+  ctx.font = `italic 14px ${FONT}`;
+  ctx.fillStyle = '#666';
+  ctx.fillText(t.kind === 'city' ? 'a walled city' : 'a village', W / 2, 119);
+  ctx.globalAlpha = 1;
 }
 
 // ---- The map of what's round you ------------------------------------------------------------------

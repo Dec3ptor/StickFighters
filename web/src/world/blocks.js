@@ -106,6 +106,26 @@ export const BED = def('bed', 'Bed', furniture({ hard: 2, resist: 4, wood: true,
 // A base flag: claims the blocks round it (worldplay.js: CLAIM_R) for whoever put it up.
 export const CLAIM_FLAG = def('claim_flag', 'Base flag', furniture({ hard: 3, resist: 30, wood: true, color: '#c8282e', pattern: 'flag' }));
 
+// ---- What towns are built of (towns.js), and players can make too (crafting.js) ------------------
+export const COBBLESTONE = def('cobblestone', 'Cobblestone', { hard: 5, resist: 10, color: '#8d8b86', pattern: 'cobble' });
+export const ROOF_TILES = def('roof_tiles', 'Roof tiles', { hard: 3, resist: 6, color: '#a4472f', pattern: 'shingles' });
+export const THATCH = def('thatch', 'Thatch', { hard: 1, resist: 1, wood: true, color: '#c9a44c', pattern: 'thatch' });
+export const PLASTER = def('plaster', 'Plaster', { hard: 3, resist: 6, color: '#e9e1cd', pattern: 'plain' });
+export const TIMBER = def('timber', 'Timber beam', { hard: 3, resist: 5, wood: true, color: '#5e3f25', pattern: 'timber' });
+export const MUD_BRICKS = def('mud_bricks', 'Mud bricks', { hard: 4, resist: 8, color: '#9b6b45', pattern: 'bricks' });
+export const STAINED_GLASS = def('stained_glass', 'Stained glass', { hard: 2, resist: 2, clear: true, color: '#7a52b8', pattern: 'stained' });
+export const FENCE = def('fence', 'Fence', { solid: false, hard: 1, resist: 2, wood: true, clear: true, color: '#9a7046', pattern: 'fence' });
+export const LANTERN = def('lantern', 'Lantern', { solid: false, hard: 0, tool: 'hand', resist: 0, clear: true, light: 13, color: '#ffc860', pattern: 'lantern' });
+export const AWNING = def('awning', 'Awning', { solid: false, platform: true, hard: 1, resist: 1, clear: true, color: '#c23a34', pattern: 'awning' });
+export const BANNER = def('banner', 'Banner', { solid: false, hard: 1, tool: 'hand', resist: 1, clear: true, color: '#b02a30', pattern: 'banner' });
+export const WHEAT = def('wheat', 'Wheat', { solid: false, hard: 0, tool: 'hand', resist: 0, clear: true, color: '#d8b04a', pattern: 'crops' });
+export const TABLE = def('table', 'Table', furniture({ hard: 2, resist: 4, wood: true, color: '#9a6a3a', pattern: 'table' }));
+export const CHAIR = def('chair', 'Chair', furniture({ hard: 1, resist: 3, wood: true, color: '#9a6a3a', pattern: 'chair' }));
+export const BOOKSHELF = def('bookshelf', 'Bookshelf', furniture({ hard: 2, resist: 4, wood: true, color: '#6e4a2c', pattern: 'bookshelf' }));
+export const BARREL = def('barrel', 'Barrel', furniture({ hard: 2, resist: 4, wood: true, color: '#8a5a32', pattern: 'barrel' }));
+export const SIGN = def('sign', 'Sign', furniture({ hard: 1, resist: 2, wood: true, color: '#a87a48', pattern: 'sign' }));
+export const POST = def('post', 'Wooden post', { solid: false, hard: 2, resist: 3, wood: true, clear: true, color: '#7a5634', pattern: 'post' });
+
 export const BLOCKS = B;
 export const BLOCK_BY_KEY = new Map(B.map(b => [b.key, b]));
 export const blockId = key => BLOCK_BY_KEY.get(key)?.id ?? AIR;
@@ -134,6 +154,11 @@ export const BRICK_WALL = wall('brick_wall', 'Brick wall', '#6a3a30');
 export const STONE_BRICK_WALL = wall('stone_brick_wall', 'Stone brick wall', '#55585e');
 export const GLASS_WALL = wall('glass_wall', 'Glass wall', '#7e98a4');
 export const SANDSTONE_BRICK_WALL = wall('sandstone_brick_wall', 'Sandstone brick wall', '#8e7650');
+export const PLASTER_WALL = wall('plaster_wall', 'Plaster wall', '#cfc5ad');
+export const TIMBER_WALL = wall('timber_wall', 'Timber-framed wall', '#d3c7ab');
+export const LOG_WALL = wall('log_wall', 'Log wall', '#6a4a2c');
+export const COBBLE_WALL = wall('cobble_wall', 'Cobblestone wall', '#5f5e5a');
+export const MUD_BRICK_WALL = wall('mud_brick_wall', 'Mud brick wall', '#6b4a32');
 export const WALLS = W;
 export const WALL_BY_KEY = new Map(W.map(w => [w.key, w]));
 

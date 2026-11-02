@@ -16,6 +16,7 @@ import { BLOCKS, WALLS, TILE, SOLID, NO_WALL } from './blocks.js';
 import { WORLD_H } from './worldgen.js';
 import { WEAPONS } from '../weapons.js';
 import { BODY } from '../config.js';
+import { pushDoor } from './doors.js';
 
 // ---- Day and night ---------------------------------------------------------------------------
 
@@ -147,6 +148,8 @@ export function spawnSpot(game, ptx, pty, under) {
   for (let attempt = 0; attempt < 6; attempt++) {
     const side = rng() < 0.5 ? -1 : 1, tx = ptx + side * (34 + Math.floor(rng() * 22));
     const surf = world.gen.surfaceAt(tx);
+    // (Not in a town, nor near one: towns are safe.)
+    if (!under && world.gen.townNear(tx, 24)) continue;
     const tries = under ? [pty, pty - 6, pty + 6, pty - 12, pty + 12] : [world.surface(tx) - 1];
     for (const y0 of tries) {
       for (let dy = 0; dy < 8; dy++) {
@@ -196,6 +199,7 @@ const seesFrom = (game, s, o) => game.world.clearLine(s.shoulderX, s.shoulderY, 
 /** Walking toward dir (-1, 0, 1): jumps when it's stopped by something, or what it's after is above. */
 function walk(game, s, ctl, inp, dir, speed, above) {
   inp.move = dir * speed;
+  if (dir && !isMonster(s)) pushDoor(game, s, dir);
   if (dir && s.body.onGround) {
     ctl.stuck = Math.abs(s.x - ctl.lastX) < 0.15 ? ctl.stuck + 1 : 0;
     if (ctl.stuck > 5 || (above && game.rng() < 0.06)) { inp.jump = true; inp.jumpPressed = true; ctl.stuck = 0; }

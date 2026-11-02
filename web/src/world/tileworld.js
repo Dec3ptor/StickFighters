@@ -36,12 +36,13 @@ export class Chunk {
 export class TileWorld {
   /**
    * seed: the world's seed. saved: chunks as saved ({ key: { fg, bg, shape } }, chunkKey),
-   * used in place of the seed's.
+   * used in place of the seed's. towns: whether it has towns (worlds made before them don't).
    */
-  constructor({ seed = 1, name = 'World', saved = null } = {}) {
+  constructor({ seed = 1, name = 'World', saved = null, towns = false } = {}) {
     this.seed = seed | 0;
     this.name = name;
-    this.gen = new WorldGen(this.seed);
+    this.towns = !!towns;
+    this.gen = new WorldGen(this.seed, { towns: this.towns });
     this.chunks = new Map();
     this.saved = saved instanceof Map ? saved : new Map(Object.entries(saved || {}).map(([k, v]) => [Number(k), v]));
     this.bounds = { left: -HALF_W * TILE, top: 0, right: HALF_W * TILE, bottom: WORLD_H * TILE };
@@ -89,7 +90,7 @@ export class TileWorld {
       c = new Chunk(cx, cy);
       const s = this.saved.get(k);
       if (s) { c.fg.set(s.fg); c.bg.set(s.bg); c.shape.set(s.shape); c.edited = true; }
-      else this.gen.fillChunk(cx, cy, c.fg, c.bg);
+      else this.gen.fillChunk(cx, cy, c.fg, c.bg, c.shape);
       this.chunks.set(k, c);
     }
     this.lastKey = k;
