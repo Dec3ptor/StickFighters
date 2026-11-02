@@ -26,6 +26,7 @@ import { progOf, spendPoint, applyProgress } from './progress.js';
 import { questsOf, dropQuest } from './quests.js';
 import { socialOptions, socialDo, tradeView, offerTrade, acceptTrade, cancelTrade, shareQuest } from './social.js';
 import { cleanFound } from './codex.js';
+import { cleanSettings, kitOf } from './worldrules.js';
 
 const LAYERS = ['fg', 'bg', 'shape'];
 const CHUNKS_PER_MESSAGE = 40;
@@ -59,7 +60,7 @@ export class WorldHost {
   join(p) {
     const s = p.soldier;
     p.wsync = { tiles: [], inv: '', chest: null, chestV: -1, talk: '', trade: '', party: '', overflow: false, ops: [] };
-    s.world = worldFromSave(this.load?.(s.name) || null);
+    s.world = worldFromSave(this.load?.(s.name) || null, kitOf(this.game.world));
     rehire(this.game, s);
     this.players.add(p);
   }
@@ -95,7 +96,7 @@ export class WorldHost {
   /** What the welcome says about the world. */
   info() {
     const w = this.game.world;
-    return { seed: w.seed, name: w.name, gen: w.genVersion || 1, towns: !!w.towns, time: Math.floor(w.time || 0), pvp: w.pvp !== false, claims: claimsToSave(w) };
+    return { seed: w.seed, name: w.name, gen: w.genVersion || 1, towns: !!w.towns, time: Math.floor(w.time || 0), pvp: w.pvp !== false, claims: claimsToSave(w), settings: w.settings || null };
   }
 
   /** Each update: the blocks changed go to every player's backlog; the bases, when they change, to everyone. */
@@ -294,7 +295,10 @@ export class WorldClient {
   /** The host's world (from its welcome), made here from its seed and the chunks it's sent. */
   makeWorld(m) {
     const info = m.world || {};
-    const world = new TileWorld({ seed: info.seed | 0, name: String(info.name || 'World').slice(0, 32), saved: this.saved, gen: info.gen ? Math.max(1, Math.min(3, info.gen | 0)) : info.towns === true ? 2 : 1 });
+    // (The world's settings: the host's, the same for everyone: worldrules.js.)
+    const settings = cleanSettings(info.settings);
+    const world = new TileWorld({ seed: info.seed | 0, name: String(info.name || 'World').slice(0, 32), saved: this.saved, gen: info.gen ? Math.max(1, Math.min(3, info.gen | 0)) : info.towns === true ? 2 : 1, noTowns: settings.towns === 'off' });
+    world.settings = settings;
     world.time = Number(info.time) || 0;
     world.pvp = info.pvp !== false;
     claimsFromSave(world, info.claims);

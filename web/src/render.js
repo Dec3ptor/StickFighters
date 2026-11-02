@@ -260,7 +260,8 @@ export class Renderer {
   startFog(game, alpha, viewer) {
     // (Spectating with the free camera: no fog.)
     this.fogNow = game.options?.fog && !this.noFog && (this.fogFrom || viewer) ? (this.fog ||= new Fog()).update(game, this.fogFrom || viewer, alpha) : null;
-    this.fogNow?.drawShadows(this.ctx, this.view);
+    // (A world: what's out of sight is darkened with the light, worldrender.js, not shadowed block by block.)
+    if (!game.world) this.fogNow?.drawShadows(this.ctx, this.view);
     return this.fogNow;
   }
 
@@ -358,7 +359,9 @@ export class Renderer {
   /** Over a world, once everything in it is drawn: the dark underground, and the block the crosshair's on. */
   drawWorldOver(game, viewer) {
     // (Dev mode can light everything.)
-    if (!viewer?.world?.dev?.lights) this.worldView?.drawLight(this, game, 0.72);
+    // (Seeing only what can be seen: what's out of sight darkened too, lit or not.)
+    const lit = viewer?.world?.dev?.lights;
+    if (!lit || this.fogNow) this.worldView?.drawLight(this, game, lit ? 0 : 0.72, this.fogNow?.eye);
     drawTarget(this.ctx, game, viewer, 'classic');
   }
 

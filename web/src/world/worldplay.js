@@ -10,7 +10,7 @@ import { Inventory, itemOf, HOTBAR, CRATE_LOOT, boxDetails } from './items.js';
 import { WORLD_H, CHUNK } from './worldgen.js';
 import { MOTION, BODY } from '../config.js';
 import { WEAPONS } from '../weapons.js';
-import { monstersTick, armNpc, foes, isMonster, monsterLoot, hireMerc, mercsOf, MERC } from './monsters.js';
+import { monstersTick, armNpc, foes, isMonster, monsterLoot, hireMerc, mercsOf, MERC, DAY_TICKS, hourOf } from './monsters.js';
 import { setDoor, pushDoor, doorsTick, soldierIn } from './doors.js';
 import { damage } from '../combat.js';
 import { devFly, devInput } from './devmode.js';
@@ -26,6 +26,8 @@ import { cleanGear } from './items.js';
 import { scanFound, cleanFound } from './codex.js';
 import { useBed, sleepInput, sleepTick, wake, homeOf } from './sleep.js';
 import { addWaystone, removeWaystone, waystoneMenu } from './waystones.js';
+import { settingOf, difficultyOf, keepTime, KITS } from './worldrules.js';
+import { setDev } from './devmode.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -371,16 +373,19 @@ export function playerToSave(s, game = null) {
     // (Their level and perks, and their quests: progress.js, quests.js. What they wear: gear.js.)
     prog: progToSave(s), quests: questsToSave(s),
     gear: Object.fromEntries(SLOTS.map(k => [k, w.gear?.[k] ? [w.gear[k].key, w.gear[k].g] : null])),
-    graves: w.graves || [], found: w.found || [],
+    graves: w.graves || [], found: w.found || [], over: !!w.over,
     // (Their ender chest's things: the same in every ender chest.)
     ender: w.ender?.slots.some(Boolean) ? w.ender.toJSON() : null,
   };
 }
 
 /** A soldier's world state from a save (or a new character's, with nothing saved). */
-export function worldFromSave(p) {
-  const w = worldState(Array.isArray(p?.inv) ? Inventory.from(p.inv) : Inventory.starting());
+export function worldFromSave(p, kit = null) {
+  // (A new character: what the world says they start with: worldrules.js.)
+  const w = worldState(Array.isArray(p?.inv) ? Inventory.from(p.inv) : kit ? Inventory.starting(kit) : Inventory.starting());
   if (!p) return w;
+  // (Hardcore: their one life spent.)
+  if (p.over) w.over = true;
   w.slot = Math.max(0, Math.min(HOTBAR - 1, p.slot | 0));
   w.slot2 = Number.isInteger(p.slot2) && p.slot2 >= 0 && p.slot2 < HOTBAR ? p.slot2 : -1;
   if (BRUSHES.includes(p.brush)) w.brush = p.brush;
@@ -1231,6 +1236,8 @@ export function worldTick(game) {
   magmaBurns(game);
   const world = game.world;
   world.time = (world.time || 0) + 1;
+  // (Always day, or always night, as the world was made: worldrules.js.)
+  if (game.tick % 30 === 0 && !game.mirror) world.time = keepTime(world, world.time, DAY_TICKS, hourOf);
   monstersTick(game);
   townsfolkTick(game);
   questsTick(game);
@@ -1249,6 +1256,8 @@ export function worldTick(game) {
     if (!s.world) continue;
     if (s.world.talk) talkTick(game, s);
     regenTick(game, s);
+    // (Creative: dev mode, from the start: worldrules.js. Turned off, it stays off.)
+    if (!s.world.creative && s.alive && !s.npc && !game.mirror && settingOf(world, 'mode') === 'creative') { s.world.creative = true; if (!s.world.dev) setDev(game, s, true); }
     // (A recall scroll being read: three seconds keeping still, then home.)
     const rc = s.world.recall;
     if (rc && !game.mirror) {
@@ -1396,6 +1405,8 @@ export const worldMode = {
     // (Harder hitting with the Marksman and Brawler perks and gear: progress.js. Less taken with
     // armour, and fire resistance against magma and burning: gear.js.)
     let dmg = attacker?.world ? amount * damageScale(attacker, weapon) : amount;
+    // (Monsters hit as hard as the world's difficulty says: worldrules.js.)
+    if (attacker && isMonster(attacker) && target?.world) dmg *= difficultyOf(game.world).dmg;
     const as = attacker?.world?.gear ? gearStats(attacker) : null;
     // (A critical hit: twice the damage.)
     if (as?.crit && game.rng() * 100 < as.crit) { dmg *= 2; game.fx?.sparks?.(target.x, target.y - 14, 0, -1); }
@@ -1438,18 +1449,24 @@ export const worldMode = {
       }
       raidKill(game, victim, by);
     }
-    // (A player: what they lose goes in a grave, where they died.)
-    else if (victim.world) bury(game, victim);
+    // (A player: what they lose goes in a grave, where they died. Hardcore: that was their one life.)
+    else if (victim.world) {
+      bury(game, victim);
+      if (settingOf(game.world, 'mode') === 'hardcore') { victim.world.died = true; victim.world.over = true; game.notify(victim, 'You died. A hardcore world: there\'s no coming back (you can watch)'); }
+    }
   },
   // (G throws what's in hand: worldInput. Saying there's a drop makes the key mean that.)
   drop() {},
   /** Players always come back; a monster or mercenary only appears the once (a mercenary beside whoever hired them). */
   canRespawn(game, s) {
-    if (!s.npc) return true;
+    // (Hardcore: one life. Dead, you watch: worldrules.js.)
+    if (!s.npc) return !(s.world?.over || (settingOf(game.world, 'mode') === 'hardcore' && s.world?.died));
     if (s.npc.spawned) return false;
     return s.npc.kind !== 'merc' || game.soldiers.some(o => o.id === s.npc.owner && o.alive && !o.npc);
   },
   winner() { return null; },
+  /** Out for good (hardcore): what the screen says. */
+  outText(game, s) { return s.world?.over ? 'Your one life is spent: this world is hardcore' : "You're out"; },
 
   /**
    * Where to come back: where they were when the world was last saved (the first time), else

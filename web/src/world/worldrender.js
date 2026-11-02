@@ -810,6 +810,32 @@ export function spread(out, solid, w, x0, y0, x1, y1) {
   }
 }
 
+/**
+ * What can be seen from the eye at (ex, ey) (in tiles of a box w x h whose blocks light doesn't go
+ * through are `solid`): rays to every tile on the box's edge, each seeing what it passes and the
+ * first block it meets. out: 1 for each tile seen.
+ */
+export function sightBox(solid, w, h, ex, ey, out) {
+  out.fill(0, 0, w * h);
+  const ray = (tx, ty) => {
+    const dx = tx + 0.5 - ex, dy = ty + 0.5 - ey, n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 2));
+    const sx = dx / n, sy = dy / n;
+    let x = ex, y = ey;
+    for (let i = 0; i <= n; i++) {
+      const cx = Math.floor(x), cy = Math.floor(y);
+      if (cx < 0 || cy < 0 || cx >= w || cy >= h) return;
+      const k = cy * w + cx;
+      out[k] = 1;
+      if (solid[k] && i > 0) return;
+      x += sx; y += sy;
+    }
+  };
+  for (let x = 0; x < w; x++) { ray(x, 0); ray(x, h - 1); }
+  for (let y = 1; y < h - 1; y++) { ray(0, y); ray(w - 1, y); }
+}
+// How dark what's out of sight is, in each game (seeing only what can be seen).
+const SIGHT_CLASSIC = 0.82, SIGHT_RM = 0.9;
+
 /** How bright the glow round each soldier is (they always see a little way round them, even underground). */
 export const SOLDIER_GLOW = 11;
 
@@ -1044,7 +1070,7 @@ export class WorldView {
    * them) when they change or the view's moved on, the soldiers' glow as they move, and drawn
    * as a soft shadow over everything (dark: how dark it gets, 0 to 1).
    */
-  drawLight(r, game, dark = 0.9) {
+  drawLight(r, game, dark = 0.9, eye = null) {
     const world = game.world, v = r.view, m = 16;
     const x0 = Math.floor(v.l / TILE) - m, y0 = Math.max(0, Math.floor(v.t / TILE) - m);
     const w = Math.ceil((v.r - v.l) / TILE) + 2 * m, h = Math.min(WORLD_H - y0, Math.ceil((v.b - v.t) / TILE) + 2 * m);
@@ -1073,24 +1099,39 @@ export class WorldView {
       if (tx >= 0 && ty >= 0 && tx < lit.w && ty < lit.h) src.push(tx, ty);
     }
     const key = src.join();
-    if (all || key !== lit.glowKey) {
+    // (Seeing only what can be seen, the world's setting: what's out of sight from the eye, dark.
+    // Worked out again as the eye goes from tile to tile, or the blocks change.)
+    const etx = eye ? Math.floor(eye.x / TILE) - lit.x0 : 0, ety = eye ? Math.floor(eye.y / TILE) - lit.y0 : 0;
+    const sightKey = eye ? `${etx},${ety}` : '';
+    let sightAll = false;
+    if (sightKey !== lit.sightKey || (eye && all)) {
+      lit.sightKey = sightKey;
+      if (eye) {
+        const vis = lit.vis?.length >= lit.w * lit.h ? lit.vis : (lit.vis = new Uint8Array(lit.w * lit.h));
+        sightBox(lit.solid, lit.w, lit.h, eye.x / TILE - lit.x0, eye.y / TILE - lit.y0, vis);
+      } else lit.vis = null;
+      sightAll = true;
+    }
+    if (all || sightAll || key !== lit.glowKey) {
       // The part to work out again: where the glow was, and where it is now.
       const R = SOLDIER_GLOW;
       let l = Infinity, t = Infinity, rr = -Infinity, b = -Infinity;
       const add = list => { for (let i = 0; i < list.length; i += 2) { l = Math.min(l, list[i] - R); rr = Math.max(rr, list[i] + R + 1); t = Math.min(t, list[i + 1] - R); b = Math.max(b, list[i + 1] + R + 1); } };
-      if (all) { l = 0; t = 0; rr = lit.w; b = lit.h; } else { add(lit.glow || []); add(src); }
+      if (all || sightAll) { l = 0; t = 0; rr = lit.w; b = lit.h; } else { add(lit.glow || []); add(src); }
       l = Math.max(0, l); t = Math.max(0, t); rr = Math.min(lit.w, rr); b = Math.min(lit.h, b);
       if (rr > l && b > t) {
         const { base, data, solid } = lit, W = lit.w;
         for (let j = t; j < b; j++) data.set(base.subarray(j * W + l, j * W + rr), j * W + l);
         for (let i = 0; i < src.length; i += 2) { const k = src[i + 1] * W + src[i]; data[k] = Math.max(data[k], SOLDIER_GLOW); }
         if (src.length) spread(data, solid, W, l, t, rr, b);
-        const px = lit.img.data, dk = this.look === 'classic' ? DARK_CLASSIC : DARK_RM;
+        const px = lit.img.data, dk = this.look === 'classic' ? DARK_CLASSIC : DARK_RM, vis = eye ? lit.vis : null;
+        const hidden = Math.round(255 * (this.look === 'classic' ? SIGHT_CLASSIC : SIGHT_RM));
         for (let j = t; j < b; j++) {
           for (let i = l; i < rr; i++) {
             const k = j * W + i, a = 1 - data[k] / 15, o = k * 4;
             px[o] = dk[0]; px[o + 1] = dk[1]; px[o + 2] = dk[2];
-            px[o + 3] = Math.round(255 * dark * a * a * (3 - 2 * a));
+            const shade = Math.round(255 * dark * a * a * (3 - 2 * a));
+            px[o + 3] = vis && !vis[k] ? Math.max(shade, hidden) : shade;
           }
         }
         lit.g.putImageData(lit.img, 0, 0, l, t, rr - l, b - t);

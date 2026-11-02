@@ -15,6 +15,7 @@ import { giveXp, progOf, countStat } from './progress.js';
 import { hash3 } from './noise.js';
 import { rollGear } from './gear.js';
 import { dropFor } from './quests.js';
+import { settingOf, difficultyOf } from './worldrules.js';
 
 const CHECK_EVERY = 60 * 30;   // updates between chances of a raid starting (half a minute)
 const CHANCE = 0.18;           // the chance each time (at night, a town with a player near)
@@ -71,6 +72,8 @@ export function raidsTick(game) {
   const world = game.world, gen = world.gen;
   if (!gen?.towns || game.mirror) return;
   const raid = world.raid;
+  // (No raids, by the world's settings, nor in a peaceful one: worldrules.js.)
+  if (!raid && (settingOf(world, 'raids') === 'off' || !difficultyOf(world).spawn)) return;
   if (raid) {
     if (game.tick % 30) return;
     const t = gen.townIn(raid.k), left = raidersLeft(game);

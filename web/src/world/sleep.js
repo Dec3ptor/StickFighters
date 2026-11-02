@@ -8,6 +8,7 @@ import * as K from './blocks.js';
 import { TILE } from './blocks.js';
 import { BODY } from '../config.js';
 import { hourOf, DAY_TICKS, isMonster } from './monsters.js';
+import { settingOf } from './worldrules.js';
 
 /** When you can go to sleep: from half past six in the evening to half past five in the morning. */
 export const canSleepNow = world => { const h = hourOf(world.time || 0); return h >= 18.5 || h < 5.5; };
@@ -26,6 +27,7 @@ const playing = game => game.soldiers.filter(o => o.world && !o.npc && o.alive);
 export function useBed(game, s, tx, ty) {
   const w = s.world;
   w.home = bedSpot(tx, ty);
+  if (settingOf(game.world, 'time') !== 'cycle') { game.notify(s, 'You\'ll come back here, at your bed. (No sleeping the night away in a world where it never changes.)'); return; }
   if (!canSleepNow(game.world)) { game.notify(s, 'You\'ll come back here, at your bed. (You can sleep at night.)'); return; }
   const near = game.soldiers.find(o => o.alive && isMonster(o) && Math.abs(o.x - s.x) < NEAR_X * TILE && Math.abs(o.y - s.y) < NEAR_Y * TILE);
   if (near) { game.notify(s, 'You can\'t sleep now: there are monsters nearby. (You\'ll come back here.)'); return; }

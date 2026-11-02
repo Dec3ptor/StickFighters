@@ -467,6 +467,12 @@ html[data-game="remastered"] .trade-ok { color: #7ee07a; }
 .journal-tab.on { background: var(--ink); color: var(--paper, #fff); }
 html[data-game="remastered"] .journal-tab.on { background: #f2c230; color: #1a1a1a; }
 .journal-body { display: flex; flex-direction: column; gap: 8px; }
+/* A new world's settings (the Worlds tab): worldrules.js. */
+.world-settings { flex-basis: 100%; margin: 4px 0; }
+.world-settings summary { cursor: pointer; font-weight: bold; padding: 4px 0; }
+.ws-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px 12px; padding: 6px 0 2px; }
+.ws-grid select { width: 100%; }
+
 /* The codex (questui.js): everything there is, how it's had, and what you've found. */
 .codex-head { display: flex; gap: 12px; align-items: center; }
 .codex-found { font-weight: bold; white-space: nowrap; }

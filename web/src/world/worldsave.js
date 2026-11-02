@@ -7,6 +7,7 @@
 // are kept as runs of the same block (most of a chunk is), in base64.
 
 import { CHUNK } from './worldgen.js';
+import { cleanSettings } from './worldrules.js';
 
 const DB_NAME = 'stickfighters-worlds';
 const DB_VERSION = 1;
@@ -82,9 +83,11 @@ export const genOf = rec => Math.max(1, Math.min(WORLD_GEN, rec?.gen | 0 || 1));
 /** Whether a world (its record) has towns. */
 export const hasTowns = rec => genOf(rec) >= 2;
 
-export async function createWorld({ name, seed, death = 'bag' }) {
+export async function createWorld({ name, seed, settings = null }) {
   const now = Date.now();
-  const rec = { id: newId(), name: worldName(name), seed: seed | 0, created: now, played: now, player: null, format: 1, gen: WORLD_GEN, death: ['coins', 'bag', 'all'].includes(death) ? death : 'bag' };
+  // (Its settings: worldrules.js. What's lost on dying is one of them.)
+  const s = cleanSettings(settings);
+  const rec = { id: newId(), name: worldName(name), seed: seed | 0, created: now, played: now, player: null, format: 1, gen: WORLD_GEN, settings: s, death: s.death };
   await saveWorld(rec, []);
   return rec;
 }

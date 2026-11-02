@@ -80,9 +80,8 @@
           <h3>New world</h3>
           <label class="field">Name <input id="worldName" maxlength="32" spellcheck="false" placeholder="World 1"></label>
           <label class="field" title="The same seed makes the same world, anywhere: a word or a number">Seed <input id="worldSeed" maxlength="40" spellcheck="false" placeholder="Random"></label>
-          <label class="field" title="What you lose when you die goes in a grave where you died: right click it to have it all back">When you die
-            <select id="worldDeath"><option value="bag" selected>Your bag goes in a grave</option><option value="coins">Only half your coins</option><option value="all">Everything goes in a grave</option></select></label>
           <button type="submit" class="primary">Make it and play</button>
+          <details class="world-settings" id="worldSettings"><summary>World settings: what you see, monsters, hardcore or creative, when you die, time, towns...</summary><div class="ws-grid" data-ws></div></details>
         </form>
         <p class="muted-note">An endless world of plains, forests, mountains, deserts, jungles and tundra, with caves, ores and ruins underneath, to dig through and build in, your shooter's guns in hand. <kbd>1</kbd>&ndash;<kbd>0</kbd> or the wheel pick from your hotbar; hold the mouse button to dig or build; <kbd>R</kbd> with blocks changes how they go down (one, a line, a rectangle, a box: drag it out); right click opens doors; <kbd>I</kbd> opens your things; <kbd>G</kbd> throws what's in your hand. It keeps itself every minute, and when you pause or leave. Export a world to keep a copy, or to play it in another browser.</p>
       </div>

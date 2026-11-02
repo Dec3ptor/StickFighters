@@ -375,9 +375,10 @@ export class Inventory {
   }
 
   /** A new character's things (the guns loaded). */
-  static starting() {
+  /** A new character's things (kit: other things to start with, [key, n] pairs: worldrules.js). */
+  static starting(kit = STARTING_KIT) {
     const inv = new Inventory();
-    for (const [key, n] of STARTING_KIT) inv.add(key, n);
+    for (const [key, n] of kit) inv.add(key, n);
     for (const s of inv.slots) if (s && WEAPONS[s.key]?.mag) s.mag = WEAPONS[s.key].mag;
     return inv;
   }

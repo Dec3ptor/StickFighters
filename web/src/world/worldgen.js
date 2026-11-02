@@ -49,10 +49,11 @@ export class WorldGen {
    * first; 2 has towns (towns.js); 3 ores in veins and nodes, gems, diamond pipes and geodes.
    * Worlds keep the land they were made with. (towns: true, an older way to say 2.)
    */
-  constructor(seed, { towns = false, gen = 0 } = {}) {
+  constructor(seed, { towns = false, gen = 0, noTowns = false } = {}) {
     this.seed = seed | 0;
     this.version = gen || (towns ? 2 : 1);
-    this.towns = this.version >= 2;
+    // (A world made without towns, by its settings: worldrules.js.)
+    this.towns = this.version >= 2 && !noTowns;
     this.veins = this.version >= 3;
     this.townPlans = new Map(); // region -> its town (or null)
     this.townRasters = new Map(); // town id -> its blocks (a few kept)

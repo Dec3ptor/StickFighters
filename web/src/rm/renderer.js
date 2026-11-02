@@ -428,7 +428,7 @@ export class RemasteredRenderer extends Renderer {
     this.drawBuildGhost(game, viewer);
 
     // A world: dark underground (the glows and flashes go over it).
-    if (world && !allLit) this.worldView.drawLight(this, game, 0.86);
+    if (world && (!allLit || this.fogNow)) this.worldView.drawLight(this, game, allLit ? 0 : 0.86, this.fogNow?.eye);
     if (this.quality !== 'low') this.lights.draw(ctx, this.view);
     if (theme.dark && this.quality === 'high') this.lights.drawDarkness(this, theme.dark);
     else if (theme.dark) {
@@ -438,7 +438,8 @@ export class RemasteredRenderer extends Renderer {
       ctx.fillRect(0, 0, this.pw, this.ph);
       ctx.setTransform(s, 0, 0, s, tx, ty);
     }
-    if (this.fogNow) {
+    // (A world's out of sight is darkened with its light: worldrender.js.)
+    if (this.fogNow && !world) {
       this.fogNow.drawShadows(ctx, this.view, 'rgba(6,9,16,0.6)');
     }
     look.backdrop.drawFore(ctx, this, look.floor);

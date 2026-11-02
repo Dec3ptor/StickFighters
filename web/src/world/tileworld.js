@@ -39,12 +39,12 @@ export class TileWorld {
    * used in place of the seed's. gen: the generator's version it was made with (worldgen.js:
    * 2 has towns, 3 ores in veins; worlds keep theirs). towns: true, an older way to say 2.
    */
-  constructor({ seed = 1, name = 'World', saved = null, towns = false, gen = 0 } = {}) {
+  constructor({ seed = 1, name = 'World', saved = null, towns = false, gen = 0, noTowns = false } = {}) {
     this.seed = seed | 0;
     this.name = name;
     this.genVersion = gen || (towns ? 2 : 1);
-    this.towns = this.genVersion >= 2;
-    this.gen = new WorldGen(this.seed, { gen: this.genVersion });
+    this.gen = new WorldGen(this.seed, { gen: this.genVersion, noTowns });
+    this.towns = this.gen.towns;
     this.chunks = new Map();
     this.saved = saved instanceof Map ? saved : new Map(Object.entries(saved || {}).map(([k, v]) => [Number(k), v]));
     this.bounds = { left: -HALF_W * TILE, top: 0, right: HALF_W * TILE, bottom: WORLD_H * TILE };

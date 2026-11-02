@@ -42,8 +42,9 @@ import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
 import { TileWorld } from './world/tileworld.js';
 import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT, genOf } from './world/worldsave.js';
-import { playerToSave, worldFromSave, dropItem, chestAt, boxFor, boxKind, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, DEATH_RULES, rehire, REACH, crafted, stackToChests } from './world/worldplay.js';
+import { playerToSave, worldFromSave, dropItem, chestAt, boxFor, boxKind, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, rehire, REACH, crafted, stackToChests } from './world/worldplay.js';
 import { warp, waystonesToSave, waystonesFromSave } from './world/waystones.js';
+import { WORLD_SETTINGS, cleanSettings, settingsSummary, kitOf } from './world/worldrules.js';
 import { craft, stationsNear } from './world/crafting.js';
 import { itemOf } from './world/items.js';
 import { InventoryScreen } from './world/inventoryui.js';
@@ -890,7 +891,7 @@ async function renderWorlds() {
   };
   el.innerHTML = list.map(w => `
     <div class="world-card" data-world="${esc(w.id)}">
-      <div class="world-info"><b>${esc(w.name)}</b><span class="muted-note">Seed ${esc(w.seed)} &middot; played ${esc(when(w.played))}</span></div>
+      <div class="world-info"><b>${esc(w.name)}</b><span class="muted-note">Seed ${esc(w.seed)} &middot; played ${esc(when(w.played))}${settingsSummary(w.settings) ? ` &middot; ${esc(settingsSummary(w.settings))}` : ''}${w.over ? ' &middot; <b>over</b> (hardcore)' : ''}</span></div>
       <button type="button" class="primary" data-act="play">Play</button>
       <button type="button" data-act="host" title="Play it online: friends can join (keep it open while they play)">Host online</button>
       <button type="button" class="small" data-act="export">Export</button>
@@ -932,7 +933,9 @@ async function newWorld() {
   const seed = typed ? seedOf(typed) : (Math.random() * 2 ** 31) | 0;
   const n = (state.worldList?.length || 0) + 1;
   try {
-    const rec = await createWorld({ name: $('worldName').value.trim() || `World ${n}`, seed, death: $('worldDeath').value });
+    // (Its settings, as chosen: worldrules.js.)
+    const settings = cleanSettings(Object.fromEntries(Object.keys(WORLD_SETTINGS).map(k => [k, $(`ws-${k}`)?.value])));
+    const rec = await createWorld({ name: $('worldName').value.trim() || `World ${n}`, seed, settings });
     $('worldName').value = '';
     $('worldSeed').value = '';
     startWorld(rec);
@@ -956,22 +959,26 @@ async function startWorld(rec, { online = false } = {}) {
   catch (err) { show('loading', false); showMenu(); toast(`Couldn't load that world: ${err?.message || err}`); return; }
   // Our own numbers (Settings, Developer), camera and aiming zoom: a world's played offline.
   useOwnRules();
-  const world = new TileWorld({ seed: rec.seed, name: rec.name, saved, gen: genOf(rec) });
+  // (Its settings, as it was made: worlds from before them, as they were then: worldrules.js.)
+  const settings = cleanSettings(rec.settings || { death: rec.death });
+  const world = new TileWorld({ seed: rec.seed, name: rec.name, saved, gen: genOf(rec), noTowns: settings.towns === 'off' });
+  world.settings = settings;
   chestsFromSave(world, rec.chests);
   gravesFromSave(world, rec.graves);
   waystonesFromSave(world, rec.waystones);
-  // (What's lost on dying: in a grave. Worlds from before it was asked: the bag.)
-  world.death = DEATH_RULES.includes(rec.death) ? rec.death : 'bag';
+  // (What's lost on dying: in a grave.)
+  world.death = settings.death;
   claimsFromSave(world, rec.claims);
   world.time = Number.isFinite(rec.time) ? rec.time : 0;
   // (What the towns' shops have sold today.)
   world.townState = rec.towns && typeof rec.towns === 'object' ? structuredClone(rec.towns) : {};
   if (online) rec.pvp = $('worldPvp').value !== 'off';
   world.pvp = rec.pvp !== false;
-  const game = new Game({ world, mode: 'world', speed: state.settings.speed, options: { destruction: true, crates: 'off', streaks: false }, seed: (Math.random() * 2 ** 31) | 0 });
+  // (Seeing only what can be seen: fog of war's hiding of what's out of sight, the world's way.)
+  const game = new Game({ world, mode: 'world', speed: state.settings.speed, options: { destruction: true, crates: 'off', streaks: false, fog: settings.vision === 'sight' }, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
   const me = game.addSoldier({ name: playerName(), isBot: false, team: 0, skin: prefs.skin }, new PlayerController(input, () => renderer, playerOptions));
-  me.world = worldFromSave(rec.player);
+  me.world = worldFromSave(rec.player, kitOf(world));
   me.respawnTimer = 1;
   rehire(game, me);
   state.mode = 'offline';
@@ -1027,6 +1034,8 @@ function saveWorldNow(last = false) {
   w.savedAt = performance.now();
   const me = w.game.soldiers.find(s => s.world && !s.isBot && !s.remote);
   if (me) w.rec.player = playerToSave(me, w.game);
+  // (Hardcore: once your one life's spent, the world says so.)
+  if (me?.world?.over) w.rec.over = true;
   // (Hosted: the players in it keep their things too.)
   w.sync?.saveAll();
   w.rec.chests = chestsToSave(w.game.world);
@@ -2453,6 +2462,9 @@ function wire() {
   $('tabWorlds').addEventListener('click', () => { showTab('worlds'); rememberMenu(); });
   $('worldList').addEventListener('click', worldAction);
   $('newWorldForm').addEventListener('submit', e => { e.preventDefault(); newWorld(); });
+  // (A new world's settings: a choice for each, as worldrules.js has them.)
+  $('worldSettings').querySelector('[data-ws]').innerHTML = Object.entries(WORLD_SETTINGS).map(([k, d]) => `<label class="field" title="${esc(d.tip || '')}">${esc(d.label)}
+    <select id="ws-${k}">${Object.entries(d.options).map(([v, t]) => `<option value="${v}"${v === d.def ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`).join('');
   $('importWorld').addEventListener('click', () => $('importWorldFile').click());
   $('importWorldFile').addEventListener('change', () => { importWorldFile($('importWorldFile').files[0]); $('importWorldFile').value = ''; });
   // (Leaving the page mid-world: kept as it is, as far as the browser lets it finish.)

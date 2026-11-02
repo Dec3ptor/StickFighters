@@ -17,6 +17,7 @@ import { WORLD_H } from './worldgen.js';
 import { WEAPONS } from '../weapons.js';
 import { BODY } from '../config.js';
 import { pushDoor } from './doors.js';
+import { difficultyOf } from './worldrules.js';
 
 // ---- Day and night ---------------------------------------------------------------------------
 
@@ -95,8 +96,8 @@ export function armNpc(s) {
 
 /** A monster of `type`, to appear at (x, y) (a body's middle) at the next update. */
 export function spawnMonster(game, type, x, y) {
-  const def = MONSTERS[type];
-  const s = game.addSoldier({ name: def.name, isBot: true, team: 0, skin: def.skin, maxHealth: def.health, profile: { npc: { kind: 'monster', type } } }, new MonsterController(type));
+  const def = MONSTERS[type], hp = Math.round(def.health * difficultyOf(game.world).hp);
+  const s = game.addSoldier({ name: def.name, isBot: true, team: 0, skin: def.skin, maxHealth: hp, profile: { npc: { kind: 'monster', type } } }, new MonsterController(type));
   s.respawnTimer = 1;
   s.npc.spawnAt = { x, y };
   return s;
@@ -137,8 +138,9 @@ export function monstersTick(game) {
     if (near > GONE || (!night && outside && s.npc.type === 'zombie' && near > 30)) game.removeSoldier(s);
   }
   for (const s of game.soldiers) if (isMerc(s) && !s.alive && s.npc.spawned && game.tick - (s.npc.diedAt ?? game.tick) > 180) game.removeSoldier(s);
-  // (Dev mode can say none come.)
-  if (world.devQuiet) return;
+  // (Dev mode can say none come; so can a peaceful world: worldrules.js.)
+  const diff = difficultyOf(world);
+  if (world.devQuiet || !diff.spawn) return;
   // Come: near each player, where it's dark (at night outside; underground, always).
   for (const p of players) {
     const ptx = Math.floor(p.x / TILE), pty = Math.floor(p.y / TILE);
@@ -147,7 +149,7 @@ export function monstersTick(game) {
     if (!under && !night) continue;
     let count = 0;
     for (const s of game.soldiers) if (isMonster(s) && Math.abs(s.x - p.x) < NEAR * TILE && Math.abs(s.y - p.y) < NEAR * TILE) count++;
-    if (count >= (under ? 3 : 4) || game.rng() > 0.15) continue;
+    if (count >= Math.round((under ? 3 : 4) * Math.max(1, diff.spawn)) || game.rng() > 0.15 * diff.spawn) continue;
     const spot = spawnSpot(game, ptx, pty, under);
     if (!spot) continue;
     const d = spot.ty - world.gen.surfaceAt(spot.tx);
