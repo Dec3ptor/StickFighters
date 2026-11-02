@@ -77,6 +77,10 @@ const BLEND_TILES = 48, BLEND_MS = 320;
 // The colours between two biomes' looks change in this many steps.
 const MIX_STEPS = 16;
 const mostFirst = (a, b) => b.w - a.w;
+// How far ahead (blocks, either way) the next biomes' scenery is made, while the game's idle.
+const WARM_AHEAD = [-170, 170];
+// When the page is idle (or soon, where browsers can't say).
+const idle = fn => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 500 }) : setTimeout(fn, 30));
 
 /** Theme a with what the soldiers, gibs, vignette and darkness take from it mixed toward theme b's by u. */
 function mixedTheme(a, b, u) {
@@ -176,7 +180,7 @@ export class RemasteredRenderer extends Renderer {
     const fresh = wl?.world !== world;
     if (fresh) {
       wl = this.worldLooks = {
-        world, looks: new Map(), mats: new Map(), weights: new Map(), parts: [], blend: {}, mixes: new Map(),
+        world, looks: new Map(), weights: new Map(), parts: [], blend: {}, ahead: {}, mixes: new Map(), warming: false, frame: 0,
         theme: null, ground: null, sky: 1, madeAt: 0,
       };
     }
@@ -209,9 +213,31 @@ export class RemasteredRenderer extends Renderer {
     // The weather fades out a few blocks underground.
     const below = this.cam.y / TILE - gen.surfaceAt(tx), sky = Math.min(1, Math.max(0, (15 - below) / 4));
     wl.sky += (sky - wl.sky) * k;
+    // (Now and then: the scenery of the biomes either way ahead, made a step at a time while the game's idle.)
+    if (++wl.frame % 30 === 0) for (const d of WARM_AHEAD) this.warm(wl, gen.blendAt(x + d, BLEND_TILES, wl.ahead), q, game);
     const look = parts[0].look;
     look.ground = Math.round(wl.ground);
     return (this.look = look);
+  }
+
+  /** The scenery of the biomes in blend `b` (either side of an edge ahead), made while the game's idle, before it's wanted. */
+  warm(wl, b, q, game) {
+    if (wl.warming) return;
+    for (const biome of [b.own, b.other]) {
+      const look = this.worldLook(wl, worldTheme(biome.key), q, game);
+      if (look.backdrop.prepare(this, 0)) continue;
+      wl.warming = true;
+      const step = deadline => {
+        if (this.worldLooks !== wl) return;
+        const until = performance.now() + Math.max(2, Math.min(8, deadline?.timeRemaining?.() ?? 4));
+        if (!look.backdrop.prepare(this, until)) { idle(step); return; }
+        // (Drawn once too, while it's still idle: a graphics card takes its pictures in then, not at the edge.)
+        look.backdrop.render(this, Math.round(wl.ground ?? 0), 0, 0);
+        wl.warming = false;
+      };
+      idle(step);
+      return;
+    }
   }
 
   /** A world's look in a biome's theme, at quality q: made the first time, then kept. */
@@ -220,12 +246,11 @@ export class RemasteredRenderer extends Renderer {
     if (!byQuality) wl.looks.set(theme, byQuality = {});
     let look = byQuality[q];
     if (!look) {
-      let mats = wl.mats.get(theme);
-      if (!mats) wl.mats.set(theme, mats = makeMaterials(this.ctx, theme));
+      // (A world's blocks are drawn by worldrender.js: of the materials, only bits of blown-up blocks' colour is wanted.)
       look = byQuality[q] = {
         map: game.map, theme, quality: q, at: performance.now(),
         backdrop: new Backdrop(theme, seedOf(`${wl.world.name}/${theme.id}`), q),
-        mats, blocks: null,
+        mats: { main: { frontColor: theme.tint || '#8a8580' } }, blocks: null,
         weather: q === 'low' ? null : new Weather(theme.weather, q),
         ground: 0, floor: Infinity,
       };
@@ -251,21 +276,55 @@ export class RemasteredRenderer extends Renderer {
 
   /** A world's sky and scenery: the biome's look with the most first, the others faded in over it. */
   drawWorldScenery(ctx, dt) {
-    const wl = this.worldLooks, ground = Math.round(wl.ground), low = this.quality !== 'high';
-    let shown = 0;
-    for (const p of wl.parts) {
-      shown += p.w;
-      p.look.backdrop.draw(ctx, this, ground, dt, low ? p.look.theme.vignette : 0, p.w / shown);
+    const wl = this.worldLooks, parts = wl.parts, ground = Math.round(wl.ground), low = this.quality !== 'high';
+    if (parts.length === 1) { parts[0].look.backdrop.draw(ctx, this, ground, dt, low ? parts[0].look.theme.vignette : 0); return; }
+    // Between biomes: each one's picture brought up to date, mixed into one at their size (smaller
+    // than the screen), and that stretched over the screen once.
+    let same = true, key = 0;
+    for (const p of parts) {
+      const bd = p.look.backdrop;
+      same = bd.render(this, ground, dt, low ? p.look.theme.vignette : 0) && same;
+      key = key * 31 + bd.picture + Math.round(p.w * 1000);
     }
+    const first = parts[0].look.backdrop.buf, W = first.width, H = first.height;
+    let mix = wl.mixed;
+    if (!mix || mix.cv.width !== W || mix.cv.height !== H) {
+      const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
+      mix = wl.mixed = { cv, g: cv.getContext('2d', { alpha: false }), key: NaN };
+    }
+    if (!same || key !== mix.key) {
+      const g = mix.g;
+      g.globalCompositeOperation = 'copy';
+      g.globalAlpha = 1;
+      g.drawImage(first, 0, 0);
+      g.globalCompositeOperation = 'source-over';
+      let shown = parts[0].w;
+      for (let i = 1; i < parts.length; i++) {
+        shown += parts[i].w;
+        g.globalAlpha = parts[i].w / shown;
+        g.drawImage(parts[i].look.backdrop.buf, 0, 0);
+      }
+      g.globalAlpha = 1;
+      mix.key = key;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'copy';
+    ctx.drawImage(mix.cv, 0, 0, this.pw, this.ph);
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   /** A world (world mode): its blocks (worldrender.js), what glows in them lighting up round it, and what's on the ground. */
   drawWorld(game) {
     const v = this.worldView ||= new WorldView('remastered');
     v.drawBlocks(this, game);
+    v.drawMagma(this.ctx, game, false);
     if (this.quality !== 'low') {
-      const g = v.glows;
-      for (let i = 0; i < g.length; i += 4) this.lights.add(g[i], g[i + 1], 16 + g[i + 2] * 3.4, glowOf(g[i + 3]), 0.18 + g[i + 2] / 40);
+      // (Magma's light pulses, as it glows.)
+      const g = v.glows, t = performance.now() / 1000;
+      for (let i = 0; i < g.length; i += 4) {
+        const k = g[i + 3] === MAGMA ? 0.8 + 0.35 * Math.sin(t * 1.7 + ((g[i] + g[i + 1]) % 63) / 10) : 1;
+        this.lights.add(g[i], g[i + 1], 16 + g[i + 2] * 3.4, glowOf(g[i + 3]), (0.18 + g[i + 2] / 40) * k);
+      }
     }
     drawDrops(this.ctx, game, 'remastered', this.alpha ?? 1, this.view);
   }

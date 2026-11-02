@@ -916,34 +916,67 @@ export class Backdrop {
    * Make what doesn't change from frame to frame, for a picture bw x bh pixels at S
    * pixels per world unit: the sky (gradient, sun or moon, stars) and the layers' strips.
    */
-  build(S, bw, bh) {
-    const t = this.theme, q = this.quality;
+  build(S, bw, bh, until = Infinity) {
+    let b = this.building;
+    if (!b || b.S !== S || b.bw !== bw || b.bh !== bh) b = this.building = { S, bw, bh, step: 0, layers: [], clouds: null, sky: null };
+    const q = this.quality, src = q === 'low' ? this.theme.layers.slice(-2) : this.theme.layers;
     const density = Math.min(S, MAX_STRIP / TILE_W);
-    const layers = (q === 'low' ? t.layers.slice(-2) : t.layers).map((L, i) => {
-      const rng = makeRng(this.seed * 7919 + i * 104729 + 13);
-      const c = mix(L.color, t.haze, L.haze ?? 0);
-      const pad = 70; // room above the tallest thing (masts, smoke)
-      const H = (L.height + pad) * density;
-      const cv = canvas(TILE_W * density, H);
-      const ctx = cv.getContext('2d');
-      ctx.setTransform(density, 0, 0, density, 0, H);
-      GEN[L.gen](ctx, L, c, rng);
-      // Mist at the bottom of each layer (more on the further ones).
-      if (t.mist) {
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.globalCompositeOperation = 'source-atop';
-        const g = ctx.createLinearGradient(0, H * 0.35, 0, H);
-        g.addColorStop(0, css(t.mist.color, 0));
-        g.addColorStop(1, css(t.mist.color, Math.min(0.8, t.mist.alpha * (1.4 - L.p))));
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, cv.width, H);
-        ctx.globalCompositeOperation = 'source-over';
-      }
-      // What's below the ground line: the layer's colour at its foot, misted.
-      const foot = t.mist ? mix(c, t.mist.color, Math.min(0.8, t.mist.alpha * (1.4 - L.p))) : c;
-      return { ...L, canvas: cv, density, H, foot: css(foot) };
-    });
-    this.built = { S, bw, bh, layers, clouds: q === 'low' ? null : this.makeClouds(Math.min(density, 0.8)), sky: this.makeSky(bw, bh, S) };
+    // (A step at a time: the sky, the clouds, then a layer each; `until`: stop after the step that passes this time.)
+    while (b.step < src.length + 2) {
+      if (performance.now() > until) return false;
+      const i = b.step++;
+      if (i === 0) b.sky = this.makeSky(bw, bh, S);
+      else if (i === 1) b.clouds = q === 'low' ? null : this.makeClouds(Math.min(density, 0.8));
+      else b.layers.push(this.makeLayer(src[i - 2], i - 2, density));
+    }
+    this.built = { S, bw, bh, layers: b.layers, clouds: b.clouds, sky: b.sky };
+    this.building = null;
+    return true;
+  }
+
+  /** Layer L's strip (the i'th drawn), at `density` pixels per world unit. */
+  makeLayer(L, i, density) {
+    const t = this.theme;
+    const rng = makeRng(this.seed * 7919 + i * 104729 + 13);
+    const c = mix(L.color, t.haze, L.haze ?? 0);
+    const pad = 70; // room above the tallest thing (masts, smoke)
+    const H = (L.height + pad) * density;
+    const cv = canvas(TILE_W * density, H);
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(density, 0, 0, density, 0, H);
+    GEN[L.gen](ctx, L, c, rng);
+    // Mist at the bottom of each layer (more on the further ones).
+    if (t.mist) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = 'source-atop';
+      const g = ctx.createLinearGradient(0, H * 0.35, 0, H);
+      g.addColorStop(0, css(t.mist.color, 0));
+      g.addColorStop(1, css(t.mist.color, Math.min(0.8, t.mist.alpha * (1.4 - L.p))));
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, cv.width, H);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    // What's below the ground line: the layer's colour at its foot, misted.
+    const foot = t.mist ? mix(c, t.mist.color, Math.min(0.8, t.mist.alpha * (1.4 - L.p))) : c;
+    return { ...L, canvas: cv, density, H, foot: css(foot) };
+  }
+
+  /** The picture's size and resolution for renderer r: [W, H, S0] (S0: pixels per world unit, unzoomed). */
+  sizeFor(r) {
+    const res = BUFFER[this.quality] || 0.6, z = this.size ||= [0, 0, 0];
+    z[0] = Math.max(1, Math.round(r.pw * res)); z[1] = Math.max(1, Math.round(r.ph * res)); z[2] = r.baseScale * r.dpr * res;
+    return z;
+  }
+
+  /**
+   * Make what drawing for renderer r needs, a step at a time until `until` (performance.now()):
+   * true once it's all made. (A world's next biome's scenery is made like this while the game's
+   * idle, before it's needed: making it all at once stutters.)
+   */
+  prepare(r, until) {
+    const z = this.sizeFor(r), W = z[0], H = z[1], S0 = z[2], b0 = this.built;
+    if (b0 && b0.bw === W && b0.bh === H && Math.abs(b0.S - S0) <= 1e-3) return true;
+    return this.build(S0, W, H, until);
   }
 
   /** The sky: its gradient, stars, and the sun or moon with its glow (fixed on screen). */
@@ -1026,9 +1059,16 @@ export class Backdrop {
    * to the next).
    */
   draw(ctx, r, ground, dt = 16, vignette = 0, alpha = 1) {
+    this.present(ctx, r, this.render(r, ground, dt, vignette), alpha);
+  }
+
+  /**
+   * Bring the picture (this.buf, smaller than the screen) up to date for renderer r. Returns
+   * true if it's the same as last time (nothing's moved).
+   */
+  render(r, ground, dt = 16, vignette = 0) {
     const res = BUFFER[this.quality] || 0.6;
-    const W = Math.max(1, Math.round(r.pw * res)), H = Math.max(1, Math.round(r.ph * res));
-    const S0 = r.baseScale * r.dpr * res;
+    const z = this.sizeFor(r), W = z[0], H = z[1], S0 = z[2];
     const b0 = this.built;
     if (!b0 || b0.bw !== W || b0.bh !== H || Math.abs(b0.S - S0) > 1e-3) this.build(S0, W, H);
     if (!this.buf || this.buf.width !== W || this.buf.height !== H) {
@@ -1043,8 +1083,7 @@ export class Backdrop {
     const last = this.last, maxP = b.layers.length ? b.layers[b.layers.length - 1].p : 0;
     if (last && last.S === S && last.ground === ground && last.vignette === vignette &&
       Math.max(Math.abs(cx - last.cx) * maxP, Math.abs(cy - last.cy) * maxP * VERTICAL, Math.abs(this.drift - last.drift) * 0.5) * S < 0.33) {
-      this.present(ctx, r, true, alpha);
-      return;
+      return true;
     }
     this.picture = (this.picture || 0) + 1;
     const was = this.last ||= {};
@@ -1091,7 +1130,7 @@ export class Backdrop {
     }
     // (Lower quality: the edges darkened here, not over the whole picture afterwards.)
     if (vignette > 0) drawVignette(bc, W, H, vignette);
-    this.present(ctx, r, false, alpha);
+    return false;
   }
 
   /**
@@ -1172,7 +1211,7 @@ export class Backdrop {
    */
   drawFore(ctx, r, floor) {
     const F = this.theme.fore;
-    if (!F || this.quality === 'low') return;
+    if (!F || this.quality === 'low' || !Number.isFinite(floor)) return;
     const S0 = r.baseScale * r.dpr;
     if (!this.fore || Math.abs(this.fore.S - S0) > 1e-3) this.fore = this.buildFore(S0);
     const f = this.fore, S = r.scale * r.dpr, k = S / f.density;

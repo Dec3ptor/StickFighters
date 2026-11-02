@@ -221,6 +221,7 @@ export class GLRenderer extends Renderer {
       forget: key => { this.worldTex?.get(key)?.tex.destroy(true); this.worldTex?.delete(key); },
     });
     this.worldView.drawBlocks(this, game);
+    this.worldView.drawMagma(this.ctx, game, true);
     drawDrops(this.ctx, game, 'classic', this.alpha ?? 1, this.view);
   }
 

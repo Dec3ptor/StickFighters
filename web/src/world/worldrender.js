@@ -844,6 +844,42 @@ export class WorldView {
     }
   }
 
+  /**
+   * Magma on screen, alive (over its picture, every frame): a glow breathing over each block,
+   * its cracks lit by a wave of heat flowing across the rock, and embers rising off it where
+   * it's open to the air. (glows: the blocks giving off light on screen, from drawBlocks.)
+   */
+  drawMagma(ctx, game, classic) {
+    const g = this.glows, world = game.world, t = performance.now() / 1000;
+    let n = 0;
+    for (let i = 0; i < g.length && n < 800; i += 4) {
+      if (g[i + 3] !== K.MAGMA) continue;
+      n++;
+      const x = g[i] - TILE / 2, y = g[i + 1] - TILE / 2, tx = x / TILE, ty = y / TILE, h = hash3(3, tx, ty);
+      const r = k => (h >>> k) & 15;
+      const breath = 0.5 + 0.5 * Math.sin(t * 1.7 + (h & 63) / 10);
+      ctx.globalAlpha = classic ? 0.08 + 0.1 * breath : 0.14 + 0.2 * breath;
+      ctx.fillStyle = '#ff5a12';
+      ctx.fillRect(x, y, TILE, TILE);
+      // (The same cracks as its picture's: worldrender.js's marks, 'veins'.)
+      const wave = 0.5 + 0.5 * Math.sin(t * 3 - (x + y * 0.5) / 22);
+      ctx.globalAlpha = 0.3 + 0.7 * wave;
+      ctx.strokeStyle = wave > 0.8 ? '#fff4b0' : '#ffc040';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x, y + 3 + (r(0) % 8)); ctx.lineTo(x + 8, y + 6 + (r(4) % 6)); ctx.lineTo(x + TILE, y + 2 + (r(8) % 10));
+      ctx.stroke();
+      if (world.tile(tx, ty - 1) !== AIR) continue;
+      for (let e = 0; e < 2; e++) {
+        const life = (t * 0.55 + ((h >>> (12 + e * 5)) & 31) / 31) % 1;
+        ctx.globalAlpha = (1 - life) * 0.9;
+        ctx.fillStyle = life < 0.35 ? '#ffe680' : '#ff7a30';
+        ctx.fillRect(x + 3 + ((h >>> (e * 7)) % 10) + Math.sin(t * 2.3 + e * 2 + tx) * 2, y - life * 26, 1.6, 1.6);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
   /** Picture p on the screen, its edges on whole pixels (so pictures side by side meet exactly). */
   show(r, p, key, fresh) {
     const s = r.s, x0 = Math.round(p.px * PP * s + r.tx), y0 = Math.round(p.py * PP * s + r.ty);

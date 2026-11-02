@@ -346,6 +346,7 @@ export class Renderer {
   drawWorld(game) {
     if (!this.cleared) this.clearWhite();
     (this.worldView ||= new WorldView('classic')).drawBlocks(this, game);
+    this.worldView.drawMagma(this.ctx, game, true);
     drawDrops(this.ctx, game, 'classic', this.alpha ?? 1, this.view);
   }
 

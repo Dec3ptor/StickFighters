@@ -815,3 +815,31 @@ test('a shape dragged out with right click goes in when right click is let go', 
   ctl.script = { alt: false, ...aimAt(me, fx + 5, y) }; run(game, 2);
   for (let x = fx + 2; x <= fx + 5; x++) assert.equal(world.tile(x, y), id('planks'), `a plank at ${x}`);
 });
+
+test('magma burns whoever touches it, and sets them alight', () => {
+  const { world, game, me, ctl } = play();
+  untilAlive(game, me);
+  const { fx, fy } = arena(world);
+  me.body.x = fx * TILE + 8; me.body.y = fy * TILE - 13; me.body.vx = me.body.vy = 0;
+  ctl.script = { move: 0 };
+  run(game, 30);
+  const full = me.health;
+  run(game, 60);
+  assert.equal(me.health, full, 'stone: nothing');
+  for (let x = fx - 2; x <= fx + 2; x++) world.setTile(x, fy, K.MAGMA);
+  run(game, 60);
+  assert.ok(me.health < full - 15, `on magma: burnt (${full} -> ${me.health.toFixed(1)})`);
+  assert.ok(me.burnTicks > 0, 'and on fire');
+  // Off it: the fire goes out a moment later.
+  for (let x = fx - 2; x <= fx + 2; x++) world.setTile(x, fy, K.STONE);
+  run(game, 120);
+  const after = me.health;
+  run(game, 60);
+  assert.equal(me.burnTicks, 0);
+  assert.equal(me.health, after, 'and stops hurting');
+  // A monster on it burns too (once it's past the moment it can't be hurt, as it appears).
+  for (let x = fx + 5; x <= fx + 23; x++) world.setTile(x, fy, K.MAGMA);
+  const z = spawnMonster(game, 'zombie', (fx + 16) * TILE + 8, fy * TILE - 13);
+  run(game, 150);
+  assert.ok(z.health < z.maxHealth, `the zombie burns (${z.health})`);
+});

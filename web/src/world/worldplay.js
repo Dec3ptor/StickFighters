@@ -12,6 +12,7 @@ import { MOTION, BODY } from '../config.js';
 import { WEAPONS } from '../weapons.js';
 import { monstersTick, armNpc, foes, isMonster, monsterLoot, hireMerc, mercsOf, MERC } from './monsters.js';
 import { setDoor, pushDoor, doorsTick, soldierIn } from './doors.js';
+import { damage } from '../combat.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -857,18 +858,47 @@ function mirrorInput(game, s, inp) {
 export function worldTick(game) {
   updateDrops(game);
   doorsTick(game);
+  magmaBurns(game);
   const world = game.world;
   world.time = (world.time || 0) + 1;
   monstersTick(game);
+  // The chunks round everyone made ready: those not made yet, a couple each update (nearest
+  // first: making one takes a millisecond or so, and a whole new column at once stutters).
+  const want = world.wanted ||= [];
   if (game.tick % 20 === 0) {
     const R = CHUNK * TILE;
+    want.length = 0;
     for (const s of game.soldiers) {
       if (!s.alive) continue;
       const cx = Math.floor(s.x / R), cy = Math.floor(s.y / R);
-      for (let y = cy - 2; y <= cy + 2; y++) for (let x = cx - 2; x <= cx + 2; x++) world.chunk(x, y);
+      for (let y = Math.max(0, cy - 2); y <= Math.min(WORLD_H / CHUNK - 1, cy + 2); y++) for (let x = cx - 2; x <= cx + 2; x++) if (!world.has(x, y)) want.push([x, y, (x - cx) ** 2 + (y - cy) ** 2]);
     }
+    want.sort((a, b) => b[2] - a[2]);
   }
+  for (let i = 0; i < 2 && want.length; i++) { const c = want.pop(); world.chunk(c[0], c[1]); }
   if (game.tick % 600 === 0) world.trim(game.soldiers.filter(s => s.alive).map(s => ({ x: s.x, y: s.y })), 12);
+}
+
+// ---- Magma ------------------------------------------------------------------------------------------
+
+const MAGMA_EVERY = 6;    // updates between burns while touching magma
+const MAGMA_DAMAGE = 1.5; // each time; and whoever touches it catches fire a moment (game.js burns them)
+
+/** Soldiers touching magma (standing on it, against it, or with it overhead) are burnt, and set alight. */
+function magmaBurns(game) {
+  if (game.tick % MAGMA_EVERY) return;
+  const world = game.world, M = K.MAGMA;
+  for (const s of game.soldiers) {
+    if (!s.alive) continue;
+    const l = s.x - BODY.halfW - 2, r = s.x + BODY.halfW + 2, feet = s.y + BODY.bottom + 2, low = s.y + BODY.bottom - 4, mid = s.y - 6;
+    if (world.tileAt(s.x - 5, feet) !== M && world.tileAt(s.x + 5, feet) !== M && world.tileAt(l, low) !== M && world.tileAt(r, low) !== M &&
+      world.tileAt(l, mid) !== M && world.tileAt(r, mid) !== M && world.tileAt(s.x, s.y + BODY.top - 2) !== M) continue;
+    damage(game, s, MAGMA_DAMAGE, null, 'Magma', { burn: true });
+    if (!s.alive) continue;
+    s.burnTicks = Math.max(s.burnTicks || 0, 45);
+    s.burnBy = null;
+    if (game.tick % 30 === 0) game.sound('flame', s.x, s.y);
+  }
 }
 
 // ---- The mode -------------------------------------------------------------------------------------
