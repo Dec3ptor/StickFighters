@@ -28,6 +28,52 @@ const NEEDS_GROUND = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.MUSHROOM, K
 const DOORS = new Set([K.DOOR, K.DOOR_OPEN]);
 const LEAF = new Set([K.LEAVES, K.PINE_LEAVES, K.JUNGLE_LEAVES, K.VINE]);
 
+// ---- Chests -------------------------------------------------------------------------------------
+
+/** How many things a chest holds. */
+export const CHEST_SIZE = 30;
+const chestKey = (tx, ty) => `${tx},${ty}`;
+
+/** The things in the chest at (tx, ty) (made empty the first time it's looked in), or null if there's no chest there. */
+export function chestAt(world, tx, ty) {
+  if (world.tile(tx, ty) !== K.CHEST) return null;
+  const chests = world.chests ||= new Map(), k = chestKey(tx, ty);
+  let c = chests.get(k);
+  if (!c) chests.set(k, c = new Inventory(CHEST_SIZE));
+  return c;
+}
+
+/** A world's chests as saved: [[tx, ty, things], ...] (the empty ones, and any whose chest is gone, left out). */
+export function chestsToSave(world) {
+  const out = [];
+  for (const [k, inv] of world.chests || []) {
+    const [tx, ty] = k.split(',').map(Number);
+    if (inv.slots.some(Boolean) && world.tile(tx, ty) === K.CHEST) out.push([tx, ty, inv.toJSON()]);
+  }
+  return out;
+}
+
+/** A world's chests from a save. */
+export function chestsFromSave(world, list) {
+  world.chests = new Map();
+  if (!Array.isArray(list)) return;
+  for (const row of list) {
+    if (!Array.isArray(row) || !Number.isInteger(row[0]) || !Number.isInteger(row[1])) continue;
+    world.chests.set(chestKey(row[0], row[1]), Inventory.from(row[2], CHEST_SIZE));
+  }
+}
+
+/** A chest broken: what was in it falls out. */
+function spillChest(game, tx, ty) {
+  const k = chestKey(tx, ty), inv = game.world.chests?.get(k);
+  if (!inv) return;
+  game.world.chests.delete(k);
+  for (const s of inv.slots) {
+    if (!s) continue;
+    dropItem(game, s.key, s.n, tx * TILE + 8, ty * TILE + 4, (game.rng() - 0.5) * 3, -2);
+  }
+}
+
 // ---- Players' things ---------------------------------------------------------------------------
 
 /** A soldier's world state: their things, and what they're doing with them. */
@@ -295,6 +341,7 @@ export function breakBlock(game, tx, ty, by = null) {
     world.setTile(tx, ty, AIR);
     if (id === K.LOOT_CRATE) openCrate(game, x, y);
     else if (b.drop) dropItem(game, b.drop, 1, x, y);
+    if (id === K.CHEST) spillChest(game, tx, ty);
   }
   game.sound(b.wood ? 'thunk' : 'smash', x, y);
   game.fx?.rubble?.(x, y, 6);
@@ -312,12 +359,14 @@ function settle(game, tx, ty) {
     if (DOORS.has(id)) { breakBlock(game, x, y); continue; }
     world.setTile(x, y, AIR);
     if (b.drop) dropItem(game, b.drop, 1, x * TILE + TILE / 2, y * TILE + TILE / 2);
+    if (id === K.CHEST) spillChest(game, x, y);
     settle(game, x, y);
   }
 }
 
 /** Whether block `id` at (x, y) still has what it needs to stay up. */
 function supported(world, x, y, id) {
+  if (BLOCKS[id].furniture) return SOLID[world.tile(x, y + 1)] || PLATFORMS[world.tile(x, y + 1)];
   if (NEEDS_GROUND.has(id)) return SOLID[world.tile(x, y + 1)] || (id === K.CACTUS && world.tile(x, y + 1) === K.CACTUS) || (id === K.CACTUS && (world.tile(x - 1, y) === K.CACTUS || world.tile(x + 1, y) === K.CACTUS));
   if (id === K.VINE) return world.tile(x, y - 1) === K.VINE || SOLID[world.tile(x, y - 1)] || LEAF.has(world.tile(x, y - 1));
   if (id === K.TORCH) return SOLID[world.tile(x, y + 1)] || SOLID[world.tile(x - 1, y)] || SOLID[world.tile(x + 1, y)] || world.wall(x, y) !== NO_WALL;
@@ -357,6 +406,7 @@ function fell(game, tx, ty) {
 const LOOT = [
   ['bullets', 40, 120, 8], ['shells', 10, 30, 4], ['rockets', 3, 8, 2], ['arrows', 20, 40, 2], ['fuel', 80, 160, 1],
   ['torch', 6, 14, 5], ['iron_ore', 6, 14, 4], ['gold_ore', 3, 8, 2], ['coal', 6, 16, 4], ['glass', 10, 20, 2], ['metal', 4, 10, 2],
+  ['copper_bar', 3, 8, 3], ['iron_bar', 2, 6, 3], ['gold_bar', 1, 4, 2],
   ['Magnum', 1, 1, 2], ['Uzi', 1, 1, 2], ['MP5K', 1, 1, 2], ['M4', 1, 1, 2], ['AK47', 1, 1, 2], ['Shotgun', 1, 1, 2],
   ['Longbow', 1, 1, 1], ['SR', 1, 1, 1], ['Bazooka', 1, 1, 1], ['GrenadeLauncher', 1, 1, 1], ['Flamer', 1, 1, 1],
   ['ClusterBomb', 2, 4, 2], ['Dynamite', 2, 4, 2], ['Mine', 2, 5, 2], ['Sheep', 1, 2, 1], ['NinjaRope', 1, 1, 1], ['iron_pickaxe', 1, 1, 1],
@@ -393,6 +443,8 @@ export function canPlace(game, it, tx, ty) {
   if (SOLID[id] && soldierIn(game, tx, ty, ty)) return false;
   if (id === K.TORCH) return SOLID[world.tile(tx, ty + 1)] || SOLID[world.tile(tx - 1, ty)] || SOLID[world.tile(tx + 1, ty)] || world.wall(tx, ty) !== NO_WALL;
   if (NEEDS_GROUND.has(id)) return SOLID[world.tile(tx, ty + 1)];
+  // (Furniture stands on the floor, or a platform.)
+  if (BLOCKS[id].furniture) return !!(SOLID[world.tile(tx, ty + 1)] || PLATFORMS[world.tile(tx, ty + 1)]);
   // Something to build onto: a block, platform or ladder beside it, or a wall behind.
   if (world.wall(tx, ty) !== NO_WALL) return true;
   for (const [x, y] of AROUND) {
@@ -532,11 +584,26 @@ function hammer(game, s, it, inp) {
   return true;
 }
 
-/** Right click on a door (in reach): open it, or shut it if nobody's in the way. */
+/**
+ * Right click on something in reach: a door opens (or shuts, if nobody's in the way), a chest
+ * opens (w.openChest: the page shows what's in it), a bed is where you'll come back.
+ */
 function interact(game, s) {
   const w = s.world, t = w.target, world = game.world;
   if (!t?.near) return false;
   const id = world.tile(t.tx, t.ty);
+  if (id === K.CHEST) {
+    chestAt(world, t.tx, t.ty);
+    w.openChest = { tx: t.tx, ty: t.ty };
+    game.sound('click', t.tx * TILE + 8, t.ty * TILE + 8, s.id);
+    return true;
+  }
+  if (id === K.BED) {
+    w.home = { x: t.tx * TILE + TILE / 2, y: (t.ty + 1) * TILE - BODY.bottom - 1 };
+    game.notify(s, 'You\'ll come back here, at your bed');
+    game.sound('click', t.tx * TILE + 8, t.ty * TILE + 8, s.id);
+    return true;
+  }
   if (!DOORS.has(id)) return false;
   let top = t.ty, bottom = t.ty;
   while (DOORS.has(world.tile(t.tx, top - 1))) top--;
@@ -652,6 +719,7 @@ export const worldMode = {
     world.onBreak = (tx, ty, id) => {
       const b = BLOCKS[id], x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
       if (id === K.LOOT_CRATE) openCrate(game, x, y);
+      else if (id === K.CHEST) { dropItem(game, 'chest', 1, x, y); spillChest(game, tx, ty); }
       else if (id === K.TRUNK) dropItem(game, 'wood', 1, x, y);
       else if (b.drop && game.rng() < (b.natural ? 0.3 : 0.6)) dropItem(game, b.drop, 1, x, y, (game.rng() - 0.5) * 3, -2);
     };

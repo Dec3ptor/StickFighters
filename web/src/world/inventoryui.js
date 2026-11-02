@@ -1,73 +1,133 @@
 // World mode's inventory screen (I, over the game, which carries on): the hotbar and the bag,
-// ten across. Click a stack to pick it up and click a slot to put it there (swapping with
-// what's there, or onto a stack of the same thing); right click splits a stack in two;
-// shift-click sends it between the hotbar and the bag. Drop throws the stack picked up; Sort
-// puts the bag in order. Hover over anything to see what it is.
+// ten across; a chest's things too, when one's opened (right click on it); and crafting: what
+// can be made, by hand or at the crafting stations near you (crafting.js).
+//
+// Click a stack to pick it up and click a slot to put it there (swapping with what's there, or
+// onto a stack of the same thing); right click splits a stack in two; shift-click sends it
+// across (between the hotbar and the bag, or between you and the chest). Drop throws the stack
+// picked up; Sort puts the bag in order. Click a recipe to make it (shift-click: five times).
+// Hover over anything to see what it is.
 
 import { HOTBAR, BAG, itemOf } from './items.js';
 import { WEAPONS } from '../weapons.js';
 import { drawWeapon } from '../sprites.js';
 import { drawIcon } from './worldrender.js';
+import { RECIPES, STATIONS, STATION_NAMES, stationsNear, timesCanMake, madeFrom } from './crafting.js';
 import { keyLabel, isKey, keyOf } from '../keys.js';
 
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// The order recipes are listed in: by hand first, then by station.
+const AT_ORDER = [null, ...STATIONS];
+
 export class InventoryScreen {
-  /** root: the screen's element; drop(i): throw slot i's stack; close(): it was closed. */
-  constructor(root, { drop, close }) {
+  /**
+   * root: the screen's element. drop(i): throw slot i's stack; craft(recipe, times): make it;
+   * close(): it was closed.
+   */
+  constructor(root, { drop, craft, close }) {
     this.root = root;
     this.onDrop = drop;
+    this.onCraft = craft;
     this.onClose = close;
     this.me = null;
-    this.picked = null;   // the slot whose stack is picked up
-    this.version = -1;
+    this.game = null;
+    this.chest = null;     // a chest opened: { inv, tx, ty }
+    this.picked = null;    // the stack picked up: { box: 'me' | 'chest', i }
+    this.seen = '';        // (what the slots and recipes were last drawn for)
+    this.near = new Set();
     this.build();
   }
 
   get open() { return !this.root.classList.contains('hidden'); }
 
   build() {
-    const slot = i => `<button type="button" class="inv-slot${i < HOTBAR ? ' hot' : ''}" data-slot="${i}"><canvas width="64" height="40" aria-hidden="true"></canvas><span class="inv-n"></span>${i < HOTBAR ? `<kbd>${(i + 1) % 10}</kbd>` : ''}</button>`;
+    const slot = (box, i) => `<button type="button" class="inv-slot${box === 'me' && i < HOTBAR ? ' hot' : ''}" data-box="${box}" data-slot="${i}"><canvas width="64" height="40" aria-hidden="true"></canvas><span class="inv-n"></span>${box === 'me' && i < HOTBAR ? `<kbd>${(i + 1) % 10}</kbd>` : ''}</button>`;
+    const grid = (box, from, n) => `<div class="inv-grid">${Array.from({ length: n }, (_, i) => slot(box, from + i)).join('')}</div>`;
     this.root.innerHTML = `
       <div class="buy-head">
         <h2>Your things</h2>
         <span class="inv-what" data-what></span>
         <button type="button" class="buy-close" data-close>Close <kbd data-inv-key>I</kbd></button>
       </div>
-      <h3 class="inv-label">Hotbar</h3>
-      <div class="inv-grid">${Array.from({ length: HOTBAR }, (_, i) => slot(i)).join('')}</div>
-      <h3 class="inv-label">Bag</h3>
-      <div class="inv-grid">${Array.from({ length: BAG }, (_, i) => slot(HOTBAR + i)).join('')}</div>
-      <div class="inv-actions">
-        <button type="button" data-act="drop">Drop</button>
-        <button type="button" data-act="sort">Sort the bag</button>
-        <span class="buy-foot">Click a stack, then where it goes &middot; right click: split it &middot; shift-click: to or from the hotbar</span>
+      <div class="inv-cols">
+        <div class="inv-main">
+          <h3 class="inv-label">Hotbar</h3>
+          ${grid('me', 0, HOTBAR)}
+          <h3 class="inv-label">Bag</h3>
+          ${grid('me', HOTBAR, BAG)}
+          <div class="inv-chest hidden" data-chest>
+            <h3 class="inv-label">Chest
+              <button type="button" class="small" data-act="take-all">Take all</button>
+              <button type="button" class="small" data-act="put-all">Put all in</button>
+            </h3>
+            ${grid('chest', 0, 30)}
+          </div>
+          <div class="inv-actions">
+            <button type="button" data-act="drop">Drop</button>
+            <button type="button" data-act="sort">Sort the bag</button>
+            <span class="buy-foot">Click a stack, then where it goes &middot; right click: split it &middot; shift-click: send it across</span>
+          </div>
+        </div>
+        <div class="inv-craft">
+          <h3 class="inv-label">Crafting <span class="craft-near" data-near></span></h3>
+          <label class="craft-only"><input type="checkbox" data-only> Only what I can make now</label>
+          <div class="craft-list" data-recipes>${RECIPES.map(r => this.recipeRow(r)).join('')}</div>
+        </div>
       </div>`;
     this.slots = [...this.root.querySelectorAll('.inv-slot')];
     for (const b of this.slots) {
-      const i = +b.dataset.slot;
-      b.addEventListener('click', e => this.click(i, e.shiftKey));
-      b.addEventListener('contextmenu', e => { e.preventDefault(); this.split(i); });
-      b.addEventListener('mouseenter', () => this.describe(i));
-      b.addEventListener('focus', () => this.describe(i));
+      const box = b.dataset.box, i = +b.dataset.slot;
+      b.addEventListener('click', e => this.click(box, i, e.shiftKey));
+      b.addEventListener('contextmenu', e => { e.preventDefault(); this.split(box, i); });
+      b.addEventListener('mouseenter', () => this.describe(box, i));
+      b.addEventListener('focus', () => this.describe(box, i));
+    }
+    this.rows = new Map();
+    for (const row of this.root.querySelectorAll('.craft-row')) {
+      const r = RECIPES[+row.dataset.recipe];
+      this.rows.set(r, row);
+      const cv = row.querySelector('canvas');
+      cv.classList.toggle('ink', itemOf(r.key).kind === 'weapon');
+      paint(cv, itemOf(r.key));
+      row.addEventListener('click', e => { this.onCraft(r, e.shiftKey ? 5 : 1); this.refresh(true); });
+      row.addEventListener('mouseenter', () => { this.whatEl.textContent = `${itemOf(r.key).name}${r.n > 1 ? ` × ${r.n}` : ''}: ${madeFrom(r)}${r.at ? `, at a ${STATION_NAMES[r.at].toLowerCase()}` : ', by hand'}`; });
     }
     this.root.querySelector('[data-close]').addEventListener('click', () => this.onClose());
     this.root.querySelector('[data-act="drop"]').addEventListener('click', () => {
-      if (this.picked == null) return;
-      const i = this.picked;
+      const p = this.picked;
       this.picked = null;
-      this.onDrop(i);
+      if (p?.box === 'me') this.onDrop(p.i);
       this.refresh(true);
     });
-    this.root.querySelector('[data-act="sort"]').addEventListener('click', () => {
-      this.picked = null;
-      this.me?.world.inv.sortBag();
-      this.refresh(true);
-    });
+    this.root.querySelector('[data-act="sort"]').addEventListener('click', () => { this.picked = null; this.inv?.sortBag(); this.refresh(true); });
+    this.root.querySelector('[data-act="take-all"]').addEventListener('click', () => { this.everything(this.chest?.inv, this.inv); });
+    this.root.querySelector('[data-act="put-all"]').addEventListener('click', () => { this.everything(this.inv, this.chest?.inv, HOTBAR); });
+    this.root.querySelector('[data-only]').addEventListener('change', () => this.refresh(true));
     this.whatEl = this.root.querySelector('[data-what]');
+    this.nearEl = this.root.querySelector('[data-near]');
+    this.chestEl = this.root.querySelector('[data-chest]');
+    this.listEl = this.root.querySelector('[data-recipes]');
+    this.onlyEl = this.root.querySelector('[data-only]');
   }
 
-  show(me) {
+  recipeRow(r) {
+    const it = itemOf(r.key);
+    return `<button type="button" class="craft-row" data-recipe="${r.id}">
+      <canvas width="48" height="32" aria-hidden="true"></canvas>
+      <span class="craft-name">${esc(it.name)}${r.n > 1 ? ` <small>× ${r.n}</small>` : ''}</span>
+      <span class="craft-of">${esc(madeFrom(r))}</span>
+      <span class="craft-at">${r.at ? esc(STATION_NAMES[r.at]) : 'By hand'}</span>
+    </button>`;
+  }
+
+  /** Open, for soldier `me` in `game` (chest: { inv, tx, ty }, one opened with a right click). */
+  show(me, game, chest = null) {
     this.me = me;
+    this.game = game;
+    this.chest = chest;
     this.picked = null;
+    this.chestEl.classList.toggle('hidden', !chest);
+    this.root.querySelector('h2').textContent = chest ? 'Your things, and the chest' : 'Your things';
     for (const k of this.root.querySelectorAll('[data-inv-key]')) k.textContent = keyLabel('inventory');
     this.root.classList.remove('hidden');
     this.refresh(true);
@@ -76,42 +136,59 @@ export class InventoryScreen {
   hide() {
     this.root.classList.add('hidden');
     this.picked = null;
+    this.chest = null;
   }
 
   get inv() { return this.me?.world?.inv; }
+  box(name) { return name === 'chest' ? this.chest?.inv : this.inv; }
 
-  click(i, shift) {
-    const inv = this.inv;
+  click(box, i, shift) {
+    const inv = this.box(box);
     if (!inv) return;
-    if (shift) { this.picked = null; inv.quickMove(i); }
-    else if (this.picked == null) { if (inv.slots[i]) this.picked = i; }
-    else if (this.picked === i) this.picked = null;
-    else { inv.move(this.picked, i); this.picked = null; }
+    if (shift) {
+      this.picked = null;
+      if (this.chest) send(inv, i, box === 'me' ? this.chest.inv : this.inv, box === 'me' ? 0 : HOTBAR);
+      else inv.quickMove(i);
+    } else if (!this.picked) { if (inv.slots[i]) this.picked = { box, i }; }
+    else if (this.picked.box === box && this.picked.i === i) this.picked = null;
+    else { moveBetween(this.box(this.picked.box), this.picked.i, inv, i); this.picked = null; }
     this.refresh(true);
   }
 
-  split(i) {
+  split(box, i) {
     this.picked = null;
-    this.inv?.split(i);
+    this.box(box)?.split(i);
     this.refresh(true);
   }
 
-  describe(i) {
-    const s = this.inv?.slots[i], it = s && itemOf(s.key);
+  /** Everything from one to the other (as much as fits). from: the first slot to send things into. */
+  everything(a, b, from = 0) {
+    if (!a || !b) return;
+    for (let i = a === this.inv ? HOTBAR : 0; i < a.slots.length; i++) send(a, i, b, from);
+    this.picked = null;
+    this.refresh(true);
+  }
+
+  describe(box, i) {
+    const s = this.box(box)?.slots[i], it = s && itemOf(s.key);
     this.whatEl.textContent = it ? `${it.name}${s.n > 1 ? ` × ${s.n}` : ''}${whatFor(it)}` : '';
   }
 
-  /** Bring the slots up to date (only when the things have changed, unless `force`). */
+  /** Bring the slots and the recipes up to date (only when something's changed, unless `force`). */
   refresh(force = false) {
-    const inv = this.inv;
-    if (!inv || (!force && inv.version === this.version)) return;
-    this.version = inv.version;
-    const w = this.me.world;
+    const inv = this.inv, me = this.me;
+    if (!inv || !this.game?.world) return;
+    const near = stationsNear(this.game.world, me.x, me.y - 8, this.near);
+    const seen = `${inv.version}|${this.chest?.inv.version ?? ''}|${[...near].join()}|${me.world.slot}|${this.picked ? `${this.picked.box}${this.picked.i}` : ''}|${this.onlyEl.checked}`;
+    if (!force && seen === this.seen) return;
+    this.seen = seen;
     for (const b of this.slots) {
-      const i = +b.dataset.slot, s = inv.slots[i], it = s && itemOf(s.key);
+      const box = b.dataset.box, i = +b.dataset.slot, from = this.box(box);
+      if (!from) continue;
+      const s = from.slots[i], it = s && itemOf(s.key);
       const look = s ? `${s.key}|${s.n}|${s.mag ?? ''}` : '';
-      b.classList.toggle('picked', this.picked === i);
-      b.classList.toggle('in-hand', i === w.slot);
+      b.classList.toggle('picked', this.picked?.box === box && this.picked.i === i);
+      b.classList.toggle('in-hand', box === 'me' && i === me.world.slot);
       b.classList.toggle('empty', !s);
       if (b.dataset.look === look) continue;
       b.dataset.look = look;
@@ -121,6 +198,24 @@ export class InventoryScreen {
       cv.classList.toggle('ink', it?.kind === 'weapon');
       paint(cv, it);
     }
+    // The recipes: what can be made now first, then what's short of something, then what needs a station not here.
+    this.nearEl.textContent = near.size ? `at ${[...near].map(n => STATION_NAMES[n]).join(', ')}` : 'by hand (stand near a crafting station for more)';
+    const only = this.onlyEl.checked, order = [];
+    for (const r of RECIPES) {
+      const row = this.rows.get(r), times = timesCanMake(inv, r, near), here = !r.at || near.has(r.at);
+      row.classList.toggle('can', times > 0);
+      row.classList.toggle('away', !here);
+      row.classList.toggle('hidden', only && times === 0);
+      row.disabled = times === 0;
+      row.title = times > 0 ? `Make ${times > 1 ? `(up to ${times} times; shift-click: five)` : ''}` : !here ? `Needs a ${STATION_NAMES[r.at].toLowerCase()} near you` : `Needs ${madeFrom(r)}`;
+      order.push([times > 0 ? 0 : here ? 1 : 2, AT_ORDER.indexOf(r.at), r.id, row]);
+    }
+    order.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+    const want = order.map(o => o[3]);
+    const kids = this.listEl.children;
+    let same = kids.length === want.length;
+    for (let i = 0; same && i < want.length; i++) same = kids[i] === want[i];
+    if (!same) this.listEl.append(...want);
   }
 
   /** A key while the screen is open: true if it was the screen's. */
@@ -130,6 +225,49 @@ export class InventoryScreen {
   }
 }
 
+/** Slot i's stack of `a` onto slot j of `b` (the same inventory or another): swapped, or onto a stack of the same thing. */
+export function moveBetween(a, i, b, j) {
+  if (a === b) { a.move(i, j); return; }
+  const A = a.slots[i], Bs = b.slots[j];
+  if (!A) return;
+  const it = itemOf(A.key);
+  if (Bs && Bs.key === A.key && (it?.stack ?? 1) > 1) {
+    const k = Math.min(A.n, it.stack - Bs.n);
+    Bs.n += k; A.n -= k;
+    if (A.n <= 0) a.slots[i] = null;
+  } else {
+    a.slots[i] = Bs;
+    b.slots[j] = A;
+  }
+  a.version++;
+  b.version++;
+}
+
+/**
+ * Slot i's stack of `a` sent to `b`: onto stacks of the same thing there first, then into its
+ * first empty slot from `from` on (then the ones before). What doesn't fit stays.
+ */
+export function send(a, i, b, from = 0) {
+  const s = a.slots[i];
+  if (!s || a === b) return;
+  const it = itemOf(s.key);
+  if ((it?.stack ?? 1) > 1) {
+    for (const o of b.slots) {
+      if (s.n <= 0) break;
+      if (o && o.key === s.key && o.n < it.stack) { const k = Math.min(s.n, it.stack - o.n); o.n += k; s.n -= k; }
+    }
+  }
+  if (s.n > 0) {
+    const n = b.slots.length;
+    for (let k = 0; k < n; k++) {
+      const j = (from + k) % n;
+      if (!b.slots[j]) { b.slots[j] = s; a.slots[i] = null; break; }
+    }
+  } else a.slots[i] = null;
+  a.version++;
+  b.version++;
+}
+
 /** What an item is for, after its name. */
 function whatFor(it) {
   switch (it.kind) {
@@ -137,6 +275,7 @@ function whatFor(it) {
     case 'block': return ': a block to build with';
     case 'wall': return ': a wall, built behind';
     case 'ammo': return ': ammunition';
+    case 'material': return ': for crafting';
     case 'weapon': return it.ammo === 'self' ? '' : it.ammo ? ` (uses ${itemOf(it.ammo)?.name.toLowerCase() || it.ammo})` : '';
     default: return '';
   }
@@ -150,7 +289,7 @@ function paint(cv, it) {
   if (!it) return;
   if (it.kind === 'weapon') {
     const def = WEAPONS[it.weapon], L = def.look.length || 12;
-    const k = def.look.type === 'held' ? 2 : Math.min(2.2, 50 / (L + 8));
+    const k = def.look.type === 'held' ? cv.height / 20 : Math.min(cv.height / 18, (cv.width - 14) / (L + 8));
     ctx.translate(cv.width / 2, cv.height / 2);
     ctx.scale(k, k);
     ctx.lineCap = 'round';
@@ -158,5 +297,6 @@ function paint(cv, it) {
     drawWeapon(ctx, def, true);
     return;
   }
-  drawIcon(ctx, it, cv.width / 2 - 14, cv.height / 2 - 14, 28, false, true);
+  const w = Math.min(cv.width, cv.height) * 0.7;
+  drawIcon(ctx, it, cv.width / 2 - w / 2, cv.height / 2 - w / 2, w, false, true);
 }

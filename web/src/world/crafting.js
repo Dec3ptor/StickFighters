@@ -1,0 +1,135 @@
+// Crafting (world mode): what can be made from what, and where. Some things are made by hand;
+// the rest at a crafting station standing near you: a workbench (wood), a furnace (smelting ore
+// into bars, sand into glass, clay into bricks), an anvil (metal tools) and a gunsmith's bench
+// (guns, ammunition, explosives). Each recipe makes n of something from what's listed.
+
+import { BLOCKS, TILE } from './blocks.js';
+import { itemOf } from './items.js';
+
+/** The crafting stations, in the order they're usually built. */
+export const STATIONS = ['workbench', 'furnace', 'anvil', 'gunsmith'];
+export const STATION_NAMES = { workbench: 'Workbench', furnace: 'Furnace', anvil: 'Anvil', gunsmith: "Gunsmith's bench" };
+/** How near a station has to be to craft at it (tiles from the soldier's middle, across and up or down). */
+export const STATION_REACH = { x: 5, y: 4 };
+
+const R = [];
+/** key ×n, from `of` ([[key, n], ...]), at a station (null: by hand). */
+const recipe = (key, n, of, at = null) => R.push({ key, n, of, at, id: R.length });
+
+// ---- By hand ----
+recipe('planks', 4, [['wood', 1]]);
+recipe('torch', 3, [['wood', 1], ['coal', 1]]);
+recipe('workbench', 1, [['wood', 10]]);
+recipe('platform', 2, [['planks', 1]]);
+recipe('ladder', 2, [['planks', 3]]);
+
+// ---- Workbench ----
+recipe('plank_wall', 4, [['planks', 1]], 'workbench');
+recipe('door', 1, [['planks', 6]], 'workbench');
+recipe('chest', 1, [['planks', 8]], 'workbench');
+recipe('bed', 1, [['planks', 15]], 'workbench');
+recipe('furnace', 1, [['stone', 20], ['wood', 4], ['torch', 3]], 'workbench');
+recipe('anvil', 1, [['iron_bar', 5]], 'workbench');
+recipe('arrows', 10, [['wood', 1], ['stone', 1]], 'workbench');
+recipe('Longbow', 1, [['wood', 12]], 'workbench');
+recipe('BaseballBat', 1, [['wood', 8]], 'workbench');
+recipe('snow_bricks', 1, [['snow', 2]], 'workbench');
+recipe('sandstone_bricks', 1, [['sandstone', 2]], 'workbench');
+recipe('stone_brick_wall', 4, [['stone_bricks', 1]], 'workbench');
+recipe('brick_wall', 4, [['bricks', 1]], 'workbench');
+recipe('glass_wall', 4, [['glass', 1]], 'workbench');
+recipe('sandstone_brick_wall', 4, [['sandstone_bricks', 1]], 'workbench');
+
+// ---- Furnace ----
+recipe('copper_bar', 1, [['copper_ore', 3]], 'furnace');
+recipe('iron_bar', 1, [['iron_ore', 3]], 'furnace');
+recipe('gold_bar', 1, [['gold_ore', 3]], 'furnace');
+recipe('glass', 1, [['sand', 2]], 'furnace');
+recipe('bricks', 1, [['clay', 2]], 'furnace');
+recipe('stone_bricks', 1, [['stone', 2]], 'furnace');
+
+// ---- Anvil ----
+recipe('pickaxe', 1, [['copper_bar', 9], ['wood', 3]], 'anvil');
+recipe('axe', 1, [['copper_bar', 8], ['wood', 3]], 'anvil');
+recipe('hammer', 1, [['copper_bar', 8], ['wood', 3]], 'anvil');
+recipe('iron_pickaxe', 1, [['iron_bar', 10], ['wood', 3]], 'anvil');
+recipe('gold_pickaxe', 1, [['gold_bar', 10], ['wood', 3]], 'anvil');
+recipe('crystal_pickaxe', 1, [['crystal_ore', 12], ['gold_bar', 6]], 'anvil');
+recipe('metal', 2, [['iron_bar', 1]], 'anvil');
+recipe('blast_bricks', 4, [['stone_bricks', 4], ['iron_bar', 1], ['coal', 2]], 'anvil');
+recipe('gunsmith', 1, [['iron_bar', 10], ['gold_bar', 4], ['planks', 10]], 'anvil');
+recipe('Knife', 1, [['iron_bar', 4]], 'anvil');
+recipe('Sledgehammer', 1, [['iron_bar', 12], ['wood', 4]], 'anvil');
+recipe('BattleAxe', 1, [['iron_bar', 10], ['gold_bar', 2], ['wood', 3]], 'anvil');
+recipe('NinjaRope', 1, [['iron_bar', 6], ['planks', 4]], 'anvil');
+
+// ---- Gunsmith's bench ----
+recipe('bullets', 30, [['copper_bar', 1], ['coal', 1]], 'gunsmith');
+recipe('shells', 12, [['iron_bar', 1], ['coal', 2]], 'gunsmith');
+recipe('rockets', 3, [['iron_bar', 2], ['coal', 3]], 'gunsmith');
+recipe('fuel', 100, [['coal', 4]], 'gunsmith');
+recipe('Platinum', 1, [['iron_bar', 6]], 'gunsmith');
+recipe('Beretta', 1, [['iron_bar', 8], ['copper_bar', 2]], 'gunsmith');
+recipe('Magnum', 1, [['iron_bar', 8], ['gold_bar', 3]], 'gunsmith');
+recipe('Uzi', 1, [['iron_bar', 10], ['copper_bar', 4]], 'gunsmith');
+recipe('MP5K', 1, [['iron_bar', 12], ['gold_bar', 3]], 'gunsmith');
+recipe('Shotgun', 1, [['iron_bar', 12], ['wood', 6]], 'gunsmith');
+recipe('M4', 1, [['iron_bar', 15], ['gold_bar', 5]], 'gunsmith');
+recipe('AK47', 1, [['iron_bar', 15], ['gold_bar', 3], ['wood', 4]], 'gunsmith');
+recipe('SR', 1, [['iron_bar', 15], ['gold_bar', 8], ['crystal_ore', 2]], 'gunsmith');
+recipe('Flamer', 1, [['iron_bar', 15], ['copper_bar', 5]], 'gunsmith');
+recipe('Bazooka', 1, [['iron_bar', 20], ['gold_bar', 6]], 'gunsmith');
+recipe('Mortar', 1, [['iron_bar', 18], ['gold_bar', 4]], 'gunsmith');
+recipe('Minigun', 1, [['iron_bar', 30], ['gold_bar', 10], ['ember_ore', 5]], 'gunsmith');
+recipe('MagicBullet', 1, [['iron_bar', 6], ['gold_bar', 6], ['crystal_ore', 6]], 'gunsmith');
+recipe('HomingMissile', 2, [['iron_bar', 4], ['gold_bar', 2], ['crystal_ore', 1]], 'gunsmith');
+recipe('GrenadeLauncher', 5, [['iron_bar', 3], ['coal', 3]], 'gunsmith');
+recipe('HEGrenade', 3, [['iron_bar', 2], ['coal', 2]], 'gunsmith');
+recipe('ClusterBomb', 2, [['iron_bar', 3], ['coal', 4]], 'gunsmith');
+recipe('Flashbang', 3, [['iron_bar', 1], ['coal', 1], ['glass', 1]], 'gunsmith');
+recipe('SmokeGrenade', 3, [['iron_bar', 1], ['coal', 2]], 'gunsmith');
+recipe('PetrolBomb', 3, [['glass', 3], ['coal', 3]], 'gunsmith');
+recipe('Dynamite', 3, [['coal', 4], ['sand', 2]], 'gunsmith');
+recipe('Mine', 2, [['iron_bar', 2], ['coal', 2]], 'gunsmith');
+recipe('Teleport', 1, [['crystal_ore', 5], ['gold_bar', 2]], 'gunsmith');
+
+export const RECIPES = R;
+
+/** The crafting stations near (x, y) (a soldier's middle, in pixels): a Set of their names. */
+export function stationsNear(world, x, y, out = new Set()) {
+  out.clear();
+  const cx = Math.floor(x / TILE), cy = Math.floor(y / TILE);
+  for (let ty = cy - STATION_REACH.y; ty <= cy + STATION_REACH.y; ty++) {
+    for (let tx = cx - STATION_REACH.x; tx <= cx + STATION_REACH.x; tx++) {
+      const st = BLOCKS[world.tile(tx, ty)].station;
+      if (st) out.add(st);
+    }
+  }
+  return out;
+}
+
+/** How many times recipe r can be made from inventory inv, with the stations `near` (0: it can't). */
+export function timesCanMake(inv, r, near) {
+  if (r.at && !near.has(r.at)) return 0;
+  let times = Infinity;
+  for (const [key, n] of r.of) times = Math.min(times, Math.floor(inv.count(key) / n));
+  return times === Infinity ? 0 : times;
+}
+
+/**
+ * Make recipe r up to `times` times from inv (with the stations `near`). Returns how many were
+ * made, and how many of what was made didn't fit in the inventory (left: for the ground).
+ */
+export function craft(inv, r, near, times = 1) {
+  let made = 0, left = 0;
+  const most = Math.min(times, timesCanMake(inv, r, near));
+  for (let t = 0; t < most; t++) {
+    for (const [key, n] of r.of) inv.remove(key, n);
+    left += inv.add(r.key, r.n);
+    made++;
+  }
+  return { made, left };
+}
+
+/** What recipe r is made from, as text ("3 Copper ore, 1 Coal"). */
+export const madeFrom = r => r.of.map(([key, n]) => `${n} ${itemOf(key)?.name ?? key}`).join(', ');

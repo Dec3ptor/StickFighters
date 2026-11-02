@@ -27,8 +27,11 @@ item('wood', 'Wood', 'block', { block: BLOCK_BY_KEY.get('log').id, color: '#8a62
 // Walls.
 for (const w of WALLS) if (w.drop === w.key) item(w.key, w.name, 'wall', { wall: w.id, color: w.color });
 
-// Materials (crafting: the next stage).
+// Materials (crafting.js): coal, and bars smelted from ore in a furnace.
 item('coal', 'Coal', 'material', { color: '#202020' });
+item('copper_bar', 'Copper bar', 'material', { color: '#d07a3a' });
+item('iron_bar', 'Iron bar', 'material', { color: '#c9ccd2' });
+item('gold_bar', 'Gold bar', 'material', { color: '#f2c230' });
 
 // Tools. power: damage a hit does to a block (a block's `hard` is how many basic hits it
 // takes); every: updates between hits (at full speed); tier: the hardest blocks it can mine.
@@ -72,12 +75,13 @@ export const ITEMS = I;
 export const itemOf = key => I.get(key) || null;
 
 /**
- * What a new character starts with: tools to dig and build, a pistol, and enough to start a
- * base (crafting, the next stage, will make more).
+ * What a new character starts with: tools to dig and build, a pistol and a shotgun, enough to
+ * start a base, and a workbench to start crafting at (crafting.js).
  */
 export const STARTING_KIT = [
   ['pickaxe', 1], ['axe', 1], ['hammer', 1], ['Platinum', 1], ['torch', 30], ['planks', 99], ['platform', 40], ['ladder', 20],
   ['door', 4], ['plank_wall', 99], ['bullets', 120], ['glass', 30], ['stone_bricks', 99], ['Shotgun', 1], ['shells', 30],
+  ['workbench', 1],
 ];
 
 /** A player's things: HOTBAR + BAG slots, each null or { key, n } (a gun's also has mag: rounds in its magazine). */

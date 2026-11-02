@@ -22,7 +22,7 @@ import { css } from './color.js';
 import { GameMap } from '../map.js';
 import { paintMap } from '../maptiles.js';
 import { WorldView, drawDrops, drawTarget } from '../world/worldrender.js';
-import { TILE, BLOCKS, MAGMA } from '../world/blocks.js';
+import { TILE, BLOCKS, MAGMA, FURNACE } from '../world/blocks.js';
 
 export // After a quality or map change, how long (ms) before the frame rate says anything about the quality.
 const SETTLE = 2500;
@@ -36,7 +36,7 @@ function lowest(map) {
 }
 
 // The colour of the light a glowing block gives (its ore's colour, or its own).
-const glowOf = id => (id === MAGMA ? '#ff7a30' : BLOCKS[id].ore || BLOCKS[id].color);
+const glowOf = id => (id === MAGMA || id === FURNACE ? '#ff7a30' : BLOCKS[id].ore || BLOCKS[id].color);
 
 const seedOf = s => { let h = 7; for (const c of String(s || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 100000; };
 

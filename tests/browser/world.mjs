@@ -100,17 +100,55 @@ report.built = { at: [put.tx, put.ty], block: plank };
 // 3. The inventory screen (I): a stack moved from the hotbar to the bag, and back.
 await page.keyboard.press('KeyI');
 await page.waitForSelector('#inventory:not(.hidden)');
-const slots = await page.locator('#inventory .inv-slot').count();
+const slots = await page.locator('#inventory .inv-slot[data-box="me"]').count();
 check(slots === 40, `40 slots (${slots})`);
-await page.click('#inventory .inv-slot[data-slot="9"]');
-await page.click('#inventory .inv-slot[data-slot="39"]');
+await page.click('#inventory .inv-slot[data-box="me"][data-slot="9"]');
+await page.click('#inventory .inv-slot[data-box="me"][data-slot="39"]');
 const moved = await page.evaluate(() => { const s = window.stickSoldiers.state.me.world.inv.slots; return [s[9]?.key ?? null, s[39]?.key ?? null]; });
 await page.screenshot({ path: `${outDir}/world-inventory.png` });
-await page.click('#inventory .inv-slot[data-slot="39"]', { modifiers: ['Shift'] });
+await page.click('#inventory .inv-slot[data-box="me"][data-slot="39"]', { modifiers: ['Shift'] });
 const back = await page.evaluate(() => window.stickSoldiers.state.me.world.inv.slots[9]?.key ?? null);
 check(moved[0] === null && moved[1] && back === moved[1], `moved to the bag and back (${JSON.stringify(moved)}, ${back})`);
 await page.keyboard.press('KeyI');
 check(await page.locator('#inventory').evaluate(el => el.classList.contains('hidden')), 'I closes it');
+
+// 3b. Crafting: a chest made at the workbench (the starting kit has one: put down beside you),
+// put down, opened with a right click, and something put in it.
+const bench = await page.evaluate(() => window.stickSoldiers.state.me.world.inv.slots.findIndex(s => s?.key === 'workbench'));
+await page.evaluate(i => window.stickSoldiers.state.me.world.inv.move(i, 9), bench);
+await page.keyboard.press('Digit0');
+await page.waitForTimeout(100);
+const benchAt = await aimAt(page, -2, -1);
+await page.mouse.down(); await page.waitForTimeout(80); await page.mouse.up();
+await page.waitForTimeout(150);
+const WORKBENCH = await page.evaluate(async () => (await import('./src/world/blocks.js')).WORKBENCH);
+check(await tileAt(page, benchAt.tx, benchAt.ty) === WORKBENCH, 'a workbench put down');
+await page.keyboard.press('KeyI');
+await page.waitForSelector('#inventory:not(.hidden)');
+const chestRow = page.locator('#inventory .craft-row', { hasText: 'Chest' }).first();
+check(!(await chestRow.isDisabled()), 'a chest can be made at the workbench');
+await chestRow.click();
+check(await page.evaluate(() => window.stickSoldiers.state.me.world.inv.count('chest')) === 1, 'a chest made');
+await page.screenshot({ path: `${outDir}/world-crafting.png` });
+await page.keyboard.press('KeyI');
+const chestSlot = await page.evaluate(() => window.stickSoldiers.state.me.world.inv.slots.findIndex(s => s?.key === 'chest'));
+await page.evaluate(i => window.stickSoldiers.state.me.world.inv.move(i, 9), chestSlot);
+await page.keyboard.press('Digit0');
+await page.waitForTimeout(100);
+const chestAtTile = await aimAt(page, -3, -1);
+await page.mouse.down(); await page.waitForTimeout(80); await page.mouse.up();
+await page.waitForTimeout(150);
+await aimAt(page, -3, -1);
+await page.mouse.down({ button: 'right' }); await page.waitForTimeout(80); await page.mouse.up({ button: 'right' });
+await page.waitForFunction(() => window.stickSoldiers.inventory?.open && window.stickSoldiers.inventory.chest, null, { timeout: 5000 }).catch(() => {});
+check(await page.evaluate(() => !!window.stickSoldiers.inventory?.chest), 'the chest opened with a right click');
+// Shift-click the glass in the bag into the chest.
+const glass = await page.evaluate(() => window.stickSoldiers.state.me.world.inv.slots.findIndex(s => s?.key === 'glass'));
+await page.click(`#inventory .inv-slot[data-box="me"][data-slot="${glass}"]`, { modifiers: ['Shift'] });
+const inChest = await page.evaluate(() => window.stickSoldiers.inventory.chest.inv.count('glass'));
+check(inChest === 30, `the glass put in the chest (${inChest})`);
+await page.keyboard.press('KeyI');
+report.chest = { at: [chestAtTile.tx, chestAtTile.ty], glass: inChest };
 
 // 4. Save and quit (the menu), then play it again: just as it was left.
 await page.keyboard.press('Escape');
@@ -133,6 +171,8 @@ report.again = again;
 check(again.hole === 0 && again.plank === plank, `the hole and the plank still there (${JSON.stringify(again)})`);
 check(again.dirt === afterDig, 'your things kept');
 check(Math.abs(again.x - where.x) < 2 && Math.abs(again.y - where.y) < 20, `back where you were (${JSON.stringify(where)} -> ${again.x},${again.y})`);
+const keptChest = await page.evaluate(async ([tx, ty]) => (await import('./src/world/worldplay.js')).chestAt(window.stickSoldiers.state.game.world, tx, ty)?.count('glass') ?? -1, report.chest.at);
+check(keptChest === 30, `the chest kept its things (${keptChest})`);
 await page.keyboard.press('Escape');
 await page.click('#quit');
 await page.waitForSelector('#worldList .world-card');

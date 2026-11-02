@@ -171,7 +171,7 @@ export async function exportWorld(id) {
   if (!rec) throw new Error('That world is gone');
   const chunks = await loadChunks(id);
   const data = {
-    kind: FILE_KIND, format: 1, name: rec.name, seed: rec.seed, created: rec.created, played: rec.played, player: rec.player,
+    kind: FILE_KIND, format: 1, name: rec.name, seed: rec.seed, created: rec.created, played: rec.played, player: rec.player, chests: rec.chests || [],
     chunks: [...chunks].map(([k, c]) => [k, packBytes(c.fg), packBytes(c.bg), packBytes(c.shape)]),
   };
   const file = `${rec.name.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'world'}${FILE_EXT}`;
@@ -196,7 +196,7 @@ export async function importWorld(text) {
   for (let i = 2; names.has(name.toLowerCase()); i++) name = worldName(`${worldName(data.name).slice(0, MAX_NAME - 4)} (${i})`);
   const rec = {
     id: newId(), name, seed: data.seed | 0, created: Number(data.created) || Date.now(), played: Date.now(),
-    player: data.player && typeof data.player === 'object' ? data.player : null, format: 1,
+    player: data.player && typeof data.player === 'object' ? data.player : null, chests: Array.isArray(data.chests) ? data.chests : [], format: 1,
   };
   await saveWorld(rec, chunks);
   return rec;

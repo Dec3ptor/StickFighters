@@ -16,6 +16,8 @@ import { worldState, playerToSave, worldFromSave, safeSpot, shapeTiles, canPlace
 import { lightBox, SOLDIER_GLOW } from '../web/src/world/worldrender.js';
 import { packBytes, unpackBytes, createWorld, saveWorld, loadChunks, listWorlds, deleteWorld, exportWorld, importWorld, worldName } from '../web/src/world/worldsave.js';
 import { seedOf } from '../web/src/world/noise.js';
+import { RECIPES, STATIONS, stationsNear, timesCanMake, craft } from '../web/src/world/crafting.js';
+import { chestAt, chestsToSave, chestsFromSave } from '../web/src/world/worldplay.js';
 
 const id = key => BLOCK_BY_KEY.get(key).id;
 
@@ -498,4 +500,115 @@ test('coming back: where you were, never inside blocks built there since', () =>
   assert.equal(REACH, 6 * TILE);
   void worldState;
   void breakBlock;
+});
+
+// ---- Crafting, chests and beds ----------------------------------------------------------------------------
+
+test('every recipe makes something from things there are, at a station there is; every station and pickaxe can be made', () => {
+  for (const r of RECIPES) {
+    assert.ok(itemOf(r.key), `${r.key} is an item`);
+    assert.ok(r.n >= 1 && r.of.length >= 1, `${r.key}: makes something from something`);
+    for (const [key, n] of r.of) assert.ok(itemOf(key) && n >= 1, `${r.key}: ${key} is an item`);
+    assert.ok(r.at === null || STATIONS.includes(r.at), `${r.key}: ${r.at} is a station`);
+  }
+  for (const st of STATIONS) {
+    const block = BLOCKS.find(b => b.station === st);
+    assert.ok(block && block.furniture, `a ${st} block`);
+    assert.ok(RECIPES.some(r => r.key === block.key), `a ${st} can be made`);
+  }
+  for (const key of ['pickaxe', 'iron_pickaxe', 'gold_pickaxe', 'crystal_pickaxe', 'axe', 'hammer', 'torch', 'chest', 'bed', 'bullets', 'shells', 'rockets', 'M4', 'Bazooka']) {
+    assert.ok(RECIPES.some(r => r.key === key), `${key} can be made`);
+  }
+  // Nothing needs a station that only something made at a later station makes, by the order they come in.
+  const reach = new Set([null]);
+  for (const st of STATIONS) {
+    const r = RECIPES.find(x => x.key === BLOCKS.find(b => b.station === st).key);
+    assert.ok(reach.has(r.at), `the ${st} is made by hand or at a station before it (${r.at})`);
+    reach.add(st);
+  }
+});
+
+test('crafting: by hand anywhere, at a station only near one; what\'s used and what\'s made', () => {
+  const { world, game, me } = play();
+  arena(world);
+  untilAlive(game, me);
+  run(game, 20);
+  const inv = me.world.inv, near = () => stationsNear(world, me.x, me.y - 8);
+  inv.add('wood', 10);
+  const planks = RECIPES.find(r => r.key === 'planks');
+  const before = inv.count('planks');
+  assert.equal(timesCanMake(inv, planks, near()), inv.count('wood'));
+  assert.deepEqual(craft(inv, planks, near(), 3), { made: 3, left: 0 });
+  assert.equal(inv.count('planks'), before + 12);
+  // Smelting needs a furnace near.
+  inv.add('copper_ore', 7);
+  const bar = RECIPES.find(r => r.key === 'copper_bar');
+  assert.equal(timesCanMake(inv, bar, near()), 0, 'no furnace near');
+  const tx = Math.floor(me.x / TILE), ty = Math.floor((me.y + 12) / TILE);
+  world.setTile(tx + 3, ty - 1, K.FURNACE);
+  assert.ok(near().has('furnace'));
+  assert.equal(timesCanMake(inv, bar, near()), 2, 'seven ore: two bars');
+  assert.deepEqual(craft(inv, bar, near(), 5), { made: 2, left: 0 });
+  assert.equal(inv.count('copper_bar'), 2);
+  assert.equal(inv.count('copper_ore'), 1);
+  // Walk away from it: no more smelting.
+  me.body.x += 10 * TILE;
+  assert.ok(!near().has('furnace'), 'too far from the furnace');
+});
+
+test('furniture stands on the floor; chests keep things (and spill them when broken), beds are where you come back', () => {
+  const { world, game, me, ctl } = play();
+  const { fx, fy } = arena(world);
+  untilAlive(game, me);
+  run(game, 20);
+  const tx = Math.floor(me.x / TILE), ty = Math.floor((me.y + 12) / TILE);
+  const chestItem = itemOf('chest');
+  assert.ok(canPlace(game, chestItem, tx + 2, ty - 1), 'on the floor');
+  assert.ok(!canPlace(game, chestItem, tx + 2, ty - 3), 'not in mid-air');
+  // A chest put down, opened with a right click, things put in.
+  me.world.inv.add('chest', 1);
+  me.world.inv.move(slotOf(me, 'chest'), 9);
+  ctl.script = { move: 0, switchTo: '#9' };
+  game.update();
+  ctl.script = { move: 0, fire: true, firePressed: true, ...aimAt(me, tx + 2, ty - 1) };
+  game.update();
+  ctl.script = { move: 0 };
+  game.update();
+  assert.equal(world.tile(tx + 2, ty - 1), K.CHEST, 'the chest is down');
+  ctl.script = { move: 0, alt: true, ...aimAt(me, tx + 2, ty - 1) };
+  game.update();
+  ctl.script = { move: 0 };
+  game.update();
+  assert.deepEqual(me.world.openChest, { tx: tx + 2, ty: ty - 1 }, 'opened');
+  const chest = chestAt(world, tx + 2, ty - 1);
+  chest.add('gold_bar', 5);
+  chest.add('M4', 1);
+  // Kept with the world.
+  const saved = JSON.parse(JSON.stringify(chestsToSave(world)));
+  const other = new TileWorld({ seed: world.seed });
+  other.setTile(tx + 2, ty - 1, K.CHEST);
+  chestsFromSave(other, saved);
+  assert.equal(chestAt(other, tx + 2, ty - 1).count('gold_bar'), 5, 'a chest\'s things kept');
+  // Broken: it falls out (and the chest with it).
+  breakBlock(game, tx + 2, ty - 1, me);
+  assert.equal(world.tile(tx + 2, ty - 1), K.AIR);
+  const lying = world.drops.map(d => `${d.key}:${d.n}`).sort();
+  assert.ok(lying.includes('gold_bar:5') && lying.includes('M4:1') && lying.includes('chest:1'), `spilled (${lying})`);
+  assert.equal(chestAt(world, tx + 2, ty - 1), null);
+  // Furniture goes when its floor does.
+  world.setTile(tx - 3, ty - 1, K.WORKBENCH);
+  breakBlock(game, tx - 3, ty, me);
+  assert.equal(world.tile(tx - 3, ty - 1), K.AIR, 'the workbench went with its floor');
+  // A bed: right click, and that's where you come back.
+  world.setTile(tx + 5, ty - 1, K.BED);
+  ctl.script = { move: 0, alt: true, ...aimAt(me, tx + 5, ty - 1) };
+  game.update();
+  ctl.script = { move: 0 };
+  game.update();
+  assert.ok(me.world.home && Math.abs(me.world.home.x - ((tx + 5) * TILE + 8)) < 1, 'home at the bed');
+  me.body.x = (fx - 15) * TILE + 8;
+  game.kill(me, null, 'Fall');
+  assert.ok(!me.alive);
+  untilAlive(game, me);
+  assert.ok(Math.abs(me.x - ((tx + 5) * TILE + 8)) < 1, `back at the bed (${me.x})`);
 });

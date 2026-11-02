@@ -391,6 +391,71 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
       g.beginPath(); g.moveTo(x + 3, y); g.lineTo(x + 3, y + TILE); g.moveTo(x + 13, y); g.lineTo(x + 13, y + TILE);
       g.moveTo(x + 3, y + 4); g.lineTo(x + 13, y + 4); g.moveTo(x + 3, y + 12); g.lineTo(x + 13, y + 12); g.stroke();
       break;
+    case 'workbench':
+    case 'gunsmith': {
+      // A table: its top and legs; a saw on a workbench, a gun in a vice on a gunsmith's.
+      g.fillStyle = classic ? '#fff' : b.color;
+      g.fillRect(x + 1, y + 7, 14, 3);
+      g.fillRect(x + 2, y + 10, 2, 6);
+      g.fillRect(x + 12, y + 10, 2, 6);
+      g.strokeStyle = line; g.lineWidth = 1;
+      g.strokeRect(x + 1.5, y + 7.5, 13, 2);
+      g.beginPath(); g.moveTo(x + 2.5, y + 10); g.lineTo(x + 2.5, y + 16); g.moveTo(x + 13.5, y + 10); g.lineTo(x + 13.5, y + 16); g.stroke();
+      if (b.pattern === 'workbench') {
+        g.fillStyle = classic ? INK : '#9aa0a8';
+        g.beginPath(); g.moveTo(x + 4, y + 7); g.lineTo(x + 10, y + 4); g.lineTo(x + 11, y + 6); g.lineTo(x + 6, y + 7); g.closePath(); g.fill();
+        g.fillStyle = classic ? '#fff' : '#7a5634'; g.fillRect(x + 10, y + 3, 3, 2);
+      } else {
+        g.fillStyle = classic ? INK : '#2a2e34';
+        g.fillRect(x + 3, y + 4, 9, 2); g.fillRect(x + 4, y + 6, 2, 1); g.fillRect(x + 11, y + 5, 2, 2);
+        g.fillStyle = classic ? '#fff' : '#8a8f96'; g.fillRect(x + 12, y + 3, 2, 4);
+      }
+      break;
+    }
+    case 'furnace': {
+      // A stone box with a fire in it, and a chimney.
+      g.fillStyle = classic ? '#fff' : tint(b.color, 1);
+      g.fillRect(x + 1, y + 3, 14, 13);
+      g.fillRect(x + 10, y, 3, 3);
+      g.strokeStyle = line; g.lineWidth = 1;
+      g.strokeRect(x + 1.5, y + 3.5, 13, 12);
+      g.strokeRect(x + 10.5, y + 0.5, 2, 3);
+      g.fillStyle = '#1a1210'; g.fillRect(x + 4, y + 8, 8, 6);
+      g.fillStyle = '#ff8a30'; g.fillRect(x + 5, y + 10, 6, 4);
+      g.fillStyle = '#ffd060'; g.fillRect(x + 6, y + 11, 4, 3);
+      break;
+    }
+    case 'anvil':
+      g.fillStyle = classic ? '#fff' : b.color;
+      g.beginPath();
+      g.moveTo(x + 1, y + 7); g.lineTo(x + 15, y + 7); g.lineTo(x + 13, y + 10); g.lineTo(x + 10, y + 10); g.lineTo(x + 11, y + 13);
+      g.lineTo(x + 13, y + 16); g.lineTo(x + 3, y + 16); g.lineTo(x + 5, y + 13); g.lineTo(x + 6, y + 10); g.lineTo(x + 3, y + 10);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = line; g.lineWidth = 1; g.stroke();
+      if (!classic) { g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(x + 2, y + 7, 12, 1); }
+      break;
+    case 'chest':
+      // A box with a lid and a lock (and Remastered's metal bands).
+      g.fillStyle = classic ? '#fff' : b.color;
+      g.fillRect(x + 1, y + 5, 14, 11);
+      if (!classic) { g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(x + 3, y + 5, 1.5, 11); g.fillRect(x + 11.5, y + 5, 1.5, 11); }
+      g.strokeStyle = line; g.lineWidth = 1;
+      g.strokeRect(x + 1.5, y + 5.5, 13, 10);
+      g.beginPath(); g.moveTo(x + 1.5, y + 9.5); g.lineTo(x + 14.5, y + 9.5); g.stroke();
+      g.fillStyle = classic ? INK : '#e0c060'; g.fillRect(x + 7, y + 8, 2, 3);
+      break;
+    case 'bed':
+      // A frame, a pillow and a blanket.
+      g.fillStyle = classic ? '#fff' : '#7a5634';
+      g.fillRect(x, y + 6, 2, 10); g.fillRect(x + 14, y + 9, 2, 7); g.fillRect(x, y + 12, 16, 2);
+      g.fillStyle = classic ? '#fff' : '#f2efe6'; g.fillRect(x + 2, y + 9, 4, 3);
+      g.fillStyle = classic ? '#fff' : b.color; g.fillRect(x + 6, y + 9, 8, 3);
+      g.strokeStyle = line; g.lineWidth = 1;
+      g.strokeRect(x + 0.5, y + 6.5, 1, 9); g.strokeRect(x + 14.5, y + 9.5, 1, 6);
+      g.strokeRect(x + 2.5, y + 9.5, 11, 4);
+      g.beginPath(); g.moveTo(x + 6, y + 9.5); g.lineTo(x + 6, y + 12); g.stroke();
+      break;
     case 'door_open':
       g.fillStyle = classic ? '#fff' : b.color;
       g.fillRect(x, y, 4, TILE);
@@ -772,6 +837,27 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
     if (it.tool === 'pick') { ctx.beginPath(); ctx.moveTo(x + w * 0.35, y + w * 0.05); ctx.quadraticCurveTo(x + w * 0.95, y + w * 0.05, x + w * 0.95, y + w * 0.65); ctx.lineTo(x + w * 0.75, y + w * 0.25); ctx.closePath(); ctx.fill(); ctx.strokeStyle = INK; ctx.stroke(); }
     else if (it.tool === 'axe') { ctx.beginPath(); ctx.moveTo(x + w * 0.55, y + w * 0.1); ctx.lineTo(x + w, y + w * 0.3); ctx.lineTo(x + w * 0.8, y + w * 0.55); ctx.closePath(); ctx.fill(); ctx.strokeStyle = INK; ctx.stroke(); }
     else { ctx.fillRect(x + w * 0.5, y, w * 0.45, w * 0.35); ctx.strokeStyle = INK; ctx.strokeRect(x + w * 0.5, y, w * 0.45, w * 0.35); }
+    return;
+  }
+  if (it.key.endsWith('_bar')) {
+    // An ingot.
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.08, y + w * 0.78); ctx.lineTo(x + w * 0.92, y + w * 0.78); ctx.lineTo(x + w * 0.74, y + w * 0.38); ctx.lineTo(x + w * 0.26, y + w * 0.38);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    return;
+  }
+  if (it.key === 'coal') {
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.2, y + w * 0.6); ctx.lineTo(x + w * 0.35, y + w * 0.25); ctx.lineTo(x + w * 0.7, y + w * 0.2); ctx.lineTo(x + w * 0.85, y + w * 0.55); ctx.lineTo(x + w * 0.6, y + w * 0.85); ctx.lineTo(x + w * 0.3, y + w * 0.82);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#555';
+    ctx.stroke();
     return;
   }
   if (it.kind === 'ammo' || it.kind === 'material') {

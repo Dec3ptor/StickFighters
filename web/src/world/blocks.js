@@ -12,6 +12,8 @@
 //   drop       the item it gives when mined (its own, unless said; null: nothing)
 //   light      light it gives off (0-15); clear: light goes through it (not a solid wall to light)
 //   color      Remastered's colour; pattern: the marks it gets in both games (worldrender.js)
+//   station    a crafting station ('workbench', 'furnace', 'anvil', 'gunsmith': crafting.js)
+//   furniture  stands on the floor (and goes when the floor does), walked through
 
 export const TILE = 16;
 
@@ -19,7 +21,7 @@ const B = [];
 const def = (key, name, o = {}) => {
   const b = {
     id: B.length, key, name, solid: true, platform: false, hard: 3, tool: 'pick', tier: 0, resist: 6,
-    drop: key, light: 0, clear: false, color: '#888888', dark: null, pattern: 'plain', natural: false, ...o,
+    drop: key, light: 0, clear: false, color: '#888888', dark: null, pattern: 'plain', natural: false, station: null, furniture: false, ...o,
   };
   b.dark ??= shade(b.color, 0.72);
   B.push(b);
@@ -92,6 +94,15 @@ export const MOSSY_BRICKS = def('mossy_bricks', 'Mossy bricks', { hard: 6, resis
 export const SNOW_BRICKS = def('snow_bricks', 'Snow bricks', { hard: 3, resist: 4, color: '#e2ebf2', pattern: 'bricks' });
 export const BLAST_BRICKS = def('blast_bricks', 'Blast-proof bricks', { hard: 18, resist: 60, tier: 2, color: '#5c6470', pattern: 'bricks' });
 export const LADDER = def('ladder', 'Ladder', { solid: false, hard: 1, resist: 2, wood: true, clear: true, color: '#a87a48', pattern: 'ladder' });
+
+// ---- Furniture: crafting stations, chests and beds (stood on the floor, walked through) --------------
+const furniture = o => ({ solid: false, clear: true, furniture: true, ...o });
+export const WORKBENCH = def('workbench', 'Workbench', furniture({ hard: 2, resist: 4, wood: true, color: '#9a6a3a', pattern: 'workbench', station: 'workbench' }));
+export const FURNACE = def('furnace', 'Furnace', furniture({ hard: 4, resist: 10, light: 9, color: '#6e6e74', pattern: 'furnace', station: 'furnace' }));
+export const ANVIL = def('anvil', 'Anvil', furniture({ hard: 6, resist: 20, color: '#4f555e', pattern: 'anvil', station: 'anvil' }));
+export const GUNSMITH = def('gunsmith', "Gunsmith's bench", furniture({ hard: 4, resist: 12, color: '#56606e', pattern: 'gunsmith', station: 'gunsmith' }));
+export const CHEST = def('chest', 'Chest', furniture({ hard: 2, resist: 6, wood: true, color: '#9a6a3a', pattern: 'chest' }));
+export const BED = def('bed', 'Bed', furniture({ hard: 2, resist: 4, wood: true, color: '#b03a3a', pattern: 'bed' }));
 
 export const BLOCKS = B;
 export const BLOCK_BY_KEY = new Map(B.map(b => [b.key, b]));

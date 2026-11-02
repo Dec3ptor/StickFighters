@@ -42,7 +42,9 @@ import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
 import { TileWorld } from './world/tileworld.js';
 import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT } from './world/worldsave.js';
-import { playerToSave, worldFromSave, dropItem } from './world/worldplay.js';
+import { playerToSave, worldFromSave, dropItem, chestAt, chestsToSave, chestsFromSave, REACH } from './world/worldplay.js';
+import { craft, stationsNear } from './world/crafting.js';
+import { itemOf } from './world/items.js';
 import { InventoryScreen } from './world/inventoryui.js';
 import { seedOf } from './world/noise.js';
 
@@ -933,6 +935,7 @@ async function startWorld(rec) {
   // Our own numbers (Settings, Developer), camera and aiming zoom: a world's played offline.
   useOwnRules();
   const world = new TileWorld({ seed: rec.seed, name: rec.name, saved });
+  chestsFromSave(world, rec.chests);
   const game = new Game({ world, mode: 'world', speed: state.settings.speed, options: { destruction: true, crates: 'off', streaks: false }, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
   const me = game.addSoldier({ name: playerName(), isBot: false, team: 0, skin: prefs.skin }, new PlayerController(input, () => renderer, playerOptions));
@@ -957,6 +960,7 @@ function saveWorldNow(last = false) {
   w.savedAt = performance.now();
   const me = w.game.soldiers.find(s => s.world && !s.isBot);
   if (me) w.rec.player = playerToSave(me);
+  w.rec.chests = chestsToSave(w.game.world);
   w.rec.played = Date.now();
   const chunks = w.game.world.takeDirty();
   return saveWorld(w.rec, chunks).catch(err => {
@@ -979,13 +983,18 @@ async function importWorldFile(file) {
 // ---- Worlds: the inventory screen ----------------------------------------------------------------
 
 let invScreen = null;
-const getInventory = () => (invScreen ||= new InventoryScreen($('inventory'), { drop: i => dropFromInventory(i), close: () => closeInventory() }));
+const getInventory = () => (invScreen ||= new InventoryScreen($('inventory'), {
+  drop: i => dropFromInventory(i), craft: (r, times) => craftItem(r, times), close: () => closeInventory(),
+}));
 
-/** I: your things (the game carries on; your soldier stands still while it's open). */
-function openInventory() {
+/**
+ * I: your things (the game carries on; your soldier stands still while it's open). chest: one
+ * opened with a right click ({ inv, tx, ty }), shown beside them.
+ */
+function openInventory(chest = null) {
   const g = state.game, me = state.me;
   if (!g?.world || !me?.world || state.menuOpen || state.chatOpen || g.over) return;
-  getInventory().show(me);
+  getInventory().show(me, g, chest);
   input.enabled = false;
   input.clear();
   input.unlock();
@@ -995,6 +1004,17 @@ function closeInventory() {
   if (!invScreen?.open) return;
   invScreen.hide();
   if (state.game && !state.menuOpen && !state.chatOpen && !state.game.over) { input.enabled = true; grabControls(); }
+}
+
+/** The inventory screen's crafting: recipe r made up to `times` times (what doesn't fit goes on the ground). */
+function craftItem(r, times) {
+  const g = state.game, me = state.me;
+  if (!g?.world || !me?.world || !me.alive) return;
+  const { made, left } = craft(me.world.inv, r, stationsNear(g.world, me.x, me.y - 8), times);
+  if (!made) return;
+  if (left) dropItem(g, r.key, left, me.x, me.y - 14, me.facing * 2, -2, 30);
+  audio.play('click');
+  localNote(`Made ${made * r.n} × ${itemOf(r.key).name}`);
 }
 
 /** The inventory screen's Drop: slot i's stack, thrown in front of you. */
@@ -1911,6 +1931,13 @@ function frame(now) {
   if (hudR !== renderer) renderer.classButton = hudR.classButton;
   // A world: kept every minute (and when it's paused or left); the inventory screen up to date.
   if (state.world && !state.paused && now - state.world.savedAt > 60000) saveWorldNow();
+  if (g.world && me.world?.openChest) {
+    const c = me.world.openChest, inv = chestAt(g.world, c.tx, c.ty);
+    me.world.openChest = null;
+    if (inv) openInventory({ inv, tx: c.tx, ty: c.ty });
+  }
+  const chest = invScreen?.open && invScreen.chest;
+  if (chest && (!me.alive || !chestAt(g.world, chest.tx, chest.ty) || Math.hypot(chest.tx * 16 + 8 - me.x, chest.ty * 16 + 8 - me.y) > REACH * 1.5)) closeInventory();
   if (invScreen?.open) invScreen.refresh();
   // Defuse's buy menu: kept up to date, and closed when you can't buy any more.
   if (buyMenu?.open) {
@@ -2451,7 +2478,7 @@ async function boot() {
   window.stickSoldiers = {
     state, get renderer() { return renderer; }, get edition() { return edition; }, get input() { return input; }, setEdition, openGamePicker, pacer, prefs, perf, setGraphics, startMatch, endMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab,
     get profile() { return profile; }, openPicker, openLoadout,
-    startWorld, saveWorldNow, renderWorlds, openInventory, closeInventory, get inventory() { return invScreen; },
+    startWorld, saveWorldNow, renderWorlds, openInventory, closeInventory, craftItem, get inventory() { return invScreen; },
     devExport: all => JSON.parse(devMenu.exportText(all)), // (what the developer menu copies out)
     // The camera and aiming zoom in use (the host's, in someone else's game).
     feelNow: () => ({ camera: cameraInUse(), aimZoom: hostFeel ? hostFeel.aimZoom : prefs.aimZoom, host: !!hostFeel }),
