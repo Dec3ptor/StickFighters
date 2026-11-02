@@ -739,3 +739,79 @@ test('scenery blends between biomes across the land either side of where they me
   }
   assert.equal(last, 1);
 });
+
+// ---- Two hands -------------------------------------------------------------------------------------
+
+test('two hands: left click digs with the pickaxe, right click builds with the planks', () => {
+  const { world, game, me, ctl } = play();
+  untilAlive(game, me);
+  const { fx, fy } = arena(world);
+  me.body.x = fx * TILE + 8; me.body.y = fy * TILE - 13; me.body.vx = me.body.vy = 0;
+  run(game, 10);
+  const planks = slotOf(me, 'planks'), pick = slotOf(me, 'pickaxe');
+  ctl.script = { switchTo: `#${pick}` }; run(game, 1);
+  ctl.script = { switchTo: `%${planks}` }; run(game, 1);
+  assert.equal(me.world.slot, pick, 'the pickaxe in the left hand');
+  assert.equal(me.world.slot2, planks, 'the planks in the right');
+  // Right click on the air beside: a plank. The pickaxe's still in the left hand.
+  const spot = [fx + 2, fy - 1];
+  ctl.script = { move: 0, alt: true, ...aimAt(me, ...spot) }; run(game, 3);
+  assert.equal(world.tile(...spot), id('planks'), 'right click built');
+  ctl.script = { move: 0, ...aimAt(me, ...spot) }; run(game, 2);
+  // Left click the stone floor on the other side: dug.
+  const floor = [fx - 2, fy];
+  ctl.script = { move: 0, fire: true, firePressed: true, ...aimAt(me, ...floor) }; run(game, 240);
+  assert.equal(world.tile(...floor), K.AIR, 'left click dug');
+  assert.equal(world.tile(...spot), id('planks'), "and didn't touch the plank");
+});
+
+test('the right hand: picked by number (again: nothing), round the hotbar, never a gun, kept with you', () => {
+  const { game, me, ctl } = play();
+  untilAlive(game, me);
+  const gun = slotOf(me, 'Platinum'), torch = slotOf(me, 'torch');
+  ctl.script = { switchTo: `%${gun}` }; run(game, 1);
+  assert.equal(me.world.slot2, -1, 'a gun stays in the left hand');
+  ctl.script = { switchTo: `%${torch}` }; run(game, 1);
+  assert.equal(me.world.slot2, torch);
+  ctl.script = { switchTo: `%${torch}` }; run(game, 1);
+  assert.equal(me.world.slot2, -1, 'the same number again: nothing');
+  ctl.script = { switchTo: '%+' }; run(game, 1);
+  assert.ok(me.world.slot2 >= 0 && slotOf(me, 'Platinum') !== me.world.slot2, `the wheel: the next that isn't a gun (${me.world.slot2})`);
+  const saved = playerToSave(me);
+  assert.equal(worldFromSave(saved).slot2, me.world.slot2, 'kept in the save');
+  ctl.script = { switchTo: '%x' }; run(game, 1);
+  assert.equal(me.world.slot2, -1);
+});
+
+test('right click still opens doors with something in the right hand; crouch to use it instead', () => {
+  const { world, game, me, ctl } = play();
+  untilAlive(game, me);
+  const { fx, fy } = arena(world);
+  me.body.x = fx * TILE + 8; me.body.y = fy * TILE - 13; me.body.vx = me.body.vy = 0;
+  for (let y = fy - 3; y < fy; y++) world.setTile(fx + 3, y, K.DOOR);
+  run(game, 5);
+  ctl.script = { switchTo: `%${slotOf(me, 'pickaxe')}` }; run(game, 1);
+  ctl.script = { switchTo: `#${slotOf(me, 'planks')}` }; run(game, 1);
+  ctl.script = { alt: true, ...aimAt(me, fx + 3, fy - 2) }; run(game, 30);
+  assert.equal(world.tile(fx + 3, fy - 2), K.DOOR_OPEN, 'opened (and held down, not dug)');
+  ctl.script = { ...aimAt(me, fx + 3, fy - 2) }; run(game, 2);
+  ctl.script = { alt: true, crouch: true, ...aimAt(me, fx + 3, fy - 2) }; run(game, 300);
+  assert.equal(world.tile(fx + 3, fy - 2), K.AIR, 'crouching: the right hand dug it out');
+});
+
+test('a shape dragged out with right click goes in when right click is let go', () => {
+  const { world, game, me, ctl } = play();
+  untilAlive(game, me);
+  const { fx, fy } = arena(world);
+  me.body.x = fx * TILE + 8; me.body.y = fy * TILE - 13; me.body.vx = me.body.vy = 0;
+  run(game, 10);
+  me.world.brush = 'line';
+  ctl.script = { switchTo: `%${slotOf(me, 'planks')}` }; run(game, 1);
+  assert.equal(me.world.slot2, slotOf(me, 'planks'));
+  const y = fy - 1;
+  ctl.script = { alt: true, ...aimAt(me, fx + 2, y) }; run(game, 2);
+  ctl.script = { alt: true, ...aimAt(me, fx + 5, y) }; run(game, 4);
+  for (let x = fx + 2; x <= fx + 5; x++) assert.equal(world.tile(x, y), K.AIR, 'not yet: still dragging');
+  ctl.script = { alt: false, ...aimAt(me, fx + 5, y) }; run(game, 2);
+  for (let x = fx + 2; x <= fx + 5; x++) assert.equal(world.tile(x, y), id('planks'), `a plank at ${x}`);
+});

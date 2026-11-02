@@ -766,3 +766,9 @@ test('a link closed before it connects gives up at once, without an uncaught err
     process.off('unhandledRejection', onUncaught);
   }
 });
+
+test("a world's hotbar picks survive the trip: left click's slot, right click's, and the wheel's", () => {
+  const picks = ['#9', '%0', '%9', '%+', '%-', '%x', 'M4', null]; // (eight: as many as one message carries)
+  const out = decodeInputs(encodeInputs(picks.map((switchTo, i) => ({ seq: i + 1, switchTo }))));
+  assert.deepEqual(out.map(i => i.switchTo), picks);
+});

@@ -15,7 +15,7 @@ import { TileWorld } from './tileworld.js';
 import { Inventory, HOTBAR, itemOf } from './items.js';
 import { packBytes, unpackBytes } from './worldsave.js';
 import { RECIPES, craft, stationsNear } from './crafting.js';
-import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, claimsToSave, claimsFromSave, REACH } from './worldplay.js';
+import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, claimsToSave, claimsFromSave, REACH, setRightHand } from './worldplay.js';
 import { mercsOf } from './monsters.js';
 
 const LAYERS = ['fg', 'bg', 'shape'];
@@ -124,11 +124,11 @@ export class WorldHost {
     const s = p.soldier, w = s?.world, ws = p.wsync;
     if (!w || !ws) return;
     const m = w.mine, last = w.got[w.got.length - 1];
-    const key = `${w.inv.version}|${w.slot}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}`;
+    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}`;
     if (key !== ws.inv) {
       ws.inv = key;
       p.link.send({
-        t: 'inv', slots: w.inv.toJSON(), slot: w.slot, brush: w.brush, home: w.home || null,
+        t: 'inv', slots: w.inv.toJSON(), slot: w.slot, slot2: w.slot2, brush: w.brush, home: w.home || null,
         mine: m ? { tx: m.tx, ty: m.ty, dmg: m.dmg, of: m.of } : null,
         got: w.got.map(g => [g.key, g.n, g.tick]),
       }, true);
@@ -186,6 +186,13 @@ export class WorldHost {
         break;
       }
       case 'close': ws.chest = null; break;
+      // (The inventory screen's right hand buttons: what right click uses.)
+      case 'hand': {
+        const i = d.slot;
+        if (i === -1) w.slot2 = -1;
+        else if (Number.isInteger(i) && i >= 0 && i < HOTBAR && w.slot2 !== i) setRightHand(g, s, String(i), true);
+        break;
+      }
     }
   }
 }
@@ -275,6 +282,7 @@ export class WorldClient {
         w.inv = Inventory.from(d.slots);
         w.inv.version = ++this.version;
         w.slot = Math.max(0, Math.min(HOTBAR - 1, d.slot | 0));
+        w.slot2 = Number.isInteger(d.slot2) && d.slot2 >= 0 && d.slot2 < HOTBAR ? d.slot2 : -1;
         if (typeof d.brush === 'string') w.brush = d.brush;
         w.home = d.home || null;
         w.mine = d.mine && Number.isFinite(d.mine.dmg) ? d.mine : null;

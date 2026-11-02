@@ -314,7 +314,7 @@ export class PlayerController {
       const bank = s.bank || [];
       if (bank.length > 1) this.rewardPick = bank[(bank.indexOf(this.pickedReward(s)) + 1) % bank.length];
     }
-    if (k.took('streak') && s.alive) {
+    if (k.took('streak') && s.alive && !s.world) {
       inp.streak = this.pickedReward(s);
       // (Nothing banked: say how to get something, on our own screen.)
       if (!inp.streak) {
@@ -324,17 +324,19 @@ export class PlayerController {
         game.notes.push({ text, tick: game.tick, to: s.id });
       }
     }
+    // (In a world, with the right hand's key held, the number keys and the wheel pick what right click uses.)
+    const second = !!s.world && k.held('hand2');
     for (let i = 0; i < SLOTS.length; i++) {
-      if (k.took(SLOTS[i])) { const id = s.slotChoice(i); if (id) inp.switchTo = id; }
+      if (k.took(SLOTS[i])) { const id = s.slotChoice(i, second); if (id) inp.switchTo = id; }
     }
     // Use (E): plant or defuse Defuse's bomb, held, where you can; otherwise (the same key as
     // Next weapon, to start with) it switches weapons.
     const using = !!game.rules.useHere?.(game, s);
     inp.use = k.held('use') && !!game.rules.useHere;
-    if (k.took('prev')) inp.cycle = -1;
+    if (k.took('prev')) { if (second) inp.switchTo = '%-'; else inp.cycle = -1; }
     else {
       const next = k.took('next');
-      if (next && !(using && keysFor('use').includes(next))) inp.cycle = 1;
+      if (next && !(using && keysFor('use').includes(next))) { if (second) inp.switchTo = '%+'; else inp.cycle = 1; }
     }
     k.wheel = 0;
     return inp;

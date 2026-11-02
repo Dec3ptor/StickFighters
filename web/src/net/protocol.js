@@ -12,7 +12,7 @@ import { CLASS_IDS, UPGRADE_IDS } from '../classes.js';
 import { REWARD_IDS } from '../streaks.js';
 import { ITEMS } from '../world/items.js';
 
-export const PROTOCOL = 20;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 21;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -27,8 +27,22 @@ export const weaponIndex = id => WEAPON_INDEX.get(id) ?? 255;
 export const weaponAt = i => WEAPON_IDS[i] || null;
 // Worlds: a hotbar slot picked ('#0' to '#9') goes as one of these instead of a weapon.
 const SLOT_BASE = 230;
-const switchCode = s => (typeof s === 'string' && /^#\d$/.test(s) ? SLOT_BASE + Number(s[1]) + 1 : s ? weaponIndex(s) + 1 : 0);
-const switchFrom = v => (v > SLOT_BASE && v <= SLOT_BASE + 10 ? `#${v - SLOT_BASE - 1}` : v ? weaponAt(v - 1) : null);
+// (A world's hotbar: '#n' picks slot n for left click, '%n' for right click, '%+' and '%-' the next
+// and the one before for right click, '%x' nothing for right click.)
+const HAND2 = ['+', '-', 'x'];
+const switchCode = s => {
+  if (typeof s !== 'string') return 0;
+  if (/^#\d$/.test(s)) return SLOT_BASE + Number(s[1]) + 1;
+  if (/^%\d$/.test(s)) return SLOT_BASE + 11 + Number(s[1]);
+  if (s[0] === '%' && HAND2.includes(s[1])) return SLOT_BASE + 21 + HAND2.indexOf(s[1]);
+  return s ? weaponIndex(s) + 1 : 0;
+};
+const switchFrom = v => {
+  if (v > SLOT_BASE && v <= SLOT_BASE + 10) return `#${v - SLOT_BASE - 1}`;
+  if (v > SLOT_BASE + 10 && v <= SLOT_BASE + 20) return `%${v - SLOT_BASE - 11}`;
+  if (v > SLOT_BASE + 20 && v <= SLOT_BASE + 23) return `%${HAND2[v - SLOT_BASE - 21]}`;
+  return v ? weaponAt(v - 1) : null;
+};
 // Worlds' items (things on the ground), by number.
 const ITEM_KEYS = [...ITEMS.keys()];
 const ITEM_INDEX = new Map(ITEM_KEYS.map((k, i) => [k, i]));

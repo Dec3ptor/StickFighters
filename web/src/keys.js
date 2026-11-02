@@ -26,6 +26,7 @@ export const ACTIONS = [
   { id: 'prev', name: 'Previous weapon', group: 'Weapons', keys: ['KeyQ', 'WheelUp'], press: true },
   { id: 'next', name: 'Next weapon', group: 'Weapons', keys: ['KeyE', 'WheelDown'], press: true },
   { id: 'melee', name: 'Sledgehammer', group: 'Weapons', keys: ['KeyF'], press: true },
+  { id: 'hand2', name: 'Right hand (worlds: hold, then a number or the wheel, for what right click uses)', group: 'Weapons', keys: ['KeyX'] },
   ...Array.from({ length: 10 }, (_, i) => ({
     id: `slot${i + 1}`, name: `Weapon ${i + 1}`, group: 'Weapon slots (and where to respawn)',
     keys: [`Digit${(i + 1) % 10}`], press: true,
@@ -47,8 +48,9 @@ const BY_ID = new Map(ACTIONS.map(a => [a.id, a]));
 /** The most keys one action can have. */
 export const MAX_KEYS = 4;
 // Actions that may share a key: E plants or defuses where you can, and switches weapons anywhere
-// else; Space jumps, and spectating, switches to the free camera.
-const SHARED = [['use', 'next'], ['freeCam', 'jump']];
+// else; Space jumps, and spectating, switches to the free camera; X uses a kill streak reward,
+// and in a world (no kill streaks) is the right hand's.
+const SHARED = [['use', 'next'], ['freeCam', 'jump'], ['hand2', 'streak']];
 const shares = (a, b) => SHARED.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
 
 /**

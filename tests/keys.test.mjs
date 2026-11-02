@@ -12,7 +12,7 @@ import { DEFAULT_SPEED } from '../web/src/config.js';
 
 afterEach(() => { resetKeys(); useLayout(null); });
 
-test('every action starts with its keys, and no key does two things (except E and Space, on purpose)', () => {
+test('every action starts with its keys, and no key does two things (except E, Space and X, on purpose)', () => {
   const seen = new Map();
   for (const a of ACTIONS) {
     assert.ok(keysFor(a.id).length > 0, `${a.id} has a key`);
@@ -20,7 +20,7 @@ test('every action starts with its keys, and no key does two things (except E an
       assert.ok(canBind(k), `${k} can be bound`);
       if (seen.has(k)) {
         const pair = [seen.get(k), a.id].sort().join('+');
-        assert.ok(['next+use', 'freeCam+jump'].includes(pair), `${k}: ${pair}`);
+        assert.ok(['next+use', 'freeCam+jump', 'hand2+streak'].includes(pair), `${k}: ${pair}`);
       } else seen.set(k, a.id);
     }
   }

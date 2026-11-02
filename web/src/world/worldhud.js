@@ -6,7 +6,7 @@ import { HOTBAR, itemOf } from './items.js';
 import { WEAPONS } from '../weapons.js';
 import { BLOCKS, WALLS, TILE, AIR, NO_WALL, shade } from './blocks.js';
 import { WORLD_H } from './worldgen.js';
-import { inHand, BRUSH_NAMES, claimAt } from './worldplay.js';
+import { inHand, rightHand, BRUSH_NAMES, claimAt } from './worldplay.js';
 import { drawIcon } from './worldrender.js';
 import { clock, dayOf, isNight, nightness } from './monsters.js';
 import { keyShort, slotAction, keyLabel } from '../keys.js';
@@ -29,6 +29,15 @@ export function drawWorldHud(r, ctx, game, me, W, H) {
 
 /** The bar for what's in your hand (hud.js's status row, right side): [fill, kind, label], or null. */
 export function heldBar(me) {
+  const bar = leftBar(me), r = rightHand(me).item;
+  if (!r) return bar;
+  const n = me.world.inv.count(r.key);
+  bar[2] = text(`h${bar[2]}|${r.key}|${n}`, () => `${bar[2]}  ·  right click: ${r.name}${r.kind === 'block' || r.kind === 'wall' ? ` ${n}` : ''}`);
+  return bar;
+}
+
+/** The bar for what's in the left hand (left click). */
+function leftBar(me) {
   const { slot, item } = inHand(me);
   if (!item) return [1, 'ammo', 'Fists  ·  plants and torches come away by hand'];
   const n = me.world.inv.count(item.key);
@@ -64,12 +73,23 @@ function drawHotbar(ctx, me, W, H) {
   ctx.scale(k, k);
   ctx.textBaseline = 'middle';
   for (let i = 0; i < HOTBAR; i++) {
-    const x = i * (HOT_SIZE + HOT_GAP), slot = w.inv.slots[i], it = slot && itemOf(slot.key), on = i === w.slot;
+    const x = i * (HOT_SIZE + HOT_GAP), slot = w.inv.slots[i], it = slot && itemOf(slot.key), on = i === w.slot, r = i === w.slot2;
     ctx.fillStyle = on ? 'rgba(30,30,30,0.88)' : slot ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.4)';
     ctx.fillRect(x, 0, HOT_SIZE, HOT_SIZE);
-    ctx.strokeStyle = on ? '#f2c230' : slot ? '#333' : 'rgba(0,0,0,0.15)';
-    ctx.lineWidth = on ? 2 : 1;
-    ctx.strokeRect(x + (on ? 1 : 0.5), on ? 1 : 0.5, HOT_SIZE - (on ? 2 : 1), HOT_SIZE - (on ? 2 : 1));
+    ctx.strokeStyle = on ? '#f2c230' : r ? '#4a9ae8' : slot ? '#333' : 'rgba(0,0,0,0.15)';
+    ctx.lineWidth = on || r ? 2 : 1;
+    ctx.strokeRect(x + (on || r ? 1 : 0.5), on || r ? 1 : 0.5, HOT_SIZE - (on || r ? 2 : 1), HOT_SIZE - (on || r ? 2 : 1));
+    // (Which button uses it: L for left click, R for right.)
+    if (on || r) {
+      ctx.textAlign = 'center';
+      ctx.font = `bold 9px ${FONT}`;
+      for (const [hand, mark, col] of [[on, 'L', '#f2c230'], [r, 'R', '#4a9ae8']]) {
+        if (!hand) continue;
+        const mx = mark === 'L' ? x + HOT_SIZE - 9 : x + HOT_SIZE - (on ? 19 : 9);
+        ctx.fillStyle = col; ctx.fillRect(mx - 5, -7, 10, 10);
+        ctx.fillStyle = mark === 'L' ? '#222' : '#fff'; ctx.fillText(mark, mx, -2);
+      }
+    }
     ctx.textAlign = 'left';
     ctx.font = `bold 10px ${FONT}`;
     ctx.fillStyle = on ? '#fff' : slot ? '#333' : 'rgba(0,0,0,0.3)';

@@ -14,6 +14,7 @@ import { drawWeapon } from '../sprites.js';
 import { drawIcon } from './worldrender.js';
 import { RECIPES, STATIONS, STATION_NAMES, stationsNear, timesCanMake, madeFrom } from './crafting.js';
 import { keyLabel, isKey, keyOf } from '../keys.js';
+import { setRightHand } from './worldplay.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 // The order recipes are listed in: by hand first, then by station.
@@ -56,6 +57,7 @@ export class InventoryScreen {
         <div class="inv-main">
           <h3 class="inv-label">Hotbar</h3>
           ${grid('me', 0, HOTBAR)}
+          <div class="inv-grid inv-hands" data-hands>${Array.from({ length: HOTBAR }, (_, i) => `<button type="button" class="inv-hand" data-hand="${i}" title="Right click uses this (click again: nothing)">R</button>`).join('')}</div>
           <h3 class="inv-label">Bag</h3>
           ${grid('me', HOTBAR, BAG)}
           <div class="inv-chest hidden" data-chest>
@@ -68,7 +70,7 @@ export class InventoryScreen {
           <div class="inv-actions">
             <button type="button" data-act="drop">Drop</button>
             <button type="button" data-act="sort">Sort the bag</button>
-            <span class="buy-foot">Click a stack, then where it goes &middot; right click: split it &middot; shift-click: send it across</span>
+            <span class="buy-foot">Click a stack, then where it goes &middot; right click: split it &middot; shift-click: send it across &middot; R under the hotbar: what right click uses (or hold <kbd data-hand-key>X</kbd> and press its number)</span>
           </div>
         </div>
         <div class="inv-craft">
@@ -110,6 +112,8 @@ export class InventoryScreen {
     this.root.querySelector('[data-act="take-all"]').addEventListener('click', () => { if (this.remote) this.remote({ op: 'take-all' }); else this.everything(this.chest?.inv, this.inv); });
     this.root.querySelector('[data-act="put-all"]').addEventListener('click', () => { if (this.remote) this.remote({ op: 'put-all' }); else this.everything(this.inv, this.chest?.inv, HOTBAR); });
     this.root.querySelector('[data-only]').addEventListener('change', () => this.refresh(true));
+    this.hands = [...this.root.querySelectorAll('[data-hand]')];
+    for (const b of this.hands) b.addEventListener('click', () => this.setHand(+b.dataset.hand));
     this.whatEl = this.root.querySelector('[data-what]');
     this.nearEl = this.root.querySelector('[data-near]');
     this.chestEl = this.root.querySelector('[data-chest]');
@@ -136,6 +140,7 @@ export class InventoryScreen {
     this.chestEl.classList.toggle('hidden', !chest);
     this.root.querySelector('h2').textContent = chest ? 'Your things, and the chest' : 'Your things';
     for (const k of this.root.querySelectorAll('[data-inv-key]')) k.textContent = keyLabel('inventory');
+    for (const k of this.root.querySelectorAll('[data-hand-key]')) k.textContent = keyLabel('hand2');
     this.root.classList.remove('hidden');
     this.refresh(true);
   }
@@ -167,6 +172,16 @@ export class InventoryScreen {
     this.refresh(true);
   }
 
+  /** Right click uses hotbar slot i (or, if it already does, nothing). */
+  setHand(i) {
+    const w = this.me?.world;
+    if (!w) return;
+    const want = w.slot2 === i ? -1 : i;
+    if (this.remote) this.remote({ op: 'hand', slot: want });
+    else if (this.game) setRightHand(this.game, this.me, want < 0 ? 'x' : String(want), true);
+    this.refresh(true);
+  }
+
   split(box, i) {
     this.picked = null;
     if (this.remote) this.remote({ op: 'split', a: [box, i] }); else this.box(box)?.split(i);
@@ -191,7 +206,7 @@ export class InventoryScreen {
     const inv = this.inv, me = this.me;
     if (!inv || !this.game?.world) return;
     const near = stationsNear(this.game.world, me.x, me.y - 8, this.near);
-    const seen = `${inv.version}|${this.chest?.inv.version ?? ''}|${[...near].join()}|${me.world.slot}|${this.picked ? `${this.picked.box}${this.picked.i}` : ''}|${this.onlyEl.checked}`;
+    const seen = `${inv.version}|${this.chest?.inv.version ?? ''}|${[...near].join()}|${me.world.slot}|${me.world.slot2}|${this.picked ? `${this.picked.box}${this.picked.i}` : ''}|${this.onlyEl.checked}`;
     if (!force && seen === this.seen) return;
     this.seen = seen;
     for (const b of this.slots) {
@@ -201,6 +216,7 @@ export class InventoryScreen {
       const look = s ? `${s.key}|${s.n}|${s.mag ?? ''}` : '';
       b.classList.toggle('picked', this.picked?.box === box && this.picked.i === i);
       b.classList.toggle('in-hand', box === 'me' && i === me.world.slot);
+      b.classList.toggle('in-right', box === 'me' && i === me.world.slot2);
       b.classList.toggle('empty', !s);
       if (b.dataset.look === look) continue;
       b.dataset.look = look;
@@ -209,6 +225,11 @@ export class InventoryScreen {
       const cv = b.querySelector('canvas');
       cv.classList.toggle('ink', it?.kind === 'weapon');
       paint(cv, it);
+    }
+    for (const h of this.hands) {
+      const i = +h.dataset.hand;
+      h.classList.toggle('on', i === me.world.slot2);
+      h.disabled = itemOf(inv.slots[i]?.key)?.kind === 'weapon';
     }
     // The recipes: what can be made now first, then what's short of something, then what needs a station not here.
     this.nearEl.textContent = near.size ? `at ${[...near].map(n => STATION_NAMES[n]).join(', ')}` : 'by hand (stand near a crafting station for more)';

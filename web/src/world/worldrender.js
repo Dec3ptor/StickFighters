@@ -10,7 +10,7 @@ import { BLOCKS, WALLS, SOLID, PLATFORMS, CLEAR, LIGHT, TILE, AIR, NO_WALL, SHAP
 import { WORLD_H } from './worldgen.js';
 import { hash3 } from './noise.js';
 import { itemOf } from './items.js';
-import { REACH, shapeTiles, canPlace, inHand } from './worldplay.js';
+import { REACH, shapeTiles, canPlace, inHand, rightHand } from './worldplay.js';
 import { skyLevel } from './monsters.js';
 
 export const PATCH = 16;                 // tiles across a picture
@@ -1084,7 +1084,10 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
 export function drawTarget(ctx, game, me, look) {
   const w = me?.world;
   if (!w?.target || !me.alive) return;
-  const t = w.target, classic = look === 'classic', { item } = inHand(me);
+  const t = w.target, classic = look === 'classic';
+  // (What a click would build: the left hand's blocks, else the right's.)
+  const isBlocks = it => it && (it.kind === 'block' || it.kind === 'wall');
+  const left = inHand(me).item, item = isBlocks(left) ? left : isBlocks(rightHand(me).item) ? rightHand(me).item : left;
   const x = t.tx * TILE, y = t.ty * TILE;
   // Digging: the cracks so far.
   if (w.mine && w.mine.tx === t.tx && w.mine.ty === t.ty) {

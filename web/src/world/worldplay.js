@@ -126,8 +126,8 @@ function spillChest(game, tx, ty) {
 /** A soldier's world state: their things, and what they're doing with them. */
 export function worldState(inv = Inventory.starting()) {
   return {
-    inv, slot: 0, brush: 'single', target: null, mine: null, cool: 0, drag: null, ammo: null,
-    prevFire: false, prevAlt: false, got: [], warned: null,
+    inv, slot: 0, slot2: -1, brush: 'single', target: null, mine: null, cool: 0, drag: null, ammo: null,
+    prevFire: false, prevAlt: false, altDone: false, got: [], warned: null,
   };
 }
 
@@ -135,7 +135,7 @@ export function worldState(inv = Inventory.starting()) {
 export function playerToSave(s, game = null) {
   const w = s.world;
   return {
-    inv: w.inv.toJSON(), slot: w.slot, brush: w.brush, home: w.home || null,
+    inv: w.inv.toJSON(), slot: w.slot, slot2: w.slot2, brush: w.brush, home: w.home || null,
     x: s.alive ? Math.round(s.x) : null, y: s.alive ? Math.round(s.y) : null,
     mercs: game ? mercsOf(game, s).map(m => ({ gun: m.npc.gun })) : [],
   };
@@ -146,6 +146,7 @@ export function worldFromSave(p) {
   const w = worldState(Array.isArray(p?.inv) ? Inventory.from(p.inv) : Inventory.starting());
   if (!p) return w;
   w.slot = Math.max(0, Math.min(HOTBAR - 1, p.slot | 0));
+  w.slot2 = Number.isInteger(p.slot2) && p.slot2 >= 0 && p.slot2 < HOTBAR ? p.slot2 : -1;
   if (BRUSHES.includes(p.brush)) w.brush = p.brush;
   if (Number.isFinite(p.home?.x) && Number.isFinite(p.home?.y)) w.home = { x: p.home.x, y: p.home.y };
   // (Back where they were, the first time they spawn.)
@@ -181,6 +182,41 @@ export function safeSpot(world, x, y) {
 export function inHand(s) {
   const w = s.world, slot = w?.inv.slots[w.slot];
   return slot ? { slot, item: itemOf(slot.key) } : { slot: null, item: null };
+}
+
+/** What's in the soldier's right hand (what right click uses): { slot, item }, or nulls. Never a gun. */
+export function rightHand(s) {
+  const w = s.world, slot = w && w.slot2 >= 0 ? w.inv.slots[w.slot2] : null, item = slot && itemOf(slot.key);
+  return item && item.kind !== 'weapon' ? { slot, item } : { slot: null, item: null };
+}
+
+/**
+ * Pick what right click uses: v is a hotbar slot ('0'-'9': the one already picked again, none),
+ * '+' or '-' (the next or the one before, round the hotbar and through none), or 'x' (none).
+ * Guns stay in the left hand (right click aims them). Returns the slot picked (-1: none).
+ */
+export function setRightHand(game, s, v, quiet = false) {
+  const w = s.world;
+  if (!w) return -1;
+  let n = w.slot2;
+  if (v === 'x') n = -1;
+  else if (v === '+' || v === '-') {
+    // (Round the hotbar's slots that hold something a right hand can, and none.)
+    const ok = i => i === -1 || (w.inv.slots[i] && itemOf(w.inv.slots[i].key)?.kind !== 'weapon');
+    const d = v === '+' ? 1 : -1;
+    for (let k = 0; k <= HOTBAR; k++) { n = n + d < -1 ? HOTBAR - 1 : n + d >= HOTBAR ? -1 : n + d; if (ok(n)) break; }
+  } else if (/^\d$/.test(v)) {
+    const i = Number(v);
+    const it = w.inv.slots[i] && itemOf(w.inv.slots[i].key);
+    if (it?.kind === 'weapon') { if (!quiet) game.notify(s, `${it.name}: guns stay in your left hand (right click aims them)`); return w.slot2; }
+    n = w.slot2 === i ? -1 : i;
+  }
+  w.slot2 = n;
+  if (!quiet) {
+    const it = n >= 0 && w.inv.slots[n] ? itemOf(w.inv.slots[n].key) : null;
+    game.notify(s, n < 0 ? 'Right click: nothing (doors, chests and beds; it aims a gun)' : `Right click: ${it ? it.name : `slot ${(n + 1) % 10} (empty)`}`);
+  }
+  return n;
 }
 
 // How items look in the hand (drawn as a weapon would be: sprites.js).
@@ -597,7 +633,7 @@ export function shapeTiles(brush, a, b) {
 }
 
 /** Holding blocks or walls: build where the crosshair is (or drag out a line, rectangle or box). */
-function build(game, s, it, inp) {
+function build(game, s, it, inp, pressed = inp.firePressed) {
   const w = s.world, t = w.target;
   const brush = it.block === K.DOOR || it.block === K.TORCH ? 'single' : w.brush;
   if (brush === 'single') {
@@ -610,7 +646,7 @@ function build(game, s, it, inp) {
     }
     return;
   }
-  if (inp.fire && !w.prevFire && t.near) w.drag = { tx: t.tx, ty: t.ty };
+  if (inp.fire && pressed && t.near) w.drag = { tx: t.tx, ty: t.ty };
   if (inp.fire || !w.drag) return;
   // Let go: the whole shape goes in, as far as the blocks carried go (a few passes, so blocks
   // with nothing to build onto yet get it from those put in first).
@@ -702,6 +738,7 @@ export function worldInput(game, s, inp) {
   if (game.mirror) return mirrorInput(game, s, inp);
   // The hotbar: slots by number ('#n': see setup), or along with the wheel and Q / E.
   if (typeof inp.switchTo === 'string' && inp.switchTo[0] === '#') w.slot = Math.max(0, Math.min(HOTBAR - 1, Number(inp.switchTo.slice(1)) || 0));
+  else if (typeof inp.switchTo === 'string' && inp.switchTo[0] === '%') setRightHand(game, s, inp.switchTo.slice(1));
   else if (inp.cycle) w.slot = (w.slot + inp.cycle + HOTBAR) % HOTBAR;
   if (inp.switchTo || inp.cycle) { w.mine = null; w.drag = null; }
   inp = { ...inp, switchTo: null, cycle: 0 };
@@ -730,14 +767,45 @@ export function worldInput(game, s, inp) {
       hold(s);
     }
   }
-  // Right click: doors (with a gun in hand, it's still for aiming down the sights).
-  const alt = !!inp.alt;
-  if (alt && !w.prevAlt && item?.kind !== 'weapon') interact(game, s);
+  // Right click: what's in the right hand (doors, chests and beds first, unless crouching); with
+  // nothing there, doors, chests and beds (and with a gun in hand, aiming down the sights).
+  const right = rightHand(s).item, alt = !!inp.alt, altPressed = alt && !w.prevAlt;
   w.prevAlt = alt;
+  if (!alt) w.altDone = false;
+  let useRight = false;
+  if (right) {
+    if (altPressed && !inp.crouch && interact(game, s)) w.altDone = true;
+    else if (alt && !w.altDone && !inp.fire) useRight = true;
+    inp.alt = false;
+  } else if (altPressed && item?.kind !== 'weapon') interact(game, s);
+  const prevLeft = w.prevFire;
+  w.prevFire = !!inp.fire;
+  if (useRight || (right && !alt && w.drag && w.dragHand === 'right')) {
+    // (Shown in hand while it's used, unless there's a gun in the left: that stays. Let go of
+    // right click with a shape dragged out: the right hand's blocks go in.)
+    if (item?.kind !== 'weapon') s.held = heldLook(right);
+    w.dragHand = 'right';
+    useItem(game, s, right, { ...inp, fire: useRight, firePressed: altPressed }, altPressed);
+    inp.fire = false;
+    inp.firePressed = false;
+    return inp;
+  }
+  w.dragHand = 'left';
+  const fire = useItem(game, s, item, inp, inp.fire && !prevLeft);
+  inp.fire = fire;
+  if (!fire) inp.firePressed = false;
+  return inp;
+}
 
+/**
+ * Use `item` (in either hand) with input `inp` (its fire: the button for that hand held; pressed:
+ * just now). Returns whether a gun should fire (a weapon in hand): else the button's taken.
+ */
+function useItem(game, s, item, inp, pressed) {
+  const w = s.world;
   let fire = inp.fire;
   if (item?.kind === 'contract') {
-    if (inp.fire && !w.prevFire) {
+    if (pressed) {
       if (mercsOf(game, s).length >= MERC.most) game.notify(s, `You can have ${MERC.most} mercenaries at a time`);
       else {
         w.inv.remove(item.key, 1);
@@ -751,7 +819,7 @@ export function worldInput(game, s, inp) {
     if (item.tool === 'hammer') { if (hammer(game, s, item, inp)) fire = false; }
     else if (inp.fire && dig(game, s, item, inp)) fire = false;
   } else if (item && (item.kind === 'block' || item.kind === 'wall')) {
-    build(game, s, item, inp);
+    build(game, s, item, inp, pressed);
     fire = false;
   } else if (item && item.kind !== 'weapon') fire = false;
   // (Nothing in hand: a punch. And plants and torches break with anything.)
@@ -760,10 +828,7 @@ export function worldInput(game, s, inp) {
     w.cool = 12 / MOTION.timeScale;
     fire = false;
   }
-  w.prevFire = !!inp.fire;
-  inp.fire = fire;
-  if (!fire) inp.firePressed = false;
-  return inp;
+  return !!fire;
 }
 
 /**
@@ -776,10 +841,14 @@ function mirrorInput(game, s, inp) {
   w.target = targetOf(s, inp);
   if (inp.seq == null || inp.seq > (w.seenSeq || 0)) {
     w.seenSeq = inp.seq ?? 0;
-    const { item } = inHand(s);
+    if (typeof inp.switchTo === 'string' && inp.switchTo[0] === '%') setRightHand(game, s, inp.switchTo.slice(1), true);
+    // (The hand in use: the right while right click's held, and the left isn't.)
+    const right = rightHand(s).item, useRight = !!right && !!inp.alt && !inp.fire;
+    const item = useRight ? right : inHand(s).item, held = useRight || inp.fire, pressed = useRight ? inp.alt && !w.mirrorAlt : inp.firePressed;
+    w.mirrorAlt = !!inp.alt;
     const dragging = item && (item.kind === 'block' || item.kind === 'wall') && w.brush !== 'single' && item.block !== K.DOOR && item.block !== K.TORCH;
-    if (!dragging || !inp.fire) w.drag = null;
-    else if (!w.drag && inp.firePressed && w.target.near) w.drag = { tx: w.target.tx, ty: w.target.ty };
+    if (!dragging || !held) w.drag = null;
+    else if (!w.drag && pressed && w.target.near) w.drag = { tx: w.target.tx, ty: w.target.ty };
   }
   return inp;
 }
@@ -841,8 +910,8 @@ export const worldMode = {
     s.npc = s.profile?.npc ? { ...s.profile.npc } : null;
     if (!s.npc) {
       s.world ||= worldState();
-      // (The number keys pick hotbar slots: worldInput.)
-      s.slotChoice = i => (i < HOTBAR ? `#${i}` : null);
+      // (The number keys pick hotbar slots for left click, or with the right hand's key held, right click: worldInput.)
+      s.slotChoice = (i, second = false) => (i < HOTBAR ? `${second ? '%' : '#'}${i}` : null);
     }
     // (Nothing switches weapons by itself: the hotbar decides.)
     s.selectBest = () => {};
