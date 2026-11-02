@@ -18,16 +18,21 @@ export const PATCH = 16;                 // tiles across a picture
 const PP = PATCH * TILE;                 // its size in the world (px)
 const PATCHES_Y = WORLD_H / PATCH;
 const MAX_PIXELS = 20e6;                 // pictures kept, at most (in pixels): the least recently drawn go first
-const PAINT_MS = 4;                      // time a frame spends making pictures, at most (at least one; more with none there yet)
+const PAINT_MS = 4;                      // time a frame spends making pictures, at most (at least one)
+const FREE_PICS = 24;                    // pictures let go of, kept to be used again (for patches coming into view)
+let PIC_IDS = 0;                         // each picture's own number (the renderer's key for it)
+const EDGE = 72;                         // how far off the screen pictures are made ahead (px in the world), one a frame with time to spare
 const INK = '#111';
 // shade(), remembered: the same few colours are worked out for every block drawn.
+// (By colour, then by how much: no new text made for each lookup, as there was.)
 const TINTS = new Map();
 function tint(hex, k) {
-  const key = hex + k;
-  let c = TINTS.get(key);
+  let m = TINTS.get(hex);
+  if (m === undefined) TINTS.set(hex, m = new Map());
+  let c = m.get(k);
   if (c === undefined) {
-    if (TINTS.size > 5000) TINTS.clear();
-    TINTS.set(key, c = shade(hex, k));
+    if (m.size > 400) m.clear();
+    m.set(k, c = shade(hex, k));
   }
   return c;
 }
@@ -851,7 +856,9 @@ export class WorldView {
    * look: 'classic' or 'remastered'. picture(canvas, sx, sy, sw, sh, key, fresh, soft): how the
    * renderer puts a picture on the screen (in screen pixels; fresh: drawn again since it was
    * last shown; soft: smoothed, as the light is), by default with the canvas's drawImage.
-   * forget(key): a picture's let go (WebGL frees its texture).
+   * forget(key): a picture's let go (WebGL frees its texture). A picture's key is its own (it's
+   * used again for other patches as they come into view: a texture kept, rather than one made
+   * and thrown away each time); the light's is 'light'.
    */
   constructor(look, { picture = null, forget = null } = {}) {
     this.look = look;
@@ -894,7 +901,9 @@ export class WorldView {
     if (i >= 0) this.world.listeners.splice(i, 1);
     const j = this.world.chunkListeners?.indexOf(this.onChunk) ?? -1;
     if (j >= 0) this.world.chunkListeners.splice(j, 1);
-    for (const k of this.pics.keys()) this.forget?.(k);
+    for (const p of this.pics.values()) this.forget?.(p.id);
+    for (const p of this.free || []) this.forget?.(p.id);
+    this.free = [];
     if (this.lit) this.forget?.('light');
     this.pics.clear();
     this.world = null;
@@ -917,10 +926,17 @@ export class WorldView {
     const v = r.view, res = this.resFor(r.s);
     const px0 = Math.floor(v.l / PP), px1 = Math.floor(v.r / PP);
     const py0 = Math.max(0, Math.floor(v.t / PP)), py1 = Math.min(PATCHES_Y - 1, Math.floor(v.b / PP));
-    // (Nearest the middle first, when there are more to draw again than a frame's worth.)
-    const order = this.order ||= [];
+    // The pictures on the screen, nearest the middle first (when there are more to make than a
+    // frame's worth); then those just off it (within EDGE: the next to come on), made with time
+    // to spare, one a frame, so a whole new row or column isn't all made in the frame it shows.
+    const qx0 = Math.floor((v.l - EDGE) / PP), qx1 = Math.floor((v.r + EDGE) / PP);
+    const qy0 = Math.max(0, Math.floor((v.t - EDGE) / PP)), qy1 = Math.min(PATCHES_Y - 1, Math.floor((v.b + EDGE) / PP));
+    const order = this.order ||= [], near = this.near ||= [];
     order.length = 0;
-    for (let py = py0; py <= py1; py++) for (let px = px0; px <= px1; px++) order.push(pkey(px, py));
+    near.length = 0;
+    for (let py = qy0; py <= qy1; py++) {
+      for (let px = qx0; px <= qx1; px++) (px >= px0 && px <= px1 && py >= py0 && py <= py1 ? order : near).push(pkey(px, py));
+    }
     const mx = (v.l + v.r) / 2 / PP - 0.5, my = (v.t + v.b) / 2 / PP - 0.5;
     const far = k => { const dx = Math.floor(k / 64) - 1048576 - mx, dy = (k % 64) - my; return dx * dx + dy * dy; };
     order.sort((a, b) => far(a) - far(b));
@@ -930,15 +946,15 @@ export class WorldView {
     glows.length = 0;
     let painted = 0;
     const start = performance.now();
+    // (Zoomed far out, as dev mode can be, there's much more to draw: a bigger share of each frame for it.)
+    const budget = (r.zoomScale ?? 1) < 0.5 ? PAINT_MS * 3 : PAINT_MS;
     for (let i = 0; i < order.length; i++) {
       const key = order[i];
       let p = this.pics.get(key), fresh = false;
       if (!p || p.stale || p.res !== res) {
-        // (Over this frame's budget: what was there before, if anything, until it's drawn again;
-        // where there's nothing yet, a while longer.)
-        // (Zoomed far out, as dev mode can be, there's much more to draw: a bigger share of each frame for it.)
-        const budget = (r.zoomScale ?? 1) < 0.5 ? PAINT_MS * 3 : PAINT_MS;
-        const over = painted > 0 && performance.now() - start > (p ? budget : budget * 3);
+        // (Over this frame's budget: what was there before, if anything, until it's made again;
+        // nothing there yet, a gap for a frame or so, at the edge: the next frame makes it.)
+        const over = painted > 0 && performance.now() - start > budget;
         if (over && !p) continue;
         if (!over) {
           p = this.paint(world, Math.floor(key / 64) - 1048576, key % 64, res, p);
@@ -953,43 +969,36 @@ export class WorldView {
       this.show(r, p, key, fresh);
       for (let j = 0; j < p.lights.length; j++) glows.push(p.lights[j]);
     }
-    if (direct) ctx.setTransform(r.s, 0, 0, r.s, r.tx, r.ty);
-    // With time to spare: the pictures just off the screen made too (the way the view's going
-    // first), so they're ready when they come on to it, rather than all wanted at once then.
-    const spare = PAINT_MS / 2, mvx = Math.sign(v.l - (this.lastL ?? v.l)), mvy = Math.sign(v.t - (this.lastT ?? v.t));
-    this.lastL = v.l; this.lastT = v.t;
-    if (performance.now() - start < spare) {
-      const ring = this.ring ||= [];
-      ring.length = 0;
-      for (let py = py0 - 1; py <= py1 + 1; py++) {
-        for (let px = px0 - 1; px <= px1 + 1; px++) {
-          if ((px >= px0 && px <= px1 && py >= py0 && py <= py1) || py < 0 || py >= PATCHES_Y) continue;
-          const ahead = (mvx && Math.sign(px - (px0 + px1) / 2) === mvx ? 1 : 0) + (mvy && Math.sign(py - (py0 + py1) / 2) === mvy ? 1 : 0);
-          ring.push(pkey(px, py), ahead);
-        }
+    // Just off the screen: kept, and one made if there's time (and none had to be made on it).
+    let ahead = painted === 0 && performance.now() - start < budget / 2;
+    for (let i = 0; i < near.length; i++) {
+      const key = near[i];
+      let p = this.pics.get(key);
+      if (!p || p.stale || p.res !== res) {
+        if (!ahead) continue;
+        ahead = false;
+        p = this.paint(world, Math.floor(key / 64) - 1048576, key % 64, res, p);
+        p.unshown = true;
+        this.pics.set(key, p);
       }
-      for (let pass = 2; pass >= 0; pass--) {
-        for (let i = 0; i < ring.length; i += 2) {
-          if (ring[i + 1] !== pass) continue;
-          const key = ring[i];
-          let p = this.pics.get(key);
-          if (p && !p.stale && p.res === res) { p.used = this.frame; continue; }
-          if (performance.now() - start >= spare) break;
-          p = this.paint(world, Math.floor(key / 64) - 1048576, key % 64, res, p);
-          p.used = this.frame;
-          p.unshown = true;
-          this.pics.set(key, p);
-        }
-      }
+      p.used = this.frame;
     }
+    if (direct) ctx.setTransform(r.s, 0, 0, r.s, r.tx, r.ty);
     // Let go of pictures not shown for a while, the oldest first, past the most kept.
     // (As many as fit in MAX_PIXELS, and never fewer than what's on screen, and a few round it.)
-    const most = Math.max(order.length + 8, Math.floor(MAX_PIXELS / (PP * res) ** 2));
+    const most = Math.max(order.length + near.length + 8, Math.floor(MAX_PIXELS / (PP * res) ** 2));
     if (this.pics.size > most) {
       const old = [];
       for (const [k, p] of this.pics) if (p.used < this.frame - 2) old.push([k, p.used]);
       old.sort((a, b) => a[1] - b[1]);
-      for (let i = 0; i < old.length && this.pics.size > most; i++) { this.forget?.(old[i][0]); this.pics.delete(old[i][0]); }
+      // (Kept to be used again for the next patches to come into view, up to a point: making a
+      // canvas, and a texture, for each new one costs more than drawing it.)
+      const free = this.free ||= [];
+      for (let i = 0; i < old.length && this.pics.size > most; i++) {
+        const p = this.pics.get(old[i][0]);
+        this.pics.delete(old[i][0]);
+        if (free.length < FREE_PICS) free.push(p); else this.forget?.(p.id);
+      }
     }
   }
 
@@ -1045,15 +1054,17 @@ export class WorldView {
   show(r, p, key, fresh) {
     const s = r.s, x0 = Math.round(p.px * PP * s + r.tx), y0 = Math.round(p.py * PP * s + r.ty);
     const x1 = Math.round((p.px + 1) * PP * s + r.tx), y1 = Math.round((p.py + 1) * PP * s + r.ty);
-    if (this.picture) this.picture(p.canvas, x0, y0, x1 - x0, y1 - y0, key, fresh, false);
+    if (this.picture) this.picture(p.canvas, x0, y0, x1 - x0, y1 - y0, p.id, fresh, false);
     else r.ctx.drawImage(p.canvas, x0, y0, x1 - x0, y1 - y0);
   }
 
   /** Draw patch (px, py) into its picture (made, or the one it had used again). */
   paint(world, px, py, res, p) {
+    // (One let go of used again, if there is one: drawn as new, so shown as new.)
+    if (!p && this.free?.length) { p = this.free.pop(); p.unshown = true; }
     if (!p) {
       const canvas = document.createElement('canvas');
-      p = { canvas, g: canvas.getContext('2d'), px, py, res: 0, stale: false, used: 0, lights: [] };
+      p = { id: ++PIC_IDS, canvas, g: canvas.getContext('2d'), px, py, res: 0, stale: false, used: 0, lights: [] };
     }
     const size = Math.round(PP * res);
     if (p.canvas.width !== size) { p.canvas.width = size; p.canvas.height = size; }

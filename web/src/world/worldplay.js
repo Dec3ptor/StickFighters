@@ -1269,9 +1269,9 @@ export function worldTick(game) {
     if (game.tick % 20 === 5 && s.world.foundAt !== fk && !game.mirror) { s.world.foundAt = fk; scanFound(s); }
   }
   // The chunks round each player made ready before they're wanted (drawn, lit, walked on): three
-  // either side and two up and down, and one more the way they're going; nearest first, for up
-  // to a couple of milliseconds each update (making one takes half a millisecond or so, some
-  // a few: all of a new column at once stutters).
+  // either side and two up and down, and one more the way they're going; nearest first, a couple
+  // each update at most (and none after a millisecond: making one takes half a millisecond or
+  // so, some a few; a frame can run several updates, and all of a new column at once stutters).
   const want = world.wanted ||= [];
   if (game.tick % 10 === 0) {
     const R = CHUNK * TILE;
@@ -1286,7 +1286,7 @@ export function worldTick(game) {
     want.sort((a, b) => b[2] - a[2]);
   }
   const t0 = performance.now();
-  for (let i = 0; want.length && (i === 0 || performance.now() - t0 < 2); i++) { const c = want.pop(); world.chunk(c[0], c[1]); }
+  for (let i = 0; want.length && i < 2 && (i === 0 || performance.now() - t0 < 1); i++) { const c = want.pop(); world.chunk(c[0], c[1]); }
   if (game.tick % 600 === 0) world.trim(game.soldiers.filter(s => s.alive).map(s => ({ x: s.x, y: s.y })), 12);
 }
 
