@@ -31,6 +31,11 @@ jobs:
   online-public:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # One at a time, across branches: quick match joins any open game on the public relays, so two
+    # runs at once (a push to main and to its mirror branch) would join each other's games.
+    concurrency:
+      group: online-public
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
