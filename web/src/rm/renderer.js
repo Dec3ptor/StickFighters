@@ -79,6 +79,8 @@ const MIX_STEPS = 16;
 const mostFirst = (a, b) => b.w - a.w;
 // How far ahead (blocks, either way) the next biomes' scenery is made, while the game's idle.
 const WARM_AHEAD = [-170, 170];
+// Time a frame may spend making a biome's scenery that's wanted and not made yet (ms; a step at least).
+const SCENERY_MS = 2;
 // When the page is idle (or soon, where browsers can't say).
 const idle = fn => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 500 }) : setTimeout(fn, 30));
 
@@ -195,11 +197,30 @@ export class RemasteredRenderer extends Renderer {
       if (want === 0 && now < 0.003) W.delete(theme);
       else { W.set(theme, now); sum += now; }
     }
+    // (A biome's scenery not made yet, as when going fast: made a step each frame, while what's
+    // there now stays; then it comes in. All at once, it stutters. Nothing made at all yet, as
+    // in a new world or just after a teleport: the one there's most of, made now.)
+    let ready = 0, budget = performance.now() + SCENERY_MS;
+    for (const [theme, w] of W) {
+      const look = this.worldLook(wl, theme, q, game);
+      if (look.backdrop.prepare(this, 0)) { ready++; continue; }
+      if (budget && look.backdrop.prepare(this, budget)) { ready++; budget = 0; continue; }
+      budget = 0;
+      if (W.size > 1) { sum -= w; W.set(theme, 0); }
+    }
+    if (!ready) {
+      let most = null, mw = -1;
+      for (const [theme, w] of W) if (w > mw) { mw = w; most = theme; }
+      this.worldLook(wl, most, q, game).backdrop.prepare(this, Infinity);
+      if (sum <= 0) { W.set(most, 1); sum = 1; }
+    }
     const parts = wl.parts;
     let n = 0;
     for (const [theme, w] of W) {
+      const look = this.worldLook(wl, theme, q, game);
+      if (w <= 0 && W.size > 1) continue;
       const part = parts[n++] ||= { look: null, w: 0 };
-      part.look = this.worldLook(wl, theme, q, game);
+      part.look = look;
       part.w = w / sum;
     }
     parts.length = n;

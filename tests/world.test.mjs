@@ -424,6 +424,20 @@ test('the light: daylight down to the ground, dark deep underground, torches lig
   light = lightBox(world, x0, y0, w, h);
   assert.ok(at(fx, fy + 20) >= 10, 'the torch lights the hole');
   assert.ok(SOLDIER_GLOW > 0 && SOLDIER_GLOW < 15);
+  // A roof put over the open sky: dark under it (the daylight kept for each column is worked out
+  // again); taken away, daylight again. A wall behind stops daylight too.
+  for (let x = fx - 3; x <= fx + 3; x++) world.setTile(x, fy - 8, K.STONE);
+  light = lightBox(world, x0, y0, w, h);
+  assert.ok(at(fx, fy - 2) < 15, `under the roof (${at(fx, fy - 2)})`);
+  for (let x = fx - 3; x <= fx + 3; x++) world.setTile(x, fy - 8, K.AIR);
+  light = lightBox(world, x0, y0, w, h);
+  assert.equal(at(fx, fy - 2), 15, 'open again');
+  world.setWall(fx, fy - 6, K.STONE_WALL);
+  light = lightBox(world, x0, y0, w, h);
+  assert.ok(at(fx, fy - 5) < 15, 'a wall behind: no daylight below it');
+  // The same as reading every tile one at a time.
+  const slow = (x, y) => { let sky = 15; for (let ty = 0; ty < y; ty++) { const id = world.tile(x, ty); if ((K.SOLID[id] && !K.CLEAR[id]) || world.wall(x, ty) !== K.NO_WALL) { sky = 0; break; } } const id = world.tile(x, y); return (K.SOLID[id] && !K.CLEAR[id]) || world.wall(x, y) !== K.NO_WALL ? 0 : sky; };
+  for (let x = x0; x < x0 + w; x++) for (let y = y0; y < y0 + h; y++) if (slow(x, y) === 15 && !K.LIGHT[world.tile(x, y)]) assert.equal(at(x, y), 15, `daylight at ${x},${y}`);
 });
 
 // ---- Keeping a world ---------------------------------------------------------------------------------------

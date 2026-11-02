@@ -1127,20 +1127,25 @@ export function worldTick(game) {
     const fk = `${s.world.inv.version}|${s.world.gearV || 0}`;
     if (game.tick % 20 === 5 && s.world.foundAt !== fk && !game.mirror) { s.world.foundAt = fk; scanFound(s); }
   }
-  // The chunks round everyone made ready: those not made yet, a couple each update (nearest
-  // first: making one takes a millisecond or so, and a whole new column at once stutters).
+  // The chunks round each player made ready before they're wanted (drawn, lit, walked on): three
+  // either side and two up and down, and one more the way they're going; nearest first, for up
+  // to a couple of milliseconds each update (making one takes half a millisecond or so, some
+  // a few: all of a new column at once stutters).
   const want = world.wanted ||= [];
-  if (game.tick % 20 === 0) {
+  if (game.tick % 10 === 0) {
     const R = CHUNK * TILE;
     want.length = 0;
     for (const s of game.soldiers) {
-      if (!s.alive) continue;
-      const cx = Math.floor(s.x / R), cy = Math.floor(s.y / R);
-      for (let y = Math.max(0, cy - 2); y <= Math.min(WORLD_H / CHUNK - 1, cy + 2); y++) for (let x = cx - 2; x <= cx + 2; x++) if (!world.has(x, y)) want.push([x, y, (x - cx) ** 2 + (y - cy) ** 2]);
+      if (!s.alive || !s.world) continue;
+      const cx = Math.floor(s.x / R), cy = Math.floor(s.y / R), way = Math.sign(s.body?.vx || 0);
+      for (let y = Math.max(0, cy - 2); y <= Math.min(WORLD_H / CHUNK - 1, cy + 2); y++) {
+        for (let x = cx - 3 + Math.min(0, way); x <= cx + 3 + Math.max(0, way); x++) if (!world.has(x, y)) want.push([x, y, (x - cx) ** 2 + (y - cy) ** 2]);
+      }
     }
     want.sort((a, b) => b[2] - a[2]);
   }
-  for (let i = 0; i < 2 && want.length; i++) { const c = want.pop(); world.chunk(c[0], c[1]); }
+  const t0 = performance.now();
+  for (let i = 0; want.length && (i === 0 || performance.now() - t0 < 2); i++) { const c = want.pop(); world.chunk(c[0], c[1]); }
   if (game.tick % 600 === 0) world.trim(game.soldiers.filter(s => s.alive).map(s => ({ x: s.x, y: s.y })), 12);
 }
 

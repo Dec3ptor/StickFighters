@@ -704,21 +704,58 @@ export function lightBox(world, x0, y0, w, h, out, day = 15, solid = null) {
   const n = w * h;
   if (!out || out.length < n) out = new Uint8Array(n);
   if (!solid || solid.length < n) solid = new Uint8Array(n);
-  for (let i = 0; i < w; i++) {
-    const tx = x0 + i;
-    // Down from the top of the sky: is the column open above the box?
-    let sky = day;
-    for (let ty = 0; ty < y0 && sky; ty++) if (blocksSky(world, tx, ty)) sky = 0;
-    for (let j = 0; j < h; j++) {
-      const ty = y0 + j, k = j * w + i, id = world.tile(tx, ty);
-      solid[k] = SOLID[id] && !CLEAR[id] ? 1 : 0;
-      if (sky && blocksSky(world, tx, ty)) sky = 0;
-      out[k] = Math.max(sky, LIGHT[id]);
+  // Each column's daylight: down to the first block or wall that stops it (kept: skyTop).
+  const tops = TOPS.length >= w ? TOPS : (TOPS = new Int32Array(w * 2));
+  for (let i = 0; i < w; i++) tops[i] = skyTop(world, x0 + i);
+  // The tiles, a chunk at a time (straight from its blocks, not a lookup each).
+  const x1 = x0 + w, y1 = Math.min(WORLD_H, y0 + h);
+  for (let cy = y0 >> 5; cy <= (y1 - 1) >> 5; cy++) {
+    for (let cx = x0 >> 5; cx <= (x1 - 1) >> 5; cx++) {
+      const fg = world.chunk(cx, cy).fg;
+      const tx0 = Math.max(x0, cx * 32), tx1 = Math.min(x1, cx * 32 + 32), ty0 = Math.max(y0, cy * 32), ty1 = Math.min(y1, cy * 32 + 32);
+      for (let ty = ty0; ty < ty1; ty++) {
+        const row = (ty & 31) << 5, o = (ty - y0) * w - x0;
+        for (let tx = tx0; tx < tx1; tx++) {
+          const id = fg[row | (tx & 31)], k = o + tx;
+          solid[k] = SOLID[id] && !CLEAR[id] ? 1 : 0;
+          const sky = ty < tops[tx - x0] ? day : 0, glow = LIGHT[id];
+          out[k] = sky > glow ? sky : glow;
+        }
+      }
     }
   }
   spread(out, solid, w, 0, 0, w, h);
   lightBox.solid = solid;
   return out;
+}
+let TOPS = new Int32Array(256);
+
+/**
+ * The first tile down column tx that stops daylight (a block light doesn't go through, or a
+ * wall), or the bottom of the world: kept for each column (a world's skyTops), and worked out
+ * again when something changes at or above it.
+ */
+export function skyTop(world, tx) {
+  let cache = world.skyTops;
+  if (!cache) {
+    cache = world.skyTops = new Map();
+    world.listeners.push((x, y) => { const t = cache.get(x); if (t !== undefined && y <= t) cache.delete(x); });
+    world.chunkListeners?.push(cx => { for (let x = cx * 32; x < cx * 32 + 32; x++) cache.delete(x); });
+  }
+  let t = cache.get(tx);
+  if (t !== undefined) return t;
+  t = WORLD_H;
+  const col = tx & 31;
+  find: for (let cy = 0; cy < WORLD_H / 32; cy++) {
+    const c = world.chunk(tx >> 5, cy), fg = c.fg, bg = c.bg;
+    for (let r = 0; r < 32; r++) {
+      const i = (r << 5) | col, id = fg[i];
+      if ((SOLID[id] && !CLEAR[id]) || bg[i] !== NO_WALL) { t = cy * 32 + r; break find; }
+    }
+  }
+  if (cache.size > 30000) cache.clear();
+  cache.set(tx, t);
+  return t;
 }
 
 /**
@@ -750,7 +787,6 @@ export const SOLDIER_GLOW = 11;
 const SOLID_DIM = 2;
 // The dark's colour in each game.
 const DARK_CLASSIC = [34, 34, 38], DARK_RM = [5, 7, 14];
-const blocksSky = (world, tx, ty) => { const id = world.tile(tx, ty); return (SOLID[id] && !CLEAR[id]) || world.wall(tx, ty) !== NO_WALL; };
 
 // ---- The view ---------------------------------------------------------------------------------------
 
@@ -856,10 +892,40 @@ export class WorldView {
         }
       }
       p.used = this.frame;
+      // (Made off the screen since it was last shown: new to the renderer all the same.)
+      if (p.unshown) { fresh = true; p.unshown = false; }
       this.show(r, p, key, fresh);
       for (let j = 0; j < p.lights.length; j++) glows.push(p.lights[j]);
     }
     if (direct) ctx.setTransform(r.s, 0, 0, r.s, r.tx, r.ty);
+    // With time to spare: the pictures just off the screen made too (the way the view's going
+    // first), so they're ready when they come on to it, rather than all wanted at once then.
+    const spare = PAINT_MS / 2, mvx = Math.sign(v.l - (this.lastL ?? v.l)), mvy = Math.sign(v.t - (this.lastT ?? v.t));
+    this.lastL = v.l; this.lastT = v.t;
+    if (performance.now() - start < spare) {
+      const ring = this.ring ||= [];
+      ring.length = 0;
+      for (let py = py0 - 1; py <= py1 + 1; py++) {
+        for (let px = px0 - 1; px <= px1 + 1; px++) {
+          if ((px >= px0 && px <= px1 && py >= py0 && py <= py1) || py < 0 || py >= PATCHES_Y) continue;
+          const ahead = (mvx && Math.sign(px - (px0 + px1) / 2) === mvx ? 1 : 0) + (mvy && Math.sign(py - (py0 + py1) / 2) === mvy ? 1 : 0);
+          ring.push(pkey(px, py), ahead);
+        }
+      }
+      for (let pass = 2; pass >= 0; pass--) {
+        for (let i = 0; i < ring.length; i += 2) {
+          if (ring[i + 1] !== pass) continue;
+          const key = ring[i];
+          let p = this.pics.get(key);
+          if (p && !p.stale && p.res === res) { p.used = this.frame; continue; }
+          if (performance.now() - start >= spare) break;
+          p = this.paint(world, Math.floor(key / 64) - 1048576, key % 64, res, p);
+          p.used = this.frame;
+          p.unshown = true;
+          this.pics.set(key, p);
+        }
+      }
+    }
     // Let go of pictures not shown for a while, the oldest first, past the most kept.
     // (As many as fit in MAX_PIXELS, and never fewer than what's on screen, and a few round it.)
     const most = Math.max(order.length + 8, Math.floor(MAX_PIXELS / (PP * res) ** 2));
