@@ -1148,6 +1148,21 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
     return;
   }
   if (it.kind === 'food') { drawFoodIcon(ctx, it, x, y, w); return; }
+  if (it.kind === 'quest') {
+    // A bundle tied with string (a letter: a folded sheet with a seal).
+    ctx.fillStyle = c;
+    if (it.key === 'letter' || it.key === 'map_scrap' || it.key === 'journal') {
+      ctx.fillRect(x + w * 0.12, y + w * 0.25, w * 0.76, w * 0.52);
+      ctx.strokeStyle = INK; ctx.strokeRect(x + w * 0.12, y + w * 0.25, w * 0.76, w * 0.52);
+      ctx.beginPath(); ctx.moveTo(x + w * 0.12, y + w * 0.25); ctx.lineTo(x + w * 0.5, y + w * 0.55); ctx.lineTo(x + w * 0.88, y + w * 0.25); ctx.stroke();
+      ctx.fillStyle = '#c8282e'; ctx.beginPath(); ctx.arc(x + w * 0.5, y + w * 0.55, w * 0.09, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.arc(x + w * 0.5, y + w * 0.58, w * 0.32, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = INK; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + w * 0.36, y + w * 0.3); ctx.lineTo(x + w * 0.5, y + w * 0.18); ctx.lineTo(x + w * 0.64, y + w * 0.3); ctx.stroke();
+    }
+    return;
+  }
   if (it.kind === 'ammo' || it.kind === 'material') {
     ctx.fillStyle = c;
     for (let i = 0; i < 3; i++) ctx.fillRect(x + w * (0.12 + i * 0.3), y + w * 0.25, w * 0.2, w * 0.6);

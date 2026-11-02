@@ -48,8 +48,8 @@ test('a key put on one action leaves the others; shared ones stay shared', () =>
   assert.deepEqual(bindKey('freeCam', 0, 'Space'), []);
   assert.ok(keysFor('jump').includes('Space'));
   // No more than MAX_KEYS.
-  // (Keys no action has to start with: I is the worlds' inventory.)
-  for (const k of ['KeyU', 'KeyJ', 'KeyO', 'KeyP', 'KeyH']) bindKey('melee', 99, k);
+  // (Keys no action has to start with: I is the worlds' inventory, J their journal.)
+  for (const k of ['KeyU', 'KeyY', 'KeyO', 'KeyP', 'KeyH']) bindKey('melee', 99, k);
   assert.equal(keysFor('melee').length, MAX_KEYS);
   unbindKey('melee', 0);
   assert.equal(keysFor('melee').length, MAX_KEYS - 1);

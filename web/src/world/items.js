@@ -4,7 +4,8 @@
 //
 // Items go by key (text), which saved worlds keep: 'dirt', 'pickaxe', 'M4', 'bullets'...
 //   kind   'block' (places a block), 'wall' (a wall behind), 'tool' (pick, axe, hammer),
-//          'weapon' (one of WEAPONS), 'ammo', 'material', 'food' (eaten: heals), 'contract'
+//          'weapon' (one of WEAPONS), 'ammo', 'material', 'food' (eaten: heals), 'contract',
+//          'quest' (carried for a quest: quests.js)
 //   stack  how many fit in a slot
 
 import { BLOCKS, WALLS, BLOCK_BY_KEY } from './blocks.js';
@@ -47,6 +48,12 @@ item('bread', 'Bread', 'food', { stack: 99, heal: 25, color: '#c88a3a', look: 'b
 item('stew', 'Mushroom stew', 'food', { stack: 20, heal: 50, color: '#9a6a3a', look: 'stew' });
 item('healing_potion', 'Healing potion', 'food', { stack: 20, heal: 80, color: '#e0303c', look: 'potion' });
 item('greater_potion', 'Greater healing potion', 'food', { stack: 20, heal: 400, color: '#ff5aa0', look: 'potion' });
+// Quest items (quests.js): carried for someone, or found for them; not for sale.
+for (const [key, name, color] of [
+  ['parcel', 'Parcel', '#c8a070'], ['letter', 'Sealed letter', '#f0e6c8'], ['locket', 'Silver locket', '#dfe4ec'], ['journal', 'Old journal', '#8a5a2a'],
+  ['satchel', 'Lost satchel', '#7a5634'], ['relic', 'Family relic', '#c2a8ff'], ['ring', 'Gold ring', '#f2c230'], ['idol', 'Stone idol', '#9aa0a8'],
+  ['map_scrap', 'Torn map', '#e8dcc0'], ['tools', 'Bag of tools', '#8a8f96'],
+]) item(key, name, 'quest', { stack: 20, color });
 // Coins: what monsters drop (and half of what you carry, when you die): mercenaries are hired with them.
 item('coins', 'Coins', 'material', { color: '#f2c230' });
 // A mercenary's contract: used (like a weapon), it hires one, who follows you and shoots monsters.
@@ -220,7 +227,7 @@ export class Inventory {
 
   /** The bag put in order (tools and guns first, then blocks...), stacks of the same thing joined. */
   sortBag() {
-    const order = { tool: 0, weapon: 1, ammo: 2, food: 3, block: 4, wall: 5, material: 6 };
+    const order = { quest: 0, tool: 1, weapon: 2, ammo: 3, food: 4, block: 5, wall: 6, material: 7 };
     const items = this.slots.slice(HOTBAR).filter(Boolean);
     const joined = [];
     for (const s of items) {

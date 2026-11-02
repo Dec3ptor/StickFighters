@@ -11,7 +11,9 @@
 
 import { TILE } from './blocks.js';
 import { ROLES, isFolk, townsNear } from './townsfolk.js';
-import { stockOf, buy, sell, SHOPS } from './trade.js';
+import { stockOf, buy, sell, SHOPS, priceFor } from './trade.js';
+import { offersFor, acceptQuest, readyFor, turnIn, questEvent, questsOf, goalText, MAX_QUESTS } from './quests.js';
+import { progOf } from './progress.js';
 import { hourOf, dayOf, DAY_TICKS, hireMerc, mercsOf, MERC } from './monsters.js';
 import { hash3 } from './noise.js';
 import { BODY } from '../config.js';
@@ -158,6 +160,8 @@ export function startTalk(game, s, npc) {
   npc.npc.talkTo = s.id;
   npc.npc.talkUntil = game.tick + 60 * 60;
   game.sound('mumble', npc.x, npc.y - 10);
+  // (Quests that wanted you to talk to them, or bring them something: quests.js.)
+  questEvent(game, s, { type: 'talk', key: ctl.f.key });
   return true;
 }
 
@@ -200,7 +204,14 @@ export function talkView(game, s) {
   const talk = s.world?.talk, found = talkingTo(game, s);
   if (!talk || !found) return null;
   const { f, t } = found, fee = fees(game, s, f, t), options = [];
-  const shop = SHOPS[f.role] ? { name: SHOPS[f.role].name, role: f.role, stock: stockOf(game.world, f, t.kind === 'city') } : null;
+  // (Prices as this player pays them: the Haggler perk.)
+  const stock = SHOPS[f.role] ? stockOf(game.world, f, t.kind === 'city').map(o => ({ ...o, price: priceFor(o.price, s) })) : null;
+  const shop = stock ? { name: SHOPS[f.role].name, role: f.role, stock } : null;
+  // Quests: what they've work for (quests.js), and what you can hand in to them.
+  const offers = offersFor(game, s, f, t).map(q => ({ id: q.id, title: q.title, text: q.text, reward: q.reward, goals: q.goals.map(g => goalText(s, g)) }));
+  const ready = readyFor(s, f.key).map(q => ({ id: q.id, title: q.title, reward: q.reward }));
+  for (const q of readyFor(s, f.key)) options.push({ op: 'turnin', id: q.id, label: q.turnIn === q.giver.key ? `Done: ${q.title}` : `I've brought this for you: ${q.title}` });
+  if (offers.length) options.push({ op: 'work', label: `Any work? (${offers.length})` });
   if (shop) options.push({ op: 'trade', label: 'Trade' });
   if (f.role === 'healer') options.push({ op: 'heal', label: fee.heal ? 'Heal me' : 'Heal me (you\'re well)', price: fee.heal });
   if (f.role === 'innkeeper') options.push({ op: 'rest', label: 'Rest here (and come back here)', price: fee.rest });
@@ -210,6 +221,7 @@ export function talkView(game, s) {
   return {
     id: found.npc.id, name: f.name, title: f.title, town: t.name, kind: t.kind, role: f.role, skin: ROLES[f.role].skin,
     said: talk.said, news: talk.news, options, shop, coins: s.world.inv.count('coins'), v: talk.v,
+    quests: { offers, ready, full: questsOf(s).list.length >= MAX_QUESTS, level: progOf(s).level },
   };
 }
 
@@ -282,6 +294,20 @@ export function talkDo(game, s, d) {
       w.talk.news = newsFrom(game, f, t);
       say(w.talk.news[0]);
       break;
+    case 'accept': {
+      const q = offersFor(game, s, f, t).find(x => x.id === d.id);
+      if (!q) return;
+      const text = acceptQuest(game, s, q);
+      if (text) { say(text.startsWith('Quest') ? `${q.text.split('. ')[0]}. Good luck.` : text); game.notify(s, text); }
+      break;
+    }
+    case 'turnin': {
+      const q = readyFor(s, f.key).find(x => x.id === d.id);
+      if (!q) return;
+      const text = turnIn(game, s, q.id);
+      if (text) { say(`Thank you. ${text.replace(/^Done: [^.]*\. /, 'Here: ')}.`); game.notify(s, text); }
+      break;
+    }
     case 'bye':
       endTalk(game, s);
       break;

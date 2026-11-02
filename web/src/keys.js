@@ -34,6 +34,7 @@ export const ACTIONS = [
   { id: 'use', name: 'Plant or defuse the bomb (hold, Defuse)', group: 'Actions', keys: ['KeyE'] },
   { id: 'buy', name: 'Buy menu (Defuse)', group: 'Actions', keys: ['KeyB'] },
   { id: 'inventory', name: 'Inventory: your things, crafting (worlds)', group: 'Actions', keys: ['KeyB', 'KeyI'] },
+  { id: 'journal', name: 'Journal: your quests, level and perks (worlds)', group: 'Actions', keys: ['KeyJ'] },
   { id: 'gadget', name: 'Gadget, or drop your gun or the bomb (Defuse)', group: 'Actions', keys: ['KeyG'], press: true },
   { id: 'streak', name: 'Use a kill streak reward', group: 'Actions', keys: ['KeyX'], press: true },
   { id: 'streakPick', name: 'Pick which kill streak reward', group: 'Actions', keys: ['KeyZ'], press: true },

@@ -12,12 +12,12 @@ import { valueOf, SHOPS, offerFor } from './trade.js';
 /** Each kind of thing's colour (bright: they're shown on dark panels). */
 export const CATEGORY_COLORS = {
   coins: '#ffd23f', gem: '#d08cff', potion: '#ff6f8e', food: '#f4b06a', weapon: '#ffb347', tool: '#7cc0ff', ammo: '#e8cf7a',
-  contract: '#f2e3b3', bar: '#e4e8ef', ore: '#d6ae84', block: '#ececec', wall: '#bdbdbd', material: '#dccdaa',
+  contract: '#f2e3b3', bar: '#e4e8ef', ore: '#d6ae84', block: '#ececec', wall: '#bdbdbd', material: '#dccdaa', quest: '#ffe36e',
 };
 /** What each kind is called. */
 const CATEGORY_NAMES = {
   coins: 'Money', gem: 'Gem', potion: 'Potion', food: 'Food', weapon: 'Weapon', tool: 'Tool', ammo: 'Ammunition', contract: 'Contract',
-  bar: 'Metal bar', ore: 'Ore', block: 'Block', wall: 'Wall', material: 'Material',
+  bar: 'Metal bar', ore: 'Ore', block: 'Block', wall: 'Wall', material: 'Material', quest: 'Quest item',
 };
 
 /** The kind of thing an item is (for its colour). */
@@ -26,7 +26,7 @@ export function categoryOf(it) {
   if (it.key === 'coins') return 'coins';
   if (it.gem) return 'gem';
   if (it.kind === 'food') return it.look === 'potion' ? 'potion' : 'food';
-  if (it.kind === 'weapon' || it.kind === 'tool' || it.kind === 'ammo' || it.kind === 'contract' || it.kind === 'wall') return it.kind;
+  if (it.kind === 'weapon' || it.kind === 'tool' || it.kind === 'ammo' || it.kind === 'contract' || it.kind === 'wall' || it.kind === 'quest') return it.kind;
   if (it.key.endsWith('_bar')) return 'bar';
   if (it.key.endsWith('_ore') || it.key === 'coal' || it.key === 'kimberlite') return 'ore';
   if (it.kind === 'block') return 'block';
@@ -40,7 +40,7 @@ export const itemColor = it => CATEGORY_COLORS[categoryOf(typeof it === 'string'
 export function isPrecious(it) {
   if (!it) return false;
   const c = categoryOf(it);
-  return c === 'gem' || c === 'potion' || c === 'weapon' || c === 'coins' || valueOf(it.key) >= 15;
+  return c === 'gem' || c === 'potion' || c === 'weapon' || c === 'coins' || c === 'quest' || valueOf(it.key) >= 15;
 }
 
 const TIERS = ['', 'copper', 'iron', 'gold', 'crystal', 'diamond'];
@@ -78,6 +78,7 @@ export function itemDetails(it, n = 1) {
       break;
     case 'ammo': lines.push('Ammunition, carried for the guns that use it'); break;
     case 'contract': lines.push('Use it (like a weapon) to hire a mercenary'); break;
+    case 'quest': lines.push('Carried for a quest (your journal says what for)', 'Nobody will buy it'); break;
     case 'coins': lines.push('Money: for townsfolk\'s shops, healing, a bed, hiring guards'); break;
     case 'gem': lines.push('Precious: traders pay the most for it', 'Diamonds make the best pickaxe'); break;
     case 'bar': lines.push('Smelted metal, for tools, guns and more'); break;

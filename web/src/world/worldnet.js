@@ -16,9 +16,11 @@ import { TileWorld } from './tileworld.js';
 import { Inventory, HOTBAR, itemOf } from './items.js';
 import { packBytes, unpackBytes } from './worldsave.js';
 import { RECIPES, craft, stationsNear } from './crafting.js';
-import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, claimsToSave, claimsFromSave, REACH, setRightHand } from './worldplay.js';
+import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, claimsToSave, claimsFromSave, REACH, setRightHand, crafted } from './worldplay.js';
 import { mercsOf } from './monsters.js';
 import { talkView, talkDo } from './talk.js';
+import { progOf, spendPoint, applyProgress } from './progress.js';
+import { questsOf, dropQuest } from './quests.js';
 
 const LAYERS = ['fg', 'bg', 'shape'];
 const CHUNKS_PER_MESSAGE = 40;
@@ -126,13 +128,18 @@ export class WorldHost {
     const s = p.soldier, w = s?.world, ws = p.wsync;
     if (!w || !ws) return;
     const m = w.mine, last = w.got[w.got.length - 1];
-    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}`;
+    // (Their level and quests too: progress.js, quests.js. And who has work for them.)
+    const pr = progOf(s), qs = questsOf(s), xg = w.xpGot?.at(-1);
+    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}`;
     if (key !== ws.inv) {
       ws.inv = key;
       p.link.send({
         t: 'inv', slots: w.inv.toJSON(), slot: w.slot, slot2: w.slot2, brush: w.brush, home: w.home || null,
         mine: m ? { tx: m.tx, ty: m.ty, dmg: m.dmg, of: m.of } : null,
         got: w.got.map(g => [g.key, g.n, g.tick]),
+        prog: { xp: pr.xp, level: pr.level, points: pr.points, perks: pr.perks, stats: pr.stats, deepest: pr.seen.deepest, towns: pr.seen.towns.length },
+        quests: { list: qs.list, track: qs.track, done: qs.done.size }, marks: w.marks || [],
+        xpGot: (w.xpGot || []).map(x => [x.n, x.why, x.tick]), levelUp: w.levelUp || null,
       }, true);
     }
     // A chest opened with a right click (worldplay.js's interact): shown to them, and kept up to
@@ -193,12 +200,16 @@ export class WorldHost {
         if (!r) break;
         const { made, left } = craft(w.inv, r, stationsNear(g.world, s.x, s.y - 8), Math.max(1, Math.min(5, d.times | 0)));
         if (left) dropItem(g, r.key, left, s.x, s.y - 14, s.facing * 2, -2, 30);
-        if (made) g.notify(s, `Made ${made * r.n} × ${itemOf(r.key).name}`);
+        if (made) { g.notify(s, `Made ${made * r.n} × ${itemOf(r.key).name}`); crafted(g, s, r, made); }
         break;
       }
       case 'close': ws.chest = null; break;
       // (In a talk: talk.js checks it all.)
       case 'talk': if (d.d && typeof d.d === 'object') talkDo(g, s, d.d); break;
+      // (The journal: which quest's on the HUD, giving one up, spending a perk point.)
+      case 'qtrack': if (typeof d.id === 'string' && questsOf(s).list.some(q => q.id === d.id)) { questsOf(s).track = d.id; questsOf(s).v++; } break;
+      case 'qdrop': if (typeof d.id === 'string') dropQuest(s, d.id); break;
+      case 'perk': if (typeof d.id === 'string') { const text = spendPoint(s, d.id); if (text) g.notify(s, text); } break;
       // (The inventory screen's right hand buttons: what right click uses.)
       case 'hand': {
         const i = d.slot;
@@ -305,6 +316,16 @@ export class WorldClient {
         w.mine = d.mine && Number.isFinite(d.mine.dmg) ? d.mine : null;
         if (d.mine) w.mine.at = game.tick;
         w.got = (Array.isArray(d.got) ? d.got : []).filter(g => Array.isArray(g) && itemOf(g[0])).map(([key, n, tick]) => ({ key, n: n | 0, tick: Number(tick) || 0 }));
+        // Our level and quests, as the host has them (and our health by them).
+        if (d.prog && typeof d.prog === 'object') {
+          const p = d.prog;
+          w.prog = { xp: Number(p.xp) || 0, level: Math.max(1, p.level | 0), points: p.points | 0, perks: p.perks && typeof p.perks === 'object' ? p.perks : {}, stats: p.stats && typeof p.stats === 'object' ? p.stats : {}, seen: { towns: new Array(p.towns | 0).fill(''), biomes: [], deepest: p.deepest | 0 } };
+          applyProgress(me);
+        }
+        if (d.quests && Array.isArray(d.quests.list)) w.quests = { list: d.quests.list, track: typeof d.quests.track === 'string' ? d.quests.track : null, done: new Set(), doneCount: d.quests.done | 0, v: (w.quests?.v || 0) + 1 };
+        w.marks = Array.isArray(d.marks) ? d.marks.filter(m => Array.isArray(m) && Number.isInteger(m[0])) : [];
+        w.xpGot = Array.isArray(d.xpGot) ? d.xpGot.map(([n, why, tick]) => ({ n: n | 0, why: String(why || ''), tick: Number(tick) || 0 })) : [];
+        if (d.levelUp && Number.isFinite(d.levelUp.tick)) w.levelUp = { level: d.levelUp.level | 0, tick: d.levelUp.tick };
         this.onInv?.();
         break;
       }

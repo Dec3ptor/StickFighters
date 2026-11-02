@@ -13,6 +13,8 @@ import { keyShort, slotAction, keyLabel } from '../keys.js';
 import { devLines } from './devmode.js';
 import { folkAt } from './talk.js';
 import { itemColor, isPrecious } from './iteminfo.js';
+import { xpToNext, MAX_LEVEL } from './progress.js';
+import { goalText, goalPlace, goalMet, questReady } from './quests.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 export const HOT_SIZE = 46;
@@ -28,12 +30,188 @@ const hotScale = W => Math.min(1, (W - 24) / (HOTBAR * HOT_SIZE + (HOTBAR - 1) *
  */
 export function drawWorldHud(r, ctx, game, me, W, H, opts = {}) {
   if (game.world.drops?.length) drawDropNames(r, ctx, game, me, W, H, !!opts.showItems);
-  if (me.alive && me.world) drawHotbar(ctx, me, W, H);
+  if (me.world?.marks?.length) drawMarks(r, ctx, game, me, W, H);
+  if (me.alive && me.world?.quests?.list.length) drawQuestPointer(r, ctx, game, me, W, H);
+  if (me.alive && me.world) { drawHotbar(ctx, me, W, H); drawXpBar(ctx, game, me, W, H); }
+  if (me.world?.quests?.list.length) drawTracker(ctx, game, me, W);
+  if (me.world?.levelUp) drawLevelUp(ctx, game, me, W, H);
   if (me.alive && me.world && !me.world.dev) drawTalkHint(ctx, game, me, W, H);
   if (me.world) drawGot(ctx, game, me, W, H);
   drawWhere(ctx, game, me, W);
   drawMiniMap(ctx, game, me, W, H);
   if (me.world?.dev) drawDev(ctx, me, r.zoomScale || 1);
+}
+
+// ---- Level, experience and quests (progress.js, quests.js) ------------------------------------------
+
+/** The experience bar, just over the hotbar: the level, how far to the next, and what was just earned. */
+function drawXpBar(ctx, game, me, W, H) {
+  const p = me.world.prog;
+  if (!p) return;
+  const k = hotScale(W), total = (HOTBAR * HOT_SIZE + (HOTBAR - 1) * HOT_GAP) * k, x0 = W / 2 - total / 2, y = H - (HOT_SIZE + 10) * k - 9;
+  const need = xpToNext(p.level), f = p.level >= MAX_LEVEL ? 1 : Math.min(1, p.xp / need);
+  ctx.fillStyle = 'rgba(16,18,24,0.6)';
+  ctx.fillRect(x0, y, total, 6);
+  ctx.fillStyle = '#f2c230';
+  ctx.fillRect(x0 + 1, y + 1, (total - 2) * f, 4);
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.font = `bold 11px ${FONT}`;
+  const label = text(`lv${p.level}|${p.points}`, () => `Level ${p.level}${p.points ? `  ·  ${p.points} perk point${p.points > 1 ? 's' : ''} (${keyLabel('journal')})` : ''}`);
+  // (Its label to the left of it, level with it.)
+  const lw = ctx.measureText(label).width + 10, lx = Math.max(4, x0 - lw - 6);
+  ctx.fillStyle = 'rgba(16,18,24,0.72)';
+  ctx.fillRect(lx, y - 4, lw, 14);
+  ctx.fillStyle = p.points ? '#ffe36e' : '#f2c230';
+  ctx.fillText(label, lx + 5, y + 3.5);
+  // What was just earned, rising off the bar's end.
+  ctx.textAlign = 'right';
+  let row = 0;
+  for (let i = (me.world.xpGot?.length || 0) - 1; i >= 0 && row < 3; i--) {
+    const g = me.world.xpGot[i], age = game.tick - g.tick;
+    if (age > 150 || age < 0) continue;
+    ctx.globalAlpha = Math.min(1, (150 - age) / 40);
+    ctx.font = `bold 12px ${FONT}`;
+    const t = text(`xp${g.n}|${g.why}`, () => `+${g.n} XP${g.why ? `  ${g.why}` : ''}`);
+    const w = ctx.measureText(t).width + 10, yy = y - 26 - row * 17 - Math.min(10, age * 0.3);
+    ctx.fillStyle = 'rgba(16,18,24,0.66)';
+    ctx.fillRect(x0 + total - w, yy - 8, w, 16);
+    ctx.fillStyle = '#ffe36e';
+    ctx.fillText(t, x0 + total - 5, yy);
+    row++;
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** A level reached: said big across the screen a moment. */
+function drawLevelUp(ctx, game, me, W, H) {
+  const lu = me.world.levelUp, age = game.tick - lu.tick;
+  if (age < 0 || age > 200) return;
+  const a = Math.min(1, age / 12, (200 - age) / 40);
+  ctx.globalAlpha = a;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const y = H * 0.2;
+  ctx.fillStyle = 'rgba(16,18,24,0.7)';
+  ctx.fillRect(W / 2 - 170, y - 34, 340, 68);
+  ctx.strokeStyle = '#f2c230';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(W / 2 - 169, y - 33, 338, 66);
+  ctx.font = `bold 28px ${FONT}`;
+  ctx.fillStyle = '#ffe36e';
+  ctx.fillText(text(`lvup${lu.level}`, () => `Level ${lu.level}!`), W / 2, y - 8);
+  ctx.font = `13px ${FONT}`;
+  ctx.fillStyle = '#eef2f7';
+  ctx.fillText(text(`lvupk${lu.level}`, () => `More health, and a perk point to spend (${keyLabel('journal')})`), W / 2, y + 18);
+  ctx.globalAlpha = 1;
+}
+
+/** The quest being followed (the journal picks it): its goals, and which way to go. */
+function drawTracker(ctx, game, me, W) {
+  const qs = me.world.quests, q = qs.list.find(x => x.id === qs.track) || qs.list.at(-1);
+  if (!q) return;
+  const x0 = 10, y0 = me.world.dev ? 120 : 56, lines = [];
+  const ready = questReady(me, q);
+  for (const g of q.goals) lines.push([goalMet(me, g) ? '✓ ' : '• ', goalText(me, g), goalMet(me, g)]);
+  if (ready) lines.push(['→ ', q.turnIn === q.giver.key ? `Back to ${q.giver.name} in ${q.giver.town}` : 'Hand it over', false]);
+  // (Which way: to the first goal that's somewhere, or back to whoever it's for.)
+  let place = null;
+  for (const g of q.goals) if ((place = goalPlace(me, g))) break;
+  if (ready) place = q.turnIn === q.giver.key ? { x: q.giver.x, y: q.giver.y } : null;
+  const dir = place ? wayTo(me, place) : '';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold 13px ${FONT}`;
+  let w = ctx.measureText(q.title).width;
+  ctx.font = `12px ${FONT}`;
+  for (const l of lines) w = Math.max(w, ctx.measureText(l[0] + l[1]).width);
+  if (dir) w = Math.max(w, ctx.measureText(dir).width);
+  const more = qs.list.length - 1, h = 24 + lines.length * 16 + (dir ? 16 : 0) + (more > 0 ? 15 : 0);
+  ctx.fillStyle = 'rgba(16,18,24,0.66)';
+  ctx.fillRect(x0, y0, w + 22, h);
+  ctx.fillStyle = '#f2c230';
+  ctx.fillRect(x0, y0, 3, h);
+  ctx.font = `bold 13px ${FONT}`;
+  ctx.fillStyle = ready ? '#7ee07a' : '#ffe36e';
+  ctx.fillText(q.title, x0 + 11, y0 + 12);
+  ctx.font = `12px ${FONT}`;
+  lines.forEach(([mark, t, met], i) => {
+    ctx.fillStyle = met ? '#8fd18b' : '#eef2f7';
+    ctx.fillText(mark + t, x0 + 11, y0 + 30 + i * 16);
+  });
+  let y = y0 + 30 + lines.length * 16;
+  if (dir) { ctx.fillStyle = '#9ad0ff'; ctx.fillText(dir, x0 + 11, y); y += 16; }
+  if (more > 0) { ctx.fillStyle = '#9aa5b4'; ctx.font = `11px ${FONT}`; ctx.fillText(text(`qmore${more}`, () => `and ${more} more (${keyLabel('journal')})`), x0 + 11, y - 1); }
+}
+
+/** Which way, and how far, from soldier me to tile `place` ('↘ 120 east, 40 down'). */
+function wayTo(me, place) {
+  const dx = Math.round(place.x - me.x / TILE), dy = Math.round(place.y - me.y / TILE);
+  const arrow = Math.abs(dx) < 3 && Math.abs(dy) < 3 ? '●' : ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'][((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8];
+  const parts = [];
+  if (Math.abs(dx) >= 3) parts.push(`${Math.abs(dx)} ${dx < 0 ? 'west' : 'east'}`);
+  if (Math.abs(dy) >= 3) parts.push(`${Math.abs(dy)} ${dy < 0 ? 'up' : 'down'}`);
+  return text(`way${dx}|${dy}`, () => `${arrow} ${parts.length ? parts.join(', ') : 'here'}`);
+}
+
+/**
+ * Where the followed quest's goal is: a pulsing mark on the spot when it's on the screen, else an
+ * arrow at the edge of the screen pointing that way.
+ */
+function drawQuestPointer(r, ctx, game, me, W, H) {
+  const qs = me.world.quests, q = qs.list.find(x => x.id === qs.track) || qs.list.at(-1);
+  if (!q) return;
+  let place = null;
+  for (const g of q.goals) if ((place = goalPlace(me, g))) break;
+  if (questReady(me, q)) place = q.turnIn === q.giver.key ? { x: q.giver.x, y: q.giver.y } : null;
+  if (!place) return;
+  const k = r.scale, sx = W / 2 + ((place.x + 0.5) * TILE - r.cam.x) * k, sy = H / 2 + ((place.y + 0.5) * TILE - r.cam.y) * k;
+  const pulse = 0.5 + 0.5 * Math.sin(game.tick * 0.12);
+  ctx.strokeStyle = '#ffe36e';
+  ctx.fillStyle = '#ffe36e';
+  if (sx > 20 && sx < W - 20 && sy > 20 && sy < H - 20) {
+    ctx.globalAlpha = 0.6 + 0.4 * pulse;
+    ctx.lineWidth = 2;
+    const s = 8 + pulse * 3;
+    ctx.beginPath(); ctx.moveTo(sx, sy - s); ctx.lineTo(sx + s, sy); ctx.lineTo(sx, sy + s); ctx.lineTo(sx - s, sy); ctx.closePath(); ctx.stroke();
+    ctx.globalAlpha = 1;
+    return;
+  }
+  // (At the edge: inset from it, pointing out.)
+  const a = Math.atan2(sy - H / 2, sx - W / 2), m = 40;
+  const t = Math.min(Math.abs((W / 2 - m) / Math.cos(a) || 1e9), Math.abs((H / 2 - m) / Math.sin(a) || 1e9));
+  const ex = W / 2 + Math.cos(a) * t, ey = H / 2 + Math.sin(a) * t;
+  ctx.save();
+  ctx.translate(ex, ey);
+  ctx.rotate(a);
+  ctx.globalAlpha = 0.75 + 0.25 * pulse;
+  ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-6, -9); ctx.lineTo(-2, 0); ctx.lineTo(-6, 9); ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+/** Over the townsfolk with something for you: a gold ! (work) or ? (a quest to hand in). */
+function drawMarks(r, ctx, game, me, W, H) {
+  const k = r.scale;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold 16px ${FONT}`;
+  for (const [id, mark] of me.world.marks) {
+    const o = game.soldiers.find(s => s.id === id);
+    if (!o?.alive) continue;
+    // (Over their name tag.)
+    const sx = W / 2 + (o.x - r.cam.x) * k, sy = H / 2 + (o.y - 46 - r.cam.y) * k - 12;
+    if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) continue;
+    const bob = Math.sin(game.tick * 0.1 + id) * 2;
+    ctx.fillStyle = 'rgba(16,18,24,0.75)';
+    ctx.beginPath(); ctx.arc(sx, sy + bob, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = mark === '?' ? '#7ee07a' : '#f2c230';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = mark === '?' ? '#7ee07a' : '#ffe36e';
+    ctx.fillText(mark, sx, sy + bob + 1);
+  }
 }
 
 /** Pointing at one of the townsfolk (talk.js): how to talk to them, over the hotbar. */

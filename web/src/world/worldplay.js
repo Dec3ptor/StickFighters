@@ -16,6 +16,9 @@ import { damage } from '../combat.js';
 import { devFly, devInput } from './devmode.js';
 import { townsfolkTick, isFolk } from './townsfolk.js';
 import { startTalk, talkTick, folkAt } from './talk.js';
+import { giveXp, countStat, applyProgress, maxHealthOf, damageScale, digScale, lootScale, doubleOreChance, regenTick, progToSave, progFromSave, KILL_XP, MINE_XP } from './progress.js';
+import { questEvent, questsTick, questsToSave, questsFromSave, setQuestHooks } from './quests.js';
+import { valueOf } from './trade.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -142,6 +145,8 @@ export function playerToSave(s, game = null) {
     inv: w.inv.toJSON(), slot: w.slot, slot2: w.slot2, brush: w.brush, home: w.home || null,
     x: s.alive ? Math.round(s.x) : null, y: s.alive ? Math.round(s.y) : null,
     mercs: game ? mercsOf(game, s).map(m => ({ gun: m.npc.gun })) : [],
+    // (Their level and perks, and their quests: progress.js, quests.js.)
+    prog: progToSave(s), quests: questsToSave(s),
   };
 }
 
@@ -157,6 +162,8 @@ export function worldFromSave(p) {
   if (Number.isFinite(p.x) && Number.isFinite(p.y)) w.resume = { x: p.x, y: p.y };
   // (Their mercenaries, hired again when they're back: rehire.)
   w.mercs = Array.isArray(p.mercs) ? p.mercs.filter(m => WEAPONS[m?.gun]).slice(0, MERC.most) : [];
+  progFromSave(w, p.prog);
+  questsFromSave(w, p.quests);
   return w;
 }
 
@@ -408,7 +415,8 @@ function dig(game, s, it, inp) {
     return true;
   }
   if (!w.mine || w.mine.tx !== t.tx || w.mine.ty !== t.ty || w.mine.layer !== 'fg') w.mine = { tx: t.tx, ty: t.ty, layer: 'fg', dmg: 0, of: b.hard };
-  w.mine.dmg += it.power;
+  // (Faster with the Miner perk: progress.js.)
+  w.mine.dmg += it.power * digScale(s);
   w.mine.at = game.tick;
   game.fx?.sparks?.(x, y, 0, -1);
   if (w.mine.dmg >= Math.max(0.5, b.hard)) {
@@ -437,7 +445,17 @@ export function breakBlock(game, tx, ty, by = null) {
   } else {
     world.setTile(tx, ty, AIR);
     if (id === K.LOOT_CRATE) openCrate(game, x, y);
-    else if (b.drop) dropItem(game, b.drop, 1, x, y);
+    else if (b.drop) {
+      dropItem(game, b.drop, 1, x, y);
+      // Mined by a player: experience for ore and gems (and, with the Prospector perk, now and
+      // then twice as much), and quests that count what's mined.
+      if (by?.world && MINE_XP[b.drop]) {
+        if (game.rng() < doubleOreChance(by)) dropItem(game, b.drop, 1, x, y);
+        giveXp(game, by, MINE_XP[b.drop], b.name);
+        countStat(by, 'mined');
+        questEvent(game, by, { type: 'mine', key: b.drop });
+      }
+    }
     if (id === K.CHEST) spillChest(game, tx, ty);
     if (id === K.CLAIM_FLAG) world.claims?.delete(`${tx},${ty}`);
   }
@@ -846,6 +864,18 @@ function useItem(game, s, item, inp, pressed) {
   return !!fire;
 }
 
+/**
+ * Player s made `made` lots of recipe r (crafting.js; the inventory screen, or online the host):
+ * experience for what's worth something, and quests that count what's made.
+ */
+export function crafted(game, s, r, made) {
+  if (!s?.world || made <= 0) return;
+  const n = made * r.n, xp = Math.min(30, Math.round(valueOf(r.key) * n * 0.3));
+  if (xp > 0) giveXp(game, s, xp, `made ${itemOf(r.key)?.name ?? r.key}`);
+  countStat(s, 'crafted', n);
+  questEvent(game, s, { type: 'craft', key: r.key, n });
+}
+
 /** Eat (or drink) one of `item` (food: items.js): it heals. Not at full health. */
 function eat(game, s, item) {
   const w = s.world, max = s.maxHealth || 150;
@@ -888,7 +918,12 @@ export function worldTick(game) {
   world.time = (world.time || 0) + 1;
   monstersTick(game);
   townsfolkTick(game);
-  for (const s of game.soldiers) if (s.world?.talk) talkTick(game, s);
+  questsTick(game);
+  for (const s of game.soldiers) {
+    if (!s.world) continue;
+    if (s.world.talk) talkTick(game, s);
+    regenTick(game, s);
+  }
   // The chunks round everyone made ready: those not made yet, a couple each update (nearest
   // first: making one takes a millisecond or so, and a whole new column at once stutters).
   const want = world.wanted ||= [];
@@ -950,6 +985,8 @@ export const worldMode = {
   begin(game) {
     const world = game.world;
     if (!world) return;
+    // (Quests drop rewards that don't fit at your feet, and put lost things in chests.)
+    setQuestHooks({ drop: (g, key, n, x, y) => dropItem(g, key, n, x, y, 0, -2, 30), chestAt });
     world.drops ||= [];
     world.claims ||= new Map();
     world.protect = (tx, ty) => !!world.gen?.townProtecting(tx, ty) || (world.claims.size > 0 && !!claimAt(world, tx, ty));
@@ -977,22 +1014,38 @@ export const worldMode = {
 
   spawnLoadout(game, s) {
     if (s.npc) { armNpc(s); s.npc.spawned = true; return; }
+    // (Their health by their level and perks: progress.js.)
+    if (s.world) { s.maxHealth = maxHealthOf(s); s.health = s.maxHealth; }
     s.weapons = {};
     hold(s);
   },
 
   /** (Nothing hurts a player in dev mode, nor any of the townsfolk but guards: townsfolk.js.) */
-  damage(game, amount, attacker, target) { return target?.world?.dev || (isFolk(target) && !target.npc.guard) ? 0 : amount; },
+  damage(game, amount, attacker, target, weapon) {
+    if (target?.world?.dev || (isFolk(target) && !target.npc.guard)) return 0;
+    // (Harder hitting with the Marksman and Brawler perks: progress.js.)
+    return attacker?.world ? amount * damageScale(attacker, weapon) : amount;
+  },
   /** Dev mode flies (devmode.js); else the game moves them. */
   moveSoldier(game, s, inp) { return devFly(game, s, inp); },
   /** Monsters don't hurt monsters; nor mercenaries the one who hired them; players each other only with PvP on. */
   canHurt(game, attacker, target) { return foes(game.world, attacker, target); },
 
   /** Killed: a monster drops coins and loot; a player drops half their coins (they keep the rest, and their things). */
-  onKill(game, victim) {
+  onKill(game, victim, killer) {
     const x = victim.x, y = victim.y - 10;
     const drop = (key, n) => dropItem(game, key, n, x, y, (game.rng() - 0.5) * 3, -2 - game.rng() * 1.5);
-    if (isMonster(victim)) monsterLoot(game, victim, drop);
+    // (Whose kill it was: a player's, or their mercenary's.)
+    const by = killer?.world ? killer : killer?.npc?.kind === 'merc' ? game.soldiers.find(o => o.id === killer.npc.owner && o.world) : null;
+    if (isMonster(victim)) {
+      monsterLoot(game, victim, drop, by ? lootScale(by) : 1);
+      if (by) {
+        const champion = victim.npc.champion;
+        giveXp(game, by, champion ? KILL_XP.champion : KILL_XP[victim.npc.type] || 10, victim.name);
+        countStat(by, 'kills');
+        questEvent(game, by, { type: 'kill', what: victim.npc.type, x: victim.x, y: victim.y, champion });
+      }
+    }
     else if (victim.world) {
       const lose = Math.floor(victim.world.inv.count('coins') / 2);
       if (lose > 0) { victim.world.inv.remove('coins', lose); dropItem(game, 'coins', lose, x, y, 0, -2, 90); }

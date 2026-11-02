@@ -9,6 +9,8 @@ import { WEAPONS } from '../weapons.js';
 import { drawWeapon } from '../sprites.js';
 import { drawIcon } from './worldrender.js';
 import { offerFor, buysAny } from './trade.js';
+import { sellScale } from './progress.js';
+import { rewardText } from './questui.js';
 import { drawSkinHead, TUNICS } from '../skins.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -41,6 +43,7 @@ export class TalkScreen {
       <p class="talk-said" data-said></p>
       <ul class="talk-news hidden" data-news></ul>
       <div class="talk-options" data-options></div>
+      <div class="talk-work hidden" data-work></div>
       <div class="talk-shop hidden" data-shop>
         <div class="talk-cols">
           <div>
@@ -66,6 +69,11 @@ export class TalkScreen {
     this.sellEl = this.root.querySelector('[data-sell]');
     this.coinsEl = this.root.querySelector('[data-coins]');
     this.shopNameEl = this.root.querySelector('[data-shop-name]');
+    this.workEl = this.root.querySelector('[data-work]');
+    this.workEl.addEventListener('click', e => {
+      const b = e.target.closest('[data-accept]');
+      if (b) this.onAct({ op: 'accept', id: b.dataset.accept });
+    });
   }
 
   /** Open (or bring up to date) for `view` (talk.js's talkView), `me`: our soldier (our things). */
@@ -75,6 +83,7 @@ export class TalkScreen {
     this.me = me;
     if (fresh) {
       this.trading = false;
+      this.working = false;
       this.paintFace(view.skin);
       this.root.classList.remove('hidden');
     }
@@ -104,7 +113,7 @@ export class TalkScreen {
   refresh(force = false) {
     const v = this.view, inv = this.me?.world?.inv;
     if (!v || !inv) return;
-    const key = `${v.v}|${v.coins}|${inv.version}|${this.trading}|${JSON.stringify(v.shop?.stock || null)}|${(v.news || []).length}|${v.options.map(o => o.price || 0).join()}`;
+    const key = `${v.v}|${v.coins}|${inv.version}|${this.trading}|${this.working}|${JSON.stringify(v.shop?.stock || null)}|${(v.news || []).length}|${v.options.map(o => `${o.op}${o.id || ''}${o.price || 0}`).join()}|${v.quests?.offers.map(q => q.id).join()}`;
     if (!force && key === this.seen) return;
     this.seen = key;
     this.nameEl.textContent = v.name;
@@ -113,8 +122,20 @@ export class TalkScreen {
     this.newsEl.classList.toggle('hidden', !v.news?.length);
     this.newsEl.innerHTML = (v.news || []).map(n => `<li>${esc(n)}</li>`).join('');
     // What they'll do: the number keys pick them too.
-    this.optionsEl.innerHTML = v.options.map((o, i) => `<button type="button" class="talk-opt${o.op === 'trade' && this.trading ? ' on' : ''}" data-op="${o.op}"><kbd>${i + 1}</kbd> ${esc(o.label)}${o.price ? ` <span class="talk-price">${o.price} coins</span>` : ''}</button>`).join('');
-    for (const b of this.optionsEl.querySelectorAll('[data-op]')) b.addEventListener('click', () => this.pick(b.dataset.op));
+    this.optionsEl.innerHTML = v.options.map((o, i) => `<button type="button" class="talk-opt${(o.op === 'trade' && this.trading) || (o.op === 'work' && this.working) ? ' on' : ''}${o.op === 'turnin' ? ' turnin' : ''}" data-op="${o.op}" data-id="${esc(o.id || '')}"><kbd>${i + 1}</kbd> ${esc(o.label)}${o.price ? ` <span class="talk-price">${o.price} coins</span>` : ''}</button>`).join('');
+    for (const b of this.optionsEl.querySelectorAll('[data-op]')) b.addEventListener('click', () => this.pick(b.dataset.op, b.dataset.id));
+    // Their work (quests.js): what each asks, and what it pays.
+    const offers = v.quests?.offers || [];
+    this.workEl.classList.toggle('hidden', !this.working || !offers.length);
+    if (this.working && offers.length) {
+      this.workEl.innerHTML = offers.map(q => `<div class="talk-quest">
+        <div class="tq-title">${esc(q.title)}</div>
+        <p class="tq-text">“${esc(q.text)}”</p>
+        <ul class="tq-goals">${q.goals.map(g => `<li>${esc(g)}</li>`).join('')}</ul>
+        <div class="tq-foot"><span class="jq-reward">${esc(rewardText(q.reward))}</span>
+        <button type="button" data-accept="${esc(q.id)}" ${v.quests.full ? 'disabled title="Your journal is full: finish or give up a quest first"' : ''}>Accept</button></div>
+      </div>`).join('');
+    }
     // The shop.
     const shop = v.shop;
     this.shopEl.classList.toggle('hidden', !shop || !this.trading);
@@ -140,9 +161,10 @@ export class TalkScreen {
     }
     // Our things they'd buy (each stack: what one, or the lot, fetches).
     const rows = [];
+    const haggle = sellScale(this.me);
     inv.slots.forEach((s, i) => {
       if (!s || !buysAny(shop.role, s.key)) return;
-      const one = offerFor(shop.role, s.key, 1), all = offerFor(shop.role, s.key, s.n);
+      const one = offerFor(shop.role, s.key, 1, haggle), all = offerFor(shop.role, s.key, s.n, haggle);
       rows.push({ i, s, one, all });
     });
     this.sellEl.innerHTML = rows.length ? rows.map(r => {
@@ -161,11 +183,12 @@ export class TalkScreen {
     }
   }
 
-  /** One of their options picked (a button, or its number key). */
-  pick(op) {
+  /** One of their options picked (a button, or its number key). id: the quest, for a hand-in. */
+  pick(op, id = '') {
     if (op === 'bye') { this.onClose(); return; }
-    if (op === 'trade') { this.trading = !this.trading; this.refresh(true); return; }
-    this.onAct({ op });
+    if (op === 'trade') { this.trading = !this.trading; this.working = false; this.refresh(true); return; }
+    if (op === 'work') { this.working = !this.working; this.trading = false; this.refresh(true); return; }
+    this.onAct(id ? { op, id } : { op });
   }
 
   /** A key while the screen is open: true if it was the screen's. */
@@ -174,7 +197,7 @@ export class TalkScreen {
     const m = /^(?:Digit|Numpad)([1-9])$/.exec(code);
     if (m && this.view) {
       const o = this.view.options[+m[1] - 1];
-      if (o) { this.pick(o.op); return true; }
+      if (o) { this.pick(o.op, o.id); return true; }
     }
     return false;
   }

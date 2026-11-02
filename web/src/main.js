@@ -42,12 +42,15 @@ import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
 import { TileWorld } from './world/tileworld.js';
 import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT, genOf } from './world/worldsave.js';
-import { playerToSave, worldFromSave, dropItem, chestAt, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, rehire, REACH } from './world/worldplay.js';
+import { playerToSave, worldFromSave, dropItem, chestAt, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, rehire, REACH, crafted } from './world/worldplay.js';
 import { craft, stationsNear } from './world/crafting.js';
 import { itemOf } from './world/items.js';
 import { InventoryScreen } from './world/inventoryui.js';
 import { TalkScreen } from './world/talkui.js';
 import { talkView, talkDo, endTalk } from './world/talk.js';
+import { JournalScreen } from './world/questui.js';
+import { questsOf, dropQuest } from './world/quests.js';
+import { spendPoint } from './world/progress.js';
 import { WorldHost, WorldClient } from './world/worldnet.js';
 import { seedOf } from './world/noise.js';
 import { setDev, devKey } from './world/devmode.js';
@@ -617,6 +620,7 @@ function endMatch(to = state.returnTo) {
   if (state.world) saveWorldNow(true);
   closeInventory();
   closeTalk();
+  closeJournal();
   state.replay = null;
   renderer.cam.zoom = 1;
   renderer.forgetMatch?.();
@@ -677,7 +681,7 @@ function setPaused(p) {
   // (A world: no restarting it, and no sitting out to watch. Pausing keeps it as it is.)
   if (state.world) { show('restart', false); show('spectate', false); if (p) saveWorldNow(); }
   else show('spectate', true);
-  if (p) { closeInventory(); closeTalk(); }
+  if (p) { closeInventory(); closeTalk(); closeJournal(); }
   state.menuOpen = p;
   show('pause', p);
   fullscreenButton();
@@ -789,7 +793,7 @@ function localNote(text) {
 /** True while the match is being played (no menu, chat or picker open over it). */
 function playingNow() {
   const g = state.game;
-  return !!g && !g.over && !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open && !invScreen?.open && !talkScreen?.open &&
+  return !!g && !g.over && !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open && !invScreen?.open && !talkScreen?.open && !journal?.open &&
     document.body.classList.contains('playing') && $('settings').classList.contains('hidden');
 }
 
@@ -1109,6 +1113,41 @@ function talkAct(d) {
   audio.play('click');
 }
 
+// ---- Worlds: the journal (quests, level and perks) --------------------------------------------------
+
+let journal = null;
+const getJournal = () => (journal ||= new JournalScreen($('journal'), { act: d => journalAct(d), close: () => closeJournal() }));
+
+/** J: the journal (the game carries on; your soldier stands still while it's open). */
+function openJournal(tab = null) {
+  const g = state.game, me = state.me;
+  if (!g?.world || !me?.world || state.menuOpen || state.chatOpen || g.over) return;
+  closeInventory();
+  getJournal().show(me, tab);
+  input.enabled = false;
+  input.clear();
+  input.unlock();
+}
+
+function closeJournal() {
+  if (!journal?.open) return;
+  journal.hide();
+  const g = state.game;
+  if (g && !state.menuOpen && !state.chatOpen && !g.over && !invScreen?.open && !talkScreen?.open) { input.enabled = true; grabControls(); }
+}
+
+/** Something done in the journal: following a quest, giving one up, spending a perk point (online, the host does it). */
+function journalAct(d) {
+  const g = state.game, me = state.me;
+  if (!g?.world || !me?.world || typeof d?.op !== 'string') return;
+  if (state.mode === 'client') { state.net?.client?.link.send({ t: 'wop', ...d }, true); audio.play('click'); return; }
+  const qs = questsOf(me);
+  if (d.op === 'qtrack' && qs.list.some(q => q.id === d.id)) { qs.track = d.id; qs.v++; }
+  else if (d.op === 'qdrop') dropQuest(me, d.id);
+  else if (d.op === 'perk') { const text = spendPoint(me, d.id); if (text) localNote(text); }
+  audio.play('click');
+}
+
 /** The inventory screen's crafting: recipe r made up to `times` times (what doesn't fit goes on the ground). */
 function craftItem(r, times) {
   const g = state.game, me = state.me;
@@ -1117,6 +1156,7 @@ function craftItem(r, times) {
   const { made, left } = craft(me.world.inv, r, stationsNear(g.world, me.x, me.y - 8), times);
   if (!made) return;
   if (left) dropItem(g, r.key, left, me.x, me.y - 14, me.facing * 2, -2, 30);
+  crafted(g, me, r, made);
   audio.play('click');
   localNote(`Made ${made * r.n} × ${itemOf(r.key).name}`);
 }
@@ -2065,6 +2105,7 @@ function frame(now) {
     if (view) showTalk(view);
     else if (talkScreen?.open) closeTalk();
   } else if (talkScreen?.open) talkScreen.refresh();
+  if (journal?.open) journal.refresh();
   // Defuse's buy menu: kept up to date, and closed when you can't buy any more.
   if (buyMenu?.open) {
     if (canShop(g, me)) buyMenu.refresh(g, me);
@@ -2223,6 +2264,7 @@ function pressMenuKey(key) {
     if (key === 'Minus' || key === 'NumpadSubtract') { input.devZoom -= 1; return true; }
     if (devKey(g, state.me, key)) return true;
   }
+  if (isKey('journal', key) && g.world) { openJournal(); return true; }
   if (isKey('changeClass', key) && g.classesOn && !g.over) {
     if (!state.me.alive) openPicker();
     else localNote(`Change class while waiting to respawn (${keyLabel('changeClass')}), or from the menu (Esc)`);
@@ -2457,6 +2499,11 @@ function wire() {
       if (!e.repeat && talkScreen.key(e.code)) e.preventDefault();
       return;
     }
+    // The journal: J or Esc closes it.
+    if (journal?.open) {
+      if (!e.repeat && journal.key(e.code, isKey('journal', keyOf(e.code)))) e.preventDefault();
+      return;
+    }
     const key = keyOf(e.code);
     if (!e.repeat && pressMenuKey(key)) { e.preventDefault(); return; }
     if (e.code === 'Escape') {
@@ -2624,7 +2671,7 @@ async function boot() {
   window.stickSoldiers = {
     state, get renderer() { return renderer; }, get edition() { return edition; }, get input() { return input; }, setEdition, openGamePicker, pacer, prefs, perf, setGraphics, startMatch, endMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab,
     get profile() { return profile; }, openPicker, openLoadout,
-    startWorld, saveWorldNow, renderWorlds, openInventory, closeInventory, craftItem, get inventory() { return invScreen; }, get talk() { return talkScreen; },
+    startWorld, saveWorldNow, renderWorlds, openInventory, closeInventory, craftItem, get inventory() { return invScreen; }, get talk() { return talkScreen; }, get journal() { return journal; }, openJournal,
     devExport: all => JSON.parse(devMenu.exportText(all)), // (what the developer menu copies out)
     // The camera and aiming zoom in use (the host's, in someone else's game).
     feelNow: () => ({ camera: cameraInUse(), aimZoom: hostFeel ? hostFeel.aimZoom : prefs.aimZoom, host: !!hostFeel }),

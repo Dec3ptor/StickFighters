@@ -189,12 +189,14 @@ function torchNear(world, tx, ty) {
   return false;
 }
 
-/** What a monster drops when it's killed: coins, and now and then something from its loot. */
-export function monsterLoot(game, s, drop) {
+/** What a monster drops when it's killed: coins, and now and then something from its loot (more: the killer's Scavenger perk). */
+export function monsterLoot(game, s, drop, more = 1) {
   const def = MONSTERS[s.npc.type], rng = game.rng;
-  const coins = def.coins[0] + Math.floor(rng() * (def.coins[1] - def.coins[0] + 1));
+  // (A named monster, a quest's quarry: a lot more.)
+  const champ = s.npc.champion ? 6 : 1;
+  const coins = Math.round((def.coins[0] + Math.floor(rng() * (def.coins[1] - def.coins[0] + 1))) * more * champ);
   drop('coins', coins);
-  for (const [key, lo, hi, chance] of def.loot) if (rng() < chance) drop(key, lo + Math.floor(rng() * (hi - lo + 1)));
+  for (const [key, lo, hi, chance] of def.loot) if (rng() < Math.min(1, chance * more * champ)) drop(key, lo + Math.floor(rng() * (hi - lo + 1)));
 }
 
 // ---- How they behave ------------------------------------------------------------------------------------

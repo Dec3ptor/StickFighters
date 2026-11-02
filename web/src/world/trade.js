@@ -9,6 +9,7 @@ import { RECIPES } from './crafting.js';
 import { hash3 } from './noise.js';
 import { dayOf } from './monsters.js';
 import { WEAPONS } from '../weapons.js';
+import { buyScale, sellScale } from './progress.js';
 
 // ---- What things are worth -----------------------------------------------------------------------------
 
@@ -176,16 +177,21 @@ export function stockOf(world, f, city = false) {
   return out;
 }
 
-/** What a shop (by its keeper's role) pays for n of `key`, or 0 if it doesn't buy it (or it's worth nothing to them). */
-export function offerFor(role, key, n = 1) {
-  const shop = SHOPS[role], it = itemOf(key);
-  if (!shop || !it || key === 'coins' || !shop.buys(it)) return 0;
-  const rate = shop.rateFor?.(it) ?? shop.rate;
-  return Math.floor(valueOf(key) * n * rate);
+/**
+ * What a shop (by its keeper's role) pays for n of `key`, or 0 if it doesn't buy it (or it's worth
+ * nothing to them). scale: the seller's (progress.js's Haggler perk: more).
+ */
+export function offerFor(role, key, n = 1, scale = 1) {
+  if (!buysAny(role, key)) return 0;
+  const shop = SHOPS[role], it = itemOf(key), rate = shop.rateFor?.(it) ?? shop.rate;
+  return Math.floor(valueOf(key) * n * rate * scale);
 }
 
-/** Whether shop `role` deals in `key` at all. */
-export const buysAny = (role, key) => { const shop = SHOPS[role], it = itemOf(key); return !!(shop && it && key !== 'coins' && shop.buys(it)); };
+/** Whether shop `role` deals in `key` at all (never coins, nor what's carried for a quest). */
+export const buysAny = (role, key) => { const shop = SHOPS[role], it = itemOf(key); return !!(shop && it && key !== 'coins' && it.kind !== 'quest' && shop.buys(it)); };
+
+/** A price as player s pays it (progress.js's Haggler perk: less). */
+export const priceFor = (price, s) => Math.max(1, Math.round(price * buyScale(s)));
 
 /**
  * Buy a bundle of `key` from one of the townsfolk (f), for player s (their things: s.world.inv).
@@ -195,9 +201,10 @@ export function buy(world, s, f, key, city = false) {
   const inv = s.world.inv, stock = stockOf(world, f, city), o = stock?.find(x => x.key === key);
   if (!o) return "They don't have that";
   if (o.left <= 0) return 'Sold out (till tomorrow)';
-  if (inv.count('coins') < o.price) return `You need ${o.price} coins`;
+  const price = priceFor(o.price, s);
+  if (inv.count('coins') < price) return `You need ${price} coins`;
   if (inv.room(key) < o.n) return 'You have no room for it';
-  inv.remove('coins', o.price);
+  inv.remove('coins', price);
   const was = inv.slots.slice();
   inv.add(key, o.n);
   // (A gun comes loaded.)
@@ -205,7 +212,7 @@ export function buy(world, s, f, key, city = false) {
   if (def?.mag) inv.slots.forEach((sl, j) => { if (sl && !was[j] && sl.key === key) sl.mag = def.mag; });
   const st = townState(world, f.town), b = st.bought[f.key] ||= {};
   b[key] = (b[key] || 0) + 1;
-  return `Bought ${o.n > 1 ? `${o.n} × ` : ''}${itemOf(key).name} for ${o.price} coins`;
+  return `Bought ${o.n > 1 ? `${o.n} × ` : ''}${itemOf(key).name} for ${price} coins`;
 }
 
 /** Sell what's in slot i (all: the whole stack, else one) to one of the townsfolk (f). Returns what to tell them. */
@@ -216,8 +223,9 @@ export function sell(world, s, f, i, all = false) {
   if (!buysAny(f.role, sl.key)) return `${f.name} doesn't buy ${it?.name ?? 'that'}`;
   // (Cheap things: as many as make a coin, at least.)
   let n = all ? sl.n : 1;
-  if (!all) while (n < sl.n && offerFor(f.role, sl.key, n) < 1) n++;
-  const pay = offerFor(f.role, sl.key, n);
+  const k = sellScale(s);
+  if (!all) while (n < sl.n && offerFor(f.role, sl.key, n, k) < 1) n++;
+  const pay = offerFor(f.role, sl.key, n, k);
   if (pay < 1) return `Not worth anything to them${all ? '' : ' (sell the whole stack: shift-click)'}`;
   if (inv.room('coins') < pay && n < sl.n) return 'You have no room for the coins';
   inv.take(i, n);
