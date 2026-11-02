@@ -12,7 +12,7 @@ import { MapTiles, paintMap, HATCH, HATCH_GAP, BUILT, BUILT_LINE, BUILT_ROW } fr
 import { buildPlan } from './building.js';
 import { Fog } from './fog.js';
 import { drawCrosshair as drawCrosshairAt } from './crosshair.js';
-import { skinFor, drawSkinHead, drawVest, SKIN_ACCENT } from './skins.js';
+import { skinFor, drawSkinHead, drawVest, drawTunic, SKIN_ACCENT, TUNICS } from './skins.js';
 import { drawSoldier as drawSoldierRm } from './rm/soldiers.js';
 import { Blocks } from './rm/blocks.js';
 import { makeMaterials } from './rm/textures.js';
@@ -696,6 +696,7 @@ export class Renderer {
       }
     } else {
       // A hat or helmet of their own (and, with armour, a vest: no room for the little helmet).
+      if (TUNICS[skin]) drawTunic(ctx, L[0], TUNICS[skin], 3.4);
       if (s.armour > 0) drawVest(ctx, L[0], '#4a4a4a', 3);
       const teams = game.rules.teams;
       drawSkinHead(ctx, head, skin, s.facing, { ink: INK, lw: 1.5, fill: teams ? TEAM_HEAD[s.team] : '#fff', accent: teams ? TEAM_COLORS[s.team] : SKIN_ACCENT[skin], tick: game.tick });

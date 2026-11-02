@@ -69,6 +69,8 @@ recipe('stone_bricks', 1, [['stone', 2]], 'furnace');
 recipe('roof_tiles', 4, [['clay', 2]], 'furnace');
 recipe('plaster', 2, [['sand', 1], ['stone', 1]], 'furnace');
 recipe('mud_bricks', 1, [['mud', 2]], 'furnace');
+recipe('bread', 1, [['wheat', 3]], 'furnace');
+recipe('stew', 1, [['mushroom', 2], ['wheat', 1]], 'furnace');
 recipe('stained_glass', 4, [['glass', 4], ['crystal_ore', 1]], 'furnace');
 
 // ---- Anvil ----

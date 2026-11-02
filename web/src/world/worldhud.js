@@ -11,6 +11,7 @@ import { drawIcon } from './worldrender.js';
 import { clock, dayOf, isNight, nightness } from './monsters.js';
 import { keyShort, slotAction, keyLabel } from '../keys.js';
 import { devLines } from './devmode.js';
+import { folkAt } from './talk.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 export const HOT_SIZE = 46;
@@ -23,10 +24,28 @@ const hotScale = W => Math.min(1, (W - 24) / (HOTBAR * HOT_SIZE + (HOTBAR - 1) *
 /** Everything world mode adds to the HUD (r: the renderer; W, H: the screen in CSS pixels). */
 export function drawWorldHud(r, ctx, game, me, W, H) {
   if (me.alive && me.world) drawHotbar(ctx, me, W, H);
+  if (me.alive && me.world && !me.world.dev) drawTalkHint(ctx, game, me, W, H);
   if (me.world) drawGot(ctx, game, me, H);
   drawWhere(ctx, game, me, W);
   drawMiniMap(ctx, game, me, W, H);
   if (me.world?.dev) drawDev(ctx, me, r.zoomScale || 1);
+}
+
+/** Pointing at one of the townsfolk (talk.js): how to talk to them, over the hotbar. */
+function drawTalkHint(ctx, game, me, W, H) {
+  const t = me.world.target;
+  if (!t || me.world.talk) return;
+  const npc = folkAt(game, me, t.x, t.y);
+  if (!npc) return;
+  const line = text(`talk${npc.id}${npc.name}`, () => `${keyLabel('aim')}: talk to ${npc.name}`);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold 14px ${FONT}`;
+  const w = ctx.measureText(line).width + 28, y = H - (HOT_SIZE + 10) * hotScale(W) - 34;
+  ctx.fillStyle = 'rgba(255,255,255,0.86)';
+  ctx.fillRect(W / 2 - w / 2, y - 13, w, 26);
+  ctx.fillStyle = '#333';
+  ctx.fillText(line, W / 2, y + 1);
 }
 
 /** Dev mode's card (devmode.js): what it's set to, and its keys. */
@@ -279,12 +298,13 @@ function drawMiniMap(ctx, game, me, W, H) {
       ctx.imageSmoothingEnabled = smooth;
     }
   }
-  // Who else is about: monsters red, mercenaries blue, other players white.
+  // Who else is about: monsters red, mercenaries blue, townsfolk gold, other players white.
   for (const o of game.soldiers) {
     if (!o.alive || o === me) continue;
     const ox = Math.floor(o.x / TILE) - mm.tx + MAP_W / 2, oy = Math.floor(o.y / TILE) - mm.ty + MAP_H / 2;
     if (ox < 0 || ox >= MAP_W || oy < 0 || oy >= MAP_H) continue;
-    ctx.fillStyle = o.npc?.kind === 'monster' ? '#ff3b2f' : o.npc?.kind === 'merc' ? '#3d7ff0' : '#ffffff';
+    const k = o.npc?.kind;
+    ctx.fillStyle = k === 'monster' ? '#ff3b2f' : k === 'merc' ? '#3d7ff0' : k === 'townsfolk' ? '#f2c230' : '#ffffff';
     ctx.fillRect(x0 + ox * MAP_SCALE - 1.5, y0 + oy * MAP_SCALE - 2, 3, 3);
   }
   // You, in the middle (and where the world starts, if it's on the map).

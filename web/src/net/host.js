@@ -162,7 +162,7 @@ export class NetHost {
   }
 
   roster() {
-    return this.game.soldiers.map(s => ({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, remote: !!s.remote, spec: !!s.spectating, skin: s.skin, npc: s.npc?.kind || null }));
+    return this.game.soldiers.map(s => ({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, remote: !!s.remote, spec: !!s.spectating, skin: s.skin, npc: s.npc?.guard ? 'guard' : s.npc?.kind || null }));
   }
 
   /** Someone started or stopped spectating (called by the game): everyone's list of players changes. */
@@ -304,10 +304,11 @@ export class NetHost {
     if (!g) return;
     this.opts.world?.tick();
     this.sharePings();
-    // (Soldiers come and go besides players: a world's monsters and mercenaries. Everyone's told.)
+    // (Soldiers come and go besides players: a world's monsters, mercenaries and townsfolk.
+    // Everyone's told. An id can be given to someone new: their name and look count too.)
     if (g.tick % 15 === 0 && this.players.size) {
       let sig = '';
-      for (const s of g.soldiers) sig += `${s.id},`;
+      for (const s of g.soldiers) sig += `${s.id}${s.name}${s.skin},`;
       if (sig !== this.rosterSig) {
         const first = this.rosterSig == null;
         this.rosterSig = sig;

@@ -365,7 +365,39 @@ html[data-game="remastered"] .craft-row.can { box-shadow: inset 3px 0 0 #7ee07a;
 html[data-game="remastered"] .inv .inv-slot.picked { outline-color: #f2c230; }
 /* (Blocks keep their colours on Remastered's dark glass; only guns, drawn in ink, are turned light.) */
 html[data-game="remastered"] .buy.inv canvas { filter: none; }
-html[data-game="remastered"] .buy.inv canvas.ink { filter: invert(0.88) hue-rotate(180deg); }
+html[data-game="remastered"] .buy.inv canvas.ink, html[data-game="remastered"] .buy.talk canvas.ink { filter: invert(0.88) hue-rotate(180deg); }
+
+/* ---- Worlds: talking to townsfolk (right click on them) ---- */
+.buy.talk { width: min(820px, calc(100vw - 24px)); }
+.talk-head { align-items: center; }
+.talk-face { width: 72px; height: 72px; flex: 0 0 auto; border: 2px solid var(--ink); border-radius: 50%; background: var(--soft); }
+.talk-who { min-width: 0; }
+.talk-title { font-size: 13px; color: var(--muted); }
+.talk-said { margin: 4px 0 8px; font-size: 17px; font-style: italic; line-height: 1.4; }
+.talk-news { margin: 0 0 10px; padding-left: 20px; font-size: 14px; line-height: 1.45; }
+.talk-options { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.talk-opt { font-size: 14px; padding: 5px 12px; }
+.talk-opt kbd { font-size: 10px; margin-right: 4px; }
+.talk-opt.on { background: var(--ink); color: var(--paper, #fff); }
+.talk-opt.on kbd { color: #1a1a1a; }
+.talk-price { font-weight: bold; color: #b8860b; }
+.talk-price::after { content: ' ●'; font-size: 9px; vertical-align: 2px; color: #f2c230; }
+.talk-price.short { color: #c0392b; }
+.talk-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 760px) { .talk-cols { grid-template-columns: minmax(0, 1fr); } }
+.talk-coins { float: right; font-weight: bold; text-transform: none; letter-spacing: 0; color: #b8860b; }
+.talk-list { display: flex; flex-direction: column; gap: 3px; max-height: min(420px, calc(100vh - 360px)); overflow-y: auto; padding-right: 4px; }
+.talk-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto 58px; column-gap: 8px; align-items: center; width: 100%; padding: 3px 8px; text-align: left; font-weight: normal; font-size: 13px; }
+.talk-row canvas { width: 40px; height: 28px; }
+.talk-row:disabled { opacity: 0.45; cursor: default; }
+.talk-row.rare { box-shadow: inset 3px 0 0 #a052ea; }
+.talk-item { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.talk-rare { color: #a052ea; font-weight: bold; }
+.talk-left { font-size: 11px; color: var(--muted); text-align: right; }
+html[data-game="remastered"] .talk-face { border-color: rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.08); }
+html[data-game="remastered"] .talk-opt.on { background: #f2c230; color: #1a1a1a; }
+html[data-game="remastered"] .talk-price, html[data-game="remastered"] .talk-coins { color: #f2c230; }
+html[data-game="remastered"] .talk-price.short { color: #ff7a6a; }
 
 .setup-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
 .setup-head h2 { margin: 0; font-size: 20px; }

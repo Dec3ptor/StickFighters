@@ -4,7 +4,7 @@
 //
 // Items go by key (text), which saved worlds keep: 'dirt', 'pickaxe', 'M4', 'bullets'...
 //   kind   'block' (places a block), 'wall' (a wall behind), 'tool' (pick, axe, hammer),
-//          'weapon' (one of WEAPONS), 'ammo', 'material'
+//          'weapon' (one of WEAPONS), 'ammo', 'material', 'food' (eaten: heals), 'contract'
 //   stack  how many fit in a slot
 
 import { BLOCKS, WALLS, BLOCK_BY_KEY } from './blocks.js';
@@ -40,6 +40,13 @@ item('emerald', 'Emerald', 'material', { color: '#1fc45c', gem: true });
 item('topaz', 'Topaz', 'material', { color: '#f2a81e', gem: true });
 item('amethyst', 'Amethyst', 'material', { color: '#a052ea', gem: true });
 item('diamond', 'Diamond', 'material', { color: '#c4f6ff', gem: true });
+// Food and potions: eaten (used with either hand: a click), they heal (heal: how much). Bought in
+// towns (trade.js), baked, picked from trees, and dropped by monsters now and then.
+item('apple', 'Apple', 'food', { stack: 99, heal: 12, color: '#d8342c', look: 'apple' });
+item('bread', 'Bread', 'food', { stack: 99, heal: 25, color: '#c88a3a', look: 'bread' });
+item('stew', 'Mushroom stew', 'food', { stack: 20, heal: 50, color: '#9a6a3a', look: 'stew' });
+item('healing_potion', 'Healing potion', 'food', { stack: 20, heal: 80, color: '#e0303c', look: 'potion' });
+item('greater_potion', 'Greater healing potion', 'food', { stack: 20, heal: 400, color: '#ff5aa0', look: 'potion' });
 // Coins: what monsters drop (and half of what you carry, when you die): mercenaries are hired with them.
 item('coins', 'Coins', 'material', { color: '#f2c230' });
 // A mercenary's contract: used (like a weapon), it hires one, who follows you and shoots monsters.
@@ -213,7 +220,7 @@ export class Inventory {
 
   /** The bag put in order (tools and guns first, then blocks...), stacks of the same thing joined. */
   sortBag() {
-    const order = { tool: 0, weapon: 1, ammo: 2, block: 3, wall: 4, material: 5 };
+    const order = { tool: 0, weapon: 1, ammo: 2, food: 3, block: 4, wall: 5, material: 6 };
     const items = this.slots.slice(HOTBAR).filter(Boolean);
     const joined = [];
     for (const s of items) {

@@ -8,7 +8,7 @@ import { buildPose } from '../stickman.js';
 import { lerp } from '../util.js';
 import { drawWeapon, drawStreakFlame } from '../sprites.js';
 import { css, mix, shade, rgb } from './color.js';
-import { drawSkinHead, drawHeadHalo, drawVest } from '../skins.js';
+import { drawSkinHead, drawHeadHalo, drawVest, drawTunic, TUNICS } from '../skins.js';
 
 export const TEAM_COLORS = { 1: '#3d7ff0', 2: '#e8483a' };
 
@@ -18,6 +18,8 @@ const ownColors = new Map();
 /** A soldier's own colour in free-for-all (spread round the colour wheel by id). */
 export function soldierColor(game, s) {
   if (game.rules.teams) return TEAM_COLORS[s.team] || '#9aa4b2';
+  // (Townsfolk: their tunic's colour.)
+  if (TUNICS[s.skin]) return TUNICS[s.skin];
   let c = ownColors.get(s.id);
   if (c === undefined) {
     const h = (s.id * 137.508) % 360;
@@ -272,6 +274,7 @@ export function drawLineSoldier(r, game, s, alpha, theme, skin) {
   ctx.beginPath();
   for (const l of L) line(ctx, l);
   ctx.stroke();
+  if (TUNICS[skin]) drawTunic(ctx, L[LINES.torso], TUNICS[skin], LINE_W + 2.2);
   if (s.armour > 0) drawVest(ctx, L[LINES.torso], shadesOf(team).vest, LINE_W + 1.6);
   drawSkinHead(ctx, h, skin, facing, { ink: c.ink, lw: 1.2, fill: game.rules.teams ? team : c.face, accent: team, tick: game.tick });
   ctx.restore();

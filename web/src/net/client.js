@@ -121,7 +121,7 @@ export class NetClient {
       case 'carves': if (this.game) this.applyCarves(data.from, data.list); break;
       // A world (worldnet.js): its chunks; our things, our chest, the bases.
       case 'chunks': this.opts.world?.chunks(data.list); break;
-      case 'inv': case 'chest': case 'claims': this.opts.world?.message(data); break;
+      case 'inv': case 'chest': case 'claims': case 'talk': this.opts.world?.message(data); break;
       case 'ev':
         if (!this.game) break;
         // Holes in the map change how everything moves: blown straight away, not when the effects show.
@@ -195,15 +195,16 @@ export class NetClient {
     for (const r of list) {
       let s = g.soldiers.find(x => x.id === r.id);
       if (!s) {
-        s = g.addSoldier({ id: r.id, name: String(r.name).slice(0, 14), team: r.team, isBot: !!r.isBot }, null);
+        s = g.addSoldier({ id: r.id, name: String(r.name).slice(0, r.npc ? 24 : 14), team: r.team, isBot: !!r.isBot }, null);
         s.alive = false;
       }
-      s.name = String(r.name).slice(0, 14);
+      // (A world's townsfolk have their work in their name tags: a bit longer.)
+      s.name = String(r.name).slice(0, r.npc ? 24 : 14);
       s.team = r.team;
       s.remote = !!r.remote;
       s.skin = isSkin(r.skin) ? r.skin : 'auto';
-      // (A world's monsters and mercenaries: drawn and mapped as such.)
-      s.npc = r.npc === 'monster' || r.npc === 'merc' ? { kind: r.npc } : null;
+      // (A world's monsters, mercenaries and townsfolk: drawn and mapped as such.)
+      s.npc = r.npc === 'monster' || r.npc === 'merc' || r.npc === 'townsfolk' ? { kind: r.npc } : r.npc === 'guard' ? { kind: 'townsfolk', guard: true } : null;
       // (Our own: unless we've just asked to change it, and the host hasn't caught up yet.)
       if (s !== this.me || this.clock() - (this.spectateAt ?? -1e9) > 1500) s.spectating = !!r.spec;
     }

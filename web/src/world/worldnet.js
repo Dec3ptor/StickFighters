@@ -4,10 +4,11 @@
 //   host -> player, as they join: the chunks changed so far ('chunks': each player makes the rest
 //     from the seed), then the welcome (the seed, the time, PvP, the bases).
 //   host -> player, with the events: every block changed since ('tc': [tx, ty, layer, value]).
-//   host -> one player: their own things ('inv', when they change) and the chest they've opened
-//     ('chest'); to everyone, the bases when they change ('claims').
+//   host -> one player: their own things ('inv', when they change), the chest they've opened
+//     ('chest') and who they're talking to ('talk': talk.js's view of it, when it changes); to
+//     everyone, the bases when they change ('claims').
 //   player -> host: what they do in their inventory screen ('wop': moving stacks, crafting, the
-//     chest...), checked and done by the host.
+//     chest...) and in a talk ('wop' 'talk': buying, selling...), checked and done by the host.
 //
 // The host keeps each player's things in its world, by name: next time they join, they have them.
 
@@ -17,6 +18,7 @@ import { packBytes, unpackBytes } from './worldsave.js';
 import { RECIPES, craft, stationsNear } from './crafting.js';
 import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, claimsToSave, claimsFromSave, REACH, setRightHand } from './worldplay.js';
 import { mercsOf } from './monsters.js';
+import { talkView, talkDo } from './talk.js';
 
 const LAYERS = ['fg', 'bg', 'shape'];
 const CHUNKS_PER_MESSAGE = 40;
@@ -49,7 +51,7 @@ export class WorldHost {
   /** A player's joined (their soldier made): their things (if they've been here before). */
   join(p) {
     const s = p.soldier;
-    p.wsync = { tiles: [], inv: '', chest: null, chestV: -1, overflow: false, ops: [] };
+    p.wsync = { tiles: [], inv: '', chest: null, chestV: -1, talk: '', overflow: false, ops: [] };
     s.world = worldFromSave(this.load?.(s.name) || null);
     rehire(this.game, s);
     this.players.add(p);
@@ -136,6 +138,15 @@ export class WorldHost {
     // A chest opened with a right click (worldplay.js's interact): shown to them, and kept up to
     // date while it's open (closed if it goes, or they walk off).
     if (w.openChest) { ws.chest = w.openChest; ws.chestV = -1; w.openChest = null; }
+    // Who they're talking to (talk.js), when anything in it changes (what's said, the shop's
+    // stock, their coins), or it ends.
+    const view = w.talk ? talkView(this.game, s) : null;
+    const tkey = view ? `${view.id}|${view.v}|${view.coins}|${w.inv.version}|${JSON.stringify(view.shop?.stock || null)}|${view.options.map(o => o.price || 0).join()}` : '';
+    if (tkey !== ws.talk) {
+      if (view) p.link.send({ t: 'talk', view }, true);
+      else if (ws.talk) p.link.send({ t: 'talk', close: true }, true);
+      ws.talk = tkey;
+    }
     if (ws.chest) {
       const inv = chestAt(this.game.world, ws.chest.tx, ws.chest.ty);
       const far = !s.alive || Math.hypot(ws.chest.tx * 16 + 8 - s.x, ws.chest.ty * 16 + 8 - s.y) > REACH * 1.5;
@@ -186,6 +197,8 @@ export class WorldHost {
         break;
       }
       case 'close': ws.chest = null; break;
+      // (In a talk: talk.js checks it all.)
+      case 'talk': if (d.d && typeof d.d === 'object') talkDo(g, s, d.d); break;
       // (The inventory screen's right hand buttons: what right click uses.)
       case 'hand': {
         const i = d.slot;
@@ -200,10 +213,14 @@ export class WorldHost {
 // ---- A player in someone else's world -----------------------------------------------------------------
 
 export class WorldClient {
-  /** onInv(): our things changed; onChest(chest | null): a chest opened ({ inv, tx, ty }), changed, or closed. */
-  constructor({ onInv = null, onChest = null } = {}) {
+  /**
+   * onInv(): our things changed; onChest(chest | null): a chest opened ({ inv, tx, ty }), changed,
+   * or closed; onTalk(view | null): a talk began, changed (talk.js's view), or ended.
+   */
+  constructor({ onInv = null, onChest = null, onTalk = null } = {}) {
     this.onInv = onInv;
     this.onChest = onChest;
+    this.onTalk = onTalk;
     this.saved = new Map();
     this.game = null;
     this.me = null;
@@ -296,6 +313,7 @@ export class WorldClient {
         this.onChest?.({ inv: Object.assign(Inventory.from(d.slots, 30), { version: ++this.version }), tx: d.tx | 0, ty: d.ty | 0 });
         break;
       case 'claims': if (game.world) claimsFromSave(game.world, d.list); break;
+      case 'talk': this.onTalk?.(d.close || !d.view || typeof d.view !== 'object' ? null : d.view); break;
     }
   }
 }

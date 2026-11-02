@@ -1125,6 +1125,21 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
     ctx.stroke();
     return;
   }
+  if (it.gem) {
+    // A cut gem: a crown and a point, with a glint.
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.12, y + w * 0.4); ctx.lineTo(x + w * 0.3, y + w * 0.18); ctx.lineTo(x + w * 0.7, y + w * 0.18); ctx.lineTo(x + w * 0.88, y + w * 0.4); ctx.lineTo(x + w * 0.5, y + w * 0.88);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + w * 0.12, y + w * 0.4); ctx.lineTo(x + w * 0.88, y + w * 0.4); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillRect(x + w * 0.34, y + w * 0.24, w * 0.12, w * 0.1);
+    return;
+  }
+  if (it.kind === 'food') { drawFoodIcon(ctx, it, x, y, w); return; }
   if (it.kind === 'ammo' || it.kind === 'material') {
     ctx.fillStyle = c;
     for (let i = 0; i < 3; i++) ctx.fillRect(x + w * (0.12 + i * 0.3), y + w * 0.25, w * 0.2, w * 0.6);
@@ -1136,6 +1151,48 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
   ctx.fillStyle = '#444';
   ctx.fillRect(x + w * 0.05, y + w * 0.4, w * 0.9, w * 0.22);
   ctx.fillRect(x + w * 0.2, y + w * 0.55, w * 0.15, w * 0.3);
+}
+
+/** Food and potions' icons (items.js: their look). */
+function drawFoodIcon(ctx, it, x, y, w) {
+  const c = it.color;
+  ctx.strokeStyle = INK;
+  switch (it.look) {
+    case 'apple':
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.arc(x + w * 0.5, y + w * 0.58, w * 0.32, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + w * 0.5, y + w * 0.3); ctx.lineTo(x + w * 0.56, y + w * 0.12); ctx.stroke();
+      ctx.fillStyle = '#4f8a34';
+      ctx.beginPath(); ctx.ellipse(x + w * 0.66, y + w * 0.2, w * 0.12, w * 0.06, -0.5, 0, Math.PI * 2); ctx.fill();
+      break;
+    case 'bread':
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.ellipse(x + w * 0.5, y + w * 0.6, w * 0.42, w * 0.25, 0, Math.PI, 0); ctx.lineTo(x + w * 0.92, y + w * 0.72); ctx.lineTo(x + w * 0.08, y + w * 0.72); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      for (const dx of [0.32, 0.5, 0.68]) { ctx.moveTo(x + w * (dx - 0.06), y + w * 0.48); ctx.lineTo(x + w * (dx + 0.06), y + w * 0.4); }
+      ctx.stroke();
+      break;
+    case 'stew':
+      ctx.fillStyle = c;
+      ctx.fillRect(x + w * 0.14, y + w * 0.42, w * 0.72, w * 0.08);
+      ctx.fillStyle = '#7a7f86';
+      ctx.beginPath(); ctx.moveTo(x + w * 0.1, y + w * 0.46); ctx.quadraticCurveTo(x + w * 0.5, y + w * 1.02, x + w * 0.9, y + w * 0.46); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(200,200,200,0.7)';
+      ctx.beginPath(); ctx.moveTo(x + w * 0.4, y + w * 0.36); ctx.quadraticCurveTo(x + w * 0.32, y + w * 0.24, x + w * 0.42, y + w * 0.12); ctx.moveTo(x + w * 0.6, y + w * 0.36); ctx.quadraticCurveTo(x + w * 0.52, y + w * 0.24, x + w * 0.62, y + w * 0.12); ctx.stroke();
+      break;
+    default: {
+      // A potion: a round flask, a neck and a cork.
+      ctx.fillStyle = 'rgba(220,235,245,0.9)';
+      ctx.fillRect(x + w * 0.4, y + w * 0.14, w * 0.2, w * 0.3);
+      ctx.strokeRect(x + w * 0.4, y + w * 0.14, w * 0.2, w * 0.3);
+      ctx.fillStyle = '#9a6a3a';
+      ctx.fillRect(x + w * 0.38, y + w * 0.06, w * 0.24, w * 0.1);
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.arc(x + w * 0.5, y + w * 0.64, w * 0.28, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillRect(x + w * 0.36, y + w * 0.54, w * 0.08, w * 0.1);
+    }
+  }
 }
 
 /**

@@ -46,6 +46,8 @@ import { playerToSave, worldFromSave, dropItem, chestAt, chestsToSave, chestsFro
 import { craft, stationsNear } from './world/crafting.js';
 import { itemOf } from './world/items.js';
 import { InventoryScreen } from './world/inventoryui.js';
+import { TalkScreen } from './world/talkui.js';
+import { talkView, talkDo, endTalk } from './world/talk.js';
 import { WorldHost, WorldClient } from './world/worldnet.js';
 import { seedOf } from './world/noise.js';
 import { setDev, devKey } from './world/devmode.js';
@@ -614,6 +616,7 @@ function endMatch(to = state.returnTo) {
   // A world: kept as it is now (and the soldier's things and where they are).
   if (state.world) saveWorldNow(true);
   closeInventory();
+  closeTalk();
   state.replay = null;
   renderer.cam.zoom = 1;
   renderer.forgetMatch?.();
@@ -674,7 +677,7 @@ function setPaused(p) {
   // (A world: no restarting it, and no sitting out to watch. Pausing keeps it as it is.)
   if (state.world) { show('restart', false); show('spectate', false); if (p) saveWorldNow(); }
   else show('spectate', true);
-  if (p) closeInventory();
+  if (p) { closeInventory(); closeTalk(); }
   state.menuOpen = p;
   show('pause', p);
   fullscreenButton();
@@ -786,7 +789,7 @@ function localNote(text) {
 /** True while the match is being played (no menu, chat or picker open over it). */
 function playingNow() {
   const g = state.game;
-  return !!g && !g.over && !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open && !invScreen?.open &&
+  return !!g && !g.over && !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open && !invScreen?.open && !talkScreen?.open &&
     document.body.classList.contains('playing') && $('settings').classList.contains('hidden');
 }
 
@@ -947,6 +950,8 @@ async function startWorld(rec, { online = false } = {}) {
   chestsFromSave(world, rec.chests);
   claimsFromSave(world, rec.claims);
   world.time = Number.isFinite(rec.time) ? rec.time : 0;
+  // (What the towns' shops have sold today.)
+  world.townState = rec.towns && typeof rec.towns === 'object' ? structuredClone(rec.towns) : {};
   if (online) rec.pvp = $('worldPvp').value !== 'off';
   world.pvp = rec.pvp !== false;
   const game = new Game({ world, mode: 'world', speed: state.settings.speed, options: { destruction: true, crates: 'off', streaks: false }, seed: (Math.random() * 2 ** 31) | 0 });
@@ -1013,6 +1018,7 @@ function saveWorldNow(last = false) {
   w.rec.chests = chestsToSave(w.game.world);
   w.rec.claims = claimsToSave(w.game.world);
   w.rec.time = Math.round(w.game.world.time || 0);
+  w.rec.towns = w.game.world.townState || {};
   w.rec.played = Date.now();
   const chunks = w.game.world.takeDirty();
   return saveWorld(w.rec, chunks).catch(err => {
@@ -1060,6 +1066,47 @@ function closeInventory() {
   if (invScreen.chest && state.mode === 'client') state.net?.client?.link.send({ t: 'wop', op: 'close' }, true);
   invScreen.hide();
   if (state.game && !state.menuOpen && !state.chatOpen && !state.game.over) { input.enabled = true; grabControls(); }
+}
+
+// ---- Worlds: talking to townsfolk -------------------------------------------------------------------
+
+let talkScreen = null;
+const getTalk = () => (talkScreen ||= new TalkScreen($('talk'), { act: d => talkAct(d), close: () => closeTalk(true) }));
+
+/** A talk began or changed (talk.js's view of it): shown (the game carries on; your soldier stands still). */
+function showTalk(view) {
+  const g = state.game, me = state.me;
+  if (!g?.world || !me?.world || state.menuOpen || g.over) return;
+  if (invScreen?.open) closeInventory();
+  const t = getTalk();
+  const was = t.open;
+  t.show(view, me);
+  if (!was) {
+    input.enabled = false;
+    input.clear();
+    input.unlock();
+  }
+}
+
+/** The talk screen closed (bye: said goodbye, so the talk's ended too). */
+function closeTalk(bye = false) {
+  if (!talkScreen?.open) return;
+  talkScreen.hide();
+  const g = state.game, me = state.me;
+  if (bye && g && me) {
+    if (state.mode === 'client') state.net?.client?.link.send({ t: 'wop', op: 'talk', d: { op: 'bye' } }, true);
+    else endTalk(g, me);
+  }
+  if (g && !state.menuOpen && !state.chatOpen && !g.over && !invScreen?.open) { input.enabled = true; grabControls(); }
+}
+
+/** Something done in a talk (buying, selling, healing...): online, the host does it. */
+function talkAct(d) {
+  const g = state.game, me = state.me;
+  if (!g?.world || !me?.world) return;
+  if (state.mode === 'client') { state.net?.client?.link.send({ t: 'wop', op: 'talk', d }, true); return; }
+  talkDo(g, me, d);
+  audio.play('click');
 }
 
 /** The inventory screen's crafting: recipe r made up to `times` times (what doesn't fit goes on the ground). */
@@ -1799,6 +1846,7 @@ function startClient(link) {
       if (invScreen?.open && invScreen.chest?.tx === chest.tx && invScreen.chest?.ty === chest.ty) { invScreen.chest.inv = chest.inv; invScreen.refresh(true); }
       else { closeInventory(); openInventory(chest); }
     },
+    onTalk: view => { if (view) showTalk(view); else closeTalk(); },
   });
   net.client = new NetClient({
     link, world,
@@ -2011,6 +2059,12 @@ function frame(now) {
   const chest = invScreen?.open && invScreen.chest;
   if (chest && (!me.alive || !chestAt(g.world, chest.tx, chest.ty) || Math.hypot(chest.tx * 16 + 8 - me.x, chest.ty * 16 + 8 - me.y) > REACH * 1.5)) closeInventory();
   if (invScreen?.open) invScreen.refresh();
+  // Talking to townsfolk (here: in someone else's world, the host says when it begins and ends).
+  if (g.world && state.mode !== 'client') {
+    const view = me.world?.talk ? talkView(g, me) : null;
+    if (view) showTalk(view);
+    else if (talkScreen?.open) closeTalk();
+  } else if (talkScreen?.open) talkScreen.refresh();
   // Defuse's buy menu: kept up to date, and closed when you can't buy any more.
   if (buyMenu?.open) {
     if (canShop(g, me)) buyMenu.refresh(g, me);
@@ -2398,6 +2452,11 @@ function wire() {
       if (!e.repeat && invScreen.key(e.code)) e.preventDefault();
       return;
     }
+    // Talking: the number keys pick what to say, Esc says goodbye.
+    if (talkScreen?.open) {
+      if (!e.repeat && talkScreen.key(e.code)) e.preventDefault();
+      return;
+    }
     const key = keyOf(e.code);
     if (!e.repeat && pressMenuKey(key)) { e.preventDefault(); return; }
     if (e.code === 'Escape') {
@@ -2565,7 +2624,7 @@ async function boot() {
   window.stickSoldiers = {
     state, get renderer() { return renderer; }, get edition() { return edition; }, get input() { return input; }, setEdition, openGamePicker, pacer, prefs, perf, setGraphics, startMatch, endMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab,
     get profile() { return profile; }, openPicker, openLoadout,
-    startWorld, saveWorldNow, renderWorlds, openInventory, closeInventory, craftItem, get inventory() { return invScreen; },
+    startWorld, saveWorldNow, renderWorlds, openInventory, closeInventory, craftItem, get inventory() { return invScreen; }, get talk() { return talkScreen; },
     devExport: all => JSON.parse(devMenu.exportText(all)), // (what the developer menu copies out)
     // The camera and aiming zoom in use (the host's, in someone else's game).
     feelNow: () => ({ camera: cameraInUse(), aimZoom: hostFeel ? hostFeel.aimZoom : prefs.aimZoom, host: !!hostFeel }),

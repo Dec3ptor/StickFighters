@@ -14,6 +14,8 @@ import { monstersTick, armNpc, foes, isMonster, monsterLoot, hireMerc, mercsOf, 
 import { setDoor, pushDoor, doorsTick, soldierIn } from './doors.js';
 import { damage } from '../combat.js';
 import { devFly, devInput } from './devmode.js';
+import { townsfolkTick, isFolk } from './townsfolk.js';
+import { startTalk, talkTick, folkAt } from './talk.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -372,7 +374,7 @@ export function targetOf(s, inp) {
   const x = s.shoulderX + Math.cos(a) * d, y = s.shoulderY + Math.sin(a) * d;
   const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
   const cx = tx * TILE + TILE / 2 - s.shoulderX, cy = ty * TILE + TILE / 2 - s.shoulderY;
-  return { tx, ty, near: cx * cx + cy * cy <= REACH * REACH };
+  return { tx, ty, x, y, near: cx * cx + cy * cy <= REACH * REACH };
 }
 
 /** Whether tool `it` can dig block b (and how: 'ok', 'tier': it needs a better one, or null: the wrong tool). */
@@ -780,7 +782,10 @@ export function worldInput(game, s, inp) {
   w.prevAlt = alt;
   if (!alt) w.altDone = false;
   let useRight = false;
-  if (right) {
+  // (Right click on one of the townsfolk, whatever's in hand: talking to them. talk.js.)
+  const npc = altPressed && !inp.crouch && w.target ? folkAt(game, s, w.target.x, w.target.y) : null;
+  if (npc && startTalk(game, s, npc)) { w.altDone = true; inp.alt = false; }
+  else if (right) {
     if (altPressed && !inp.crouch && interact(game, s)) w.altDone = true;
     else if (alt && !w.altDone && !inp.fire) useRight = true;
     inp.alt = false;
@@ -811,7 +816,10 @@ export function worldInput(game, s, inp) {
 function useItem(game, s, item, inp, pressed) {
   const w = s.world;
   let fire = inp.fire;
-  if (item?.kind === 'contract') {
+  if (item?.kind === 'food') {
+    if (pressed) eat(game, s, item);
+    fire = false;
+  } else if (item?.kind === 'contract') {
     if (pressed) {
       if (mercsOf(game, s).length >= MERC.most) game.notify(s, `You can have ${MERC.most} mercenaries at a time`);
       else {
@@ -836,6 +844,17 @@ function useItem(game, s, item, inp, pressed) {
     fire = false;
   }
   return !!fire;
+}
+
+/** Eat (or drink) one of `item` (food: items.js): it heals. Not at full health. */
+function eat(game, s, item) {
+  const w = s.world, max = s.maxHealth || 150;
+  if (w.cool > 0) return;
+  if (s.health >= max) { game.notify(s, 'You\'re not hurt'); w.cool = 30; return; }
+  w.inv.remove(item.key, 1);
+  s.health = Math.min(max, s.health + item.heal);
+  w.cool = 30 / MOTION.timeScale;
+  game.sound('health', s.x, s.y, s.id);
 }
 
 /**
@@ -868,6 +887,8 @@ export function worldTick(game) {
   const world = game.world;
   world.time = (world.time || 0) + 1;
   monstersTick(game);
+  townsfolkTick(game);
+  for (const s of game.soldiers) if (s.world?.talk) talkTick(game, s);
   // The chunks round everyone made ready: those not made yet, a couple each update (nearest
   // first: making one takes a millisecond or so, and a whole new column at once stutters).
   const want = world.wanted ||= [];
@@ -937,6 +958,7 @@ export const worldMode = {
       if (id === K.LOOT_CRATE) openCrate(game, x, y);
       else if (id === K.CHEST) { dropItem(game, 'chest', 1, x, y); spillChest(game, tx, ty); }
       else if (id === K.TRUNK) dropItem(game, 'wood', 1, x, y);
+      else if ((id === K.LEAVES || id === K.JUNGLE_LEAVES) && game.rng() < 0.04) dropItem(game, 'apple', 1, x, y, (game.rng() - 0.5) * 2, -1.5);
       else if (b.drop && game.rng() < (b.natural ? 0.3 : 0.6)) dropItem(game, b.drop, 1, x, y, (game.rng() - 0.5) * 3, -2);
     };
   },
@@ -959,8 +981,8 @@ export const worldMode = {
     hold(s);
   },
 
-  /** (Nothing hurts a player in dev mode.) */
-  damage(game, amount, attacker, target) { return target?.world?.dev ? 0 : amount; },
+  /** (Nothing hurts a player in dev mode, nor any of the townsfolk but guards: townsfolk.js.) */
+  damage(game, amount, attacker, target) { return target?.world?.dev || (isFolk(target) && !target.npc.guard) ? 0 : amount; },
   /** Dev mode flies (devmode.js); else the game moves them. */
   moveSoldier(game, s, inp) { return devFly(game, s, inp); },
   /** Monsters don't hurt monsters; nor mercenaries the one who hired them; players each other only with PvP on. */
@@ -992,7 +1014,7 @@ export const worldMode = {
    * blocks built there since.)
    */
   spawnPoint(game, s) {
-    if (s.npc?.kind === 'monster') return s.npc.spawnAt;
+    if (s.npc?.spawnAt) return s.npc.spawnAt;
     if (s.npc?.kind === 'merc') {
       const o = game.soldiers.find(x => x.id === s.npc.owner);
       return safeSpot(game.world, o.x - o.facing * 24, o.y);

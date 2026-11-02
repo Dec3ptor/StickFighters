@@ -214,6 +214,63 @@ if (town) {
   await page.screenshot({ path: `${outDir}/world-town.png` });
 }
 
+// 4a2. Talking to the townsfolk (talk.js): right click on someone in the village, and the talk
+// screen opens; their shop; buying something; goodbye.
+const folk = await page.evaluate(async () => {
+  const T = await import('./src/world/townsfolk.js');
+  const { state } = window.stickSoldiers, g = state.game, me = state.me;
+  const all = g.soldiers.filter(s => s.npc?.kind === 'townsfolk' && s.alive);
+  const npc = all.find(s => ['merchant', 'smith', 'farmer'].includes(s.npc.role)) || all[0];
+  if (!npc) return null;
+  g.controllers.get(npc).wait = 5000;
+  // (Beside them, where they could walk: not inside a wall.)
+  const nx = Math.floor(npc.x / 16), ny = Math.floor((npc.y + 12) / 16), [lo, hi] = T.walkSpan(g.world, nx, ny, 6);
+  const x = nx - 2 >= lo ? nx - 2 : Math.min(hi, nx + 2);
+  me.body.x = x * 16 + 8; me.body.y = npc.y; me.body.vx = me.body.vy = 0;
+  me.world.inv.add('coins', 500);
+  return { id: npc.id, name: npc.name, role: npc.npc.role, count: all.length };
+});
+check(!!folk, 'townsfolk in the village');
+if (folk) {
+  await page.waitForTimeout(500);
+  for (let i = 0; i < 12; i++) {
+    const p = await page.evaluate(id => {
+      const { renderer: r, state } = window.stickSoldiers, npc = state.game.soldiers.find(s => s.id === id);
+      return { x: r.w / 2 + (npc.x - r.cam.x) * r.scale, y: r.h / 2 + (npc.y - 8 - r.cam.y) * r.scale };
+    }, folk.id);
+    await page.mouse.move(p.x, p.y);
+    await page.waitForTimeout(60);
+    const on = await page.evaluate(async id => {
+      const T = await import('./src/world/talk.js');
+      const { state } = window.stickSoldiers, t = state.me.world.target;
+      return t && T.folkAt(state.game, state.me, t.x, t.y)?.id === id;
+    }, folk.id);
+    if (on) break;
+  }
+  await page.mouse.down({ button: 'right' });
+  await page.waitForTimeout(80);
+  await page.mouse.up({ button: 'right' });
+  await page.waitForSelector('#talk:not(.hidden)', { timeout: 4000 }).catch(() => {});
+  const opened = await page.evaluate(() => ({ open: !document.getElementById('talk').classList.contains('hidden'), name: document.querySelector('#talk [data-name]')?.textContent, said: document.querySelector('#talk [data-said]')?.textContent, options: [...document.querySelectorAll('#talk [data-op]')].map(b => b.dataset.op) }));
+  report.talk = { ...folk, ...opened };
+  check(opened.open && folk.name.startsWith(opened.name), `the talk screen opened for ${folk.name} (${JSON.stringify(opened)})`);
+  if (opened.options.includes('trade')) {
+    await page.keyboard.press(`Digit${opened.options.indexOf('trade') + 1}`);
+    await page.waitForSelector('#talk [data-buy]:not([disabled])', { timeout: 3000 }).catch(() => {});
+    const before = await page.evaluate(() => window.stickSoldiers.state.me.world.inv.count('coins'));
+    await page.click('#talk [data-buy]:not([disabled])').catch(() => {});
+    await page.waitForTimeout(300);
+    const after = await page.evaluate(() => window.stickSoldiers.state.me.world.inv.count('coins'));
+    report.talk.bought = before - after;
+    check(after < before, `bought something (${before} -> ${after} coins)`);
+  }
+  await page.screenshot({ path: `${outDir}/world-talk.png` });
+  if (opened.open) await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  const ended = await page.evaluate(() => document.getElementById('talk').classList.contains('hidden') && !window.stickSoldiers.state.me.world.talk);
+  check(ended, 'goodbye: the talk screen closed and the talk ended');
+}
+
 // 4b. Night falls: the light dims, a monster comes for you and a mercenary is hired.
 await page.evaluate(async () => {
   const M = await import('./src/world/monsters.js');
