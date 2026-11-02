@@ -1021,9 +1021,11 @@ export class Backdrop {
 
   /**
    * Draw the sky and scenery for renderer r (its camera, size and scale), filling
-   * the canvas. ground: the world y the scenery stands on (the map's bottom).
+   * the canvas. ground: the world y the scenery stands on (the map's bottom). alpha
+   * below 1: over what's there, partly (a world's scenery, changing from one biome's
+   * to the next).
    */
-  draw(ctx, r, ground, dt = 16, vignette = 0) {
+  draw(ctx, r, ground, dt = 16, vignette = 0, alpha = 1) {
     const res = BUFFER[this.quality] || 0.6;
     const W = Math.max(1, Math.round(r.pw * res)), H = Math.max(1, Math.round(r.ph * res));
     const S0 = r.baseScale * r.dpr * res;
@@ -1041,7 +1043,7 @@ export class Backdrop {
     const last = this.last, maxP = b.layers.length ? b.layers[b.layers.length - 1].p : 0;
     if (last && last.S === S && last.ground === ground && last.vignette === vignette &&
       Math.max(Math.abs(cx - last.cx) * maxP, Math.abs(cy - last.cy) * maxP * VERTICAL, Math.abs(this.drift - last.drift) * 0.5) * S < 0.33) {
-      this.present(ctx, r, true);
+      this.present(ctx, r, true, alpha);
       return;
     }
     this.picture = (this.picture || 0) + 1;
@@ -1089,16 +1091,24 @@ export class Backdrop {
     }
     // (Lower quality: the edges darkened here, not over the whole picture afterwards.)
     if (vignette > 0) drawVignette(bc, W, H, vignette);
-    this.present(ctx, r);
+    this.present(ctx, r, false, alpha);
   }
 
   /**
    * Onto the screen, in one go (it covers everything: no blending needed). still: the same
    * picture as last frame; drawn by the processor, it's then copied from the screen-sized
-   * copy (stretched once: the same pixels) rather than stretched again.
+   * copy (stretched once: the same pixels) rather than stretched again. alpha below 1: over
+   * what's there, partly (stretched each time: the screen-sized copy is kept for the scenery
+   * underneath).
    */
-  present(ctx, r, still = false) {
+  present(ctx, r, still = false, alpha = 1) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (alpha < 1) {
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(this.buf, 0, 0, r.pw, r.ph);
+      ctx.globalAlpha = 1;
+      return;
+    }
     ctx.globalCompositeOperation = 'copy';
     if (still && drawnByCPU()) ctx.drawImage(this.full(r), 0, 0);
     else ctx.drawImage(this.buf, 0, 0, r.pw, r.ph);

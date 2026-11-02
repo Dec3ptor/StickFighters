@@ -253,10 +253,13 @@ export const WORLD_THEMES = {
 // Each biome's look (worldgen.js's biomes).
 const BIOME_THEMES = { plains: 'meadow', forest: 'meadow', mountains: 'meadow', desert: 'desert', badlands: 'desert', jungle: 'jungle', snow: 'arctic' };
 
-/** The look for a world where a biome (its key) is. */
+const worldThemes = new Map();
+/** The look for a world where a biome (its key) is (the same one each time). */
 export function worldTheme(biome) {
   const id = BIOME_THEMES[biome] || 'meadow';
-  return { id, ...(WORLD_THEMES[id] || THEMES[id]) };
+  let t = worldThemes.get(id);
+  if (!t) worldThemes.set(id, t = { id, ...(WORLD_THEMES[id] || THEMES[id]) });
+  return t;
 }
 
 /**

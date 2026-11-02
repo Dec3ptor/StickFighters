@@ -18,7 +18,7 @@ import { drawSoldier, drawLineSoldier, drawShadows, drawName } from './soldiers.
 import { skinFor } from '../skins.js';
 import { Lights, Weather, LIGHT, glowSprite, fireballSprite, smokeSprite, cloudSprite, drawVignette, drawnByCPU, dropVignetteCopies } from './fx.js';
 import { styledContext } from './hudstyle.js';
-import { css } from './color.js';
+import { css, mix } from './color.js';
 import { GameMap } from '../map.js';
 import { paintMap } from '../maptiles.js';
 import { WorldView, drawDrops, drawTarget } from '../world/worldrender.js';
@@ -71,6 +71,25 @@ function dimmingOf(theme) {
   return c;
 }
 
+// A world's scenery turns from one biome's into the next across this many blocks either side
+// of where they meet, and eases over about this long (ms) when the camera jumps.
+const BLEND_TILES = 48, BLEND_MS = 320;
+// The colours between two biomes' looks change in this many steps.
+const MIX_STEPS = 16;
+const mostFirst = (a, b) => b.w - a.w;
+
+/** Theme a with what the soldiers, gibs, vignette and darkness take from it mixed toward theme b's by u. */
+function mixedTheme(a, b, u) {
+  const c = (x, y) => css(mix(x || '#ffffff', y || '#ffffff', u));
+  return {
+    ...a,
+    ink: c(a.ink, b.ink), haze: c(a.haze, b.haze), rim: c(a.rim, b.rim), halo: c(a.halo, b.halo),
+    haloAlpha: lerp(a.haloAlpha ?? 0.3, b.haloAlpha ?? 0.3, u),
+    vignette: Math.round(lerp(a.vignette || 0, b.vignette || 0, u) * 50) / 50,
+    dark: lerp(a.dark || 0, b.dark || 0, u),
+  };
+}
+
 export class RemasteredRenderer extends Renderer {
   /**
    * quality: 'high' (everything), 'medium' (plain-coloured block sides, less weather, simpler
@@ -109,7 +128,8 @@ export class RemasteredRenderer extends Renderer {
    */
   shed(now = performance.now()) {
     if (!this.auto || this.quality === 'low') return false;
-    if (now - this.adaptedAt < SETTLE || now - (this.look?.at ?? -Infinity) < SETTLE) return true;
+    const made = Math.max(this.look?.at ?? -Infinity, this.worldLooks?.madeAt ?? -Infinity);
+    if (now - this.adaptedAt < SETTLE || now - made < SETTLE) return true;
     const next = this.quality === 'high' ? 'medium' : 'low';
     this.quality = next;
     this.flat = next === 'low';
@@ -126,7 +146,7 @@ export class RemasteredRenderer extends Renderer {
   lookFor(map) {
     const q = this.quality;
     if (this.look?.map === map && this.look.quality === q) return this.look;
-    if (this.looks?.map !== map) { this.looks = { map }; this.gibHalo = null; }
+    if (this.looks?.map !== map) this.looks = { map };
     let look = this.looks[q];
     if (!look) {
       const other = this.looks.high || this.looks.medium || this.looks.low, theme = other?.theme || themeFor(map);
@@ -144,37 +164,99 @@ export class RemasteredRenderer extends Renderer {
   }
 
   /**
-   * A world's look: the sky and scenery of the biome under the camera (changing once the
-   * camera's been over another biome a moment), standing on the land round about. Each look
-   * is kept once made.
+   * A world's look: the sky, scenery and weather of the biome under the camera, standing on
+   * the land round about. Near where two biomes meet both show, one turning into the other
+   * across the land either side of the edge (and over a moment when the camera jumps: a
+   * respawn, a teleport): worldLooks.parts, the looks shown and how much of each, the most
+   * first; worldLooks.theme, the colours between them. Returns the look with the most.
    */
-  worldLookFor(game) {
-    const world = game.world, q = this.quality, gen = world.gen, tx = Math.floor(this.cam.x / TILE);
+  worldLookFor(game, dt = 16) {
+    const world = game.world, q = this.quality, gen = world.gen, x = this.cam.x / TILE, tx = Math.floor(x);
     let wl = this.worldLooks;
-    if (wl?.world !== world) wl = this.worldLooks = { world, looks: new Map(), mats: new Map(), theme: worldTheme(gen.biomeAt(tx).key), since: 0, ground: null };
-    const here = worldTheme(gen.biomeAt(tx).key);
-    if (here.id !== wl.theme.id) { if (++wl.since > 45) { wl.theme = here; wl.since = 0; } } else wl.since = 0;
-    // (The scenery stands a little below the land round about, eased as the land rises and falls.)
+    const fresh = wl?.world !== world;
+    if (fresh) {
+      wl = this.worldLooks = {
+        world, looks: new Map(), mats: new Map(), weights: new Map(), parts: [], blend: {}, mixes: new Map(),
+        theme: null, ground: null, sky: 1, madeAt: 0,
+      };
+    }
+    // How much of each biome's look there is where the camera is; eased (a new world: at once).
+    const b = gen.blendAt(x, BLEND_TILES, wl.blend), own = worldTheme(b.own.key), other = worldTheme(b.other.key);
+    const k = fresh ? 1 : 1 - Math.exp(-dt / BLEND_MS), W = wl.weights;
+    if (!W.has(own)) W.set(own, 0);
+    if (!W.has(other)) W.set(other, 0);
     let sum = 0;
-    for (let i = -6; i <= 6; i++) sum += gen.surfaceAt(tx + i * 12);
-    const land = (sum / 13) * TILE + 140;
+    for (const [theme, w] of W) {
+      const want = (theme === own ? 1 - b.t : 0) + (theme === other ? b.t : 0), now = w + (want - w) * k;
+      if (want === 0 && now < 0.003) W.delete(theme);
+      else { W.set(theme, now); sum += now; }
+    }
+    const parts = wl.parts;
+    let n = 0;
+    for (const [theme, w] of W) {
+      const part = parts[n++] ||= { look: null, w: 0 };
+      part.look = this.worldLook(wl, theme, q, game);
+      part.w = w / sum;
+    }
+    parts.length = n;
+    if (n > 1) parts.sort(mostFirst);
+    wl.theme = n > 1 ? this.mixTheme(wl, parts[0].look.theme, parts[1].look.theme, parts[1].w / (parts[0].w + parts[1].w)) : parts[0].look.theme;
+    // (The scenery stands a little below the land round about, eased as the land rises and falls.)
+    let land = 0;
+    for (let i = -6; i <= 6; i++) land += gen.surfaceAt(tx + i * 12);
+    land = (land / 13) * TILE + 140;
     wl.ground = wl.ground == null ? land : wl.ground + (land - wl.ground) * 0.04;
-    const theme = wl.theme, key = `${theme.id}/${q}`;
-    let look = wl.looks.get(key);
+    // The weather fades out a few blocks underground.
+    const below = this.cam.y / TILE - gen.surfaceAt(tx), sky = Math.min(1, Math.max(0, (15 - below) / 4));
+    wl.sky += (sky - wl.sky) * k;
+    const look = parts[0].look;
+    look.ground = Math.round(wl.ground);
+    return (this.look = look);
+  }
+
+  /** A world's look in a biome's theme, at quality q: made the first time, then kept. */
+  worldLook(wl, theme, q, game) {
+    let byQuality = wl.looks.get(theme);
+    if (!byQuality) wl.looks.set(theme, byQuality = {});
+    let look = byQuality[q];
     if (!look) {
-      let mats = wl.mats.get(theme.id);
-      if (!mats) wl.mats.set(theme.id, mats = makeMaterials(this.ctx, theme));
-      look = {
+      let mats = wl.mats.get(theme);
+      if (!mats) wl.mats.set(theme, mats = makeMaterials(this.ctx, theme));
+      look = byQuality[q] = {
         map: game.map, theme, quality: q, at: performance.now(),
-        backdrop: new Backdrop(theme, seedOf(`${world.name}/${theme.id}`), q),
+        backdrop: new Backdrop(theme, seedOf(`${wl.world.name}/${theme.id}`), q),
         mats, blocks: null,
         weather: q === 'low' ? null : new Weather(theme.weather, q),
         ground: 0, floor: Infinity,
       };
-      wl.looks.set(key, look);
+      wl.madeAt = look.at;
     }
-    look.ground = Math.round(wl.ground);
-    return (this.look = look);
+    return look;
+  }
+
+  /**
+   * Theme a's colours mixed toward theme b's by t (b's share, up to a half: a has more), in
+   * steps, each kept once made: what the soldiers, gibs, vignette and darkness use between
+   * two biomes.
+   */
+  mixTheme(wl, a, b, t) {
+    const step = Math.round(t * MIX_STEPS);
+    if (step <= 0 || a === b) return a;
+    let byB = wl.mixes.get(a);
+    if (!byB) wl.mixes.set(a, byB = new Map());
+    let steps = byB.get(b);
+    if (!steps) byB.set(b, steps = []);
+    return (steps[step] ||= mixedTheme(a, b, step / MIX_STEPS));
+  }
+
+  /** A world's sky and scenery: the biome's look with the most first, the others faded in over it. */
+  drawWorldScenery(ctx, dt) {
+    const wl = this.worldLooks, ground = Math.round(wl.ground), low = this.quality !== 'high';
+    let shown = 0;
+    for (const p of wl.parts) {
+      shown += p.w;
+      p.look.backdrop.draw(ctx, this, ground, dt, low ? p.look.theme.vignette : 0, p.w / shown);
+    }
   }
 
   /** A world (world mode): its blocks (worldrender.js), what glows in them lighting up round it, and what's on the ground. */
@@ -226,7 +308,8 @@ export class RemasteredRenderer extends Renderer {
     const now = performance.now(), dt = Math.min(100, now - this.frameAt);
     this.frameAt = now;
     const world = game.world;
-    const look = world ? this.worldLookFor(game) : this.lookFor(game.map), theme = look.theme;
+    const look = world ? this.worldLookFor(game, dt) : this.lookFor(game.map);
+    const theme = this.theme = world ? this.worldLooks.theme : look.theme;
     const ctx = this.ctx, s = this.scale * this.dpr;
     this.blank = false;
     this.alpha = alpha;
@@ -236,7 +319,8 @@ export class RemasteredRenderer extends Renderer {
     this.updateView(s, tx, ty);
     this.lineW = Math.max(1.1, 1.3 / this.scale);
 
-    look.backdrop.draw(ctx, this, look.ground, dt, this.quality === 'high' ? 0 : theme.vignette);
+    if (world) this.drawWorldScenery(ctx, dt);
+    else look.backdrop.draw(ctx, this, look.ground, dt, this.quality === 'high' ? 0 : theme.vignette);
     if (world) drawNight(ctx, this, nightness(world.time || 0));
     ctx.setTransform(s, 0, 0, s, tx, ty);
     this.lights.clear();
@@ -279,8 +363,9 @@ export class RemasteredRenderer extends Renderer {
     look.backdrop.drawFore(ctx, this, look.floor);
     ctx.setTransform(s, 0, 0, s, tx, ty);
     for (const sol of shown.names) this.drawName(game, sol, alpha, viewer);
-    // (No weather underground.)
-    if (!world || this.cam.y < (world.gen.surfaceAt(Math.floor(this.cam.x / TILE)) + 14) * TILE) look.weather?.draw(ctx, this, dt);
+    // (A world's: each biome's shown as much as its scenery is, fading out underground.)
+    if (world) for (const p of this.worldLooks.parts) p.look.weather?.draw(ctx, this, dt, p.w * this.worldLooks.sky);
+    else look.weather?.draw(ctx, this, dt);
     if (this.quality === 'high') drawVignette(ctx, this.pw, this.ph, theme.vignette);
     ctx.setTransform(s, 0, 0, s, tx, ty);
     this.fogNow?.drawAlerts(ctx);
@@ -290,8 +375,9 @@ export class RemasteredRenderer extends Renderer {
   drawSoldier(game, s, alpha) {
     // Remastered's own soldier, or a stick figure (the classic look, or a skin's: skins.js).
     const skin = skinFor(s, 'soldier');
-    if (skin === 'soldier') drawSoldier(this, game, s, alpha, this.look.theme);
-    else drawLineSoldier(this, game, s, alpha, this.look.theme, skin);
+    const theme = this.theme || this.look.theme;
+    if (skin === 'soldier') drawSoldier(this, game, s, alpha, theme);
+    else drawLineSoldier(this, game, s, alpha, theme, skin);
     const x = lerp(s.prevX, s.x, alpha), y = lerp(s.prevY, s.y, alpha);
     if (s.body.jetting) this.lights.add(x - s.facing * 3, y - 2, 34, LIGHT.jet, 0.55);
     // A Juggernaut lights up everything round it, pulsing with its glow.
@@ -299,6 +385,15 @@ export class RemasteredRenderer extends Renderer {
   }
 
   drawName(game, s, alpha, viewer) { drawName(this, game, s, alpha, viewer); }
+
+  /** The pale outline round gibs, in a theme's colours (worked out again only when the theme changes). */
+  gibHaloOf(theme) {
+    if (this.gibTheme !== theme) {
+      this.gibTheme = theme;
+      this.gibHalo = css(theme?.halo || '#ffffff', (theme?.haloAlpha ?? 0.3) * 0.8);
+    }
+    return this.gibHalo;
+  }
 
   /** Jump pads: glowing green, with chevrons rising. */
   drawPads(game) {
@@ -497,11 +592,11 @@ export class RemasteredRenderer extends Renderer {
       }
       case 'gib': {
         // A limb, outlined like the soldiers (so it reads on any background), bloody at one end.
-        const theme = this.look?.theme, ink = theme?.ink || '#111';
+        const theme = this.theme ?? this.look?.theme, ink = theme?.ink || '#111';
         const dx = Math.cos(p.angle) * p.len / 2, dy = Math.sin(p.angle) * p.len / 2;
         ctx.globalAlpha = Math.min(1, p.life / 40);
         ctx.lineCap = 'round';
-        ctx.strokeStyle = this.gibHalo ||= css(theme?.halo || '#ffffff', (theme?.haloAlpha ?? 0.3) * 0.8);
+        ctx.strokeStyle = this.gibHaloOf(theme);
         ctx.lineWidth = 4.6;
         ctx.beginPath(); ctx.moveTo(x - dx, y - dy); ctx.lineTo(x + dx, y + dy); ctx.stroke();
         ctx.strokeStyle = ink;
@@ -514,9 +609,9 @@ export class RemasteredRenderer extends Renderer {
         return;
       }
       case 'head': {
-        const theme = this.look?.theme;
+        const theme = this.theme ?? this.look?.theme;
         ctx.globalAlpha = Math.min(1, p.life / 40);
-        ctx.fillStyle = this.gibHalo ||= css(theme?.halo || '#ffffff', (theme?.haloAlpha ?? 0.3) * 0.8);
+        ctx.fillStyle = this.gibHaloOf(theme);
         ctx.beginPath(); ctx.arc(x, y, p.r + 1.4, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = theme?.ink || '#111';
         ctx.beginPath(); ctx.arc(x, y, p.r, 0, Math.PI * 2); ctx.fill();

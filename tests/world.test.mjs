@@ -10,7 +10,7 @@ import { DEFAULT_SPEED } from '../web/src/config.js';
 import { TileWorld, TILE, CHUNK, WORLD_H, chunkKey } from '../web/src/world/tileworld.js';
 import * as K from '../web/src/world/blocks.js';
 import { BLOCKS, SHAPES, BLOCK_BY_KEY } from '../web/src/world/blocks.js';
-import { BIOMES } from '../web/src/world/worldgen.js';
+import { BIOMES, WorldGen } from '../web/src/world/worldgen.js';
 import { Inventory, itemOf, ammoOf, HOTBAR, BAG, STARTING_KIT } from '../web/src/world/items.js';
 import { worldState, playerToSave, worldFromSave, safeSpot, shapeTiles, canPlace, breakBlock, dropItem, REACH } from '../web/src/world/worldplay.js';
 import { lightBox, SOLDIER_GLOW } from '../web/src/world/worldrender.js';
@@ -709,4 +709,33 @@ test('monsters leave monsters alone; mercenaries follow whoever hired them, shoo
   untilAlive(other.game, other.me);
   run(other.game, 5);
   assert.equal(mercsOf(other.game, other.me).filter(s => s.alive).length, 1, 'your mercenary back with you');
+});
+
+test('scenery blends between biomes across the land either side of where they meet', () => {
+  const g = new WorldGen(4242), out = {};
+  // (An edge between two different biomes.)
+  let k = g.spawnRegion + 1;
+  while (g.regionBiome(k - 1) === g.regionBiome(k)) k++;
+  const edge = g.edge(k), east = g.regionBiome(k);
+  const at = d => ({ ...g.blendAt(edge + d, 48, out) });
+  // Far from the edge: only the region's own biome.
+  assert.equal(at(-200).t, 0);
+  assert.equal(at(-48).t, 0);
+  // Right at the edge: half each.
+  assert.equal(at(0).t, 0.5);
+  // Either side: the same mix seen from each biome (the other one's share mirrored).
+  for (const d of [6, 20, 40]) {
+    const left = at(-d), right = at(d);
+    assert.equal(left.own, right.other);
+    assert.equal(left.other, right.own);
+    assert.ok(Math.abs(left.t - right.t) < 1e-9, `mirrored at ${d}`);
+  }
+  // Rising smoothly, with no jumps, all the way across.
+  let last = 0;
+  for (let d = -60; d <= 60; d += 0.5) {
+    const b = at(d), share = b.own === east ? 1 - b.t : b.t;
+    assert.ok(share >= last - 1e-9 && share - last < 0.03, `smooth at ${d}`);
+    last = share;
+  }
+  assert.equal(last, 1);
 });

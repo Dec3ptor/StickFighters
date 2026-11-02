@@ -116,6 +116,21 @@ export class WorldGen {
   surfaceAt(x) { return this.column(x).surf; }
   biomeAt(x) { return this.column(x).biome; }
 
+  /**
+   * For what changes gradually from one biome to the next (Remastered's scenery): the biomes
+   * either side of the nearest edge to x (tiles, fractions too), and how much of the other one
+   * there is at x: none `half` tiles or more from the edge, half right at it, rising smoothly
+   * across it. Into `out` ({ own, other, t }).
+   */
+  blendAt(x, half = 48, out = {}) {
+    const k = this.regionAt(Math.floor(x)), dl = x - this.edge(k), dr = this.edge(k + 1) - x;
+    const v = Math.max(0, 0.5 - Math.min(dl, dr) / (2 * half));
+    out.own = this.regionBiome(k);
+    out.other = this.regionBiome(dl <= dr ? k - 1 : k + 1);
+    out.t = v * v * (3 - 2 * v);
+    return out;
+  }
+
   // ---- Underground ---------------------------------------------------------------------------
 
   /** True if (x, y) is in a cave or tunnel. surf: the column's surface row. */

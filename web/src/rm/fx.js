@@ -321,22 +321,29 @@ export class Weather {
     return p;
   }
 
-  /** Move and draw the weather over the screen (screen pixels), following the camera at each particle's depth. */
-  draw(ctx, r, dt) {
+  /**
+   * Move and draw the weather over the screen (screen pixels), following the camera at each
+   * particle's depth. alpha: how much of it shows (a world's, fading in or out between biomes).
+   */
+  draw(ctx, r, dt, alpha = 1) {
     const d = this.def;
-    if (!d) return;
+    if (!d || !(alpha > 0.004)) return;
+    const now = performance.now();
+    // (Not drawn for a while: it carries on from where the camera is now, not from where it was.)
+    if (now - (this.drawnAt || 0) > 250) this.camX = null;
+    this.drawnAt = now;
     const W = r.pw, H = r.ph, S = r.scale * r.dpr, f = dt / 16.7;
     const cam = r.cam;
     const dx = this.camX != null ? (cam.x - this.camX) * S : 0, dy = this.camX != null ? (cam.y - this.camY) * S : 0;
     this.camX = cam.x;
     this.camY = cam.y;
-    const t = performance.now() / 1000;
+    const t = now / 1000;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (d.kind === 'glow') ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = d.color;
     ctx.strokeStyle = d.color;
     ctx.lineWidth = Math.max(1, r.dpr * 0.9);
-    if (d.kind === 'streak') ctx.beginPath();
+    if (d.kind === 'streak') { ctx.globalAlpha = alpha; ctx.beginPath(); }
     for (const p of this.parts) {
       const k = p.z * S * 0.5;
       p.x = (p.x * W - dx * p.z + (d.drift * k + (d.sway ? Math.sin(t * d.sway + p.ph) * 0.4 * k : 0)) * f) / W;
@@ -349,7 +356,7 @@ export class Weather {
         ctx.moveTo(x, y);
         ctx.lineTo(x + d.drift * s * 0.4, y + s * 3);
       } else {
-        ctx.globalAlpha = Math.min(1, 0.35 + p.z * 0.45);
+        ctx.globalAlpha = Math.min(1, 0.35 + p.z * 0.45) * alpha;
         ctx.fillRect(x, y, s, s);
       }
     }
