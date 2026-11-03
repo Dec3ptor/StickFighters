@@ -399,23 +399,29 @@ function drawTalkHint(ctx, game, me, W, H) {
 }
 
 /** Dev mode's card (devmode.js): what it's set to, and its keys. */
-/** Looking through a scope (scope.js): the edges darkened, how far it's zoomed and how far out the view is. */
+/** Looking through a scope (scope.js): the edges darkened, how far it's zoomed, how far out the view is, and what stops it. */
 function drawScope(ctx, sc, W, H) {
   const r = Math.min(W, H) * 0.55, g = ctx.createRadialGradient(W / 2, H / 2, r * 0.75, W / 2, H / 2, Math.hypot(W, H) / 2);
   g.addColorStop(0, 'rgba(0,0,0,0)');
   g.addColorStop(1, 'rgba(0,0,0,0.55)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
-  ctx.font = '600 13px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  const far = sc.blocked ? `${sc.blocks} blocks out: can't see past that` : sc.blocks >= sc.reach - 1 ? `${sc.reach} blocks out: as far as it reaches` : `${sc.blocks} of ${sc.reach} blocks out`;
-  const text = `Scope ${(sc.zoom || 1).toFixed(1)}× · ${far} · crosshair toward the edge: look further · wheel: zoom · let go of right click: back`;
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  const tw = ctx.measureText(text).width;
-  ctx.fillRect(W / 2 - tw / 2 - 8, H - 132, tw + 16, 22);
-  ctx.fillStyle = '#fff';
-  ctx.fillText(text, W / 2, H - 116);
+  // (How it stands, and under it, how it's used.)
+  const why = sc.limit === 'sight' ? ": can't see past that" : sc.limit === 'range' ? ': as far as your shots go' : '';
+  const lines = [
+    ['600 13px system-ui, sans-serif', `Scope ${(sc.zoom || 1).toFixed(1)}× · ${sc.blocks} block${sc.blocks === 1 ? '' : 's'} out${why} · shots reach ${sc.range}`],
+    ['12px system-ui, sans-serif', `crosshair toward the edge: look further · wheel: zoom (up to ${sc.mag}×) · let go: back`],
+  ];
+  lines.forEach(([font, text], i) => {
+    ctx.font = font;
+    const tw = ctx.measureText(text).width, y = H - 150 + i * 21;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(W / 2 - tw / 2 - 8, y - 15, tw + 16, 20);
+    ctx.fillStyle = i ? '#dcdcdc' : '#fff';
+    ctx.fillText(text, W / 2, y);
+  });
 }
 
 function drawDev(ctx, me, zoom) {

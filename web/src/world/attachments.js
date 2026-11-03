@@ -157,7 +157,7 @@ export function describe(a) {
 /** What an attachment does: a few words for each thing. */
 export function effects(a) {
   const bits = [];
-  if (a.scope) bits.push(`aiming, zooms in ${a.scope.mag}× and sees out to ${a.scope.reach} blocks`);
+  if (a.scope) bits.push(`aiming, looks out to ${a.scope.reach} blocks (as far as its shots go) and zooms up to ${a.scope.mag}× with the wheel`);
   if (a.stats?.wacc) bits.push(`${a.stats.wacc}% more accurate`);
   if (a.stats?.wdmg) bits.push(`${a.stats.wdmg > 0 ? '+' : ''}${a.stats.wdmg}% damage`);
   if (a.stats?.wmag) bits.push(`+${a.stats.wmag}% magazine`);

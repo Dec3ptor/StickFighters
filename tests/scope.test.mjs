@@ -1,10 +1,11 @@
-// Looking down a scope (web/src/world/scope.js): it zooms in on what's under the crosshair (and
-// that stays under it), the wheel zooms in and out, the middle of the screen holds the view still
-// and toward the edge steers it (as fast on the screen whatever the zoom, faster kept there), the
-// mouse out of the window stops it, it goes no further than the scope reaches, and only where the
-// one looking could see: not through walls or into hills (glass is seen through), nor into land
-// not made yet, and back into sight if they step behind something. And a sniper rifle has a scope
-// of its own (attachments.js), a better one fitted taking over.
+// Looking down a scope (web/src/world/scope.js): it doesn't zoom by itself; the wheel zooms in
+// and out on what's under the crosshair (and that stays under it); the middle of the screen holds
+// the view still and toward the edge steers it (as fast on the screen whatever the zoom, faster
+// kept there); the mouse out of the window stops it; it goes no further than the scope reaches,
+// nor shows anything further than the gun's shots go (combat.js's shotReach: an arrow, as far as
+// it carries); and only where the one looking could see: not through walls or into hills (glass is
+// seen through), nor into land not made yet, and back into sight if they step behind something.
+// And a sniper rifle has a scope of its own (attachments.js), a better one fitted taking over.
 // Run with: npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,6 +13,8 @@ import { TileWorld, TILE } from '../web/src/world/tileworld.js';
 import * as K from '../web/src/world/blocks.js';
 import { newScopeView, scopeStart, scopeWheel, scopeFrame, pushOf, boostOf, SCOPE_DEAD } from '../web/src/world/scope.js';
 import { scopeOf, OWN_SCOPES, ATTACHMENTS } from '../web/src/world/attachments.js';
+import { shotReach } from '../web/src/combat.js';
+import { WEAPONS } from '../web/src/weapons.js';
 import { sightFrom } from '../web/src/world/worldrender.js';
 import { Fog } from '../web/src/fog.js';
 
@@ -31,40 +34,49 @@ const run = (sv, m, n, mx, my, opts = {}) => {
   for (let i = 0; i < n; i++) scopeFrame(sv, m.world, opts.ex ?? m.ex, opts.ey ?? m.ey, mx, my, W, H, BASE, DT, opts.out);
   return sv;
 };
-/** Scoped at the eye, zoomed in on the middle of the screen, settled. */
-function scoped(m, scope = { reach: 120, mag: 2.4 }) {
+/** Scoped at the eye (no limit to the shots unless given), zoomed in by the wheel `notches`, settled. */
+function scoped(m, scope = { reach: 120, mag: 2.4 }, notches = 0, range = 0) {
   const sv = newScopeView();
-  scopeStart(sv, scope, m.ex, m.ey, 1, 0, 0, BASE);
+  scopeStart(sv, scope, m.ex, m.ey, 1, 0, 0, BASE, range);
+  for (let i = 0; i < notches; i++) scopeWheel(sv, -1, 0, 0, BASE);
   return run(sv, m, 60, 0, 0);
 }
 
-test('it zooms in on what\'s under the crosshair, and that stays under it', () => {
+test('it doesn\'t zoom by itself; the wheel zooms in on what\'s under the crosshair, and that stays under it', () => {
   const m = flat(), sv = newScopeView();
   // (A point well off the middle, but where the view holds still.)
   const cx = m.ex + 30, cy = m.ey - 20, mx = 250, my = -90;
-  const under = { x: cx + mx / BASE, y: cy + my / BASE };
   scopeStart(sv, { reach: 120, mag: 2.4 }, cx, cy, 1, mx, my, BASE);
+  run(sv, m, 60, mx, my);
+  assert.equal(sv.z, 1, 'not zoomed');
+  assert.ok(Math.abs(sv.vx - cx) < 1e-6 && Math.abs(sv.vy - cy) < 1e-6, 'and the view where it was');
+  const under = { x: cx + mx / BASE, y: cy + my / BASE };
+  for (let i = 0; i < 4; i++) scopeWheel(sv, -1, mx, my, BASE);
   for (let i = 0; i < 60; i++) {
     scopeFrame(sv, m.world, m.ex, m.ey, mx, my, W, H, BASE, DT);
     // (Under the crosshair, all the way in.)
     const x = sv.vx + mx / (BASE * sv.z), y = sv.vy + my / (BASE * sv.z);
     assert.ok(Math.abs(x - under.x) < 0.5 && Math.abs(y - under.y) < 0.5, `frame ${i}: ${x.toFixed(1)},${y.toFixed(1)}`);
   }
-  assert.equal(sv.z, 2.4, 'all the way in');
-  assert.ok(sv.z > 1.5, 'zoomed in, not out');
+  assert.equal(sv.z, 2.4, 'zoomed in by the wheel, as far as the scope goes');
+  // (Started again: not zoomed, whatever it was before.)
+  scopeStart(sv, { reach: 120, mag: 2.4 }, sv.vx, sv.vy, sv.z, mx, my, BASE);
+  run(sv, m, 60, mx, my);
+  assert.equal(sv.z, 1, 'back to none');
 });
 
-test('the wheel zooms in and out, from none to the scope\'s own, on the crosshair', () => {
+test('the wheel zooms in and out, from none to the scope\'s own', () => {
   const m = flat(), sv = scoped(m);
-  scopeWheel(sv, 1, 0, 0, BASE);
+  assert.equal(sv.z, 1);
+  scopeWheel(sv, -1, 0, 0, BASE);
   run(sv, m, 60, 0, 0);
-  assert.ok(Math.abs(sv.z - 2.4 / 1.25) < 1e-6, `a notch out (${sv.z})`);
-  for (let i = 0; i < 10; i++) scopeWheel(sv, 1, 0, 0, BASE);
-  run(sv, m, 60, 0, 0);
-  assert.equal(sv.z, 1, 'never out past none');
+  assert.ok(Math.abs(sv.z - 1.25) < 1e-6, `a notch in (${sv.z})`);
   for (let i = 0; i < 10; i++) scopeWheel(sv, -1, 0, 0, BASE);
   run(sv, m, 60, 0, 0);
   assert.equal(sv.z, 2.4, 'never in past the scope\'s own');
+  for (let i = 0; i < 10; i++) scopeWheel(sv, 1, 0, 0, BASE);
+  run(sv, m, 60, 0, 0);
+  assert.equal(sv.z, 1, 'never out past none');
 });
 
 test('the middle of the screen holds still; toward the edge steers, faster nearer it', () => {
@@ -85,12 +97,12 @@ test('the middle of the screen holds still; toward the edge steers, faster neare
 
 test('steering goes as fast on the screen whatever the zoom; kept at the edge, faster', () => {
   const m = flat();
-  const moved = (zoom, frames) => {
-    const sv = scoped(m, { reach: 120, mag: zoom }), x0 = sv.vx;
-    run(sv, m, frames, W / 2 - 2, 0);
-    return (sv.vx - x0) * BASE * zoom;  // (on the screen)
+  const moved = notches => {
+    const sv = scoped(m, { reach: 120, mag: 3 }, notches), x0 = sv.vx;
+    run(sv, m, 10, W / 2 - 2, 0);
+    return (sv.vx - x0) * BASE * sv.z;  // (on the screen)
   };
-  const a = moved(1.2, 10), b = moved(2.4, 10);
+  const a = moved(0), b = moved(4);
   assert.ok(Math.abs(a - b) / a < 0.05, `the same on the screen (${a.toFixed(0)} and ${b.toFixed(0)} px)`);
   // (Long scopes pick up speed, kept at the edge; short ones don't need to.)
   assert.equal(boostOf(30), 1);
@@ -98,6 +110,7 @@ test('steering goes as fast on the screen whatever the zoom; kept at the edge, f
   // (From the arena's far end: room to go.)
   const far = { ex: -190 * TILE, ey: m.ey }, sv = newScopeView();
   scopeStart(sv, { reach: 500, mag: 2 }, far.ex, far.ey, 1, 0, 0, BASE);
+  for (let i = 0; i < 3; i++) scopeWheel(sv, -1, 0, 0, BASE);
   run(sv, m, 60, 0, 0, far);
   run(sv, m, 6, W / 2 - 2, 0, far);
   const x1 = sv.vx;
@@ -162,6 +175,43 @@ test('not into land not made yet; and back into sight when they step behind some
   run(sv, m, 1, 0, 0);
   assert.ok(sv.vx < back * TILE, 'back this side of it');
   assert.ok(m.world.sight(m.ex, m.ey, sv.vx, sv.vy) >= 1);
+});
+
+test('nothing on the screen further than the shots go; zoomed in, it can look further', () => {
+  const m = flat(), R = 1200;
+  const corner = sv => { const hw = W / (2 * BASE * sv.z), hh = H / (2 * BASE * sv.z); return Math.hypot(Math.abs(sv.vx - m.ex) + hw, Math.abs(sv.vy - m.ey) + hh); };
+  const sv = scoped(m, { reach: 500, mag: 3 }, 0, R);
+  run(sv, m, 400, W / 2 - 2, 0);
+  assert.ok(corner(sv) <= R + 0.5 && corner(sv) > R - 8, `the screen's furthest corner: ${corner(sv).toFixed(0)} of ${R}`);
+  assert.equal(sv.limit, 'range', 'and says so');
+  assert.equal(sv.blocked, false);
+  const out = sv.vx;
+  // (Zoomed in, the screen's narrower: the view can go further, its corner still in range.)
+  for (let i = 0; i < 5; i++) scopeWheel(sv, -1, 0, 0, BASE);
+  run(sv, m, 400, W / 2 - 2, 0);
+  assert.ok(sv.vx > out + 100 && corner(sv) <= R + 0.5, `further in (${(sv.vx - out).toFixed(0)} px more)`);
+  // (Back out: pulled in, so the screen's in range again.)
+  for (let i = 0; i < 5; i++) scopeWheel(sv, 1, 0, 0, BASE);
+  run(sv, m, 120, 0, 0);
+  assert.equal(sv.z, 1);
+  assert.ok(corner(sv) <= R + 0.5, `zoomed out, in range (${corner(sv).toFixed(0)})`);
+  // (Shots that go less far than the screen's already wide: no further out at all.)
+  const short = scoped(m, { reach: 500, mag: 3 }, 0, 300), x0 = short.vx, y0 = short.vy;
+  run(short, m, 200, W / 2 - 2, 0);
+  run(short, m, 100, 0, -(H / 2 - 2));
+  assert.ok(Math.hypot(short.vx - m.ex, short.vy - m.ey) <= Math.hypot(x0 - m.ex, y0 - m.ey) + 1e-6, 'no further out');
+});
+
+test('how far shots go: bullets and beams their range, an arrow as far as it carries, a seeker as far as it flies', () => {
+  assert.equal(shotReach(WEAPONS.M4), WEAPONS.M4.range);
+  assert.equal(shotReach(WEAPONS.SR), WEAPONS.SR.range);
+  const bow = WEAPONS.Longbow, carry = bow.speed * bow.speed / bow.gravity;
+  assert.equal(shotReach(bow), Math.min(bow.range, carry));
+  // (A scope that stretches a bow's range doesn't make its arrows carry further.)
+  assert.equal(shotReach({ ...bow, range: 8000 }), carry);
+  const magic = WEAPONS.MagicBullet;
+  assert.equal(shotReach(magic), magic.speed * magic.life);
+  assert.equal(shotReach(null), 0);
 });
 
 test('a sniper rifle\'s own scope; a better one fitted takes over, a lesser one doesn\'t', () => {

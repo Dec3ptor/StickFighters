@@ -114,6 +114,19 @@ export function shotSpeed(game, def) {
   return def.kind === 'bullet' ? def.speed * (game.options?.bulletSpeed || 1) : def.speed;
 }
 
+/**
+ * How far a shot of weapon `def` can go (px), as it is now (its numbers scaled to the game's
+ * speed): a bullet, a beam or a rocket, its range; one that falls (an arrow, a lobbed shell), as
+ * far as it carries at its best angle; a seeker, as far as it flies before it's gone. (A scope
+ * shows no further: world/scope.js.)
+ */
+export function shotReach(def) {
+  if (!def) return 0;
+  if (def.gravity > 0 && def.speed > 0) return Math.min(def.range || Infinity, (def.speed * def.speed) / def.gravity);
+  if (def.kind === 'seeker' && def.life > 0 && def.speed > 0) return def.speed * def.life;
+  return def.range || 0;
+}
+
 /** Updates between shots of weapon def in this match (the time between shots option). */
 export function shotDelay(game, def) {
   return def.rof * (game.options?.fireDelay || 1);

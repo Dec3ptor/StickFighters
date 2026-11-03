@@ -26,7 +26,7 @@ import { NetClient } from './net/client.js';
 import { Community } from './net/community.js';
 import { PROTOCOL } from './net/protocol.js';
 import { CLASSES, CLASS_IDS, weaponFor } from './classes.js';
-import { shotDelay } from './combat.js';
+import { shotDelay, shotReach } from './combat.js';
 import { holdSpawn } from './gadgets.js';
 import { loadKit, saveKit, KIT_KEY } from './kitchoice.js';
 import { BuyMenu } from './buymenu.js';
@@ -2206,19 +2206,22 @@ function frame(now) {
   const ax = free ? free.x : lerp(view.prevX ?? view.x, view.x, alpha) + (view.drawDX || 0);
   const ay = free ? free.y : lerp(view.prevY ?? view.y, view.y, alpha) + (view.drawDY || 0);
   // Down a scope (a world's gun with one fitted, or a sniper rifle's own: attachments.js), right
-  // click held (with nothing in the right hand, which right click would use): the view zooms in
-  // on what's under the crosshair, and steers out from there as the crosshair nears the screen's
-  // edge, as far as the scope reaches and only where you could see from where you stand
-  // (scope.js). The wheel zooms. Let go of right click and the view comes back.
+  // click held (with nothing in the right hand, which right click would use): the view steers out
+  // as the crosshair nears the screen's edge, as far as the scope reaches, no further than the
+  // gun's shots go, and only where you could see from where you stand (scope.js). It doesn't
+  // zoom by itself: the wheel zooms in and out. Let go of right click and the view comes back.
   const scope = g.world && view === me && me.alive && !watchMode && !state.menuOpen && !state.chatOpen && input.held('aim') && !rightHand(me).item
     ? scopeOf(me.world?.inv?.slots[me.world.slot]) : null;
   const sv = state.scopeView ||= newScopeView();
   input.scoping = !!scope;
   if (scope) {
     const W = renderer.w, H = renderer.h, base = renderer.baseScale * renderer.zoomScale, mx = input.mouse.x - W / 2, my = input.mouse.y - H / 2;
-    if (!sv.on) scopeStart(sv, scope, renderer.cam.x, renderer.cam.y, renderer.cam.zoom / renderer.zoomScale, mx, my, base);
+    // (No further than the gun's shots go: nothing on the screen out of their reach.)
+    const range = shotReach(weaponFor(me, me.current));
+    if (!sv.on) scopeStart(sv, scope, renderer.cam.x, renderer.cam.y, renderer.cam.zoom / renderer.zoomScale, mx, my, base, range);
     // (Another scoped gun picked up, still looking: its scope's reach and zoom.)
     else if (sv.reach !== scope.reach || sv.mag !== scope.mag) { sv.reach = scope.reach; sv.mag = scope.mag; sv.zoom = Math.min(sv.zoom, scope.mag); }
+    sv.range = range;
     // (The wheel: a notch at a time, however finely a touchpad sends it.)
     if (input.scopeZoom && now - (sv.wheelAt || 0) > 70) { scopeWheel(sv, Math.sign(input.scopeZoom), mx, my, base); sv.wheelAt = now; }
     scopeFrame(sv, g.world, ax, ay - SCOPE_EYE, mx, my, W, H, base, dt, !!input.mouse.out);
@@ -2266,7 +2269,7 @@ function frame(now) {
     killMark: killK >= 0 && killK < 1 && !state.menuOpen && !watchMode ? { x: input.mouse.x, y: input.mouse.y, k: killK } : null,
     showScores: input.held('scores') && !state.chatOpen, showItems: input.held('showItems') && !state.chatOpen, watching, chat: state.chat,
     // (Looking through a scope: how far out, and how far it goes.)
-    scope: sv.on ? { blocks: Math.round(Math.hypot(sv.vx - ax, sv.vy - ay + SCOPE_EYE) / 16), reach: sv.reach, zoom: sv.z, blocked: sv.blocked } : null,
+    scope: sv.on ? { blocks: Math.round(Math.hypot(sv.vx - ax, sv.vy - ay + SCOPE_EYE) / 16), range: Math.round(sv.range / 16), zoom: sv.z, mag: sv.mag, limit: sv.limit } : null,
     spectating: me.spectating ? { free: !!free, target: watching } : null,
     online: state.mode !== 'offline',
     hostId: state.mode === 'host' ? me.id : state.mode === 'client' ? g.soldiers.find(s => !s.isBot && !s.remote)?.id : null,
