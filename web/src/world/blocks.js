@@ -211,6 +211,8 @@ export const BERRY_BUSH = plant('berry_bush', 'Berry bush', '#36602c', 'berries'
 export const DRY_TALL_GRASS = plant('dry_tall_grass', 'Dry grass', '#c8b462', 'blades');
 export const BAMBOO = plant('bamboo', 'Bamboo', '#7ab040', 'bamboo', { tool: 'axe', hard: 1 });
 export const PETALS = plant('petals', 'Fallen petals', '#f4b0cc', 'petals');
+// ---- A sail (worlds made since capitals: boats in harbours): cloth, walked through.
+export const SAIL = def('sail', 'Sail', { solid: false, hard: 1, tool: 'hand', resist: 0, drop: null, clear: true, color: '#efe6d2', pattern: 'sail' });
 
 /** The gem blocks (they glint). */
 export const GEMS = new Set([RUBY, SAPPHIRE, EMERALD, TOPAZ, AMETHYST, DIAMOND]);

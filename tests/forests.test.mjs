@@ -31,7 +31,7 @@ function regionOf(g, key) {
 }
 
 test('new worlds are made with forests; their biomes are new to them', () => {
-  assert.equal(WORLD_GEN, 5);
+  assert.ok(WORLD_GEN >= 5);
   const keys = BIOMES.filter(b => b.since === 5).map(b => b.key);
   assert.ok(keys.length >= 10, 'ten new biomes');
   const seen = new Set(), seenOld = new Set();

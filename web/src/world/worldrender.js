@@ -655,6 +655,21 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
       if (h & 4) { g.fillStyle = classic ? '#fff' : tint(b.color, 0.85); g.beginPath(); g.ellipse(x + ((h & 8) ? 13 : 3), y + 4 + (h & 3), 4, 1.4, (h & 8) ? -0.5 : 0.5, 0, Math.PI * 2); g.fill(); if (classic) g.stroke(); }
       break;
     }
+    case 'sail': {
+      // Cloth: filling its tile, seams across it, its edges where it ends (bellied a little).
+      g.fillStyle = classic ? '#fff' : b.color;
+      g.fillRect(x, y, TILE, TILE);
+      g.strokeStyle = classic ? '#b8b8b8' : tint(b.color, 0.8); g.lineWidth = 0.8;
+      g.beginPath(); g.moveTo(x, y + 5); g.lineTo(x + TILE, y + 5.5); g.moveTo(x, y + 11); g.lineTo(x + TILE, y + 11.5); g.stroke();
+      g.strokeStyle = classic ? INK : tint(b.color, 0.55); g.lineWidth = 1;
+      g.beginPath();
+      if (grid.fg[k - W] !== id) { g.moveTo(x, y + 0.5); g.lineTo(x + TILE, y + 0.5); }
+      if (grid.fg[k + W] !== id) { g.moveTo(x, y + TILE - 0.5); g.quadraticCurveTo(x + 8, y + TILE + 2, x + TILE, y + TILE - 0.5); }
+      if (grid.fg[k - 1] !== id && grid.fg[k - 1] !== K.LOG) { g.moveTo(x + 0.5, y); g.lineTo(x + 0.5, y + TILE); }
+      if (grid.fg[k + 1] !== id && grid.fg[k + 1] !== K.LOG) { g.moveTo(x + TILE - 0.5, y); g.lineTo(x + TILE - 0.5, y + TILE); }
+      g.stroke();
+      break;
+    }
     case 'petals':
       // Pink petals fallen on the ground.
       g.fillStyle = classic ? '#9a9a9a' : b.color;

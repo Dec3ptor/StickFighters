@@ -47,7 +47,7 @@ const NAMES = {
 };
 
 /** How many people each kind of building has (a house: one or two). */
-const HOW_MANY = { barracks: 2, inn: 1, house: h => 1 + (h % 2) };
+const HOW_MANY = { barracks: 2, inn: 1, house: h => 1 + (h % 2), greatgate: 2, palace: 1, townhouse: h => 1 + (h % 2) };
 
 /**
  * The people of town t (the same for the same seed): [{ key (who they are: '<town>:<building>:<n>'),
@@ -78,7 +78,7 @@ export function folkOf(seed, t) {
       const post = role === 'guard' && b.kind !== 'barracks';
       let home = { x0: b.x0 + 1, x1: b.x1 - 1, base: b.base, ground: b.base === t.level, kind: b.kind };
       let at = { x: Math.max(b.x0 + 1, Math.min(b.x1 - 1, b.spots[0].x + j * 2)), y: b.spots[0].y };
-      if (b.kind === 'gate') {
+      if (b.kind === 'gate' || b.kind === 'greatgate') {
         const x = b.x0 <= t.x0 + 1 ? b.x1 + 2 : b.x0 - 2;
         at = { x, y: t.level - 1 };
         home = { x0: x - 3, x1: x + 3, base: t.level, ground: true, kind: 'gate' };
@@ -86,7 +86,7 @@ export function folkOf(seed, t) {
       out.push({
         key: `${t.id}:${bi}:${j}`, town: t.id, k: t.k, bi, role, name, title,
         label: tag ? `${name} · ${tag}` : name, home, at,
-        weapon: def.guard ? (b.kind === 'tower' ? 'Longbow' : t.kind === 'city' ? 'M4' : 'Beretta') : def.weapon || null,
+        weapon: def.guard ? (b.kind === 'tower' ? 'Longbow' : t.kind !== 'village' ? 'M4' : 'Beretta') : def.weapon || null,
         guard: !!def.guard, post,
       });
     }
@@ -102,7 +102,8 @@ export const isFolk = s => s?.npc?.kind === 'townsfolk';
 export function townsNear(gen, x, r) {
   const out = [];
   if (!gen?.towns) return out;
-  for (let k = gen.regionAt(Math.floor(x - r)), last = gen.regionAt(Math.floor(x + r)); k <= last; k++) {
+  // (From the region before: a capital there takes the next one too.)
+  for (let k = gen.regionAt(Math.floor(x - r)) - 1, last = gen.regionAt(Math.floor(x + r)); k <= last; k++) {
     const t = gen.townIn(k);
     if (t && t.x1 >= x - r && t.x0 <= x + r) out.push(t);
   }

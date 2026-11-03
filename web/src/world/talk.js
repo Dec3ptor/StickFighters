@@ -22,7 +22,7 @@ import { BODY } from '../config.js';
 /** How near (px, from them) a player has to be to start talking to someone, and to keep talking. */
 export const TALK_REACH = 5 * TILE, TALK_KEEP = 9 * TILE;
 /** What a guard costs to take along (city barracks only), what resting at an inn costs. */
-const GUARD_FEE = { village: 0, city: 110 }, REST_FEE = { village: 6, city: 12 };
+const GUARD_FEE = { village: 0, city: 110, capital: 140 }, REST_FEE = { village: 6, city: 12, capital: 16 };
 
 // ---- What they say -------------------------------------------------------------------------------------
 
@@ -188,7 +188,7 @@ export function talkTick(game, s) {
 
 /** What a stay at the inn, healing or a guard costs here. */
 function fees(game, s, f, t) {
-  const max = s.maxHealth || 150, missing = Math.max(0, max - s.health), city = t.kind === 'city';
+  const max = s.maxHealth || 150, missing = Math.max(0, max - s.health), city = t.kind !== 'village';
   return {
     heal: missing < 1 && !(s.burnTicks > 0) ? 0 : Math.max(2, Math.ceil(missing * 0.2 * (city ? 1.15 : 1))),
     rest: REST_FEE[t.kind] || REST_FEE.village,
@@ -206,7 +206,7 @@ export function talkView(game, s) {
   if (!talk || !found) return null;
   const { f, t } = found, fee = fees(game, s, f, t), options = [];
   // (Prices as this player pays them: the Haggler perk.)
-  const stock = SHOPS[f.role] ? stockOf(game.world, f, t.kind === 'city').map(o => ({ ...o, price: priceFor(o.price, s) })) : null;
+  const stock = SHOPS[f.role] ? stockOf(game.world, f, t.kind !== 'village').map(o => ({ ...o, price: priceFor(o.price, s) })) : null;
   const shop = stock ? { name: SHOPS[f.role].name, role: f.role, stock } : null;
   // Quests: what they've work for (quests.js), and what you can hand in to them.
   const offers = offersFor(game, s, f, t).map(q => ({ id: q.id, kind: q.kind, title: q.title, text: q.text, reward: q.reward, goals: q.goals.map(g => goalText(s, g)), step: q.chain ? q.chain.step + 1 : q.kind === 'story' ? q.step + 1 : 0, of: q.steps || 0 }));
@@ -235,7 +235,7 @@ export function talkView(game, s) {
 export function talkDo(game, s, d) {
   const w = s.world, found = talkingTo(game, s);
   if (!w?.talk || !found || !s.alive || !d || typeof d.op !== 'string') return;
-  const { f, t } = found, fee = fees(game, s, f, t), inv = w.inv, city = t.kind === 'city';
+  const { f, t } = found, fee = fees(game, s, f, t), inv = w.inv, city = t.kind !== 'village';
   const pay = n => {
     if (inv.count('coins') < n) { say(`That's ${n} coins. You haven't got it.`); return false; }
     inv.remove('coins', n);

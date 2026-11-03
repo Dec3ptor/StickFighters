@@ -11,7 +11,7 @@
 
 import { hash3, rand3, noise2, fbm1, fbm2 } from './noise.js';
 import * as K from './blocks.js';
-import { planTown, buildTown, TOWN_RAMP, BELOW as TOWN_BELOW } from './towns.js';
+import { planTown, buildTown, hasTowns, TOWN_RAMP, BELOW as TOWN_BELOW } from './towns.js';
 
 export const CHUNK = 32;            // tiles each side of a chunk
 export const WORLD_H = 512;         // tiles from the top of the sky to the bottom of the bedrock
@@ -27,6 +27,8 @@ const REGION = 320, JITTER = 96, BLEND = 40;
 // there: see coastLift); how often regions are sea (a slow noise over them, above this).
 export const SEA_ROW = SURFACE + 6;
 const SEA_H = SURFACE - SEA_ROW, SEA_BLEND = 90, SHORE = 32, SEA_NOISE = 0.2;
+// Worlds made since capitals (gen 6): how likely (in a hundred) an even region starts a capital.
+const CAPITAL_CHANCE = 24;
 // Lakes (one in some of the cells LAKE_CELL tiles across) and pools (POOL_CELL: swamps are full of
 // them): how likely in each biome [a lake, a pool].
 const LAKE_CELL = 170, POOL_CELL = 44;
@@ -155,8 +157,9 @@ export class WorldGen {
   /**
    * gen: the version of the generator the world was made with (worldsave.js's WORLD_GEN): 1 the
    * first; 2 has towns (towns.js); 3 ores in veins and nodes, gems, diamond pipes and geodes;
-   * 4 seas, beaches, lakes and swamps; 5 more biomes, dense forests and many more kinds of tree.
-   * Worlds keep the land they were made with. (towns: true, an older way to say 2.)
+   * 4 seas, beaches, lakes and swamps; 5 more biomes, dense forests and many more kinds of tree;
+   * 6 capitals and harbours. Worlds keep the land they were made with. (towns: true, an older way
+   * to say 2.)
    */
   constructor(seed, { towns = false, gen = 0, noTowns = false } = {}) {
     this.seed = seed | 0;
@@ -166,6 +169,9 @@ export class WorldGen {
     this.veins = this.version >= 3;
     this.seas = this.version >= 4;
     this.forests = this.version >= 5;
+    this.capitals = this.version >= 6;
+    this.caps = new Map();      // region -> whether a capital starts there
+    this.raw = new Map();       // region -> its own biome (before a capital takes it over)
     this.biomes = new Map();    // region -> its biome
     this.spans = new Map();     // sea region -> the sea it's part of (seaSpan)
     this.lakes = new Map();     // lake cell -> its lake (or null)
@@ -209,6 +215,40 @@ export class WorldGen {
   regionBiome(k) {
     let b = this.biomes.get(k);
     if (b) return b;
+    // (Worlds made since capitals: a capital's second region is of its first's biome.)
+    b = this.capitals && this.capitalStart(k - 1) ? this.rawBiome(k - 1) : this.rawBiome(k);
+    if (this.biomes.size > 512) this.biomes.clear();
+    this.biomes.set(k, b);
+    return b;
+  }
+
+  /**
+   * Whether a capital starts in region k (worlds made since capitals): now and then, an even
+   * region, its biome and the next's land with towns, well away from where everyone starts. It
+   * takes both regions (towns.js's planCapital).
+   */
+  capitalStart(k) {
+    if (!this.capitals || !this.towns || k & 1) return false;
+    let c = this.caps.get(k);
+    if (c !== undefined) return c;
+    const ok = j => !this.rawBiome(j).sea && !this.rawBiome(j + 1).sea && hasTowns(this.rawBiome(j).key) && Math.abs(j - this.spawnRegion) > 3;
+    // (One always near where everyone starts: the first even region that can have one, either way.)
+    if (this.nearCapital === undefined) {
+      this.nearCapital = null;
+      for (let d = 4; d <= 30 && this.nearCapital === null; d++) for (const j of [this.spawnRegion + d, this.spawnRegion - d]) if (this.nearCapital === null && !(j & 1) && ok(j)) this.nearCapital = j;
+    }
+    // (Never two side by side: not after another by chance.)
+    const chance = j => hash3(this.seed, j, 430) % 100 < CAPITAL_CHANCE && ok(j);
+    c = ok(k) && (k === this.nearCapital || (chance(k) && !chance(k - 2) && k - 2 !== this.nearCapital));
+    if (this.caps.size > 512) this.caps.clear();
+    this.caps.set(k, c);
+    return c;
+  }
+
+  /** Region k's own biome (regionBiome: unless a capital's taken it over). */
+  rawBiome(k) {
+    let b = this.raw.get(k);
+    if (b) return b;
     if (k === this.spawnRegion) b = BIOMES[0];
     else {
       const t = fbm1(this.seed + 11, k * 0.31, 2);
@@ -221,8 +261,8 @@ export class WorldGen {
         b = BIOMES[list[hash3(this.seed, k, 5) % list.length]];
       }
     }
-    if (this.biomes.size > 512) this.biomes.clear();
-    this.biomes.set(k, b);
+    if (this.raw.size > 512) this.raw.clear();
+    this.raw.set(k, b);
     return b;
   }
 
@@ -296,7 +336,7 @@ export class WorldGen {
     const start = this.edge(k), end = this.edge(k + 1);
     let h = this.naturalHeight(x, k);
     // A town levels the land under it, which comes to its level over the ramps either side.
-    let town = this.townIn(k);
+    let town = this.townOf(k);
     if (town && x >= town.x0 - TOWN_RAMP && x <= town.x1 + TOWN_RAMP) {
       if (x < town.x0) h = mix(h, town.h, (x - (town.x0 - TOWN_RAMP)) / TOWN_RAMP);
       else if (x > town.x1) h = mix(h, town.h, (town.x1 + TOWN_RAMP - x) / TOWN_RAMP);
@@ -952,9 +992,61 @@ export class WorldGen {
     return st;
   }
 
-  /** The ruins, cabins and shipwrecks touching the tile box (inclusive). */
+  /**
+   * Town t's harbour, if it's by the sea (worlds made since capitals): { kind: 'harbor', side (the
+   * way the sea is: -1 or 1), shore (the first column of water), road (where the road down to it
+   * from the town starts), x0, x1, y0, y1, deck (the pier's row: just over the water), len (the
+   * pier's length), light (the lighthouse's first column, or null: a village's has none), boats:
+   * [{ x, w, big }] (moored out past the pier) }, or null. Worked out once.
+   */
+  harborOf(t) {
+    if (!this.capitals || !t) return null;
+    if (t.harbor !== undefined) return t.harbor;
+    t.harbor = null;
+    const last = t.k + (t.capital ? 1 : 0), s = this.seed;
+    for (const [ks, side] of [[last + 1, 1], [t.k - 1, -1]]) {
+      const sp = this.seaSpan(ks);
+      if (!sp) continue;
+      const shore = side > 0 ? sp.x0 : sp.x1, room = (sp.x1 - sp.x0) * 0.6;
+      const len = Math.min(room, t.capital ? 64 : t.kind === 'city' ? 48 : 30), light = t.kind === 'village' ? null : shore + side * len;
+      const boats = [], h = hash3(s, t.k, 440);
+      let at = shore + side * (len + (light === null ? 3 : 8));
+      for (const big of t.capital ? [true, false] : t.kind === 'city' ? [false, false] : [false]) {
+        const w = big ? 24 : 10 + (h % 3);
+        if (Math.abs(at + side * w - shore) > room) break;
+        boats.push({ x: side > 0 ? at : at - w + 1, w, big });
+        at += side * (w + 6);
+      }
+      const road = side > 0 ? t.x1 + TOWN_RAMP + 1 : t.x0 - TOWN_RAMP - 1, far = at;
+      const x0 = Math.min(road, far), x1 = Math.max(road, far);
+      let bottom = SEA_ROW;
+      for (let x = x0; x <= x1; x++) bottom = Math.max(bottom, this.column(x).surf);
+      t.harbor = { kind: 'harbor', town: t.id, name: `${t.name} harbour`, side, shore, road, x0, x1, y0: SEA_ROW - 32, y1: bottom, deck: SEA_ROW - 1, len, light, boats };
+      break;
+    }
+    return t.harbor;
+  }
+
+  /** The harbour covering tile (x, y), if any. */
+  harborAt(x, y) {
+    if (!this.capitals) return null;
+    const k = this.regionAt(x);
+    for (let j = k - 2; j <= k + 2; j++) {
+      const h = this.harborOf(this.townIn(j));
+      if (h && x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1) return h;
+    }
+    return null;
+  }
+
+  /** The ruins, cabins, shipwrecks and harbours touching the tile box (inclusive). */
   structuresIn(x0, y0, x1, y1) {
     const out = [];
+    if (this.capitals) {
+      for (let k = this.regionAt(x0) - 2; k <= this.regionAt(x1) + 2; k++) {
+        const h = this.harborOf(this.townIn(k));
+        if (h && h.x1 >= x0 && h.x0 <= x1 && h.y1 >= y0 && h.y0 <= y1) out.push(h);
+      }
+    }
     if (this.seas && y1 > SEA_ROW) {
       for (let k = this.regionAt(x0 - 30); k <= this.regionAt(x1 + 30); k++) {
         const r = this.wreck(k);
@@ -980,6 +1072,7 @@ export class WorldGen {
   structureTile(st, x, y) {
     const s = this.seed;
     if (st.kind === 'wreck') return this.wreckTile(st, x, y);
+    if (st.kind === 'harbor') return this.harborTile(st, x, y);
     if (st.kind === 'ruin') {
       const { x0, x1, base, mat, wall } = st, top = base - 6;
       const broken = rand3(s, x * 31 + y, 64) < 0.22;
@@ -1031,6 +1124,100 @@ export class WorldGen {
     return [K.WATER, broken ? -1 : K.PLANK_WALL];
   }
 
+  /**
+   * A harbour's tile: the road down from the town (paved, a lamp now and then); the pier out over
+   * the water (a deck on pilings down to the sea floor, barrels, lanterns on posts); a lighthouse at
+   * its end (on a stone footing up out of the water: banded, a ladder up inside, the light at the
+   * top under glass); and boats moored out past it (a hull on the water, dry inside, a mast and a
+   * sail; a capital's, a great ship with two masts and a cabin).
+   */
+  harborTile(H, x, y) {
+    const { side, shore, deck } = H, d = (x - shore) * side, col = this.column(x), surf = col.surf;
+    // The road, on the land between the town and the water.
+    if (d < 0 && surf <= deck) {
+      if (y === surf) return [K.COBBLESTONE, -1];
+      if (Math.abs(x - H.road) % 12 === 6) { if (y === surf - 1 || y === surf - 2) return [K.FENCE, -1]; if (y === surf - 3) return [K.LANTERN, -1]; }
+      return [-1, -1];
+    }
+    // The lighthouse.
+    if (H.light !== null) {
+      const l0 = side > 0 ? H.light : H.light - 4, l1 = l0 + 4;
+      if (x >= l0 && x <= l1) {
+        if (y > deck) return y < surf ? [K.STONE_BRICKS, -1] : [-1, -1];
+        const top = deck - 18, edge = x === l0 || x === l1, mid = x === l0 + 2;
+        if (y === deck) return [K.STONE_BRICKS, -1];
+        if (y < top - 4) return [-1, -1];
+        if (y <= top - 1) {
+          // Its lamp room: glass round it, the light inside, a roof over it.
+          if (y === top - 4) return [x === l0 + 2 ? K.ROOF_TILES : -1, -1];
+          if (y === top - 3) return [Math.abs(x - (l0 + 2)) <= 1 ? K.ROOF_TILES : -1, -1];
+          if (edge) return [K.GLASS, -1];
+          return [mid ? K.TORCH : K.LANTERN, K.STONE_BRICK_WALL];
+        }
+        if (y === top) return [mid ? K.LADDER : K.STONE_BRICKS, K.STONE_BRICK_WALL];
+        if (edge) {
+          // (A door at its foot, facing the pier.)
+          if (y >= deck - 3 && x === (side > 0 ? l0 : l1)) return [K.DOOR, -1];
+          return [Math.floor((deck - y) / 3) % 2 ? K.PLASTER : K.BRICKS, -1];
+        }
+        if (mid) return [K.LADDER, K.STONE_BRICK_WALL];
+        if ((deck - y) % 6 === 0) return [K.PLATFORM, K.STONE_BRICK_WALL];
+        return [K.AIR, K.STONE_BRICK_WALL];
+      }
+    }
+    // The pier.
+    if (d >= -2 && d <= H.len && surf > deck) {
+      if (y === deck) return [K.PLATFORM, -1];
+      if (y > deck && y < surf && d % 4 === 0) return [K.LOG, -1];
+      if (y === deck - 1 && d % 8 === 4) return [K.FENCE, -1];
+      if (y === deck - 2 && d % 8 === 4) return [K.LANTERN, -1];
+      if (y === deck - 1 && d % 11 === 7) return [K.BARREL, -1];
+      return [-1, -1];
+    }
+    // Boats.
+    for (const b of H.boats) {
+      if (x < b.x || x >= b.x + b.w) continue;
+      return this.boatTile(b, x, y, side);
+    }
+    return [-1, -1];
+  }
+
+  /**
+   * A boat's tile (b: its first column and width; big: a great ship). Its hull on the water,
+   * narrowing to its keel, dry inside; a mast (two on a great ship) with a sail; a great ship's
+   * deck over its hold, and a cabin at its stern.
+   */
+  boatTile(b, x, y, side) {
+    const S = SEA_ROW, i = x - b.x, w = b.w, dd = b.big ? 3 : 1, free = b.big ? 3 : 1;
+    if (y > S + dd || y < S - free - 12) return [-1, -1];
+    // The hull: each row's sides closer in, the further down.
+    if (y >= S - free) {
+      const inset = Math.max(0, y - S + 1), l = inset, r = w - 1 - inset;
+      if (i < l || i > r) return [-1, -1];
+      if (y === S + dd) return [K.OLD_PLANKS, -1];
+      if (i === l || i === r) return [b.big ? K.OLD_PLANKS : K.PLANKS, -1];
+      if (b.big && y === S - 1) return [K.PLANKS, -1]; // (its deck, over the hold)
+      if (y >= S) return [i === 3 && y === S + dd - 1 ? K.BARREL : K.AIR, b.big ? K.PLANK_WALL : -1];
+      return [K.AIR, -1];
+    }
+    // Above the hull: masts and sails; a great ship's cabin at its stern.
+    const top = S - free - 1, masts = b.big ? [6, 15] : [w >> 1];
+    for (const m of masts) {
+      if (i === m && y >= top - (b.big ? 11 : 7)) return [K.LOG, -1];
+      if ((i === m + 1 || i === m + 2 || (b.big && i === m - 1)) && y <= top - 1 && y >= top - (b.big ? 9 : 6)) return [K.SAIL, -1];
+    }
+    if (b.big) {
+      const c0 = side > 0 ? w - 6 : 1, c1 = c0 + 4;
+      if (i >= c0 && i <= c1 && y >= top - 3) {
+        if (y === top - 3) return [K.PLANKS, -1];
+        if (i === c0 || i === c1) return [y >= top - 2 && y <= top && i === (side > 0 ? c0 : c1) ? K.DOOR : K.PLANKS, -1];
+        return [i === c0 + 2 && y === top - 2 ? K.LANTERN : K.AIR, K.PLANK_WALL];
+      }
+      if (y === top && (i === 2 || i === w - 3)) return [K.FENCE, -1];
+    }
+    return [-1, -1];
+  }
+
   // ---- Towns (towns.js) --------------------------------------------------------------------------
 
   /** Region k's town, or null (worked out once). */
@@ -1047,20 +1234,26 @@ export class WorldGen {
 
   /** The town whose land (its level part, or the ramps either side) column x is in, or null. */
   townAtX(x) {
-    const t = this.townIn(this.regionAt(x));
+    const t = this.townOf(this.regionAt(x));
     return t && x >= t.x0 - TOWN_RAMP && x <= t.x1 + TOWN_RAMP ? t : null;
   }
 
   /** The town within `margin` tiles of column x (across), or null. */
   townNear(x, margin = 0) {
-    const t = this.townIn(this.regionAt(x));
+    const t = this.townOf(this.regionAt(x));
     return t && x >= t.x0 - margin && x <= t.x1 + margin ? t : null;
   }
 
-  /** The town protecting tile (x, y) from being dug, built on or blasted, or null. */
+  /** The town in region k: its own, or (worlds made since capitals) the capital that takes it and the region before. */
+  townOf(k) {
+    return this.townIn(k) || (this.capitals && this.capitalStart(k - 1) ? this.townIn(k - 1) : null);
+  }
+
+  /** The town protecting tile (x, y) from being dug, built on or blasted (or its harbour: named for it), or null. */
   townProtecting(x, y) {
     const t = this.townNear(x, 1);
-    return t && y >= t.top && y <= t.bottom ? t : null;
+    if (t && y >= t.top && y <= t.bottom) return t;
+    return this.capitals ? this.harborAt(x, y) : null;
   }
 
   /** Town t's blocks (towns.js's raster), made the first time they're asked for (a few are kept). */
@@ -1202,7 +1395,7 @@ export class WorldGen {
   waterLife(x0, y0, fg) {
     const s = this.seed;
     // (Nothing growing in a shipwreck, or through it.)
-    const wrecks = y0 + CHUNK > SEA_ROW ? this.structuresIn(x0, SEA_ROW, x0 + CHUNK - 1, WORLD_H - 1).filter(st => st.kind === 'wreck') : [];
+    const wrecks = y0 + CHUNK > SEA_ROW ? this.structuresIn(x0, SEA_ROW, x0 + CHUNK - 1, WORLD_H - 1).filter(st => st.kind === 'wreck' || st.kind === 'harbor') : [];
     for (let lx = 0; lx < CHUNK; lx++) {
       const x = x0 + lx, wt = this.waterTop(x), col = this.column(x), bottom = col.surf - 1;
       if (wt > bottom || wt >= y0 + CHUNK || bottom < y0) continue;

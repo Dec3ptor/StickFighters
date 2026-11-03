@@ -612,7 +612,7 @@ function drawArrival(ctx, W) {
   ctx.fillText(t.name, W / 2, 93);
   ctx.font = `italic 14px ${FONT}`;
   ctx.fillStyle = '#666';
-  ctx.fillText(t.kind === 'city' ? 'a walled city' : 'a village', W / 2, 119);
+  ctx.fillText(t.kind === 'capital' ? `${t.title}, the capital` : t.kind === 'city' ? 'a walled city' : 'a village', W / 2, 119);
   ctx.globalAlpha = 1;
 }
 

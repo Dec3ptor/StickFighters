@@ -95,7 +95,7 @@ export function raidsTick(game) {
     if (!t || !nearTown(p, t)) continue;
     if (game.rng() >= CHANCE) return;
     const players = game.soldiers.filter(s => s.alive && s.world && nearTown(s, t)).length;
-    startRaid(game, t, Math.min(20, 6 + players * 3 + (t.kind === 'city' ? 4 : 0)));
+    startRaid(game, t, Math.min(20, 6 + players * 3 + (t.kind === 'capital' ? 8 : t.kind === 'city' ? 4 : 0)));
     return;
   }
 }
