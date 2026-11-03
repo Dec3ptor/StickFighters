@@ -248,10 +248,54 @@ export const WORLD_THEMES = {
     ink: '#15201a', halo: '#ffffff', haloAlpha: 0.3, rim: '#fff8d8',
     vignette: 0.3, dark: 0,
   },
+  // The open sea: sky and water to the horizon, an island or a sail far off, gulls' weather.
+  ocean: {
+    name: 'Open sea',
+    sky: [[0, '#2a6aaa'], [0.6, '#8cc0e0'], [1, '#eaf4f6']],
+    sun: { x: 0.74, y: 0.2, r: 32, color: '#ffffff', glow: '#fff3d0', glowR: 340 },
+    clouds: { color: '#ffffff', alpha: 0.5, count: 9, top: 0.05, bottom: 0.36 },
+    haze: '#d8eaf2',
+    layers: [
+      { p: 0.05, gen: 'sea', height: 150, color: '#86a6bb', haze: 0.4, water: '#3f7fb0' },
+      { p: 0.12, gen: 'ships', height: 170, color: '#5f7a8e', haze: 0.32 },
+    ],
+    ground: '#0e2a3e',
+    fore: null,
+    mist: { color: '#f2f9ff', alpha: 0.28 },
+    weather: null,
+    material: 'rock', top: 'sand', tint: '#8a8a7a',
+    light: { x: 0.45, y: -0.9, color: '#ffffff', strength: 0.5 },
+    ink: '#10202c', halo: '#ffffff', haloAlpha: 0.3, rim: '#ffffff',
+    vignette: 0.3, dark: 0,
+  },
+  // A swamp: low, green and misty, dark trees standing in the water, fireflies.
+  swamp: {
+    name: 'Swamp',
+    sky: [[0, '#4f7a86'], [0.55, '#97b4a4'], [1, '#d4dcc0']],
+    sun: { x: 0.66, y: 0.22, r: 30, color: '#fbf6dc', glow: '#e8e8b8', glowR: 260 },
+    clouds: { color: '#eef2e4', alpha: 0.35, count: 7, top: 0.06, bottom: 0.32 },
+    haze: '#c4d2bc',
+    layers: [
+      { p: 0.07, gen: 'hills', height: 160, color: '#7d9a8a', haze: 0.5 },
+      { p: 0.2, gen: 'canopy', height: 220, color: '#4a6a4f', haze: 0.3 },
+      { p: 0.42, gen: 'canopy', height: 200, color: '#24382a', haze: 0.12, tall: true },
+    ],
+    ground: '#141f16',
+    fore: { gen: 'grass', height: 80, color: '#0a140c' },
+    mist: { color: '#e2ecd8', alpha: 0.48 },
+    weather: 'motes',
+    material: 'mossrock', top: 'grass', tint: '#6a7058',
+    light: { x: 0.4, y: -0.9, color: '#f6f2d0', strength: 0.4 },
+    ink: '#132018', halo: '#eef6e4', haloAlpha: 0.26, rim: '#f2eec8',
+    vignette: 0.4, dark: 0,
+  },
 };
 
 // Each biome's look (worldgen.js's biomes).
-const BIOME_THEMES = { plains: 'meadow', forest: 'meadow', mountains: 'meadow', desert: 'desert', badlands: 'desert', jungle: 'jungle', snow: 'arctic' };
+const BIOME_THEMES = {
+  plains: 'meadow', forest: 'meadow', mountains: 'meadow', desert: 'desert', badlands: 'desert', jungle: 'jungle', snow: 'arctic',
+  ocean: 'ocean', warm_ocean: 'ocean', frozen_ocean: 'arctic', swamp: 'swamp',
+};
 
 const worldThemes = new Map();
 /** The look for a world where a biome (its key) is (the same one each time). */

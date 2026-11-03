@@ -41,6 +41,13 @@ export const PHYS = {
   sprintDrain: 0.55,    // stamina per tick of sprinting (3 seconds' worth at full speed)
   sprintRegen: 0.33,    // stamina per tick back while not sprinting (5 seconds to refill)
   sprintRecover: 30,    // run out, and you're winded until stamina is back up to this
+  // Swimming (worlds' water): as much of the run speed; up (jump), diving (crouch), floating to the
+  // top (left alone); how quickly it speeds up and slows down.
+  swimSpeed: 0.6,
+  swimUp: 3,
+  swimDive: 3,
+  swimFloat: 0.9,
+  swimAccel: 0.3,
 };
 
 // Other motion values (at full speed), rescaled by speed.js.

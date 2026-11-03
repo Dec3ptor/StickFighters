@@ -53,7 +53,7 @@ const STYLES = {
     city: { path: K.STONE_BRICKS },
   },
 };
-const STYLE_OF = { plains: 'timber', forest: 'timber', desert: 'adobe', badlands: 'adobe', snow: 'cabin', jungle: 'stilt' };
+const STYLE_OF = { plains: 'timber', forest: 'timber', desert: 'adobe', badlands: 'adobe', snow: 'cabin', jungle: 'stilt', swamp: 'stilt' };
 
 // ---- Names ------------------------------------------------------------------------------------------
 

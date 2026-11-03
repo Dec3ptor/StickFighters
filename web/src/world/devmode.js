@@ -115,6 +115,8 @@ export function flyBody(b, inp, mult = 1) {
   b.jetting = false;
   b.crouching = false;
   b.rope = null;
+  // (Flying through water isn't swimming in it: no splashes or bubbles.)
+  b.swimming = b.under = b.leaping = false;
 }
 
 /** A flying speed (v) on its way to another (to): there, once it's next to it (stopped, or at full speed). */

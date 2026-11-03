@@ -625,8 +625,10 @@ const mm = { canvas: null, g: null, img: null, at: -1e9, tx: NaN, ty: NaN, versi
 /** Each block's colour on the map ([r, g, b]), and each wall's (darker). */
 function mapColors() {
   const rgb = hex => { const n = parseInt(hex.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+  // (What grows in water: the water's colour, on the map.)
+  const water = BLOCKS.find(b => b.key === 'water').color;
   return {
-    blocks: BLOCKS.map(b => (b.id === AIR ? null : rgb(b.ore || b.color))),
+    blocks: BLOCKS.map(b => (b.id === AIR ? null : rgb(b.liquid && b.key !== 'lily_pad' ? water : b.ore || b.color))),
     walls: WALLS.map(w => (w.color ? rgb(shade(w.color, 0.6)) : null)),
   };
 }

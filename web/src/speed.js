@@ -16,8 +16,8 @@ const BASE = JSON.parse(JSON.stringify({ PHYS, MOTION, RULES, WEAPONS }, (k, v) 
  */
 export const BASE_VALUES = BASE;
 
-const SPEEDS = ['runSpeed', 'crouchSpeed', 'jumpSpeed', 'jumpCut', 'bounceScale', 'jetMaxUp', 'maxFall', 'jetDrain', 'jetRegen', 'ropeClimb', 'climbSpeed', 'sprintDrain', 'sprintRegen'];
-const ACCELS = ['gravity', 'groundAccel', 'airAccel', 'jetAccel'];
+const SPEEDS = ['runSpeed', 'crouchSpeed', 'jumpSpeed', 'jumpCut', 'bounceScale', 'jetMaxUp', 'maxFall', 'jetDrain', 'jetRegen', 'ropeClimb', 'climbSpeed', 'sprintDrain', 'sprintRegen', 'swimUp', 'swimDive', 'swimFloat'];
+const ACCELS = ['gravity', 'groundAccel', 'airAccel', 'jetAccel', 'swimAccel'];
 
 // Weapon numbers by unit (anywhere in a weapon's definition, including payloads).
 const W_TIMES = new Set(['rof', 'reload', 'fuse', 'life', 'spinup', 'arm', 'delay', 'duration', 'interval', 'holy']);

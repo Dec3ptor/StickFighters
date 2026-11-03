@@ -87,7 +87,11 @@ test('a world has biomes side by side, everyone starting on solid ground in the 
   }
   const world = new TileWorld({ seed: 5 }), seen = new Set();
   for (let x = -40000; x < 40000; x += 37) seen.add(world.gen.biomeAt(x).key);
-  for (const b of BIOMES) assert.ok(seen.has(b.key), `${b.name} somewhere in 80,000 tiles`);
+  // (Seas and swamps: in worlds made since seas.)
+  const world4 = new TileWorld({ seed: 5, gen: 4 }), seen4 = new Set();
+  for (let x = -40000; x < 40000; x += 37) seen4.add(world4.gen.biomeAt(x).key);
+  for (const b of BIOMES) assert.ok((b.since ? seen4 : seen).has(b.key), `${b.name} somewhere in 80,000 tiles`);
+  for (const b of BIOMES) if (b.since) assert.ok(!seen.has(b.key), `${b.name}: not in worlds made before`);
 });
 
 test('underground: caves, ores deeper down, bedrock at the bottom', () => {

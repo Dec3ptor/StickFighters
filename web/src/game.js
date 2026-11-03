@@ -476,6 +476,12 @@ export class Game {
     const b = s.body;
     if (b.bounced) this.sound('bounce', s.x, s.y);
     if (b.landed > MOTION.landSound) { this.sound('land', s.x, s.y); this.noise(s.x, s.y, 220, s); }
+    // Worlds' water: a splash going in fast, and bubbles from under it.
+    if (b.swimming !== !!s.wasSwimming) {
+      if (b.swimming && Math.abs(b.vy) > 1.5 * MOTION.timeScale) { this.sound('splash', s.x, s.y); this.noise(s.x, s.y, 200, s); this.fx?.splash(s.x, s.y - 8, Math.abs(b.vy)); }
+      s.wasSwimming = b.swimming;
+    }
+    if (b.under && this.tick % 24 === s.id % 24) this.fx?.bubble?.(s.x + s.facing * 3, s.y - 17);
     // Footsteps: running is heard close by (creeping along crouched isn't).
     if (b.onGround && !b.crouching && Math.abs(b.vx) > PHYS.runSpeed * MOTION.timeScale * 0.6 && this.tick % 12 === s.id % 12) this.noise(s.x, s.y, b.sprinting ? 180 : 110, s);
     if (b.jetting && this.tick % 10 === s.id % 10) this.noise(s.x, s.y, 420, s);

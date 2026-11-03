@@ -153,6 +153,25 @@ export const SHULKER_BOXES = new Set([SHULKER_BOX, RED_SHULKER_BOX, BLUE_SHULKER
 // ---- A waystone (waystones.js): stood by, it takes you to any other waystone in the world.
 export const WAYSTONE = def('waystone', 'Waystone', furniture({ hard: 10, tier: 1, resist: 60, light: 7, color: '#8a93a6', pattern: 'waystone' }));
 
+// ---- Water and what grows in it (worlds made since seas: worldgen.js's gen 4) ------------------
+// Water: swum in (physics.js), not dug or blasted, and flows (tileworld.js's flow: into the open
+// beside or below it, when a block that held it back goes). What grows in it is in water too
+// (liquid: swum through, drawn under the water): seagrass, kelp, coral fans, reeds at the edges,
+// and lily pads on top (stood on, like a platform). Coral grows into blocks, on reefs in warm seas.
+const wet = o => ({ solid: false, hard: 0, tool: 'hand', resist: 0, drop: null, clear: true, natural: true, liquid: true, ...o });
+export const WATER = def('water', 'Water', wet({ tool: 'none', tier: 9, resist: 999, color: '#2f6fd0', pattern: 'water' }));
+export const SEAGRASS = def('seagrass', 'Seagrass', wet({ color: '#3f9a4a', pattern: 'seagrass' }));
+export const KELP = def('kelp', 'Kelp', wet({ color: '#4f7a2a', pattern: 'kelp' }));
+export const CORAL_FAN = def('coral_fan', 'Coral fan', wet({ color: '#e0607a', pattern: 'fan' }));
+export const REEDS = def('reeds', 'Reeds', wet({ color: '#8a9a4a', pattern: 'reeds' }));
+export const LILY_PAD = def('lily_pad', 'Lily pad', wet({ platform: true, color: '#4f9a3a', pattern: 'lily' }));
+const coral = (key, name, color) => def(key, name, { hard: 2, resist: 2, color, pattern: 'coral', natural: true });
+export const CORAL = coral('coral', 'Coral', '#e05a7a');
+export const CORAL_BLUE = coral('coral_blue', 'Blue coral', '#3a7ae0');
+export const CORAL_GOLD = coral('coral_gold', 'Gold coral', '#e0b030');
+// Shipwrecks (worldgen.js): their hulls, of old timber gone dark in the sea.
+export const OLD_PLANKS = def('old_planks', 'Old planks', { hard: 3, resist: 4, wood: true, drop: 'planks', color: '#6a5238', pattern: 'planks' });
+
 /** The gem blocks (they glint). */
 export const GEMS = new Set([RUBY, SAPPHIRE, EMERALD, TOPAZ, AMETHYST, DIAMOND]);
 
@@ -166,6 +185,8 @@ export const PLATFORMS = Uint8Array.from(B, b => (b.platform ? 1 : 0));
 export const LIGHT = Uint8Array.from(B, b => b.light);
 // Light passes through (air, glass, plants, torches): else a block lets a little in at its face.
 export const CLEAR = Uint8Array.from(B, b => (b.clear || !b.solid ? 1 : 0));
+// Water, and what's in it: swum in, drawn under water, flowed out of.
+export const LIQUID = Uint8Array.from(B, b => (b.liquid ? 1 : 0));
 
 // ---- Walls: the layer behind (dug-out caves keep theirs; rooms are walled in) ----------------
 const W = [];

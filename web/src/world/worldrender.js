@@ -6,7 +6,7 @@
 // the crosshair's block: what you'd dig, and what you'd build (a whole shape, dragged out).
 
 import * as K from './blocks.js';
-import { BLOCKS, WALLS, SOLID, PLATFORMS, CLEAR, LIGHT, TILE, AIR, NO_WALL, SHAPES, shade } from './blocks.js';
+import { BLOCKS, WALLS, SOLID, PLATFORMS, CLEAR, LIGHT, LIQUID, TILE, AIR, NO_WALL, SHAPES, shade } from './blocks.js';
 import { WORLD_H } from './worldgen.js';
 import { hash3 } from './noise.js';
 import { itemOf } from './items.js';
@@ -81,13 +81,16 @@ const GRIDS = { w: PATCH + 2, fg: new Uint8Array((PATCH + 2) ** 2), bg: new Uint
 
 /**
  * Draw patch (px, py) of `world` into g (set to world coordinates). What gives off light in it
- * goes in `lights` (x, y, level, block: four numbers each).
+ * goes in `lights` (x, y, level, block: four numbers each); its water in `water` (drawn over
+ * everything each frame, WorldView's drawWater: { body, top }, x, y, width in pixels, three numbers
+ * a stretch of a row; top, the stretches along its top, with open air above).
  */
-export function paintPatch(g, world, px, py, look, lights) {
+export function paintPatch(g, world, px, py, look, lights, water = null) {
   const grid = GRIDS, W = PATCH + 2, x0 = px * PATCH, y0 = py * PATCH;
   readPatch(world, px, py, grid);
   const classic = look === 'classic';
   lights.length = 0;
+  if (water) waterOf(grid, x0, y0, water);
   // Walls behind, where they show.
   for (let j = 0; j < PATCH; j++) {
     for (let i = 0; i < PATCH; i++) {
@@ -96,6 +99,8 @@ export function paintPatch(g, world, px, py, look, lights) {
       drawWall(g, (x0 + i) * TILE, (y0 + j) * TILE, wall, classic, x0 + i, y0 + j);
     }
   }
+  // Water: the sea's colour behind what's in it (not the sky), darker deeper down.
+  if (water?.body.length) waterBack(g, world, grid, x0, y0, classic);
   // Blocks, then the plants, trees and things in front. (First, what the tiles just outside the
   // picture put inside it.)
   const edges = [];
@@ -104,6 +109,8 @@ export function paintPatch(g, world, px, py, look, lights) {
     for (let i = 0; i < PATCH; i++) {
       const k = (j + 1) * W + i + 1, id = grid.fg[k];
       if (id === AIR) continue;
+      // (Water itself is drawn over everything, each frame: drawWater.)
+      if (id === K.WATER) continue;
       const x = (x0 + i) * TILE, y = (y0 + j) * TILE, tx = x0 + i, ty = y0 + j;
       if (LIGHT[id]) lights.push(x + TILE / 2, y + TILE / 2, LIGHT[id], id);
       if (SOLID[id]) drawBlock(g, grid, k, x, y, id, classic, tx, ty, edges);
@@ -119,6 +126,71 @@ export function paintPatch(g, world, px, py, look, lights) {
     for (let e = 0; e < edges.length; e += 4) { g.moveTo(edges[e], edges[e + 1]); g.lineTo(edges[e + 2], edges[e + 3]); }
     g.stroke();
   }
+}
+
+// Water's colours, at its top and deep down: [top, deep] (Remastered), by where it is. And
+// the original's, paper tinted blue.
+const WATER_RM = { sea: ['#4a8fd0', '#0e3158'], warm: ['#40b4d4', '#0f5a7a'], cold: ['#7aa2c4', '#1c3448'], swamp: ['#4f7c5c', '#16301f'], lake: ['#4a92bc', '#123858'] };
+const WATER_CLASSIC = ['#e4eff9', '#a8c3df'];
+const WATER_STEPS = 30, WATER_DEEP = 30; // shades from top to bottom, over this many tiles down
+const waterShades = new Map();
+function waterShade(pair, d) {
+  const k = Math.min(WATER_STEPS, Math.floor((d / WATER_DEEP) * WATER_STEPS)), key = `${pair[0]}${k}`;
+  let c = waterShades.get(key);
+  if (!c) {
+    const a = parseInt(pair[0].slice(1), 16), b = parseInt(pair[1].slice(1), 16), t = k / WATER_STEPS;
+    const ch = sh => Math.round(((a >> sh) & 255) + (((b >> sh) & 255) - ((a >> sh) & 255)) * t);
+    waterShades.set(key, c = `rgb(${ch(16)},${ch(8)},${ch(0)})`);
+  }
+  return c;
+}
+
+/** Behind a patch's water (where there's no wall: that shows through it): its colour, by depth (how far under its top). */
+function waterBack(g, world, grid, x0, y0, classic) {
+  const W = PATCH + 2;
+  for (let i = 0; i < PATCH; i++) {
+    let d = -1, pair = WATER_CLASSIC;
+    for (let j = 0; j < PATCH; j++) {
+      const k = (j + 1) * W + i + 1, id = grid.fg[k];
+      // (Under something sunk in it, a wreck's deck, or ice: still as deep as it is.)
+      if (!LIQUID[id]) { d = SOLID[id] && d >= 0 ? d + 1 : -1; continue; }
+      if (d < 0) {
+        // (How far under its top this is: up through the water above the patch, and what's sunk in it.)
+        d = 0;
+        for (let y = y0 + j - 1, t; d < WATER_DEEP && (LIQUID[t = world.tile(x0 + i, y)] || SOLID[t]); y--) d++;
+        if (!classic) {
+          const b = world.gen?.biomeAt(x0 + i), col = world.gen?.column(x0 + i);
+          pair = !b ? WATER_RM.sea : b.key === 'swamp' || b.key === 'jungle' ? WATER_RM.swamp : col?.lake ? WATER_RM.lake : b.coral || b.climate === 2 ? WATER_RM.warm : b.frozen || b.climate === 0 ? WATER_RM.cold : WATER_RM.sea;
+        }
+      } else d++;
+      if (grid.bg[k] !== NO_WALL) continue;
+      g.fillStyle = waterShade(pair, d);
+      g.fillRect((x0 + i) * TILE, (y0 + j) * TILE, TILE, TILE);
+    }
+  }
+}
+
+/** A patch's water (from its grid), as stretches of rows: into water.body and water.top (see paintPatch). */
+function waterOf(grid, x0, y0, water) {
+  const W = PATCH + 2, body = water.body ||= [], top = water.top ||= [];
+  body.length = 0;
+  top.length = 0;
+  let all = true;
+  for (let j = 0; j < PATCH; j++) {
+    let run = -1, surf = -1;
+    for (let i = 0; i <= PATCH; i++) {
+      const k = (j + 1) * W + i + 1, wet = i < PATCH && LIQUID[grid.fg[k]] === 1;
+      // (Its top: open above it, not water, nor a block over it, as ice is.)
+      const above = grid.fg[k - W], open = wet && !LIQUID[above] && !SOLID[above];
+      if (!wet) all = false;
+      if (wet && run < 0) run = i;
+      if (!wet && run >= 0) { body.push((x0 + run) * TILE, (y0 + j) * TILE, (i - run) * TILE); run = -1; }
+      if (open && surf < 0) surf = i;
+      if (!open && surf >= 0) { top.push((x0 + surf) * TILE, (y0 + j) * TILE, (i - surf) * TILE); surf = -1; }
+    }
+  }
+  // (All water: one square, not sixteen rows.)
+  if (all) { body.length = 0; body.push(x0 * TILE, y0 * TILE, PATCH * TILE, PATCH * TILE); water.whole = true; } else water.whole = false;
 }
 
 /**
@@ -404,6 +476,14 @@ function marks(g, b, x, y, h, classic, grid, k) {
       g.lineWidth = 1;
       g.beginPath(); g.moveTo(x + 8, y); g.lineTo(x + 8, y + TILE); g.moveTo(x, y + 8); g.lineTo(x + TILE, y + 8); g.stroke();
       break;
+    case 'coral': {
+      // Knobbly coral: holes and bumps.
+      g.fillStyle = classic ? '#9a9a9a' : tint(b.color, 0.7);
+      for (let i = 0; i < 5; i++) { g.beginPath(); g.arc(x + 3 + ((h >>> (i * 3)) % 11), y + 3 + ((h >>> (i * 3 + 13)) % 11), 1.3, 0, Math.PI * 2); g.fill(); }
+      g.fillStyle = classic ? '#d0d0d0' : tint(b.color, 1.25);
+      g.fillRect(x + 2 + (h & 7), y + 2, 2, 2);
+      break;
+    }
     case 'crate':
       g.strokeStyle = classic ? INK : '#3a2c14';
       g.lineWidth = 1;
@@ -482,6 +562,51 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
     case 'vine':
       g.strokeStyle = classic ? INK : b.color; g.lineWidth = 1.2;
       g.beginPath(); g.moveTo(x + 8, y); g.quadraticCurveTo(x + 4 + (h & 7), y + 8, x + 8, y + TILE); g.stroke();
+      break;
+    case 'seagrass':
+      // Ribbons swaying up from the bottom.
+      g.strokeStyle = classic ? INK : b.color; g.lineWidth = 1.2;
+      g.beginPath();
+      for (let i = 0; i < 3; i++) { const bx = x + 3 + i * 5 + ((h >>> (i * 2)) & 1); g.moveTo(bx, y + TILE); g.quadraticCurveTo(bx + ((h >>> (i + 6)) & 1 ? 3 : -3), y + 9, bx + ((h >>> (i + 9)) & 1 ? 1 : -1), y + 2 + ((h >>> (i * 3)) & 3)); }
+      g.stroke();
+      break;
+    case 'kelp': {
+      // A tall stalk, its leaves either side (the top of it, a frond).
+      const top = grid.fg[k - W] !== K.KELP;
+      g.strokeStyle = classic ? INK : tint(b.color, 0.8); g.lineWidth = 1.4;
+      g.beginPath(); g.moveTo(x + 8, y + TILE); g.quadraticCurveTo(x + 5 + (h & 3), y + 8, x + 8, top ? y + 4 : y); g.stroke();
+      g.fillStyle = classic ? '#fff' : b.color;
+      for (let i = 0; i < 2; i++) {
+        const ly = y + 3 + i * 7, side = (h >>> i) & 1 ? 1 : -1;
+        g.beginPath(); g.ellipse(x + 8 + side * 3.5, ly + 2, 3.2, 1.6, side * 0.5, 0, Math.PI * 2); g.fill();
+        if (classic) { g.strokeStyle = INK; g.lineWidth = 0.8; g.stroke(); }
+      }
+      break;
+    }
+    case 'fan': {
+      // A coral fan: a branching spray, of a reef's colours.
+      const c = classic ? INK : ['#e0607a', '#f08a4a', '#c05ae0', '#4ab0e0'][h & 3];
+      g.strokeStyle = c; g.lineWidth = 1.1;
+      g.beginPath();
+      for (let i = -2; i <= 2; i++) { g.moveTo(x + 8, y + TILE); g.lineTo(x + 8 + i * 3, y + 5 + Math.abs(i) * 1.5); }
+      g.stroke();
+      break;
+    }
+    case 'reeds':
+      // Reeds standing up out of the shallows (above the water's top), their heads dark.
+      g.strokeStyle = classic ? INK : b.color; g.lineWidth = 1.1;
+      g.beginPath();
+      for (let i = 0; i < 3; i++) { const bx = x + 3 + i * 5 + ((h >>> (i * 2)) & 1); g.moveTo(bx, y + TILE); g.lineTo(bx + ((h >>> (i + 6)) & 1 ? 1 : -1), y - 8 - ((h >>> (i * 3)) & 3)); }
+      g.stroke();
+      g.fillStyle = classic ? INK : '#6a4a2a';
+      for (let i = 0; i < 3; i += 2) { const bx = x + 3 + i * 5 + ((h >>> (i * 2)) & 1) + ((h >>> (i + 6)) & 1 ? 1 : -1); g.fillRect(bx - 1, y - 9 - ((h >>> (i * 3)) & 3), 2.2, 4); }
+      break;
+    case 'lily':
+      // A pad floating on the top, a flower on some.
+      g.fillStyle = classic ? '#fff' : b.color;
+      g.beginPath(); g.ellipse(x + 8, y + 1.5, 6.5, 2, 0, 0.25, Math.PI * 2 - 0.25); g.lineTo(x + 8, y + 1.5); g.fill();
+      g.strokeStyle = classic ? INK : tint(b.color, 0.6); g.lineWidth = 0.9; g.stroke();
+      if ((h & 3) === 0) { g.fillStyle = classic ? INK : '#f2b8d0'; g.beginPath(); g.arc(x + 9, y, 1.8, 0, Math.PI * 2); g.fill(); }
       break;
     case 'cactus': {
       g.fillStyle = classic ? '#fff' : b.color;
@@ -783,9 +908,12 @@ export function lightBox(world, x0, y0, w, h, out, day = 15, solid = null) {
   const n = w * h;
   if (!out || out.length < n) out = new Uint8Array(n);
   if (!solid || solid.length < n) solid = new Uint8Array(n);
-  // Each column's daylight: down to the first block or wall that stops it (kept: skyTop).
+  // Each column's daylight: down to the first block or wall that stops it (kept: skyTop), fading
+  // through water from its top (wetTop) as it goes down.
   const tops = TOPS.length >= w ? TOPS : (TOPS = new Int32Array(w * 2));
   for (let i = 0; i < w; i++) tops[i] = skyTop(world, x0 + i);
+  const wets = WETS.length >= w ? WETS : (WETS = new Int32Array(w * 2));
+  for (let i = 0; i < w; i++) wets[i] = wetTop(world, x0 + i, tops[i]);
   // The tiles, a chunk at a time (straight from its blocks, not a lookup each).
   const x1 = x0 + w, y1 = Math.min(WORLD_H, y0 + h);
   for (let cy = y0 >> 5; cy <= (y1 - 1) >> 5; cy++) {
@@ -797,7 +925,7 @@ export function lightBox(world, x0, y0, w, h, out, day = 15, solid = null) {
         for (let tx = tx0; tx < tx1; tx++) {
           const id = fg[row | (tx & 31)], k = o + tx;
           solid[k] = SOLID[id] && !CLEAR[id] ? 1 : 0;
-          const sky = ty < tops[tx - x0] ? day : 0, glow = LIGHT[id];
+          const c = tx - x0, sky = ty < tops[c] ? (ty < wets[c] ? day : Math.max(0, day - Math.floor((ty - wets[c] + 1) / WATER_DIM))) : 0, glow = LIGHT[id];
           out[k] = sky > glow ? sky : glow;
         }
       }
@@ -807,7 +935,33 @@ export function lightBox(world, x0, y0, w, h, out, day = 15, solid = null) {
   lightBox.solid = solid;
   return out;
 }
-let TOPS = new Int32Array(256);
+let TOPS = new Int32Array(256), WETS = new Int32Array(256);
+// Daylight fades by one level each this many tiles down through water.
+const WATER_DIM = 3;
+
+/**
+ * The top of the water in column tx that daylight goes through (above `sky`, the column's skyTop),
+ * or the bottom of the world: kept for each column, as skyTop's are.
+ */
+export function wetTop(world, tx, sky) {
+  let cache = world.wetTops;
+  if (!cache) {
+    cache = world.wetTops = new Map();
+    world.listeners.push((x, y) => { const t = cache.get(x); if (t !== undefined && y <= t + 1) cache.delete(x); });
+    world.chunkListeners?.push(cx => { for (let x = cx * 32; x < cx * 32 + 32; x++) cache.delete(x); });
+  }
+  let t = cache.get(tx);
+  if (t !== undefined && (t < sky || t === WORLD_H)) return t;
+  t = WORLD_H;
+  const col = tx & 31;
+  find: for (let cy = 0; cy <= Math.min(WORLD_H / 32 - 1, sky >> 5); cy++) {
+    const fg = world.chunk(tx >> 5, cy).fg;
+    for (let r = 0; r < 32 && cy * 32 + r < sky; r++) if (LIQUID[fg[(r << 5) | col]]) { t = cy * 32 + r; break find; }
+  }
+  if (cache.size > 30000) cache.clear();
+  cache.set(tx, t);
+  return t;
+}
 
 /**
  * The first tile down column tx that stops daylight (a block light doesn't go through, or a
@@ -1105,6 +1259,47 @@ export class WorldView {
     ctx.globalAlpha = 1;
   }
 
+  /**
+   * The water on screen, over everything in it (soldiers swimming, what grows on the bottom): a
+   * see-through wash of its colour, and along its top a lighter band and waves rolling along it.
+   * (How dark it is down deep is the light's: lightBox.)
+   */
+  drawWater(ctx, game, classic) {
+    const order = this.order;
+    if (!order?.length) return;
+    const t = performance.now() / 1000;
+    ctx.fillStyle = classic ? 'rgba(80,150,225,0.16)' : 'rgba(30,100,190,0.3)';
+    let tops = 0;
+    for (let i = 0; i < order.length; i++) {
+      const p = this.pics.get(order[i]), w = p?.water;
+      if (!w) continue;
+      const b = w.body;
+      if (w.whole) ctx.fillRect(b[0], b[1], b[2], b[3]);
+      else for (let j = 0; j < b.length; j += 3) ctx.fillRect(b[j], b[j + 1], b[j + 2], TILE);
+      tops += w.top.length;
+    }
+    if (!tops || order.length > 600) return;
+    // Its top: a lighter band, and a wave along it.
+    ctx.fillStyle = classic ? 'rgba(120,180,240,0.25)' : 'rgba(130,200,255,0.28)';
+    for (let i = 0; i < order.length; i++) {
+      const top = this.pics.get(order[i])?.water?.top;
+      if (top) for (let j = 0; j < top.length; j += 3) ctx.fillRect(top[j], top[j + 1], top[j + 2], 3);
+    }
+    ctx.strokeStyle = classic ? '#2f5f9a' : 'rgba(225,245,255,0.8)';
+    ctx.lineWidth = classic ? 1 : 1.2;
+    ctx.beginPath();
+    for (let i = 0; i < order.length; i++) {
+      const top = this.pics.get(order[i])?.water?.top;
+      if (!top) continue;
+      for (let j = 0; j < top.length; j += 3) {
+        const x0 = top[j], y = top[j + 1] + 1.5, x1 = x0 + top[j + 2];
+        ctx.moveTo(x0, y + Math.sin(t * 2.2 + x0 / 11) * 1.1);
+        for (let x = x0 + 4; x <= x1; x += 4) ctx.lineTo(x, y + Math.sin(t * 2.2 + x / 11) * 1.1);
+      }
+    }
+    ctx.stroke();
+  }
+
   /** Picture p on the screen, its edges on whole pixels (so pictures side by side meet exactly). */
   show(r, p, key, fresh) {
     const s = r.s, x0 = Math.round(p.px * PP * s + r.tx), y0 = Math.round(p.py * PP * s + r.ty);
@@ -1119,14 +1314,14 @@ export class WorldView {
     if (!p && this.free?.length) { p = this.free.pop(); p.unshown = true; }
     if (!p) {
       const canvas = document.createElement('canvas');
-      p = { id: ++PIC_IDS, canvas, g: canvas.getContext('2d'), px, py, res: 0, stale: false, used: 0, lights: [] };
+      p = { id: ++PIC_IDS, canvas, g: canvas.getContext('2d'), px, py, res: 0, stale: false, used: 0, lights: [], water: { body: [], top: [], whole: false } };
     }
     const size = Math.round(PP * res);
     if (p.canvas.width !== size) { p.canvas.width = size; p.canvas.height = size; }
     else { p.g.setTransform(1, 0, 0, 1, 0, 0); p.g.clearRect(0, 0, size, size); }
     p.px = px; p.py = py; p.res = res; p.stale = false;
     p.g.setTransform(res, 0, 0, res, -px * PP * res, -py * PP * res);
-    paintPatch(p.g, world, px, py, this.look, p.lights);
+    paintPatch(p.g, world, px, py, this.look, p.lights, p.water);
     return p;
   }
 

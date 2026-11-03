@@ -1,6 +1,9 @@
 // Making a world from its seed (world mode): biomes side by side along the surface, hills,
 // mountains, dunes and mesas, soil and rock in layers going down, caves and tunnels, ores
-// by depth, trees and plants, ruins on the surface and cabins underground.
+// by depth, trees and plants, ruins on the surface and cabins underground. Worlds made since
+// seas (gen 4): seas between the lands (their floors of sand, gravel and clay, kelp and seagrass,
+// coral reefs in warm seas, ice over cold ones, shipwrecks), beaches, lakes, and swamps full of
+// pools with reeds and lily pads.
 //
 // Every tile is worked out from the seed and its own position only, so any chunk can be made
 // on its own, in any order, and comes out the same every time and on every machine (noise.js).
@@ -18,6 +21,16 @@ export const DEEP = 360;            // slate from here down
 export const UNDERWORLD = 468;      // basalt and magma from here down
 
 const REGION = 320, JITTER = 96, BLEND = 40;
+// Worlds made since seas (gen 4). The sea's top row; its height (tiles above the usual surface);
+// how far either side of an edge between sea and land their heights blend (a gentler slope than
+// between two lands); how far into the land the shore always is (the land's above the sea from
+// there: see coastLift); how often regions are sea (a slow noise over them, above this).
+export const SEA_ROW = SURFACE + 6;
+const SEA_H = SURFACE - SEA_ROW, SEA_BLEND = 90, SHORE = 32, SEA_NOISE = 0.2;
+// Lakes (one in some of the cells LAKE_CELL tiles across) and pools (POOL_CELL: swamps are full of
+// them): how likely in each biome [a lake, a pool].
+const LAKE_CELL = 170, POOL_CELL = 44;
+const LAKE_CHANCE = { plains: [0.5, 0.06], forest: [0.45, 0.08], mountains: [0.2, 0], desert: [0.15, 0], jungle: [0.35, 0.2], snow: [0.4, 0.04], swamp: [0.6, 0.9] };
 // Worlds made since veins (oreVeins): diamond pipes and geodes, how high they come, and the gems.
 const PIPE_CELL = 420, PIPE_TOP = 290, GEODE_TOP = 360, HOLLOW = -2;
 const GEM_ORES = [K.RUBY, K.SAPPHIRE, K.EMERALD, K.TOPAZ, K.AMETHYST];
@@ -36,9 +49,18 @@ export const BIOMES = [
   { key: 'badlands', name: 'Badlands', climate: 2, base: 18, amp: 20, scale: 56, shape: 'mesa', top: K.RED_SAND, soil: K.RED_SAND, soilDepth: 2, under: 'bands', wall: K.CLAY_WALL, trees: 0.04, tree: 'cactus', plants: 0.05, plant: K.DEAD_BUSH, flowers: 0 },
   { key: 'jungle', name: 'Jungle', climate: 2, base: 5, amp: 21, scale: 70, shape: 'rolling', top: K.JUNGLE_GRASS, soil: K.MUD, soilDepth: 11, wall: K.MUD_WALL, trees: 0.7, tree: 'jungle', plants: 0.65, flowers: 0.08 },
   { key: 'snow', name: 'Tundra', climate: 0, base: 6, amp: 18, scale: 95, shape: 'rolling', top: K.SNOW, soil: K.SNOW, soilDepth: 4, under: 'ice', wall: K.ICE_WALL, trees: 0.32, tree: 'pine', plants: 0, flowers: 0 },
+  // Worlds made since seas (gen 4): the seas (cold ones iced over, warm ones with coral reefs), and swamps.
+  { key: 'ocean', since: 4, name: 'Sea', climate: 1, base: -34, amp: 9, scale: 90, shape: 'rolling', top: K.SAND, soil: K.SAND, soilDepth: 4, wall: K.SANDSTONE_WALL, trees: 0, tree: 'oak', plants: 0, flowers: 0, sea: true },
+  { key: 'warm_ocean', since: 4, name: 'Warm sea', climate: 2, base: -30, amp: 8, scale: 80, shape: 'rolling', top: K.SAND, soil: K.SAND, soilDepth: 5, wall: K.SANDSTONE_WALL, trees: 0, tree: 'oak', plants: 0, flowers: 0, sea: true, coral: true },
+  { key: 'frozen_ocean', since: 4, name: 'Frozen sea', climate: 0, base: -32, amp: 9, scale: 90, shape: 'rolling', top: K.GRAVEL, soil: K.GRAVEL, soilDepth: 3, wall: K.STONE_WALL, trees: 0, tree: 'pine', plants: 0, flowers: 0, sea: true, frozen: true },
+  { key: 'swamp', since: 4, name: 'Swamp', climate: 1, base: -2, amp: 4, scale: 60, shape: 'rolling', top: K.GRASS, soil: K.MUD, soilDepth: 6, wall: K.MUD_WALL, trees: 0.38, tree: 'swamp', plants: 0.55, flowers: 0.03 },
 ];
 export const BIOME_BY_KEY = new Map(BIOMES.map((b, i) => [b.key, { ...b, index: i }]));
 const BY_CLIMATE = [[6, 2, 6], [0, 1, 1, 2, 0], [3, 4, 5, 3]];
+const biomeIndex = key => BIOMES.findIndex(b => b.key === key);
+// Worlds made since seas: the lands for each climate, and the sea.
+const BY_CLIMATE_4 = [['snow', 'mountains', 'snow'], ['plains', 'forest', 'forest', 'mountains', 'plains', 'swamp'], ['desert', 'badlands', 'jungle', 'desert', 'swamp']].map(l => l.map(biomeIndex));
+const SEAS = ['frozen_ocean', 'ocean', 'warm_ocean'].map(biomeIndex);
 
 /** The world's ruins and cabins: { kind, x0, y0, x1, y1 (tiles, inclusive), ... }. */
 const RUIN_CELL = 240, CABIN_W = 160, CABIN_H = 96;
@@ -46,8 +68,9 @@ const RUIN_CELL = 240, CABIN_W = 160, CABIN_H = 96;
 export class WorldGen {
   /**
    * gen: the version of the generator the world was made with (worldsave.js's WORLD_GEN): 1 the
-   * first; 2 has towns (towns.js); 3 ores in veins and nodes, gems, diamond pipes and geodes.
-   * Worlds keep the land they were made with. (towns: true, an older way to say 2.)
+   * first; 2 has towns (towns.js); 3 ores in veins and nodes, gems, diamond pipes and geodes;
+   * 4 seas, beaches, lakes and swamps. Worlds keep the land they were made with. (towns: true,
+   * an older way to say 2.)
    */
   constructor(seed, { towns = false, gen = 0, noTowns = false } = {}) {
     this.seed = seed | 0;
@@ -55,6 +78,12 @@ export class WorldGen {
     // (A world made without towns, by its settings: worldrules.js.)
     this.towns = this.version >= 2 && !noTowns;
     this.veins = this.version >= 3;
+    this.seas = this.version >= 4;
+    this.biomes = new Map();    // region -> its biome
+    this.spans = new Map();     // sea region -> the sea it's part of (seaSpan)
+    this.lakes = new Map();     // lake cell -> its lake (or null)
+    this.pools = new Map();     // pool cell -> its pool (or null)
+    this.wrecks = new Map();    // sea region -> its shipwreck (or null)
     this.townPlans = new Map(); // region -> its town (or null)
     this.townRasters = new Map(); // town id -> its blocks (a few kept)
     this.columns = new Map(); // x -> column (kept for a while: chunks above and below ask too)
@@ -85,13 +114,27 @@ export class WorldGen {
     return k;
   }
 
-  /** Region k's biome (the one around the middle of the world is always plains: where everyone starts). */
+  /**
+   * Region k's biome (the one around the middle of the world is always plains: where everyone
+   * starts). Worlds made since seas: some are sea (never next to where everyone starts), of the
+   * climate there.
+   */
   regionBiome(k) {
-    if (k === this.spawnRegion) return BIOMES[0];
-    const t = fbm1(this.seed + 11, k * 0.31, 2);
-    const climate = t < -0.22 ? 0 : t > 0.22 ? 2 : 1;
-    const list = BY_CLIMATE[climate];
-    return BIOMES[list[hash3(this.seed, k, 5) % list.length]];
+    let b = this.biomes.get(k);
+    if (b) return b;
+    if (k === this.spawnRegion) b = BIOMES[0];
+    else {
+      const t = fbm1(this.seed + 11, k * 0.31, 2);
+      const climate = t < -0.22 ? 0 : t > 0.22 ? 2 : 1;
+      if (this.seas && Math.abs(k - this.spawnRegion) > 1 && fbm1(this.seed + 13, k * 0.2, 2) > SEA_NOISE) b = BIOMES[SEAS[climate]];
+      else {
+        const list = (this.seas ? BY_CLIMATE_4 : BY_CLIMATE)[climate];
+        b = BIOMES[list[hash3(this.seed, k, 5) % list.length]];
+      }
+    }
+    if (this.biomes.size > 512) this.biomes.clear();
+    this.biomes.set(k, b);
+    return b;
   }
 
   /** How high biome b's ground is at column x (tiles above the usual surface). */
@@ -124,11 +167,32 @@ export class WorldGen {
    */
   naturalHeight(x, k = this.regionAt(x)) {
     const land = fbm1(this.seed + 99, x / 1400, 3) * 16;
+    if (this.seas) return this.naturalHeight4(x, k, land);
     let h = this.height(this.regionBiome(k), x) + land;
     const dl = x - this.edge(k), dr = this.edge(k + 1) - 1 - x;
     if (dl < BLEND) h = mix(this.height(this.regionBiome(k - 1), x) + land, h, 0.5 + 0.5 * dl / BLEND);
     else if (dr < BLEND) h = mix(this.height(this.regionBiome(k + 1), x) + land, h, 0.5 + 0.5 * dr / BLEND);
     return h;
+  }
+
+  /**
+   * naturalHeight in worlds made since seas: the sea floor rising and falling less with the
+   * whole land; between sea and land the heights blend over a wider stretch (a gentle slope down
+   * into the sea), from both sides at once where a region's narrow; and the land rising out of
+   * the sea not far in (coastLift).
+   */
+  naturalHeight4(x, k, land) {
+    const b = this.regionBiome(k), bl = this.regionBiome(k - 1), br = this.regionBiome(k + 1);
+    const hOf = o => this.height(o, x) + (o.sea ? land * 0.3 : land);
+    const dl = x - this.edge(k), dr = this.edge(k + 1) - 1 - x;
+    const wl = bl.sea !== b.sea ? SEA_BLEND : BLEND, wr = br.sea !== b.sea ? SEA_BLEND : BLEND;
+    // (Each neighbour's share: half right at the edge, none from its blend's width in.)
+    const sl = dl < wl ? 1 - smooth(0.5 + 0.5 * dl / wl) : 0, sr = dr < wr ? 1 - smooth(0.5 + 0.5 * dr / wr) : 0;
+    let h = hOf(b) * (1 - sl - sr);
+    if (sl) h += hOf(bl) * sl;
+    if (sr) h += hOf(br) * sr;
+    if (b.sea || (!bl.sea && !br.sea)) return h;
+    return coastLift(h, Math.min(bl.sea ? dl : Infinity, br.sea ? dr : Infinity));
   }
 
   /** The ground's row for height h (and back). */
@@ -152,8 +216,11 @@ export class WorldGen {
     // Biomes meet along a ragged line, not a straight one.
     const dl = x - start, dr = end - 1 - x;
     const own = dl < 3 && rand3(this.seed, x, 9) < 0.5 ? this.regionBiome(k - 1) : dr < 3 && rand3(this.seed, x, 9) < 0.5 ? this.regionBiome(k + 1) : b;
-    const surf = this.surfaceRow(h);
-    c = { surf, biome: own, soilDepth: own.soilDepth + (hash3(this.seed, x, 13) % 3), town };
+    let surf = this.surfaceRow(h);
+    // Worlds made since seas: a lake's bowl, dug into the land (never in a town).
+    const lake = this.seas && !town ? this.lakeAt(x) : null;
+    if (lake) surf = Math.max(surf, lake.level + 1 + Math.round(lake.depth * (1 - ((x - lake.mid) / lake.w) ** 2)));
+    c = { surf, biome: own, soilDepth: own.soilDepth + (hash3(this.seed, x, 13) % 3), town, lake };
     if (this.columns.size > 6000) this.columns.clear();
     this.columns.set(x, c);
     return c;
@@ -161,6 +228,143 @@ export class WorldGen {
 
   surfaceAt(x) { return this.column(x).surf; }
   biomeAt(x) { return this.column(x).biome; }
+
+  // ---- Seas and lakes (worlds made since seas) -----------------------------------------------
+
+  /**
+   * The sea that region k is part of: { x0, x1 (its first and last columns under water), biome },
+   * or null (not a sea). Worked out once: from the middle of the region out each way, as far as the
+   * ground's under the sea's top (into the land either side a little: coastLift sees to that; and
+   * on through a sea next to it).
+   */
+  seaSpan(k) {
+    if (!this.seas) return null;
+    const b = this.regionBiome(k);
+    if (!b.sea) return null;
+    let sp = this.spans.get(k);
+    if (sp) return sp;
+    const mid = Math.floor((this.edge(k) + this.edge(k + 1)) / 2);
+    let a = mid, z = mid;
+    while (this.column(a - 1).surf > SEA_ROW) a--;
+    while (this.column(z + 1).surf > SEA_ROW) z++;
+    sp = { x0: a, x1: z, biome: b, k };
+    if (this.spans.size > 64) this.spans.clear();
+    this.spans.set(k, sp);
+    return sp;
+  }
+
+  /** The sea column x is in (its own region's, if that's a sea: one sea's regions can be of different climates), or null. */
+  seaAt(x) {
+    if (!this.seas) return null;
+    const k = this.regionAt(x);
+    for (const j of [k, k - 1, k + 1]) {
+      const sp = this.seaSpan(j);
+      if (sp && x >= sp.x0 && x <= sp.x1) return sp;
+    }
+    return null;
+  }
+
+  /**
+   * The top row of the water over column x (a sea's or a lake's), or WORLD_H: none. With it, the
+   * column's bed (what the ground's made of under water, and on a beach): { top, soil, depth, under }.
+   */
+  waterTop(x, c = this.column(x)) {
+    if (c.water !== undefined) return c.water;
+    c.water = WORLD_H;
+    c.bed = null;
+    if (!this.seas) return c.water;
+    const s = this.seed;
+    if (c.lake) {
+      const L = c.lake, key = L.biome;
+      c.water = L.level;
+      c.bed = key === 'swamp' || key === 'jungle' ? { top: K.MUD, soil: K.MUD, depth: 4 }
+        : key === 'desert' ? { top: K.SAND, soil: K.SAND, depth: 4, under: K.SANDSTONE }
+        : key === 'snow' || key === 'mountains' ? { top: K.GRAVEL, soil: K.GRAVEL, depth: 3 }
+        : Math.abs(x - L.mid) >= L.w - 3 ? { top: K.SAND, soil: K.SAND, depth: 3 } : { top: K.CLAY, soil: K.DIRT, depth: 3 };
+      return c.water;
+    }
+    const sp = this.seaAt(x);
+    if (sp) {
+      c.water = SEA_ROW;
+      const deep = c.surf - SEA_ROW, n = noise2(s + 70, x / 40, 0.5);
+      c.bed = sp.biome.frozen ? { top: deep < 6 ? K.SAND : K.GRAVEL, soil: K.GRAVEL, depth: 3 }
+        : sp.biome.coral ? { top: K.SAND, soil: K.SAND, depth: 5, under: K.SANDSTONE }
+        : { top: deep < 10 || (n > -0.3 && n < 0.3) ? K.SAND : n >= 0.3 ? K.CLAY : K.GRAVEL, soil: K.SAND, depth: 4, under: K.SANDSTONE };
+      return c.water;
+    }
+    // A beach: dry land along a sea, not far above it.
+    if (c.surf >= SEA_ROW - 6) {
+      const k = this.regionAt(x);
+      for (let j = k - 1; j <= k + 1; j++) {
+        const o = this.seaSpan(j);
+        if (!o || Math.min(Math.abs(x - o.x0), Math.abs(x - o.x1)) > 8) continue;
+        c.bed = o.biome.frozen ? { top: K.GRAVEL, soil: K.GRAVEL, depth: 3 }
+          : c.biome.key === 'badlands' ? { top: K.RED_SAND, soil: K.RED_SAND, depth: 4 } : { top: K.SAND, soil: K.SAND, depth: 4, under: K.SANDSTONE };
+        c.beach = true;
+        break;
+      }
+    }
+    return c.water;
+  }
+
+  /** The bottom (row) of the deepest water within a few columns of x, or -1: caves keep away from it. */
+  wetFloor(x) {
+    const c = this.column(x);
+    if (c.wetFloor !== undefined) return c.wetFloor;
+    let f = -1;
+    for (let xx = x - 3; xx <= x + 3; xx++) if (this.waterTop(xx) < WORLD_H) f = Math.max(f, this.column(xx).surf);
+    c.wetFloor = f;
+    return f;
+  }
+
+  /** The lake (or pool) whose water column x is under, if any (its edges are the land it's in). */
+  lakeAt(x) {
+    for (let small = 0; small < 2; small++) {
+      const cell = small ? POOL_CELL : LAKE_CELL, i = Math.floor(x / cell);
+      for (let j = i - 1; j <= i + 1; j++) {
+        const L = this.lake(j, !!small);
+        if (L && x > L.x0 && x < L.x1) return L;
+      }
+    }
+    return null;
+  }
+
+  /** The lake in lake cell i (small: the pool in pool cell i), or null. Worked out once. */
+  lake(i, small) {
+    const cache = small ? this.pools : this.lakes;
+    let L = cache.get(i);
+    if (L !== undefined) return L;
+    L = this.planLake(i, small);
+    if (cache.size > 256) cache.clear();
+    cache.set(i, L);
+    return L;
+  }
+
+  /**
+   * Lake cell i's lake, if it has one: a bowl dug into the land across [x0, x1] (those two columns
+   * the land, holding it in), its water up to the lower of them (level, a row), depth rows deeper
+   * in the middle. Only in one biome's land, away from seas, towns and where everyone starts, and
+   * not through a hill.
+   */
+  planLake(i, small) {
+    const s = this.seed, cell = small ? POOL_CELL : LAKE_CELL, salt = small ? 600 : 610, h = hash3(s, i, salt);
+    const w = small ? 3 + ((h >>> 8) % 6) : 8 + ((h >>> 8) % 16), depth = small ? 1 + ((h >>> 12) % 3) : 3 + ((h >>> 12) % 6);
+    const pad = w + 3, mid = i * cell + pad + (h % Math.max(1, cell - 2 * pad)), x0 = mid - w, x1 = mid + w;
+    const k = this.regionAt(mid), b = this.regionBiome(k);
+    if (rand3(s, i, salt + 1) >= (LAKE_CHANCE[b.key]?.[small ? 1 : 0] || 0)) return null;
+    if (this.regionAt(x0 - 2) !== k || this.regionAt(x1 + 2) !== k) return null;
+    if (this.regionBiome(k - 1).sea || this.regionBiome(k + 1).sea) return null;
+    if (Math.abs(mid - this.spawnX) < w + 70) return null;
+    if (this.towns && (this.townNear(x0, TOWN_RAMP + 8) || this.townNear(x1, TOWN_RAMP + 8))) return null;
+    // (A pool not where a lake is.)
+    if (small) for (let j = Math.floor(x0 / LAKE_CELL) - 1; j <= Math.floor(x1 / LAKE_CELL) + 1; j++) { const o = this.lake(j, false); if (o && o.x1 + 3 >= x0 && o.x0 - 3 <= x1) return null; }
+    const row = x => this.surfaceRow(this.naturalHeight(x, k));
+    const rl = row(x0), rr = row(x1);
+    if (Math.abs(rl - rr) > (small ? 2 : 4)) return null;
+    const level = Math.max(rl, rr);
+    for (let x = x0 + 2; x < x1 - 1; x += 3) if (row(x) < level - (small ? 2 : 6)) return null;
+    return { x0, x1, mid, w, level, depth, biome: b.key, frozen: b.climate === 0, small };
+  }
 
   /**
    * For what changes gradually from one biome to the next (Remastered's scenery): the biomes
@@ -184,6 +388,8 @@ export class WorldGen {
     const depth = y - surf;
     if (depth < 3 || y >= WORLD_H - 6) return false;
     if (town && depth < TOWN_BELOW + 8) return false;
+    // (Not coming up under or beside the sea or a lake: the water would hang in the air.)
+    if (this.seas && y < SURFACE + 100) { const f = this.wetFloor(x); if (f >= 0 && y < f + 14) return false; }
     // (Geodes, deep down, are hollow inside: oreVeins has their shells.)
     if (this.veins && y > GEODE_TOP && this.geode(x, y) === HOLLOW) return true;
     // (Not right under where everyone starts.)
@@ -217,6 +423,13 @@ export class WorldGen {
       if (noise2(s + 26, x / 9, y / 9) > 0.42) return K.MAGMA;
       if (noise2(s + 27, x / 14, y / 5) > 0.5) return K.OBSIDIAN;
       return K.BASALT;
+    }
+    // (Under water, and on beaches: its bed. waterTop has worked it out.)
+    const wet = col.bed;
+    if (wet) {
+      if (depth === 0) return wet.top;
+      if (depth < wet.depth) return wet.soil;
+      if (wet.under && depth < wet.depth + 6) return wet.under;
     }
     if (depth === 0) {
       // Snow on high peaks.
@@ -335,13 +548,15 @@ export class WorldGen {
     const col = this.column(x), b = col.biome;
     if (rand3(this.seed, cell, 52) >= b.trees) return null;
     if (col.town && x >= col.town.x0 - 6 && x <= col.town.x1 + 6) return null;
+    // (Not in water, on a beach, or leaning over a lake's edge.)
+    if (this.seas && (this.waterTop(x, col) < WORLD_H || col.beach || this.waterTop(x - 1) < WORLD_H || this.waterTop(x + 1) < WORLD_H)) return null;
     if (x > -6 && x < 6) return null; // (room to land where everyone starts)
     const surf = col.surf;
     if (Math.abs(this.surfaceAt(x - 1) - surf) > 1 || Math.abs(this.surfaceAt(x + 1) - surf) > 1) return null;
     if (this.inStructure(x, surf - 1)) return null;
     const kind = col.biome.tree, r = hash3(this.seed, x, 53);
-    const h = kind === 'cactus' ? 2 + (r % 3) : kind === 'jungle' ? 10 + (r % 7) : kind === 'pine' ? 7 + (r % 6) : 5 + (r % 4);
-    return { x, base: surf, kind, h, r: kind === 'jungle' ? 4 : 2 + ((r >>> 4) & 1) };
+    const h = kind === 'cactus' ? 2 + (r % 3) : kind === 'jungle' ? 10 + (r % 7) : kind === 'pine' ? 7 + (r % 6) : kind === 'swamp' ? 5 + (r % 3) : 5 + (r % 4);
+    return { x, base: surf, kind, h, r: kind === 'jungle' ? 4 : kind === 'swamp' ? 3 : 2 + ((r >>> 4) & 1) };
   }
 
   /** What tree `t` puts at (x, y), or AIR. */
@@ -363,12 +578,13 @@ export class WorldGen {
       const half = Math.min(3, (i >> 1) + (i % 2));
       return Math.abs(dx) <= half && !(dx === 0 && y >= top) ? K.PINE_LEAVES : K.AIR;
     }
-    // A round crown on top (wide and flat in the jungle).
-    const cy = top - (t.kind === 'jungle' ? 1 : 0), ry = t.kind === 'jungle' ? 2.6 : t.r;
+    // A round crown on top (wide and flat in the jungle, and in swamps).
+    const flat = t.kind === 'jungle' || t.kind === 'swamp';
+    const cy = top - (flat ? 1 : 0), ry = t.kind === 'jungle' ? 2.6 : t.kind === 'swamp' ? 1.8 : t.r;
     const ex = dx / (t.r + 0.5), ey = (y - cy) / (ry + 0.5);
     if (ex * ex + ey * ey <= 1 && !(dx === 0 && y >= top)) return t.kind === 'jungle' ? K.JUNGLE_LEAVES : K.LEAVES;
-    // Jungle trees trail vines from their crown.
-    if (t.kind === 'jungle' && Math.abs(dx) >= 2 && Math.abs(dx) <= t.r && y > cy && y <= cy + 2 + (hash3(this.seed, x, 55) % 4) && hash3(this.seed, x, 56) % 3 === 0) return K.VINE;
+    // Jungle and swamp trees trail vines from their crowns.
+    if (flat && Math.abs(dx) >= 2 && Math.abs(dx) <= t.r && y > cy && y <= cy + 2 + (hash3(this.seed, x, 55) % 4) && hash3(this.seed, x, 56) % 3 === 0) return K.VINE;
     return K.AIR;
   }
 
@@ -381,6 +597,7 @@ export class WorldGen {
     const w = 9 + (hash3(s, k, 62) % 5), x0 = k * RUIN_CELL + 30 + (hash3(s, k, 63) % (RUIN_CELL - 60 - w));
     if (x0 < 20 && x0 + w > -20) return null; // (not on top of where everyone starts)
     if (this.towns && (this.townAtX(x0 - 6) || this.townAtX(x0 + w + 6))) return null; // (nor in a town)
+    if (this.seas && (this.waterTop(x0 - 1) < WORLD_H || this.waterTop(x0 + (w >> 1)) < WORLD_H || this.waterTop(x0 + w) < WORLD_H)) return null; // (nor in water)
     const col = this.column(x0 + (w >> 1)), b = col.biome;
     if (!['plains', 'forest', 'desert', 'snow', 'badlands'].includes(b.key)) return null;
     let lo = Infinity, hi = -Infinity;
@@ -402,9 +619,42 @@ export class WorldGen {
     return { kind: 'cabin', x0, x1: x0 + w - 1, y0, y1: y0 + h - 1 };
   }
 
-  /** The ruins and cabins touching the tile box (inclusive). */
+  /**
+   * Sea region k's shipwreck, if it has one (worlds made since seas): an old ship sunk into the
+   * sea floor, somewhere well out from the shore where it's deep enough, broken open, with its
+   * cargo (supply crates) still in its hold. { kind: 'wreck', x0, x1, y0, y1, keel, mast, k }.
+   */
+  wreck(k) {
+    if (!this.seas) return null;
+    let st = this.wrecks.get(k);
+    if (st !== undefined) return st;
+    st = null;
+    const s = this.seed, sp = this.seaSpan(k);
+    if (sp && rand3(s, k, 91) < 0.7) {
+      const w = 15 + (hash3(s, k, 92) % 8), room = Math.min(sp.x1, this.edge(k + 1)) - Math.max(sp.x0, this.edge(k)) - 2 * 24 - w;
+      if (room > 0) {
+        const x0 = Math.max(sp.x0, this.edge(k)) + 24 + (hash3(s, k, 93) % room), x1 = x0 + w - 1;
+        let lo = Infinity, hi = -Infinity;
+        for (let x = x0; x <= x1; x++) { const r = this.column(x).surf; lo = Math.min(lo, r); hi = Math.max(hi, r); }
+        // (Its keel in the floor, its deck six rows up, well under the water.)
+        const keel = lo + 1, mast = 4 + (hash3(s, k, 94) % 5);
+        if (hi - lo <= 3 && keel - 6 - mast > SEA_ROW + 1) st = { kind: 'wreck', x0, x1, y0: keel - 6 - mast, y1: hi, keel, mast, k };
+      }
+    }
+    if (this.wrecks.size > 64) this.wrecks.clear();
+    this.wrecks.set(k, st);
+    return st;
+  }
+
+  /** The ruins, cabins and shipwrecks touching the tile box (inclusive). */
   structuresIn(x0, y0, x1, y1) {
     const out = [];
+    if (this.seas && y1 > SEA_ROW) {
+      for (let k = this.regionAt(x0 - 30); k <= this.regionAt(x1 + 30); k++) {
+        const r = this.wreck(k);
+        if (r && r.x1 >= x0 && r.x0 <= x1 && r.y1 >= y0 && r.y0 <= y1) out.push(r);
+      }
+    }
     for (let k = Math.floor((x0 - 20) / RUIN_CELL); k <= Math.floor((x1 + 20) / RUIN_CELL); k++) {
       const r = this.ruin(k);
       if (r && r.x1 >= x0 && r.x0 <= x1 && r.y1 >= y0 && r.y0 <= y1) out.push(r);
@@ -423,6 +673,7 @@ export class WorldGen {
   /** What structure st puts at (x, y): [block or -1 (leave it), wall or -1]. */
   structureTile(st, x, y) {
     const s = this.seed;
+    if (st.kind === 'wreck') return this.wreckTile(st, x, y);
     if (st.kind === 'ruin') {
       const { x0, x1, base, mat, wall } = st, top = base - 6;
       const broken = rand3(s, x * 31 + y, 64) < 0.22;
@@ -444,6 +695,34 @@ export class WorldGen {
     if (x === x0 + 2 && y === y1 - 1) return [K.LOOT_CRATE, K.PLANK_WALL];
     if (x === ((x0 + x1) >> 1) && y === y0 + 2) return [K.TORCH, K.PLANK_WALL];
     return [K.AIR, K.PLANK_WALL];
+  }
+
+  /**
+   * A shipwreck's tile: the hull rising from its keel (in the sand) to its deck, the bow and stern
+   * curving up, holes broken in it; water in its hold, with the cargo; a broken mast; sand banked
+   * up under it where the floor's lower.
+   */
+  wreckTile(st, x, y) {
+    const { x0, x1, keel, mast } = st, s = this.seed, deck = keel - 5, mid = (x0 + x1) >> 1;
+    const r = keel - y, inset = Math.max(0, 3 - r), l = x0 + inset, rr = x1 - inset;
+    const broken = rand3(s, x * 7 + y * 131, 95) < (y === deck ? 0.22 : 0.1);
+    if (y > keel) return y <= this.column(x).surf - 1 ? [K.SAND, -1] : [-1, -1];
+    if (y < deck) {
+      // The mast (broken off), and a cabin at the stern: its walls and roof, half fallen in.
+      if (x === mid && y >= deck - mast) return [K.LOG, -1];
+      const c0 = x1 - 6;
+      if (x >= c0 && x <= x1 - 1 && y >= deck - 3) {
+        if (x === c0 || x === x1 - 1 || y === deck - 3) return [broken || (y === deck - 3 && x < c0 + 2) ? K.WATER : K.OLD_PLANKS, -1];
+        return [K.WATER, K.PLANK_WALL];
+      }
+      return [-1, -1];
+    }
+    if (x < l || x > rr) return [-1, -1];
+    const shell = y === keel || y === deck || x === l || x === rr;
+    if (shell) return [broken && y !== keel ? K.WATER : K.OLD_PLANKS, -1];
+    // The hold: under water, the planks behind; the cargo on its floor.
+    if (y === keel - 1 && (x === l + 2 || x === rr - 3)) return [K.LOOT_CRATE, K.PLANK_WALL];
+    return [K.WATER, broken ? -1 : K.PLANK_WALL];
   }
 
   // ---- Towns (towns.js) --------------------------------------------------------------------------
@@ -508,6 +787,8 @@ export class WorldGen {
       // Past the ends of the world: bedrock all the way up.
       if (x < -HALF_W || x >= HALF_W) { for (let ly = 0; ly < CHUNK; ly++) fg[ly * CHUNK + lx] = K.BEDROCK; continue; }
       const col = this.column(x);
+      // (Its water, and the bed under it: rock() needs that.)
+      if (this.seas) this.waterTop(x, col);
       for (let ly = 0; ly < CHUNK; ly++) {
         const y = y0 + ly, i = ly * CHUNK + lx;
         if (y < col.surf) continue;
@@ -519,7 +800,9 @@ export class WorldGen {
         fg[i] = b;
       }
     }
-    // Ruins and cabins over the ground and rock.
+    // Water over the ground (worlds made since seas): the sea's and lakes', iced over in the cold.
+    if (this.seas) this.fillWater(x0, y0, fg);
+    // Ruins, cabins and shipwrecks over the ground and rock.
     for (const st of this.structuresIn(x0, y0, x0 + CHUNK - 1, y0 + CHUNK - 1)) {
       for (let y = Math.max(y0, st.y0); y <= Math.min(y0 + CHUNK - 1, st.y1); y++) {
         for (let x = Math.max(x0, st.x0); x <= Math.min(x0 + CHUNK - 1, st.x1); x++) {
@@ -555,6 +838,8 @@ export class WorldGen {
         }
       }
     }
+    // What grows in the water: seagrass, kelp, coral, reeds, lily pads.
+    if (this.seas) this.waterLife(x0, y0, fg);
     // Plants on the ground, mushrooms on cave floors, vines from jungle cave roofs.
     for (let lx = 0; lx < CHUNK; lx++) {
       const x = x0 + lx;
@@ -580,11 +865,66 @@ export class WorldGen {
     }
   }
 
+  /** Chunk (x0, y0)'s water (fg: its blocks): the sea's or a lake's, down to the ground; ice on top in the cold. */
+  fillWater(x0, y0, fg) {
+    for (let lx = 0; lx < CHUNK; lx++) {
+      const x = x0 + lx, wt = this.waterTop(x), col = this.column(x);
+      if (wt >= col.surf || wt >= y0 + CHUNK || col.surf <= y0) continue;
+      const frozen = col.lake ? col.lake.frozen : this.seaAt(x)?.biome.frozen;
+      for (let y = Math.max(y0, wt); y < Math.min(y0 + CHUNK, col.surf); y++) {
+        const i = (y - y0) * CHUNK + lx;
+        if (fg[i] !== K.AIR) continue;
+        fg[i] = frozen && y === wt && rand3(this.seed, x, 97) > 0.12 ? K.ICE : K.WATER;
+      }
+    }
+  }
+
+  /**
+   * What grows in chunk (x0, y0)'s water (fg: its blocks, water in already): on the floor of
+   * seas, seagrass and kelp (tall, in deeper water; not much in the cold), and in warm seas coral
+   * reefs (blocks of coral, and fans); in lakes and pools, seagrass, reeds in the shallows at
+   * the edges and lily pads on top.
+   */
+  waterLife(x0, y0, fg) {
+    const s = this.seed;
+    // (Nothing growing in a shipwreck, or through it.)
+    const wrecks = y0 + CHUNK > SEA_ROW ? this.structuresIn(x0, SEA_ROW, x0 + CHUNK - 1, WORLD_H - 1).filter(st => st.kind === 'wreck') : [];
+    for (let lx = 0; lx < CHUNK; lx++) {
+      const x = x0 + lx, wt = this.waterTop(x), col = this.column(x), bottom = col.surf - 1;
+      if (wt > bottom || wt >= y0 + CHUNK || bottom < y0) continue;
+      if (wrecks.some(st => x >= st.x0 - 1 && x <= st.x1 + 1)) continue;
+      const deep = col.surf - wt, r = rand3(s, x, 98), lake = col.lake;
+      const put = (ya, yb, b) => {
+        for (let y = Math.max(y0, ya); y <= Math.min(y0 + CHUNK - 1, yb); y++) { const i = (y - y0) * CHUNK + lx; if (fg[i] === K.WATER) fg[i] = b; }
+      };
+      if (lake) {
+        if (lake.frozen) continue;
+        const edge = Math.abs(x - lake.mid) >= lake.w - 4;
+        if (edge && deep <= 2 && r < 0.55) put(wt, wt, K.REEDS);
+        else if (deep >= 2 && r < 0.14) put(wt, wt, K.LILY_PAD);
+        else if (r > 0.75) put(bottom, bottom, K.SEAGRASS);
+        continue;
+      }
+      const sea = this.seaAt(x)?.biome;
+      if (!sea) continue;
+      if (sea.coral && deep >= 4 && noise2(s + 71, x / 26, 0.5) > -0.1) {
+        // A reef: coral a block or a few high, fans between.
+        if (r < 0.42) put(bottom - (hash3(s, x, 99) % 3), bottom, [K.CORAL, K.CORAL_BLUE, K.CORAL_GOLD][hash3(s, x, 100) % 3]);
+        else if (r < 0.7) put(bottom, bottom, K.CORAL_FAN);
+        else if (r < 0.85) put(bottom, bottom, K.SEAGRASS);
+        continue;
+      }
+      if (deep >= 6 && r < (sea.frozen ? 0.05 : 0.12)) put(bottom - 1 - (hash3(s, x, 101) % (deep - 4)), bottom, K.KELP);
+      else if (r < (sea.frozen ? 0.15 : 0.45)) put(bottom, bottom, K.SEAGRASS);
+    }
+  }
+
   /** The block at (x, y) as the ground and rock have it (no trees or plants): for looking past a chunk's edge. */
   groundTile(x, y) {
     if (y < 0 || y >= WORLD_H) return y < 0 ? K.AIR : K.BEDROCK;
     const col = this.column(x);
     if (col.town && this.towns) { const v = this.townBlock(col.town, x, y); if (v >= 0) return v; }
+    if (this.seas && this.waterTop(x, col) <= y && y < col.surf) return K.WATER;
     if (y < col.surf || this.cave(x, y, col.surf, col.town)) return K.AIR;
     for (const st of this.structuresIn(x, y, x, y)) { const [b] = this.structureTile(st, x, y); if (b >= 0) return b; }
     const b = this.rock(x, y, col);
@@ -598,4 +938,15 @@ export class WorldGen {
   }
 }
 
-const mix = (a, b, t) => a + (b - a) * (t * t * (3 - 2 * t));
+const smooth = t => t * t * (3 - 2 * t);
+const mix = (a, b, t) => a + (b - a) * smooth(t);
+
+/**
+ * Land d tiles from the edge of a sea (worlds made since seas), at height h: raised if it's
+ * lower than the coast is there, so it's above the sea from SHORE tiles in (the shore's always
+ * near the edge, whatever the land's like further in), rising a little more, then letting go.
+ */
+function coastLift(h, d) {
+  const floor = d < SHORE ? SEA_H + 1 - (SHORE - d) * 0.5 : d < 70 ? SEA_H + 1 + (d - SHORE) / 12 : SEA_H + 1 + (70 - SHORE) / 12 - (d - 70) * 0.5;
+  return Math.max(h, floor);
+}

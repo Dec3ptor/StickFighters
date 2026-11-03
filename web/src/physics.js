@@ -14,8 +14,9 @@ export function makeBody(x, y) {
     momentum: 0,       // ticks of keeping speed in the air (after a rope swing or a big hit)
     // Set during each step, for animation and sound:
     jetting: false, bounced: false, jumped: false, landed: 0,
-    // Worlds: standing on a one-way platform; dropping through one (updates left); on a ladder.
-    onPlatform: false, dropping: 0, climbing: false,
+    // Worlds: standing on a one-way platform; dropping through one (updates left); on a ladder;
+    // in water (its middle), and with the head under it.
+    onPlatform: false, dropping: 0, climbing: false, swimming: false, under: false, leaping: false,
   };
 }
 
@@ -44,9 +45,14 @@ export function stepBody(body, input, map) {
   const ladder = !!map.climbable && map.climbable(body.x - BODY.halfW, body.y + bodyTop(body), body.x + BODY.halfW, body.y + BODY.bottom);
   body.climbing = ladder && (body.climbing || !!input.jump || !!input.crouch);
   if (body.dropping > 0) body.dropping--;
+  // Worlds' water: swimming, where the body's middle is in it (and floating, with the head out,
+  // where the chest is: see swim()).
+  const wet = !!map.liquidAt && map.liquidAt(body.x, body.y + SWIM_MID);
+  body.swimming = wet;
+  body.under = wet && map.liquidAt(body.x, body.y + BODY.top + 3);
 
-  // Crouch (only on the ground; standing up needs head room).
-  if (input.crouch && wasGround && !body.climbing) {
+  // Crouch (only on the ground; standing up needs head room; not swimming: crouch dives).
+  if (input.crouch && wasGround && !body.climbing && !wet) {
     body.crouching = true;
   } else if (body.crouching) {
     const blocked = map.overlap(body.x - BODY.halfW, body.y + BODY.top, body.x + BODY.halfW, body.y + BODY.crouchTop);
@@ -55,7 +61,7 @@ export function stepBody(body, input, map) {
 
   // Sprinting: faster on the ground while stamina lasts (run out, and you're winded until
   // it's partly back). The speed carries through a jump, as long as you keep it held.
-  const sprint = !!input.sprint && !!input.move && !body.crouching && !body.rope;
+  const sprint = !!input.sprint && !!input.move && !body.crouching && !body.rope && !wet;
   if (wasGround) {
     if (body.winded && body.stamina >= PHYS.sprintRecover) body.winded = false;
     body.sprinting = sprint && !body.winded;
@@ -70,6 +76,12 @@ export function stepBody(body, input, map) {
   if (body.rope && !wasGround) {
     // Swinging: left and right pump the swing instead of steering.
     body.vx += (input.move || 0) * PHYS.airAccel * 0.25;
+  } else if (wet) {
+    // Swimming: slower, and the water slows whatever comes into it fast (a blast, a run and a dive).
+    const target = (input.move || 0) * PHYS.runSpeed * PHYS.swimSpeed;
+    if (Math.abs(body.vx - target) > PHYS.runSpeed) body.vx = target + (body.vx - target) * WATER_DRAG;
+    const dv = target - body.vx, accel = PHYS.swimAccel;
+    body.vx += dv > accel ? accel : dv < -accel ? -accel : dv;
   } else {
     const target = (input.move || 0) * (body.crouching ? PHYS.crouchSpeed : PHYS.runSpeed * (body.sprinting ? PHYS.sprintSpeed : 1));
     let accel = wasGround ? PHYS.groundAccel : PHYS.airAccel;
@@ -86,11 +98,13 @@ export function stepBody(body, input, map) {
     body.crouching = false;
     body.y += 1;
   }
-  // Jumping.
-  else if (input.jumpPressed && wasGround && !body.crouching && !body.climbing) {
-    body.vy = -PHYS.jumpSpeed;
+  // Jumping (and out of the water from its top, the head out: onto the bank. Held, swimming up,
+  // it leaps out as soon as the head's out).
+  else if (!body.crouching && !body.climbing && ((input.jumpPressed && wasGround) || (wet && !body.under && !wasGround && (input.jumpPressed || (input.jump && body.vy < 0))))) {
+    body.vy = -PHYS.jumpSpeed * (wasGround ? 1 : SWIM_LEAP);
     body.onGround = false;
     body.jumped = true;
+    body.leaping = wet && !wasGround;
   }
   if (!input.jump && !body.padLaunch && !body.rope && body.momentum <= 0 && body.vy < -PHYS.jumpCut) body.vy = -PHYS.jumpCut;
 
@@ -105,7 +119,10 @@ export function stepBody(body, input, map) {
   }
 
   if (body.climbing) body.vy = input.jump ? -PHYS.climbSpeed : input.crouch ? PHYS.climbSpeed : 0;
+  else if (wet && !body.leaping) swim(body, input, map);
   else body.vy = Math.min(body.vy + PHYS.gravity, PHYS.maxFall);
+  // (A leap out of the water goes on until it's on the way down again.)
+  if (body.leaping && body.vy >= 0) body.leaping = false;
   if (body.y < map.bounds.top - RULES.ceilingMargin && body.vy < 0) body.vy = 0;
 
   moveX(body, map, wasGround);
@@ -121,6 +138,24 @@ export function stepBody(body, input, map) {
     if (body.onGround && !body.climbing) body.vy = 0;
   }
   if (body.rope) holdRope(body, input, map);
+}
+
+// Swimming: the body's middle (from its origin), where it counts as in the water; its chest,
+// what floats at the top; how much speed water leaves (each update) from a fast way in; a leap
+// out of the water, as much of a jump.
+const SWIM_MID = -5, SWIM_CHEST = -11, WATER_DRAG = 0.8, SWIM_LEAP = 0.85;
+
+/**
+ * Up and down in water: jump swims up, crouch dives, and left alone the body floats with its
+ * head out (sinking a little when the chest's out, rising when it's under), bobbing at the top.
+ * Fast into it (a fall, a jump), the water slows it.
+ */
+function swim(body, input, map) {
+  const want = input.jump ? -PHYS.swimUp : input.crouch ? PHYS.swimDive
+    : map.liquidAt(body.x, body.y + SWIM_CHEST) ? -PHYS.swimFloat : PHYS.swimFloat;
+  if (Math.abs(body.vy - want) > PHYS.swimUp * 1.5) body.vy = want + (body.vy - want) * WATER_DRAG;
+  const a = PHYS.swimAccel, dv = want - body.vy;
+  body.vy += dv > a ? a : dv < -a ? -a : dv;
 }
 
 const ROPE_MIN = 18, ROPE_MAX = 420;

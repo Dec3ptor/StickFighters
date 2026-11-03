@@ -5,7 +5,7 @@
 // to pick up. The guns are the game's own, using ammunition from the inventory.
 
 import * as K from './blocks.js';
-import { BLOCKS, SOLID, PLATFORMS, TILE, AIR, NO_WALL } from './blocks.js';
+import { BLOCKS, SOLID, PLATFORMS, LIQUID, TILE, AIR, NO_WALL } from './blocks.js';
 import { Inventory, itemOf, HOTBAR, CRATE_LOOT, boxDetails } from './items.js';
 import { WORLD_H, CHUNK } from './worldgen.js';
 import { MOTION, BODY } from '../config.js';
@@ -13,7 +13,7 @@ import { WEAPONS } from '../weapons.js';
 import { monstersTick, armNpc, foes, isMonster, monsterLoot, hireMerc, mercsOf, MERC, DAY_TICKS, hourOf } from './monsters.js';
 import { setDoor, pushDoor, doorsTick, soldierIn } from './doors.js';
 import { damage } from '../combat.js';
-import { devFly, devInput, devOn, godOn } from './devmode.js';
+import { devFly, devInput, devOn, devView, godOn } from './devmode.js';
 import { craft, stationsNear, plainGear, devGive } from './crafting.js';
 import { gunStats, fitTo, strip as stripAtt } from './attachments.js';
 import { townsfolkTick, isFolk } from './townsfolk.js';
@@ -41,8 +41,12 @@ const PLACE_EVERY = 5;         // updates between blocks placed while holding th
 const DROP_LIFE = 5 * 60 * 60; // things on the ground go after five minutes (at full speed)
 const MAX_DROPS = 400;
 
-// Plants and the like: broken by anything, put in the way of nothing (building replaces them).
-const SOFT = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.VINE, K.WHEAT]);
+// Plants and the like: broken by anything, put in the way of nothing (building replaces them;
+// and water, and what grows in it: blocks only, there).
+const SOFT = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.VINE, K.WHEAT, K.WATER, K.SEAGRASS, K.KELP, K.CORAL_FAN, K.REEDS, K.LILY_PAD]);
+// What grows in water, on the bottom (or on more of itself: kelp): gone with what held it up
+// (water again, where it was).
+const SEABED = new Set([K.SEAGRASS, K.KELP, K.CORAL_FAN, K.REEDS]);
 // What needs something to stand on (or hang from) and goes when it's taken away.
 const NEEDS_GROUND = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.MUSHROOM, K.CACTUS, K.WHEAT]);
 const DOORS = new Set([K.DOOR, K.DOOR_OPEN]);
@@ -698,7 +702,8 @@ export function breakBlock(game, tx, ty, by = null) {
     for (let yy = top; yy <= bottom; yy++) world.setTile(tx, yy, AIR);
     dropItem(game, 'door', 1, x, (top + bottom + 1) * TILE / 2);
   } else {
-    world.setTile(tx, ty, AIR);
+    // (What grows in water leaves water where it was.)
+    world.setTile(tx, ty, LIQUID[id] ? K.WATER : AIR);
     if (id === K.LOOT_CRATE) openCrate(game, x, y);
     // (A shulker box: picked up whole, what's in it kept in it.)
     else if (K.SHULKER_BOXES.has(id)) dropShulker(game, tx, ty, id, x, y);
@@ -731,7 +736,7 @@ function settle(game, tx, ty) {
     if (id === AIR || supported(world, x, y, id)) continue;
     const b = BLOCKS[id];
     if (DOORS.has(id)) { breakBlock(game, x, y); continue; }
-    world.setTile(x, y, AIR);
+    world.setTile(x, y, LIQUID[id] ? K.WATER : AIR);
     if (K.SHULKER_BOXES.has(id)) dropShulker(game, x, y, id, x * TILE + TILE / 2, y * TILE + TILE / 2);
     else if (b.drop) dropItem(game, b.drop, 1, x * TILE + TILE / 2, y * TILE + TILE / 2);
     if (id === K.CHEST) spillChest(game, x, y);
@@ -746,6 +751,8 @@ function supported(world, x, y, id) {
   if (BLOCKS[id].furniture) return SOLID[world.tile(x, y + 1)] || PLATFORMS[world.tile(x, y + 1)];
   if (NEEDS_GROUND.has(id)) return SOLID[world.tile(x, y + 1)] || (id === K.CACTUS && world.tile(x, y + 1) === K.CACTUS) || (id === K.CACTUS && (world.tile(x - 1, y) === K.CACTUS || world.tile(x + 1, y) === K.CACTUS));
   if (id === K.VINE) return world.tile(x, y - 1) === K.VINE || SOLID[world.tile(x, y - 1)] || LEAF.has(world.tile(x, y - 1));
+  if (SEABED.has(id)) { const below = world.tile(x, y + 1); return !!SOLID[below] || (id === K.KELP && below === K.KELP); }
+  if (id === K.LILY_PAD) return !!LIQUID[world.tile(x, y + 1)] || !!SOLID[world.tile(x, y + 1)];
   if (id === K.TORCH) return SOLID[world.tile(x, y + 1)] || SOLID[world.tile(x - 1, y)] || SOLID[world.tile(x + 1, y)] || world.wall(x, y) !== NO_WALL;
   if (id === K.LANTERN || id === K.BANNER || id === K.FENCE) return hangsOrStands(world, x, y, id);
   if (DOORS.has(id)) {
@@ -828,6 +835,8 @@ export function canPlace(game, it, tx, ty) {
   }
   const id = it.block, cur = world.tile(tx, ty);
   if (cur !== AIR && !SOFT.has(cur)) return false;
+  // (In water, only blocks: a torch or a chest there would leave a dry hole in it.)
+  if (LIQUID[cur] && !SOLID[id]) return false;
   if (id === K.DOOR) return doorSpot(game, tx, ty) != null;
   if (SOLID[id] && soldierIn(game, tx, ty, ty)) return false;
   if (id === K.TORCH) return SOLID[world.tile(tx, ty + 1)] || SOLID[world.tile(tx - 1, ty)] || SOLID[world.tile(tx + 1, ty)] || world.wall(tx, ty) !== NO_WALL;
@@ -1297,7 +1306,12 @@ export function worldTick(game) {
   updateDrops(game);
   doorsTick(game);
   magmaBurns(game);
+  waterTick(game);
   const world = game.world;
+  // Water flowing where a way's opened for it (the host's: online, everyone else is told of each
+  // tile, as of any other change).
+  if (game.mirror) world.flowing?.clear();
+  else if (game.tick % FLOW_EVERY === 0) world.flowTick?.();
   world.time = (world.time || 0) + 1;
   // (Always day, or always night, as the world was made: worldrules.js.)
   if (game.tick % 30 === 0 && !game.mirror) world.time = keepTime(world, world.time, DAY_TICKS, hourOf);
@@ -1383,6 +1397,38 @@ function magmaBurns(game) {
     s.burnTicks = Math.max(s.burnTicks || 0, 45);
     s.burnBy = null;
     if (game.tick % 30 === 0) game.sound('flame', s.x, s.y);
+  }
+}
+
+// ---- Water: breath, and drowning ------------------------------------------------------------------
+
+/** A player's breath (0 to this): used up with their head under water, back when it's out. */
+export const BREATH = 100;
+const BREATH_SECONDS = 15;  // under water this long (at full speed), and you start to drown
+const DROWN_EVERY = 40;     // updates between hurts, out of breath
+const DROWN_DAMAGE = 12;
+const FLOW_EVERY = 4;       // updates between waves of water flowing (tileworld.js's flowTick)
+
+/**
+ * Soldiers in water: put out, if they're burning. Players with their heads under it lose breath
+ * (not in dev mode), and out of it they drown, a hurt at a time, until they're out (and it soon
+ * comes back). Online, everyone's own breath is worked out where they play, for the HUD; the
+ * host's does the drowning.
+ */
+function waterTick(game) {
+  const world = game.world, use = (BREATH / (BREATH_SECONDS * 60)) * MOTION.timeScale;
+  for (const s of game.soldiers) {
+    if (!s.alive) continue;
+    if (s.burnTicks > 0 && s.body?.swimming) s.burnTicks = 0;
+    const w = s.world;
+    if (!w || s.npc) continue;
+    if (w.breath === undefined) w.breath = BREATH;
+    const under = !devView(s) && world.liquidAt(s.x, s.y + BODY.top + 3);
+    if (!under) { if (w.breath < BREATH) w.breath = Math.min(BREATH, w.breath + use * 8); continue; }
+    w.breath = Math.max(0, w.breath - use);
+    if (w.breath > 0 || game.mirror || game.tick % DROWN_EVERY) continue;
+    damage(game, s, DROWN_DAMAGE, null, 'Drowning');
+    if (s.alive) game.sound('cough', s.x, s.y);
   }
 }
 

@@ -309,6 +309,7 @@ const SOUNDS = {
   },
   smash: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.25, freq: 4000, type: 'highpass', gain: 0.6 }); [2600, 3300, 2900].forEach((f, i) => a.tone(o, t + 0.03 * i, { dur: 0.08, from: f, type: 'triangle', gain: 0.06 })); return 0.3; },
   gas: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.7, freq: 600, type: 'lowpass', gain: 0.35, attack: 0.08 }); return 0.7; },
+  splash: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.32, freq: 1200, type: 'lowpass', gain: 0.5, attack: 0.01 }); [480, 700, 600].forEach((f, i) => a.tone(o, t + 0.05 + i * 0.05, { dur: 0.06, from: f, to: f * 1.7, type: 'sine', gain: 0.06 })); return 0.34; },
   cough: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.1, freq: 500, gain: 0.35 }); a.noiseBurst(o, t + 0.16, { dur: 0.09, freq: 450, gain: 0.3 }); return 0.28; },
   baa: (a, o, t) => bleat(a, o, t),
   mumble: (a, o, t) => { for (let i = 0; i < 5; i++) a.tone(o, t + i * 0.09, { dur: 0.08, from: 200 + Math.random() * 120, type: 'triangle', gain: 0.08 }); return 0.5; },

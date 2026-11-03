@@ -428,7 +428,8 @@ export class RemasteredRenderer extends Renderer {
     for (const sol of shown.soldiers) if (lasered(sol)) this.drawLaser(game, sol);
     this.drawBuildGhost(game, viewer);
 
-    // A world: dark underground (the glows and flashes go over it).
+    // A world: its water, over everything in it; dark underground (the glows and flashes go over it).
+    if (world) this.worldView.drawWater(ctx, game, false);
     if (world && (!allLit || this.fogNow)) this.worldView.drawLight(this, game, allLit ? 0 : 0.86, this.fogNow?.eye);
     if (this.quality !== 'low') this.lights.draw(ctx, this.view);
     if (theme.dark && this.quality === 'high') this.lights.drawDarkness(this, theme.dark);
@@ -661,6 +662,17 @@ export class RemasteredRenderer extends Renderer {
       case 'blood':
         ctx.fillStyle = '#9a0e0e';
         ctx.fillRect(x - p.size / 2, y - p.size / 2, p.size, p.size);
+        return;
+      case 'drop':
+        ctx.fillStyle = 'rgba(170,215,255,0.85)';
+        ctx.fillRect(x - p.size / 2, y - p.size / 2, p.size, p.size);
+        return;
+      case 'bubble':
+        ctx.strokeStyle = 'rgba(220,240,255,0.7)';
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.arc(x, y, p.size / 2 + 0.3, 0, Math.PI * 2);
+        ctx.stroke();
         return;
       case 'chunk': {
         // A bit of a blown-up block, in the map's material.

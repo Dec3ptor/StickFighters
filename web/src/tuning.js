@@ -83,6 +83,8 @@ const LABELS = {
     jetDrain: ['Jetpack: fuel used each update', 'fuel is 0-100'], jetRegen: ['Jetpack: fuel back each update on the ground'],
     ropeClimb: ['Ninja rope: climbing speed'], climbSpeed: ['Ladders (worlds): climbing speed'], sprintSpeed: ['Sprint: times faster'], sprintDrain: ['Sprint: stamina used each update', 'stamina is 0-100'],
     sprintRegen: ['Sprint: stamina back each update'], sprintRecover: ['Sprint: winded until stamina is back to'],
+    swimSpeed: ['Swimming (worlds): times the run speed'], swimUp: ['Swimming: up (jump)', 'px per update'], swimDive: ['Swimming: diving (crouch)', 'px per update'],
+    swimFloat: ['Swimming: floating to the top', 'px per update'], swimAccel: ['Swimming: speeding up and slowing down in the water'],
   },
   MOTION: {
     grenadeGravity: ['Grenades: gravity (thrown weapons without their own)'], flameDrag: ['Flames: speed kept each update'],

@@ -180,6 +180,29 @@ export class Effects {
     }
   }
 
+  /** Into water fast (worlds): drops thrown up (speed: how fast it came in). */
+  splash(x, y, speed = 4) {
+    const n = Math.min(16, 5 + Math.round(speed * 1.5));
+    for (let i = 0; i < n; i++) {
+      const p = this.make('drop', x + (Math.random() - 0.5) * 12, y);
+      p.vx = (Math.random() - 0.5) * 3.2;
+      p.vy = -1.2 - Math.random() * (1.2 + speed * 0.35);
+      p.life = 26 + Math.random() * 18;
+      p.size = 1 + Math.random() * 1.3;
+      this.add(p);
+    }
+  }
+
+  /** A bubble, rising from someone under water (gone at the top). */
+  bubble(x, y) {
+    const p = this.make('bubble', x, y);
+    p.vx = (Math.random() - 0.5) * 0.3;
+    p.vy = -0.45 - Math.random() * 0.4;
+    p.life = 50 + Math.random() * 40;
+    p.size = 1 + Math.random() * 1.6;
+    this.add(p);
+  }
+
   fire(x, y) {
     const p = this.make('fire', x, y);
     p.vx = (Math.random() - 0.5) * 0.6;
@@ -291,6 +314,15 @@ export class Effects {
         }
         case 'spark': case 'ember':
           p.vy += 0.15 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.95 ** dt;
+          break;
+        case 'drop':
+          p.vy += 0.22 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+          // (Back into the water: gone.)
+          if (p.vy > 0 && map.liquidAt?.(p.x, p.y)) { if (spare.length < MAX_SPARE) spare.push(p); continue; }
+          break;
+        case 'bubble':
+          p.x += (p.vx + Math.sin(p.life * 0.3) * 0.15) * dt; p.y += p.vy * dt;
+          if (map.liquidAt && !map.liquidAt(p.x, p.y)) { if (spare.length < MAX_SPARE) spare.push(p); continue; }
           break;
         case 'shell': case 'gib': case 'head': case 'chunk': {
           p.vy += 0.3 * dt;

@@ -17,7 +17,7 @@ import { lasered } from './combat.js';
 
 const INK = 0x111111;
 // Particles drawn as sprites (the rest are drawn as shapes, like on the canvas).
-const SPRITE_PARTS = new Set(['blood', 'spark', 'ember', 'sparkle', 'shell', 'smoke', 'fire', 'boom']);
+const SPRITE_PARTS = new Set(['blood', 'spark', 'ember', 'sparkle', 'shell', 'smoke', 'fire', 'boom', 'drop', 'bubble']);
 
 /**
  * A renderer for `canvas`. choice: 'webgl', 'canvas', or 'auto' (WebGL if the
@@ -280,6 +280,8 @@ export class GLRenderer extends Renderer {
       QP[2] = QP[3] = 1; QP[4] = 0; QP[5] = 1;
       switch (p.kind) {
         case 'blood': QP[2] = QP[3] = p.size; tint = 0xc40f0f; break;
+        case 'drop': QP[2] = QP[3] = p.size; tint = 0x5b9ad8; break;
+        case 'bubble': tex = 1; QP[2] = QP[3] = p.size; tint = 0x9cc8f0; QP[5] = 0.7; break;
         case 'spark': tint = 0x444444; break;
         case 'ember': QP[2] = QP[3] = 1.6; tint = p.life > 15 ? 0xffb02e : 0xc4561a; break;
         case 'sparkle': QP[2] = QP[3] = 1.6; tint = 0xaa78ff; QP[5] = p.life / p.max; break;

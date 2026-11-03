@@ -5,7 +5,7 @@
 // them; those players change are kept, and saved (worldsave.js).
 
 import * as K from './blocks.js';
-import { TILE, SOLID, PLATFORMS, SHAPES, BLOCKS, AIR, BEDROCK } from './blocks.js';
+import { TILE, SOLID, PLATFORMS, LIQUID, SHAPES, BLOCKS, AIR, BEDROCK } from './blocks.js';
 import { WorldGen, CHUNK, WORLD_H, HALF_W } from './worldgen.js';
 import { segmentT, SEG } from '../map.js';
 
@@ -76,6 +76,8 @@ export class TileWorld {
     // straight away, as with GameMap's).
     this.ring = Array.from({ length: 4096 }, () => ({ l: 0, t: 0, r: 0, b: 0, id: -1, bounce: 0, hard: false, built: false, look: null, tx: 0, ty: 0, block: 0, platform: false }));
     this.ringAt = 0;
+    // Water to flow next (flowTick): tiles opened up beside it, as keys (flowKey).
+    this.flowing = new Set();
     this._hit = { t: 0, x: 0, y: 0, nx: 0, ny: 0, solid: null };
     this.lastKey = NaN;
     this.lastChunk = null;
@@ -203,6 +205,7 @@ export class TileWorld {
     this.version++;
     this.editCount++;
     for (const fn of this.listeners) fn(tx, ty, layer, was);
+    if (layer === 'fg') this.wakeWater(tx, ty, v);
     return true;
   }
 
@@ -329,6 +332,71 @@ export class TileWorld {
     return null;
   }
 
+  /** True if the point (in pixels) is in water (or something growing in it). */
+  liquidAt(x, y) {
+    const ty = Math.floor(y / TILE);
+    if (ty < 0 || ty >= WORLD_H) return false;
+    const tx = Math.floor(x / TILE);
+    return LIQUID[this.chunk(tx >> 5, ty >> 5).fg[((ty & 31) << 5) | (tx & 31)]] === 1;
+  }
+
+  // ---- Water flowing --------------------------------------------------------------------------
+  // Water stays where it is until a way opens up beside or below it (a block dug, blown away):
+  // then it flows, a tile at a time (flowTick, a wave every few updates): down into the open
+  // under it, and sideways from water that's resting on something (not falling). The sea and
+  // lakes never run dry. Only in chunks that are made: it doesn't make the world as it goes.
+
+  /** The block at (tx, ty) if its chunk is made, else -1 (without making it). */
+  peek(tx, ty) {
+    if (ty < 0 || ty >= WORLD_H) return ty < 0 ? AIR : BEDROCK;
+    const c = this.chunks.get(chunkKey(tx >> 5, ty >> 5));
+    return c ? c.fg[((ty & 31) << 5) | (tx & 31)] : -1;
+  }
+
+  /** Tile (tx, ty) just became block v: the water it's opened a way for, or that it is, to flow. */
+  wakeWater(tx, ty, v) {
+    if (LIQUID[v]) {
+      // (Water here: into the open under it and beside it; and beside the tile above, which
+      // it now holds up.)
+      for (let i = 0; i < FLOW_NEXT.length; i += 2) this.flowing.add(flowKey(tx + FLOW_NEXT[i], ty + FLOW_NEXT[i + 1]));
+    } else if (v === AIR && (LIQUID[this.peek(tx, ty - 1)] || LIQUID[this.peek(tx - 1, ty)] || LIQUID[this.peek(tx + 1, ty)])) {
+      this.flowing.add(flowKey(tx, ty));
+    }
+  }
+
+  /** Whether water flows into the open tile (tx, ty): from above, or from resting water beside it. */
+  flowsInto(tx, ty) {
+    if (LIQUID[this.peek(tx, ty - 1)]) return true;
+    for (let dx = -1; dx <= 1; dx += 2) {
+      if (!LIQUID[this.peek(tx + dx, ty)]) continue;
+      const under = this.peek(tx + dx, ty + 1);
+      if (SOLID[under] || LIQUID[under] || PLATFORMS[under]) return true;
+    }
+    return false;
+  }
+
+  /**
+   * One wave of water flowing: each tile waiting that water flows into is filled (at most `most`
+   * of them; the rest wait for the next wave). Returns how many were filled.
+   */
+  flowTick(most = FLOW_WAVE) {
+    if (!this.flowing.size) return 0;
+    const wave = [...this.flowing];
+    this.flowing.clear();
+    let n = 0;
+    for (const k of wave) {
+      if (n >= most) { this.flowing.add(k); continue; }
+      const tx = Math.floor(k / 512) - HALF_W, ty = k % 512;
+      if (this.peek(tx, ty) !== AIR || tx < -HALF_W || tx >= HALF_W || ty < 1 || ty >= WORLD_H - 1) continue;
+      // (Not into towns, or players' bases: nobody floods them.)
+      if (this.protect?.(tx, ty)) continue;
+      if (!this.flowsInto(tx, ty)) continue;
+      this.setTile(tx, ty, K.WATER);
+      n++;
+    }
+    return n;
+  }
+
   /** True if the box touches a ladder. */
   climbable(l, t, r, b) {
     const tx0 = Math.floor(l / TILE), tx1 = Math.floor((r - 0.01) / TILE), ty0 = Math.max(0, Math.floor(t / TILE)), ty1 = Math.min(WORLD_H - 1, Math.floor((b - 0.01) / TILE));
@@ -450,3 +518,8 @@ export class TileWorld {
 
 const PLAT = [0, 0, TILE, PLATFORM_H];
 const NONE = [];
+// Water flowing: a tile's key in the waiting list; where water goes from a tile it's filled
+// ([dx, dy] pairs: under, beside, beside the one above); the most filled in a wave.
+const flowKey = (tx, ty) => (tx + HALF_W) * 512 + ty;
+const FLOW_NEXT = [0, 1, -1, 0, 1, 0, -1, -1, 1, -1];
+const FLOW_WAVE = 240;

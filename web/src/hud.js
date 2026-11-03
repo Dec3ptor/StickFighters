@@ -221,6 +221,8 @@ const BAR_COLORS = {
   ammo: ['#a39a1f', '#4a4510'],
   fuel: ['#2f74d0', '#163a6b'],
   stamina: ['#2fb3a0', 'rgba(0,0,0,0.18)'],
+  breath: ['#5ab4f0', '#1c3c5a'],
+  drowning: ['#e05a4a', '#4a1c16'],
   winded: ['#d8862a', 'rgba(0,0,0,0.18)'],
   gadget: ['#6d4fc2', '#2e2352'],
   gadgetReady: ['#8c62e8', '#2e2352'],
@@ -294,6 +296,9 @@ function drawStatus(ctx, game, me, W, H, opts) {
   if (game.streaksOn) extra.push(...streakBars(me, opts.rewardPick));
   if (me.armour > 0) extra.push([me.armour / RULES.maxArmour, 'armour', `Armour ${Math.ceil(me.armour)}%`]);
   if (b.hasJetpack) extra.push([b.fuel / 100, 'fuel', `Jet fuel ${Math.round(b.fuel)}%`]);
+  // (A world's water: breath, while it's used up under water or coming back; out of it, drowning.)
+  const breath = me.world?.breath;
+  if (breath < 100) extra.push(breath > 0 ? [breath / 100, 'breath', 'Breath'] : [1, 'drowning', 'Drowning! Get to the top']);
   if (def?.spinup && me.spin > 0 && me.spin < def.spinup) extra.push([me.spin / def.spinup, 'fuel', 'Spinning up…']);
   for (let i = 0; i < extra.length; i++) {
     if (i % 2 === 0) y -= 18;

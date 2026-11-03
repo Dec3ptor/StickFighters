@@ -41,7 +41,7 @@ const FILLED_WEAPONS = new Set(['pistol', 'smg', 'rifle', 'ak', 'knife', 'shotgu
 
 // Particles small enough to skip when they're off screen (the view's margin is far
 // bigger than any of them, wherever they are between two updates).
-const SMALL = new Set(['blood', 'spark', 'ember', 'sparkle', 'shell', 'chunk', 'flash', 'puff', 'smoke', 'fire', 'gib', 'head']);
+const SMALL = new Set(['blood', 'spark', 'ember', 'sparkle', 'shell', 'chunk', 'flash', 'puff', 'smoke', 'fire', 'gib', 'head', 'drop', 'bubble']);
 // Of those, the ones that leave the canvas's opacity at 1 once drawn.
 const SETS_ALPHA = new Set(['sparkle', 'puff', 'smoke', 'fire', 'gib', 'head']);
 
@@ -359,6 +359,8 @@ export class Renderer {
 
   /** Over a world, once everything in it is drawn: the dark underground, and the block the crosshair's on. */
   drawWorldOver(game, viewer) {
+    // The water, over everything in it.
+    this.worldView?.drawWater(this.ctx, game, true);
     // (Dev mode can light everything.)
     // (Seeing only what can be seen: what's out of sight darkened too, lit or not.)
     const lit = viewer?.world?.dev?.lights;
@@ -861,6 +863,15 @@ export class Renderer {
       case 'blood':
         ctx.fillStyle = '#c40f0f';
         ctx.fillRect(x - p.size / 2, y - p.size / 2, p.size, p.size);
+        break;
+      case 'drop':
+        ctx.fillStyle = '#5b9ad8';
+        ctx.fillRect(x - p.size / 2, y - p.size / 2, p.size, p.size);
+        break;
+      case 'bubble':
+        ctx.strokeStyle = '#4a7fb8';
+        ctx.lineWidth = 0.6;
+        ctx.strokeRect(x - p.size / 2, y - p.size / 2, p.size, p.size);
         break;
       case 'spark':
         ctx.fillStyle = '#444';
