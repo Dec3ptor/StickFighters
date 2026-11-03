@@ -729,10 +729,13 @@ export class Game {
 
     // (The pieces only matter to the effects: no working out the pose when they're off.)
     if (!opts.fall && this.fx) {
-      const pose = buildPose(victim);
-      const segs = pose.lines.map(l => [victim.x + l[0], victim.y + l[1], victim.x + l[2], victim.y + l[3]]);
-      const head = { x: victim.x + pose.head.x, y: victim.y + pose.head.y, r: pose.head.r };
-      this.fx.gibs(segs, head, victim.body.vx, victim.body.vy, opts.explosive ? 6 : 1.5);
+      // (A world's animal has no stick figure's limbs to fly apart.)
+      if (victim.npc?.kind !== 'animal') {
+        const pose = buildPose(victim);
+        const segs = pose.lines.map(l => [victim.x + l[0], victim.y + l[1], victim.x + l[2], victim.y + l[3]]);
+        const head = { x: victim.x + pose.head.x, y: victim.y + pose.head.y, r: pose.head.r };
+        this.fx.gibs(segs, head, victim.body.vx, victim.body.vy, opts.explosive ? 6 : 1.5);
+      }
       this.fx.blood(victim.x, victim.y - 8, 0, -1, 40);
     }
     this.sound(opts.fall ? 'fall' : opts.explosive ? 'gib' : 'death', victim.x, victim.y);

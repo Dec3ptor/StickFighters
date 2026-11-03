@@ -10,6 +10,7 @@ import { RECIPES, STATION_NAMES, madeFrom } from './crafting.js';
 import { SHOPS } from './trade.js';
 import { MONSTERS } from './monsters.js';
 import { BASES, DROP_WEAPONS, namedGear, foundId } from './gear.js';
+import { ANIMALS } from './animals.js';
 
 /** The codex's kinds of thing, in the order its buttons show them. */
 export const CODEX_CATS = { all: 'All', gear: 'Gear', weapon: 'Weapons', unique: 'Uniques', set: 'Sets', block: 'Blocks', material: 'Materials', food: 'Food', tool: 'Tools', other: 'Other' };
@@ -31,7 +32,16 @@ const EXTRA = {
   dark_brick_wall: 'Knocked out from inside monster towers, with a hammer',
   glowcap: 'Picked in the blighted lands and crystal fields; wraiths drop them',
   calcite: 'Mined in crystal fields',
+  // (Farming and animals: farming.js, animals.js.)
+  wool: 'Sheared from sheep (shears: it grows back), or theirs when they\'re hunted',
+  egg: 'Laid by chickens, now and then',
+  flint: 'Now and then, from gravel that\'s dug',
+  wheat_seeds: 'Now and then, from tall grass that\'s cut',
+  carrot: 'Grown on farmland (planted, it gives more)',
+  potato: 'Grown on farmland (planted, it gives more)',
 };
+/** Animals' names, more than one ('cows'). */
+const herdOf = a => (['Sheep', 'Deer', 'Fish'].includes(a.name) ? a.name.toLowerCase() : `${a.name.toLowerCase()}s`);
 
 let entries = null;
 
@@ -62,6 +72,8 @@ export function codexEntries() {
     if (CRATE_LOOT.some(([k]) => k === key)) where.push('Found in supply crates (in ruins and caves)');
     const by = droppers(key);
     if (by.length) where.push(`Dropped by ${list(by)}`);
+    const hunted = Object.values(ANIMALS).filter(an => an.drops.some(([k]) => k === key)).map(herdOf);
+    if (hunted.length) where.push(`From ${list(hunted)} (hunted)`);
     if (it.kind === 'gear') {
       const base = BASES[key];
       where.unshift(`Worn on the ${WEAR[base.kind] || base.kind}`);

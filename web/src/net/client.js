@@ -216,7 +216,7 @@ export class NetClient {
       // (Invisible, in a world's dev mode: not drawn, unless it's us.)
       s.hidden = !!r.hidden;
       // (A world's monsters, mercenaries and townsfolk: drawn and mapped as such.)
-      s.npc = r.npc === 'monster' || r.npc === 'merc' || r.npc === 'townsfolk' ? { kind: r.npc } : r.npc === 'guard' ? { kind: 'townsfolk', guard: true } : null;
+      s.npc = r.npc === 'monster' || r.npc === 'merc' || r.npc === 'townsfolk' ? { kind: r.npc } : r.npc === 'guard' ? { kind: 'townsfolk', guard: true } : r.npc === 'animal' ? { kind: 'animal', look: String(r.skin || '').slice(0, 24) } : null;
       // (Our own: unless we've just asked to change it, and the host hasn't caught up yet.)
       if (s !== this.me || this.clock() - (this.spectateAt ?? -1e9) > 1500) s.spectating = !!r.spec;
     }

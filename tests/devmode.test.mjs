@@ -123,14 +123,16 @@ test('everything free in dev mode: every recipe, anywhere, from nothing; everyth
   assert.equal(progOf(me).xp, xp, 'no XP for it');
   assert.equal(progOf(me).stats?.crafted || 0, made, 'nor counted as made');
   // Gear: a plain piece of it, each.
-  makeRecipe(game, me, DEV_RECIPES.find(r => r.key === 'leather_cap'), 2);
+  // (Leather gear has recipes of its own now (from animals' leather): any recipe's free in dev mode.)
+  const anyRecipe = key => DEV_RECIPES.find(r => r.key === key) || RECIPES.find(r => r.key === key);
+  makeRecipe(game, me, anyRecipe('leather_cap'), 2);
   const caps = inv.slots.filter(s => s?.key === 'leather_cap');
   assert.equal(caps.length, 2);
   assert.ok(caps.every(s => s.g?.r === 'basic' && s.g.name === 'Leather cap'), 'plain caps');
   // No room: on the ground (gear, a piece at a time, as it was made).
   for (let i = 0; i < HOTBAR + BAG; i++) if (!inv.slots[i]) inv.slots[i] = { key: 'dirt', n: 999 };
   const drops = (game.world.drops ||= []).length;
-  makeRecipe(game, me, DEV_RECIPES.find(r => r.key === 'leather_boots'), 2);
+  makeRecipe(game, me, anyRecipe('leather_boots'), 2);
   const fell = game.world.drops.slice(drops);
   assert.equal(fell.length, 2, 'both on the ground');
   assert.ok(fell.every(d => d.key === 'leather_boots' && d.n === 1 && d.g?.r === 'basic'));

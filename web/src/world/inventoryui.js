@@ -427,11 +427,12 @@ export const send = (a, i, b, from = 0) => Inventory.send(a, i, b, from);
 /** What an item is for, after its name. */
 function whatFor(it) {
   switch (it.kind) {
-    case 'tool': return it.tool === 'hammer' ? ': shapes blocks into halves and ramps, takes down walls' : it.tool === 'axe' ? ': fells trees, breaks wooden things' : `: mines blocks (tier ${it.tier})`;
+    case 'tool': return it.tool === 'hammer' ? ': shapes blocks into halves and ramps, takes down walls' : it.tool === 'axe' ? ': fells trees, breaks wooden things' : it.tool === 'hoe' ? ': tills dirt and grass into farmland' : it.tool === 'shears' ? ': clips a sheep\'s wool' : `: mines blocks (tier ${it.tier})`;
     case 'block': return ': a block to build with';
     case 'wall': return ': a wall, built behind';
     case 'ammo': return ': ammunition';
-    case 'material': return ': for crafting';
+    case 'material': return it.meal ? ': grows crops at once' : ': for crafting';
+    case 'seed': return ': planted on farmland';
     case 'weapon': return it.ammo === 'self' ? '' : it.ammo ? ` (uses ${itemOf(it.ammo)?.name.toLowerCase() || it.ammo})` : '';
     default: return '';
   }

@@ -98,14 +98,21 @@ export function itemDetails(it, n = 1, g = null) {
       break;
     }
     case 'tool':
-      kind = it.kind === 'bucket' ? 'Tool · bucket' : it.tool === 'pick' ? 'Tool · pickaxe' : it.tool === 'axe' ? 'Tool · axe' : 'Tool · hammer';
+      kind = it.kind === 'bucket' ? 'Tool · bucket' : it.tool === 'pick' ? 'Tool · pickaxe' : it.tool === 'axe' ? 'Tool · axe' : it.tool === 'hoe' ? 'Tool · hoe' : it.tool === 'shears' ? 'Tool · shears' : 'Tool · hammer';
       if (it.kind === 'bucket') lines.push(...(it.fluid ? ['Click where it\'s to go (either hand): it pours out, and flows from there'] : ['Click still water (either hand) to fill it: a sea, a lake, a pool', 'Not flowing water: it runs out of still water']));
       else if (it.tool === 'pick') lines.push(`Digs ${TIERS[it.tier] || ''}-tier blocks and softer`, `Digging power ${round(it.power)}`);
       else if (it.tool === 'axe') lines.push('Fells trees, breaks wooden things', `Chopping power ${round(it.power)}`);
+      else if (it.tool === 'hoe') lines.push('Tills dirt and grass into farmland', 'Plant seeds, carrots or potatoes on it');
+      else if (it.tool === 'shears') lines.push('Click a sheep: its wool (it grows back)');
       else lines.push('Shapes blocks into halves and ramps', 'Takes down walls');
       break;
     case 'food': case 'potion':
-      lines.push(`Heals ${it.heal >= 400 ? 'you fully' : it.heal}`, `Click to ${cat === 'potion' ? 'drink' : 'eat'} one (either hand)`);
+      // (Where there's hunger, food fills you up: hunger.js. Without it, food heals.)
+      if (it.food) lines.push(`Fills ${it.food} of 20 hunger${it.raw ? ' (raw: cook it for more)' : ''}`, `Heals ${it.heal} where there's no hunger${it.heals ? `; ${it.heals} anywhere` : ''}`);
+      else lines.push(`Heals ${it.heal >= 400 ? 'you fully' : it.heal}`);
+      if (it.sick) lines.push(`Raw: ${Math.round(it.sick * 100)}% chance it makes you sick`);
+      if (it.plant) lines.push('Or plant it on farmland');
+      lines.push(`Click to ${cat === 'potion' ? 'drink' : 'eat'} one (either hand)`);
       break;
     case 'ammo': lines.push('Ammunition, carried for the guns that use it'); break;
     case 'contract': lines.push('Use it (like a weapon) to hire a mercenary'); break;
@@ -132,6 +139,11 @@ export function itemDetails(it, n = 1, g = null) {
       else lines.push('A block to build with');
       break;
     }
+    case 'material':
+      // (Farming: farming.js.)
+      if (it.plant) lines.push('Planted on farmland (till dirt or grass with a hoe)');
+      else if (it.meal) lines.push('Click a crop: it grows; click grass: grass and flowers');
+      break;
     default: break;
   }
   // What it's worth, and what the best shop would pay.

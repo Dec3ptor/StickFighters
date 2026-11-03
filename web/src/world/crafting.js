@@ -7,9 +7,9 @@ import { BLOCKS, TILE } from './blocks.js';
 import { ITEMS, itemOf } from './items.js';
 import { BASES, namedGear } from './gear.js';
 
-/** The crafting stations, in the order they're usually built. */
-export const STATIONS = ['workbench', 'furnace', 'anvil', 'gunsmith'];
-export const STATION_NAMES = { workbench: 'Workbench', furnace: 'Furnace', anvil: 'Anvil', gunsmith: "Gunsmith's bench" };
+/** The crafting stations, in the order they're usually built. (A campfire: cooking, anywhere.) */
+export const STATIONS = ['workbench', 'furnace', 'anvil', 'gunsmith', 'campfire'];
+export const STATION_NAMES = { workbench: 'Workbench', furnace: 'Furnace', anvil: 'Anvil', gunsmith: "Gunsmith's bench", campfire: 'Campfire' };
 /** How near a station has to be to craft at it (tiles from the soldier's middle, across and up or down). */
 export const STATION_REACH = { x: 5, y: 4 };
 
@@ -23,6 +23,10 @@ recipe('torch', 3, [['wood', 1], ['coal', 1]]);
 recipe('workbench', 1, [['wood', 10]]);
 recipe('platform', 2, [['planks', 1]]);
 recipe('ladder', 2, [['planks', 3]]);
+// (Survival: a campfire to cook at, bone meal for crops, carpets from wool.)
+recipe('campfire', 1, [['wood', 3], ['coal', 1]]);
+recipe('bone_meal', 3, [['bone', 1]]);
+recipe('carpet', 3, [['wool', 2]]);
 
 // ---- Workbench ----
 recipe('plank_wall', 4, [['planks', 1]], 'workbench');
@@ -66,6 +70,17 @@ recipe('cobble_wall', 4, [['cobblestone', 1]], 'workbench');
 recipe('mud_brick_wall', 4, [['mud_bricks', 1]], 'workbench');
 recipe('glass_wall', 4, [['glass', 1]], 'workbench');
 recipe('sandstone_brick_wall', 4, [['sandstone_bricks', 1]], 'workbench');
+// (Farming, animals' leather and wool, and arrows fletched with feathers.)
+recipe('hoe', 1, [['wood', 2], ['stone', 2]], 'workbench');
+recipe('bed', 1, [['planks', 3], ['wool', 3]], 'workbench');
+recipe('arrows', 16, [['wood', 1], ['flint', 1], ['feather', 1]], 'workbench');
+recipe('leather_cap', 1, [['leather', 5]], 'workbench');
+recipe('leather_armor', 1, [['leather', 8]], 'workbench');
+recipe('leather_gloves', 1, [['leather', 3]], 'workbench');
+recipe('leather_belt', 1, [['leather', 3]], 'workbench');
+recipe('leather_boots', 1, [['leather', 4]], 'workbench');
+recipe('wool_mittens', 1, [['wool', 3]], 'workbench');
+recipe('berry_pie', 1, [['berries', 4], ['wheat', 2], ['egg', 1]], 'workbench');
 
 // ---- Furnace ----
 recipe('copper_bar', 1, [['copper_ore', 3]], 'furnace');
@@ -81,6 +96,15 @@ recipe('mud_bricks', 1, [['mud', 2]], 'furnace');
 recipe('bread', 1, [['wheat', 3]], 'furnace');
 recipe('stew', 1, [['mushroom', 2], ['wheat', 1]], 'furnace');
 recipe('stained_glass', 4, [['glass', 4], ['crystal_ore', 1]], 'furnace');
+
+// ---- Cooking: at a campfire, or in a furnace ----
+for (const [raw, cooked] of [['raw_beef', 'steak'], ['raw_pork', 'cooked_pork'], ['raw_mutton', 'cooked_mutton'], ['raw_chicken', 'cooked_chicken'],
+  ['raw_venison', 'cooked_venison'], ['raw_rabbit', 'cooked_rabbit'], ['raw_fish', 'cooked_fish'], ['crab_meat', 'cooked_crab'], ['potato', 'baked_potato']]) {
+  recipe(cooked, 1, [[raw, 1]], 'campfire');
+  recipe(cooked, 1, [[raw, 1]], 'furnace');
+}
+recipe('bread', 1, [['wheat', 3]], 'campfire');
+recipe('rabbit_stew', 1, [['cooked_rabbit', 1], ['carrot', 1], ['potato', 1], ['mushroom', 1]], 'campfire');
 
 // ---- Anvil ----
 recipe('pickaxe', 1, [['copper_bar', 9], ['wood', 3]], 'anvil');
@@ -100,6 +124,8 @@ recipe('Sledgehammer', 1, [['iron_bar', 12], ['wood', 4]], 'anvil');
 recipe('BattleAxe', 1, [['iron_bar', 10], ['gold_bar', 2], ['wood', 3]], 'anvil');
 recipe('NinjaRope', 1, [['iron_bar', 6], ['planks', 4]], 'anvil');
 recipe('lantern', 2, [['iron_bar', 1], ['glass', 1], ['torch', 1]], 'anvil');
+recipe('shears', 1, [['iron_bar', 2]], 'anvil');
+recipe('golden_apple', 1, [['apple', 1], ['gold_bar', 4]], 'anvil');
 
 // ---- Gunsmith's bench ----
 recipe('bullets', 30, [['copper_bar', 1], ['coal', 1]], 'gunsmith');

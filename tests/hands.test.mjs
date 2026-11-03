@@ -114,6 +114,8 @@ test('eating and drinking: to the mouth, and what\'s eaten stays in hand till it
   const { game, me, inp, tx, y0 } = stage();
   aimAt(me, inp, tx + 3, y0 - 2);
   me.health = 40;
+  // (Hungry, so there's room for it: hunger.js.)
+  me.world.food = 5;
   give(me, 'apple', 1);
   click(game, inp);
   assert.equal(me.anim.act, 'eat');

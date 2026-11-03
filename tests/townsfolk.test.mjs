@@ -281,8 +281,9 @@ test('a healer heals for coins, an innkeeper gives a bed (and the morning) and y
   assert.ok(m.me.world.home && Math.abs(m.me.world.home.x - inn.x) < 4 * TILE, 'you\'ll come back here');
 });
 
-test('food and potions heal when eaten (one at a time), not when you\'re not hurt', () => {
+test('food and potions heal when eaten (one at a time), not when you\'re not hurt (a world without hunger: hunger.js; with it, survival.test.mjs)', () => {
   const m = play();
+  m.world.settings = { hunger: 'off' };
   const w = m.me.world;
   w.inv.slots[9] = { key: 'bread', n: 3 };
   w.inv.version++;

@@ -15,6 +15,7 @@ import { Fog } from './fog.js';
 import { drawCrosshair as drawCrosshairAt } from './crosshair.js';
 import { skinFor, drawSkinHead, drawVest, drawTunic, SKIN_ACCENT, TUNICS } from './skins.js';
 import { drawSoldier as drawSoldierRm } from './rm/soldiers.js';
+import { drawAnimal } from './world/animalart.js';
 import { Blocks } from './rm/blocks.js';
 import { makeMaterials } from './rm/textures.js';
 import { themeFor } from './rm/themes.js';
@@ -642,6 +643,7 @@ export class Renderer {
 
   /** One soldier, inside drawFigures (st: the line ends and opacity it started with, and the ones set now). */
   drawFigure(game, s, alpha, st) {
+    if (s.npc?.kind === 'animal') { drawAnimal(this, game, s, alpha, 'classic'); return; } // (a world's animals: animalart.js)
     const ctx = this.ctx, k = this.s;
     // Their skin (skins.js): the stick figure, with a hat or helmet of some kind; or
     // Remastered's soldier, drawn its own way (it leaves the canvas as it found it).
@@ -782,6 +784,7 @@ export class Renderer {
   }
 
   drawTag(game, s, alpha, viewer, st) {
+    if (s.npc?.kind === 'animal') return; // (no name tags on a world's animals)
     const ctx = this.ctx;
     const x = lerp(s.prevX, s.x, alpha) + (s.drawDX || 0), y = lerp(s.prevY, s.y, alpha) + (s.drawDY || 0);
     const font = s === viewer ? NAME_FONT_ME : NAME_FONT;
