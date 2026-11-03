@@ -13,6 +13,7 @@ import { GLContext, QuadBatch, QP } from './glctx.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
 import { fillSeams, hatch, courses } from './map.js';
 import { WorldView, drawDrops } from './world/worldrender.js';
+import { drawSkyBehind } from './world/sky.js';
 import { lasered } from './combat.js';
 
 const INK = 0x111111;
@@ -221,6 +222,8 @@ export class GLRenderer extends Renderer {
       picture: (cv, x, y, w, h, key, fresh) => this.worldPicture(cv, x, y, w, h, key, fresh),
       forget: key => { this.worldTex?.get(key)?.tex.destroy(true); this.worldTex?.delete(key); },
     });
+    // (The sky behind the blocks: far clouds, the cloud layer's further clouds, birds: sky.js.)
+    drawSkyBehind(this.ctx, this, game, true);
     this.worldView.drawBlocks(this, game);
     this.worldView.drawMagma(this.ctx, game, true);
     drawDrops(this.ctx, game, 'classic', this.alpha ?? 1, this.view);

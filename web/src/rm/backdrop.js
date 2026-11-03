@@ -567,6 +567,103 @@ const GEN = {
     }
   },
 
+  isles(ctx, L, c, rng) {
+    // The open sea's far side: sea stacks, rocky islets with a tree or two, an arch the waves have
+    // worn through, a tall ship under sail now and then; the sea round them glinting.
+    const h = L.height, water = rgb(L.water || '#3f7fb0');
+    const rock = css(c), dark = css(shade(c, 0.82)), lit = css(shade(c, 1.12), 0.6);
+    let ship = rng() < 0.75;
+    for (let x = rng.range(40, 200); x < TILE_W - 60; x += rng.range(240, 520)) {
+      const kind = ship && rng() < 0.3 ? 'ship' : ['stack', 'stack', 'islet', 'islet', 'arch'][rng.int(5)];
+      if (kind === 'ship') {
+        // A tall ship: a dark hull, three masts, sails catching the light.
+        ship = false;
+        const w = rng.range(70, 110), mh = w * 0.9;
+        wrap(x, w + 20, X => {
+          ctx.fillStyle = dark;
+          ctx.beginPath(); ctx.moveTo(X, -10); ctx.lineTo(X + w, -12); ctx.lineTo(X + w - 10, 1); ctx.lineTo(X + 8, 1); ctx.closePath(); ctx.fill();
+          ctx.fillRect(X + w - 6, -16, 18, 2);
+          for (let m = 0; m < 3; m++) {
+            const mx = X + w * (0.25 + m * 0.25), tall = mh * (m === 1 ? 1 : 0.82);
+            ctx.fillStyle = dark;
+            ctx.fillRect(mx - 0.8, -10 - tall, 1.6, tall);
+            ctx.fillStyle = css(mix(c, '#ffffff', 0.55));
+            for (let k = 0; k < 3; k++) {
+              const sy = -10 - tall + 6 + k * tall * 0.3, sw = (14 - k * 1.5) * (m === 1 ? 1.1 : 0.9);
+              ctx.beginPath(); ctx.moveTo(mx - sw / 2, sy); ctx.lineTo(mx + sw / 2, sy); ctx.quadraticCurveTo(mx + sw / 2 + 3, sy + tall * 0.13, mx + sw / 2, sy + tall * 0.24); ctx.lineTo(mx - sw / 2, sy + tall * 0.24); ctx.closePath(); ctx.fill();
+            }
+          }
+        });
+      } else if (kind === 'stack') {
+        // Sea stacks: tall, narrow, ragged, in ones and twos.
+        const n = 1 + rng.int(2);
+        for (let k = 0; k < n; k++) {
+          const sx = x + k * rng.range(26, 50), bw = rng.range(22, 46), tw = bw * rng.range(0.35, 0.7), sh = h * rng.range(0.45, 0.95);
+          const lean = rng.range(-6, 6), jag = Array.from({ length: 6 }, () => rng.range(-3, 3)), peak = rng.range(0, 4);
+          // (Drawn again over the strip's end where it crosses it: what's random, picked first.)
+          const strata = [];
+          for (let y = -sh * 0.8; y < -6; y += rng.range(9, 16)) strata.push(y);
+          wrap(sx, bw + 10, X => {
+            ctx.fillStyle = rock;
+            ctx.beginPath();
+            ctx.moveTo(X, 2);
+            for (let j = 0; j < 6; j++) ctx.lineTo(X + (bw - tw) / 2 * (j / 5) + jag[j] + lean * (j / 5), -sh * (j / 5));
+            ctx.lineTo(X + (bw + tw) / 2 + lean, -sh - peak);
+            for (let j = 5; j >= 0; j--) ctx.lineTo(X + bw - (bw - tw) / 2 * (j / 5) - jag[j] + lean * (j / 5), -sh * (j / 5));
+            ctx.closePath();
+            ctx.fill();
+            // (Its shaded side, and lines of rock across it.)
+            ctx.fillStyle = dark;
+            ctx.beginPath(); ctx.moveTo(X + bw * 0.6, 2); ctx.lineTo(X + (bw + tw) / 2 + lean, -sh); ctx.lineTo(X + bw - (bw - tw) / 2 + lean, -sh); ctx.lineTo(X + bw, 2); ctx.closePath(); ctx.fill();
+            ctx.fillStyle = lit;
+            for (const y of strata) ctx.fillRect(X + bw * 0.2, y, bw * 0.45, 1);
+          });
+        }
+      } else if (kind === 'islet') {
+        // An islet: a hump of rock, green on top, a tree or two on it.
+        const w = rng.range(90, 190), ih = h * rng.range(0.18, 0.38), trees = rng.int(3);
+        const tx = Array.from({ length: trees }, () => rng.range(0.25, 0.75)), th = Array.from({ length: trees }, () => rng.range(18, 34));
+        wrap(x, w + 20, X => {
+          ctx.fillStyle = rock;
+          ctx.beginPath(); ctx.moveTo(X, 2);
+          for (let k = 0; k <= 12; k++) { const u = k / 12; ctx.lineTo(X + u * w, -ih * Math.pow(Math.sin(Math.PI * u), 0.7)); }
+          ctx.lineTo(X + w, 2); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = css(mix(c, '#3e6a44', 0.35));
+          ctx.beginPath();
+          for (let k = 2; k <= 10; k++) { const u = k / 12; ctx[k === 2 ? 'moveTo' : 'lineTo'](X + u * w, -ih * Math.pow(Math.sin(Math.PI * u), 0.7) - 1); }
+          for (let k = 10; k >= 2; k--) { const u = k / 12; ctx.lineTo(X + u * w, -ih * Math.pow(Math.sin(Math.PI * u), 0.7) + 4); }
+          ctx.closePath(); ctx.fill();
+          for (let k = 0; k < trees; k++) {
+            const px = X + tx[k] * w, base = -ih * Math.pow(Math.sin(Math.PI * tx[k]), 0.7);
+            ctx.fillStyle = dark;
+            ctx.fillRect(px - 0.8, base - th[k], 1.6, th[k]);
+            ctx.fillStyle = css(mix(c, '#2e5a34', 0.4));
+            ctx.beginPath(); ctx.arc(px, base - th[k], th[k] * 0.32, 0, Math.PI * 2); ctx.fill();
+          }
+        });
+      } else {
+        // An arch: a headland the sea's worn a hole through.
+        const w = rng.range(90, 150), ah = h * rng.range(0.45, 0.7);
+        wrap(x, w + 10, X => {
+          ctx.fillStyle = rock;
+          ctx.beginPath();
+          ctx.moveTo(X, 2); ctx.lineTo(X + w * 0.08, -ah * 0.85); ctx.quadraticCurveTo(X + w * 0.3, -ah * 1.05, X + w * 0.6, -ah); ctx.quadraticCurveTo(X + w * 0.9, -ah * 0.9, X + w, 2);
+          // (The hole, cut back out, the way round the other way.)
+          ctx.lineTo(X + w * 0.72, 2); ctx.quadraticCurveTo(X + w * 0.66, -ah * 0.55, X + w * 0.5, -ah * 0.56); ctx.quadraticCurveTo(X + w * 0.34, -ah * 0.55, X + w * 0.3, 2);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = dark;
+          ctx.beginPath(); ctx.moveTo(X + w * 0.72, 2); ctx.quadraticCurveTo(X + w * 0.66, -ah * 0.55, X + w * 0.5, -ah * 0.56); ctx.lineTo(X + w * 0.52, -ah * 0.62); ctx.quadraticCurveTo(X + w * 0.7, -ah * 0.6, X + w * 0.78, 2); ctx.closePath(); ctx.fill();
+        });
+      }
+    }
+    // The sea along their feet, glinting.
+    ctx.fillStyle = css(water);
+    ctx.fillRect(0, -3, TILE_W, 5);
+    ctx.fillStyle = css(shade(water, 1.45), 0.55);
+    for (let k = 0; k < 140; k++) ctx.fillRect(rng.range(0, TILE_W), -rng.range(0, 3), rng.range(4, 22), 0.8);
+  },
+
   docks(ctx, L, c, rng) {
     ctx.fillStyle = css(c);
     for (let x = 0; x < TILE_W; x += rng.range(90, 240)) {
@@ -956,8 +1053,10 @@ export class Backdrop {
       ctx.fillRect(0, 0, cv.width, H);
       ctx.globalCompositeOperation = 'source-over';
     }
-    // What's below the ground line: the layer's colour at its foot, misted.
-    const foot = t.mist ? mix(c, t.mist.color, Math.min(0.8, t.mist.alpha * (1.4 - L.p))) : c;
+    // What's below the ground line: the layer's colour at its foot, misted (a layer out on the
+    // open sea: its water).
+    const base = L.water && L.gen === 'isles' ? mix(L.water, t.haze, L.haze ?? 0) : c;
+    const foot = t.mist ? mix(base, t.mist.color, Math.min(0.8, t.mist.alpha * (1.4 - L.p))) : base;
     return { ...L, canvas: cv, density, H, foot: css(foot) };
   }
 
@@ -1078,7 +1177,8 @@ export class Backdrop {
     }
     const t = this.theme, b = this.built, bc = this.bctx, S = r.scale * r.dpr * res;
     const cx = r.cam.x, cy = r.cam.y;
-    if (b.clouds) this.drift += dt * 0.004;
+    // (Drifting left, or in a world the way its wind blows: sky.js.)
+    if (b.clouds) this.drift -= dt * 0.004 * (this.wind ?? -1);
     // Nothing has moved by as much as a third of a pixel since last time: the picture's still good.
     const last = this.last, maxP = b.layers.length ? b.layers[b.layers.length - 1].p : 0;
     if (last && last.S === S && last.ground === ground && last.vignette === vignette &&

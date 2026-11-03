@@ -23,6 +23,7 @@ import { GameMap } from '../map.js';
 import { lasered } from '../combat.js';
 import { paintMap } from '../maptiles.js';
 import { WorldView, drawDrops, drawTarget } from '../world/worldrender.js';
+import { drawSkyBehind, drawSkyFront, drawSkyGlow, windOf } from '../world/sky.js';
 import { nightness } from '../world/monsters.js';
 import { TILE, BLOCKS, MAGMA, FURNACE } from '../world/blocks.js';
 
@@ -271,7 +272,7 @@ export class RemasteredRenderer extends Renderer {
       // (A world's blocks are drawn by worldrender.js: of the materials, only bits of blown-up blocks' colour is wanted.)
       look = byQuality[q] = {
         map: game.map, theme, quality: q, at: performance.now(),
-        backdrop: new Backdrop(theme, seedOf(`${wl.world.name}/${theme.id}`), q),
+        backdrop: Object.assign(new Backdrop(theme, seedOf(`${wl.world.name}/${theme.id}`), q), { wind: Math.sign(windOf(wl.world.gen?.seed ?? wl.world.seed ?? 1)) || 1 }),
         mats: { main: { frontColor: theme.tint || '#8a8580' } }, blocks: null,
         weather: q === 'low' ? null : new Weather(theme.weather, q),
         ground: 0, floor: Infinity,
@@ -409,6 +410,8 @@ export class RemasteredRenderer extends Renderer {
     // Fog of war: what's out of sight is worked out now, and darkened after the world is drawn.
     this.fogNow = game.options?.fog && !this.noFog && (this.fogFrom || viewer) ? (this.fog ||= new Fog()).update(game, this.fogFrom || viewer, alpha) : null;
 
+    // (A world: the cloud layer's further clouds and the birds, behind its blocks: sky.js.)
+    if (world) drawSkyBehind(ctx, this, game, false);
     if (world) this.drawWorld(game);
     else look.blocks.draw(this, game.map, look.mats, theme, !!game.options?.destruction);
     // Blocks given the original's look (the map maker's Look tool): paper and ink, as the
@@ -430,6 +433,8 @@ export class RemasteredRenderer extends Renderer {
 
     // A world: its water, over everything in it; dark underground (the glows and flashes go over it).
     if (world) this.worldView.drawWater(ctx, game, false);
+    // (Leaves falling, motes in caves, the cloud layer's nearer clouds, under the light.)
+    if (world) drawSkyFront(ctx, this, game, false);
     if (world && (!allLit || this.fogNow)) this.worldView.drawLight(this, game, allLit ? 0 : 0.86, this.fogNow?.eye);
     if (this.quality !== 'low') this.lights.draw(ctx, this.view);
     if (theme.dark && this.quality === 'high') this.lights.drawDarkness(this, theme.dark);
@@ -440,6 +445,8 @@ export class RemasteredRenderer extends Renderer {
       ctx.fillRect(0, 0, this.pw, this.ph);
       ctx.setTransform(s, 0, 0, s, tx, ty);
     }
+    // (Fireflies glowing in the dark, and the white inside a cloud.)
+    if (world) drawSkyGlow(ctx, this, game, false, viewer);
     // (A world's out of sight is darkened with its light: worldrender.js.)
     if (this.fogNow && !world) {
       this.fogNow.drawShadows(ctx, this.view, 'rgba(6,9,16,0.6)');

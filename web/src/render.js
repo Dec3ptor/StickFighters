@@ -18,6 +18,7 @@ import { Blocks } from './rm/blocks.js';
 import { makeMaterials } from './rm/textures.js';
 import { themeFor } from './rm/themes.js';
 import { WorldView, drawDrops, drawTarget } from './world/worldrender.js';
+import { drawSkyBehind, drawSkyFront, drawSkyGlow } from './world/sky.js';
 
 export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate };
 
@@ -352,6 +353,8 @@ export class Renderer {
   /** A world (world mode): on white paper, its blocks (worldrender.js), then what's lying on the ground. */
   drawWorld(game) {
     if (!this.cleared) this.clearWhite();
+    // (The sky behind the blocks: far clouds, the cloud layer's further clouds, birds: sky.js.)
+    drawSkyBehind(this.ctx, this, game, true);
     (this.worldView ||= new WorldView('classic')).drawBlocks(this, game);
     this.worldView.drawMagma(this.ctx, game, true);
     drawDrops(this.ctx, game, 'classic', this.alpha ?? 1, this.view);
@@ -361,10 +364,14 @@ export class Renderer {
   drawWorldOver(game, viewer) {
     // The water, over everything in it.
     this.worldView?.drawWater(this.ctx, game, true);
+    // (Leaves falling, motes in caves, the cloud layer's nearer clouds, under the light: sky.js.)
+    drawSkyFront(this.ctx, this, game, true);
     // (Dev mode can light everything.)
     // (Seeing only what can be seen: what's out of sight darkened too, lit or not.)
     const lit = viewer?.world?.dev?.lights;
     if (!lit || this.fogNow) this.worldView?.drawLight(this, game, lit ? 0 : 0.72, this.fogNow?.eye);
+    // (Fireflies glowing in the dark, and the white inside a cloud.)
+    drawSkyGlow(this.ctx, this, game, true, viewer);
     drawTarget(this.ctx, game, viewer, 'classic');
   }
 
