@@ -9,6 +9,7 @@ import { lerp } from '../util.js';
 import { drawWeapon, drawStreakFlame } from '../sprites.js';
 import { css, mix, shade, rgb } from './color.js';
 import { drawSkinHead, drawHeadHalo, drawVest, drawTunic, TUNICS } from '../skins.js';
+import { drawAnimal } from '../world/animalart.js';
 
 export const TEAM_COLORS = { 1: '#3d7ff0', 2: '#e8483a' };
 
@@ -91,6 +92,7 @@ export function drawShadows(r, game, list, alpha) {
 
 /** One soldier, part way between the last two game updates. */
 export function drawSoldier(r, game, s, alpha, theme) {
+  if (s.npc?.kind === 'animal') return drawAnimal(r, game, s, alpha, 'remastered'); // (a world's animals: animalart.js)
   const ctx = r.ctx, c = inks(theme);
   const x = lerp(s.prevX, s.x, alpha) + (s.drawDX || 0), y = lerp(s.prevY, s.y, alpha) + (s.drawDY || 0);
   const v = r.animated(s);
@@ -228,6 +230,7 @@ const LINE_W = 1.9; // a stick figure's lines, in Remastered
  * the theme's ink with the soft outline round it, the team's colour (or their own) on its head.
  */
 export function drawLineSoldier(r, game, s, alpha, theme, skin) {
+  if (s.npc?.kind === 'animal') return drawAnimal(r, game, s, alpha, 'remastered'); // (a world's animals: animalart.js)
   const ctx = r.ctx, c = inks(theme);
   const x = lerp(s.prevX, s.x, alpha) + (s.drawDX || 0), y = lerp(s.prevY, s.y, alpha) + (s.drawDY || 0);
   const v = r.animated(s);
@@ -330,6 +333,7 @@ function widthOf(ctx, font, text) {
 
 /** A name tag (a small label in the soldier's colour) and their health under it. */
 export function drawName(r, game, s, alpha, viewer) {
+  if (s.npc?.kind === 'animal') return; // (no name tags on a world's animals)
   const ctx = r.ctx;
   const x = lerp(s.prevX, s.x, alpha) + (s.drawDX || 0), y = lerp(s.prevY, s.y, alpha) + (s.drawDY || 0);
   const me = s === viewer, font = me ? NAME_FONT_ME : NAME_FONT;

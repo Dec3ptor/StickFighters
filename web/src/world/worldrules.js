@@ -12,6 +12,7 @@
 //   towns       towns and their people, or a wild world (worldgen.js)
 //   raids       raids on towns at night (raids.js)
 //   kit         what a new character starts with
+//   hunger      players get hungry, eat to keep going and to heal (hunger.js), or never do
 
 /** The settings: what each is called, its choices (key: what it says), and the one it starts at. */
 export const WORLD_SETTINGS = {
@@ -23,6 +24,7 @@ export const WORLD_SETTINGS = {
   towns: { label: 'Towns and people', options: { on: 'Yes', off: 'None: a wild world' }, def: 'on', tip: 'Villages and cities, their people, shops and quests' },
   raids: { label: 'Raids on towns', options: { on: 'Yes', off: 'No' }, def: 'on', tip: 'Now and then at night, the dead come for a town you\'re near' },
   kit: { label: 'You start with', options: { full: 'Tools, guns, enough to build', basic: 'A pickaxe, an axe, torches', none: 'Nothing at all' }, def: 'full', tip: 'What a new character has' },
+  hunger: { label: 'Hunger', options: { on: 'Yes: eat to keep going', off: 'No: food just heals' }, def: 'on', tip: 'Hungry, you stop healing by yourself; starving, you\'re hurt. Food fills you up (cook meat: it\'s better)' },
 };
 
 /** Monsters at each difficulty: how often they come, how hard they hit, how much health they have. */
@@ -51,7 +53,7 @@ export function settingsSummary(s) {
   const c = cleanSettings(s), out = [];
   for (const [k, d] of Object.entries(WORLD_SETTINGS)) {
     if (c[k] === d.def || k === 'death') continue;
-    out.push(k === 'vision' ? 'Line of sight' : k === 'towns' ? 'No towns' : k === 'raids' ? 'No raids' : k === 'kit' ? `Start: ${c[k]}` : d.options[c[k]].replace(/ \(.*\)$/, ''));
+    out.push(k === 'vision' ? 'Line of sight' : k === 'towns' ? 'No towns' : k === 'raids' ? 'No raids' : k === 'hunger' ? 'No hunger' : k === 'kit' ? `Start: ${c[k]}` : d.options[c[k]].replace(/ \(.*\)$/, ''));
   }
   return out.join(' · ');
 }

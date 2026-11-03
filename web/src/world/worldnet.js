@@ -14,7 +14,8 @@
 
 import { TileWorld } from './tileworld.js';
 import { Inventory, HOTBAR, itemOf } from './items.js';
-import { packBytes, unpackBytes } from './worldsave.js';
+import { packBytes, unpackBytes, WORLD_GEN } from './worldsave.js';
+import { hungerKey, hungerToSave, hungerFromSave } from './hunger.js';
 import { recipeById } from './crafting.js';
 import { devAct } from './devtools.js';
 import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, boxFor, boxKind, claimsToSave, claimsFromSave, REACH, setRightHand, makeRecipe, devTake, equip, unequip, stackToChests, fitAttachment, stripGun } from './worldplay.js';
@@ -137,7 +138,7 @@ export class WorldHost {
     const m = w.mine, last = w.got[w.got.length - 1];
     // (Their level and quests too: progress.js, quests.js. And who has work for them.)
     const pr = progOf(s), qs = questsOf(s), xg = w.xpGot?.at(-1);
-    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}|${w.gearV || 0}|${(w.graves || []).join(';')}|${w.foundV || 0}|${w.sleep ? `z${this.game.world.asleep?.n}/${this.game.world.asleep?.of}` : ''}|${w.dev ? `dev${w.dev.fly === false ? 0 : 1}${w.dev.speed || 1}${w.dev.god ? 1 : 0}${w.dev.invisible ? 1 : 0}${w.dev.lights ? 1 : 0}` : ''}`;
+    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}|${w.gearV || 0}|${(w.graves || []).join(';')}|${w.foundV || 0}|${w.sleep ? `z${this.game.world.asleep?.n}/${this.game.world.asleep?.of}` : ''}|${w.dev ? `dev${w.dev.fly === false ? 0 : 1}${w.dev.speed || 1}${w.dev.god ? 1 : 0}${w.dev.invisible ? 1 : 0}${w.dev.lights ? 1 : 0}` : ''}|${w.dev || w.creative ? '' : hungerKey(w)}`;
     if (key !== ws.inv) {
       ws.inv = key;
       p.link.send({
@@ -155,6 +156,8 @@ export class WorldHost {
         // (In dev mode, theirs in a creative world: crafting's free, the codex gives anything, they
         // fly (or not, and how fast: their screen moves them as the host does), the dev menu's switches.)
         dev: w.dev ? { fly: w.dev.fly !== false, speed: w.dev.speed || 1, god: !!w.dev.god, invisible: !!w.dev.invisible, lights: !!w.dev.lights } : 0,
+        // (Their hunger, for the HUD: hunger.js. None shown in dev mode.)
+        food: w.dev || w.creative ? null : hungerToSave(w),
       }, true);
       ws.foundV = w.foundV || 0;
     }
@@ -306,7 +309,7 @@ export class WorldClient {
     const info = m.world || {};
     // (The world's settings: the host's, the same for everyone: worldrules.js.)
     const settings = cleanSettings(info.settings);
-    const world = new TileWorld({ seed: info.seed | 0, name: String(info.name || 'World').slice(0, 32), saved: this.saved, gen: info.gen ? Math.max(1, Math.min(3, info.gen | 0)) : info.towns === true ? 2 : 1, noTowns: settings.towns === 'off' });
+    const world = new TileWorld({ seed: info.seed | 0, name: String(info.name || 'World').slice(0, 32), saved: this.saved, gen: info.gen ? Math.max(1, Math.min(WORLD_GEN, info.gen | 0)) : info.towns === true ? 2 : 1, noTowns: settings.towns === 'off' });
     world.settings = settings;
     world.time = Number(info.time) || 0;
     world.pvp = info.pvp !== false;
@@ -394,6 +397,9 @@ export class WorldClient {
         w.xpGot = Array.isArray(d.xpGot) ? d.xpGot.map(([n, why, tick]) => ({ n: n | 0, why: String(why || ''), tick: Number(tick) || 0 })) : [];
         if (d.levelUp && Number.isFinite(d.levelUp.tick)) w.levelUp = { level: d.levelUp.level | 0, tick: d.levelUp.tick };
         w.raidInfo = d.raid && typeof d.raid === 'object' ? { name: String(d.raid.name), left: d.raid.left | 0, total: d.raid.total | 0 } : null;
+        // Our hunger, as the host has it (none: a world without it).
+        if (Array.isArray(d.food)) hungerFromSave(w, d.food);
+        else if (d.food === null) w.food = undefined;
         this.onInv?.();
         break;
       }

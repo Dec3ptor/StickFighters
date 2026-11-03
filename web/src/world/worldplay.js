@@ -30,6 +30,10 @@ import { useBed, sleepInput, sleepTick, wake, homeOf } from './sleep.js';
 import { addWaystone, removeWaystone, waystoneMenu } from './waystones.js';
 import { settingOf, difficultyOf, keepTime, KITS } from './worldrules.js';
 import { setDev } from './devmode.js';
+// (Hunger, farming and animals: survival.js.)
+import { useSurvival, survivalTick, blockDrops } from './survival.js';
+import { exert, hurtNow, cantEat, feed, fill, hungerToSave, hungerFromSave } from './hunger.js';
+import { isAnimal, animalDrops } from './animals.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -49,7 +53,7 @@ const SOFT = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.VINE, K.WHEAT, K.WA
 // (water again, where it was).
 const SEABED = new Set([K.SEAGRASS, K.KELP, K.CORAL_FAN, K.REEDS]);
 // What needs something to stand on (or hang from) and goes when it's taken away.
-const NEEDS_GROUND = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.MUSHROOM, K.CACTUS, K.WHEAT, K.FERN, K.BUSH, K.BERRY_BUSH, K.DRY_TALL_GRASS, K.PETALS]);
+const NEEDS_GROUND = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.MUSHROOM, K.CACTUS, K.WHEAT, K.FERN, K.BUSH, K.BERRY_BUSH, K.DRY_TALL_GRASS, K.PETALS, ...K.CROPS]);
 const DOORS = new Set([K.DOOR, K.DOOR_OPEN]);
 // (Leaves, of every kind of tree, and vines; a crown, felled with its tree, takes giant mushrooms' caps too.)
 const LEAF = new Set([...K.LEAVES_ALL, K.VINE]);
@@ -385,6 +389,8 @@ export function playerToSave(s, game = null) {
     graves: w.graves || [], found: w.found || [], over: !!w.over,
     // (Their ender chest's things: the same in every ender chest.)
     ender: w.ender?.slots.some(Boolean) ? w.ender.toJSON() : null,
+    // (Their hunger: hunger.js.)
+    food: hungerToSave(w),
   };
 }
 
@@ -412,6 +418,7 @@ export function worldFromSave(p, kit = null) {
   questsFromSave(w, p.quests);
   w.found = cleanFound(p.found);
   if (Array.isArray(p.ender)) w.ender = Inventory.from(p.ender, CHEST_SIZE);
+  hungerFromSave(w, p.food);
   w.graves = Array.isArray(p.graves) ? p.graves.filter(g => Array.isArray(g) && Number.isInteger(g[0]) && Number.isInteger(g[1])).slice(-8).map(g => [g[0], g[1]]) : [];
   for (const k of SLOTS) {
     const it = p.gear?.[k];
@@ -670,6 +677,8 @@ function dig(game, s, it, inp) {
   if (w.cool > 0) return true;
   w.cool = it.every / MOTION.timeScale;
   s.anim.swing = 1;
+  // (It's tiring: hunger.js.)
+  exert(s, 0.025);
   const x = t.tx * TILE + TILE / 2, y = t.ty * TILE + TILE / 2;
   if (how === 'tier') {
     game.sound('tink', x, y);
@@ -694,6 +703,7 @@ function dig(game, s, it, inp) {
  */
 export function breakBlock(game, tx, ty, by = null) {
   const world = game.world, id = world.tile(tx, ty), b = BLOCKS[id];
+  let got;
   if (id === AIR || b.resist >= 1e9) return false;
   const x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
   if (K.TRUNKS.has(id)) return fell(game, tx, ty);
@@ -710,6 +720,8 @@ export function breakBlock(game, tx, ty, by = null) {
     if (id === K.LOOT_CRATE) openCrate(game, x, y);
     // (A shulker box: picked up whole, what's in it kept in it.)
     else if (K.SHULKER_BOXES.has(id)) dropShulker(game, tx, ty, id, x, y);
+    // (Crops by how far they've grown, seeds from grass, flint from gravel: survival.js.)
+    else if ((got = blockDrops(game, id))) for (const [key, n] of got) dropItem(game, key, n, x, y, (game.rng() - 0.5) * 2, -1.5);
     else if (b.drop) {
       dropItem(game, b.drop, 1, x, y);
       // Mined by a player: experience for ore and gems (and, with the Prospector perk, now and
@@ -1157,12 +1169,22 @@ export function worldInput(game, s, inp) {
   return inp;
 }
 
+// (What survival.js does through this file: things on the ground, breaking blocks, base protection.)
+const SURVIVAL = {
+  drop: (game, key, n, x, y) => dropItem(game, key, n, x, y, (game.rng() - 0.5) * 2, -1.5),
+  breakBlock: (game, tx, ty, s) => breakBlock(game, tx, ty, s),
+  allowed: (game, s, tx, ty) => (mayChange(game.world, s, tx, ty) ? true : (notYours(game, s, tx, ty), false)),
+};
+
 /**
  * Use `item` (in either hand) with input `inp` (its fire: the button for that hand held; pressed:
  * just now). Returns whether a gun should fire (a weapon in hand): else the button's taken.
  */
 function useItem(game, s, item, inp, pressed) {
   const w = s.world;
+  // (Hoes, seeds, bone meal, shears, and animals' food: survival.js.)
+  const sv = useSurvival(game, s, item, inp, pressed, SURVIVAL);
+  if (sv !== undefined) return sv;
   let fire = inp.fire;
   if (item?.kind === 'food') {
     if (pressed) eat(game, s, item);
@@ -1303,13 +1325,17 @@ export function unequip(game, s, slot) {
   return `Took off ${it.g.name}`;
 }
 
-/** Eat (or drink) one of `item` (food: items.js): it heals. Not at full health. */
+/**
+ * Eat (or drink) one of `item` (food: items.js): with hunger (hunger.js), food fills you up and
+ * potions heal; without it, food heals too. Not when you're full (or not hurt).
+ */
 function eat(game, s, item) {
-  const w = s.world, max = s.maxHealth || 150;
+  const w = s.world;
   if (w.cool > 0) return;
-  if (s.health >= max) { game.notify(s, 'You\'re not hurt'); w.cool = 30; return; }
+  const why = cantEat(game, s, item);
+  if (why) { game.notify(s, why); w.cool = 30; return; }
   w.inv.remove(item.key, 1);
-  s.health = Math.min(max, s.health + item.heal);
+  feed(game, s, item);
   w.cool = 30 / MOTION.timeScale;
   game.sound('health', s.x, s.y, s.id);
 }
@@ -1352,6 +1378,8 @@ export function worldTick(game) {
   if (game.tick % 30 === 0 && !game.mirror) world.time = keepTime(world, world.time, DAY_TICKS, hourOf);
   monstersTick(game);
   townsfolkTick(game);
+  // (Hunger, animals, crops: survival.js.)
+  survivalTick(game, SURVIVAL);
   questsTick(game);
   raidsTick(game);
   sleepTick(game);
@@ -1557,6 +1585,8 @@ export const worldMode = {
   /** (Nothing hurts a player in god mode, dev mode's, nor any of the townsfolk but guards: townsfolk.js.) */
   damage(game, amount, attacker, target, weapon) {
     if (godOn(target) || (isFolk(target) && !target.npc.guard)) return 0;
+    // (Fighting is tiring, and so is being hurt: hunger.js.)
+    if (amount > 0) { exert(attacker, 0.1); hurtNow(game, target); }
     // (Hurt in bed: awake, at once. Reading a recall scroll: it's spoilt.)
     if (target?.world?.sleep && amount > 0) wake(game, target, 'Something woke you!');
     if (target?.world?.recall && amount > 0) { target.world.recall = null; game.notify(target, 'The scroll\'s magic fades: you were hurt'); }
@@ -1610,9 +1640,13 @@ export const worldMode = {
       }
       raidKill(game, victim, by);
     }
+    // (An animal: meat, leather, wool... animals.js.)
+    else if (isAnimal(victim)) animalDrops(game, victim, by, drop);
     // (A player: what they lose goes in a grave, where they died. Hardcore: that was their one life.)
     else if (victim.world) {
       bury(game, victim);
+      // (Back full: hunger.js.)
+      if (victim.world.food !== undefined) fill(victim.world);
       if (settingOf(game.world, 'mode') === 'hardcore') { victim.world.died = true; victim.world.over = true; game.notify(victim, 'You died. A hardcore world: there\'s no coming back (you can watch)'); }
     }
   },

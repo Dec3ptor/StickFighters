@@ -25,13 +25,16 @@ const RAW = {
   crystal_ore: 6, ember_ore: 8,
   amethyst: 20, topaz: 28, emerald: 40, sapphire: 48, ruby: 60, diamond: 150,
   apple: 1.5, healing_potion: 18, greater_potion: 45, recall_scroll: 30,
+  // (Hunted, grown, gathered: animals.js, farming.js.)
+  raw_beef: 1, raw_pork: 1, raw_mutton: 0.8, raw_chicken: 0.6, raw_venison: 1.2, raw_rabbit: 0.8, raw_fish: 0.6, crab_meat: 0.6,
+  leather: 1.5, wool: 0.8, feather: 0.3, bone: 0.4, egg: 0.5, flint: 0.3, wheat_seeds: 0.1, carrot: 0.6, potato: 0.4, berries: 0.4,
   // (Weapons nobody can make: found in crates.)
   BananaBomb: 12, HolyHandGrenade: 60, Skunk: 10, Sheep: 12, SuperSheep: 25, OldWoman: 15, MadCow: 25, AirStrike: 60,
   NapalmStrike: 70, ConcreteDonkey: 150, Earthquake: 100, Kamikaze: 15, FirePunch: 40,
   coins: 1,
 };
 // (The work in making something, by where it's made.)
-const WORK = { hand: 1.1, workbench: 1.15, furnace: 1.2, anvil: 1.3, gunsmith: 1.3 };
+const WORK = { hand: 1.1, workbench: 1.15, furnace: 1.2, anvil: 1.3, gunsmith: 1.3, campfire: 1.2 };
 
 let VALUES = null;
 
@@ -92,6 +95,7 @@ export const SHOPS = {
       ['door', 0.7, 3], ['chest', 0.7, 2], ['bed', 0.5, 1], ['lantern', 0.5, 3], ['workbench', 0.6, 1], ['furnace', 0.5, 1],
       ['coal', 0.8, 5], ['copper_bar', 0.5, 4], ['iron_bar', 0.4, 3], ['arrows', 0.6, 3], ['bullets', 0.6, 3], ['claim_flag', 0.4, 1],
       ['wheat', 0.5, 4], ['cobblestone', 0.5, 4], ['stone_bricks', 0.5, 4], ['plank_wall', 0.6, 4], ['healing_potion', 0.3, 2],
+      ['wheat_seeds', 0.5, 4], ['campfire', 0.5, 2],
     ],
     rare: [['merc_contract', 1], ['iron_pickaxe', 1], ['stained_glass', 3]],
   },
@@ -132,15 +136,22 @@ export const SHOPS = {
   },
   innkeeper: {
     name: 'Inn', markup: 1.2, rate: 0.4, buys: isFood,
-    sells: [['bread', 1, 8], ['apple', 1, 6], ['stew', 1, 5], ['torch', 0.6, 4], ['bed', 0.3, 1], ['healing_potion', 0.2, 1]],
+    sells: [['bread', 1, 8], ['apple', 1, 6], ['stew', 1, 5], ['torch', 0.6, 4], ['bed', 0.3, 1], ['healing_potion', 0.2, 1],
+      ['steak', 0.6, 4], ['cooked_chicken', 0.6, 4], ['cooked_fish', 0.5, 4], ['baked_potato', 0.5, 4], ['berry_pie', 0.3, 2], ['rabbit_stew', 0.2, 2]],
   },
   healer: {
     name: 'Temple', markup: 1.15, rate: 0.5, buys: it => it.key === 'mushroom' || it.key === 'cactus' || it.look === 'potion',
     sells: [['healing_potion', 1, 5], ['greater_potion', 0.6, 2], ['apple', 0.6, 4], ['stew', 0.5, 3], ['recall_scroll', 0.8, 3]],
   },
+  // A farm (a village's farmers): its crops and seeds, eggs, wool and leather, and what a farm needs.
   farmer: {
-    name: 'Farm', markup: 1.15, rate: 0.5, buys: it => ['wheat', 'mushroom', 'cactus', 'apple', 'wood'].includes(it.key),
-    sells: [['wheat', 1, 8], ['bread', 1, 6], ['apple', 1, 6], ['thatch', 0.6, 4], ['stew', 0.4, 3]],
+    name: 'Farm', markup: 1.15, rate: 0.5,
+    buys: it => isFood(it) || ['wheat', 'wheat_seeds', 'mushroom', 'cactus', 'wood', 'egg', 'wool', 'leather', 'feather', 'bone', 'bone_meal'].includes(it.key),
+    sells: [
+      ['wheat', 1, 8], ['bread', 1, 6], ['apple', 1, 6], ['thatch', 0.6, 4], ['stew', 0.4, 3], ['wheat_seeds', 1, 4], ['carrot', 0.8, 4], ['potato', 0.8, 4],
+      ['egg', 0.7, 3], ['hoe', 0.5, 1], ['bone_meal', 0.5, 3], ['wool', 0.5, 4], ['leather', 0.4, 3], ['raw_beef', 0.4, 3], ['raw_chicken', 0.4, 3], ['campfire', 0.3, 1],
+    ],
+    rare: [['shears', 1], ['golden_apple', 1]],
   },
 };
 

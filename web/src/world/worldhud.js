@@ -393,7 +393,7 @@ function leftBar(me) {
     return [Math.min(1, n / item.stack), 'ammo', `${item.name}  ${n}${brush}`];
   }
   if (item.kind === 'tool') {
-    const what = item.tool === 'hammer' ? 'shapes blocks, takes down walls' : item.tool === 'axe' ? 'fells trees' : `tier ${item.tier}`;
+    const what = item.tool === 'hammer' ? 'shapes blocks, takes down walls' : item.tool === 'axe' ? 'fells trees' : item.tool === 'hoe' ? 'tills dirt and grass into farmland' : item.tool === 'shears' ? 'clips a sheep\'s wool' : `tier ${item.tier}`;
     return [1, 'ammo', `${item.name}  ·  ${what}`];
   }
   if (item.kind === 'contract') return [1, 'ammo', `${item.name}  ${n}  ·  click: hire a mercenary`];
@@ -680,14 +680,14 @@ function drawMiniMap(ctx, game, me, W, H) {
       ctx.imageSmoothingEnabled = smooth;
     }
   }
-  // Who else is about: monsters red, mercenaries blue, townsfolk gold, other players white.
+  // Who else is about: monsters red, mercenaries blue, townsfolk gold, animals green, other players white.
   for (const o of game.soldiers) {
     // (Not someone invisible: a world's dev mode.)
     if (!o.alive || o === me || o.hidden || o.world?.dev?.invisible) continue;
     const ox = Math.floor(o.x / TILE) - mm.tx + MAP_W / 2, oy = Math.floor(o.y / TILE) - mm.ty + MAP_H / 2;
     if (ox < 0 || ox >= MAP_W || oy < 0 || oy >= MAP_H) continue;
     const k = o.npc?.kind, mate = me.world?.partyList?.some(p => p.id === o.id);
-    ctx.fillStyle = k === 'monster' ? '#ff3b2f' : k === 'merc' ? '#3d7ff0' : k === 'townsfolk' ? '#f2c230' : mate ? '#5ad1ff' : '#ffffff';
+    ctx.fillStyle = k === 'monster' ? '#ff3b2f' : k === 'merc' ? '#3d7ff0' : k === 'townsfolk' ? '#f2c230' : k === 'animal' ? '#8ad45a' : mate ? '#5ad1ff' : '#ffffff';
     ctx.fillRect(x0 + ox * MAP_SCALE - 1.5, y0 + oy * MAP_SCALE - 2, 3, 3);
   }
   // Your graves: a pale cross.

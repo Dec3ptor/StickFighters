@@ -10,6 +10,7 @@ import { GADGETS, rechargeTicks } from './gadgets.js';
 import { REWARDS, JUGGER_TICKS, nextReward } from './streaks.js';
 import { keyLabel, keyShort, keyText, slotAction } from './keys.js';
 import { drawWorldHud, heldBar } from './world/worldhud.js';
+import { foodBar } from './world/hunger.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
@@ -222,6 +223,11 @@ const BAR_COLORS = {
   fuel: ['#2f74d0', '#163a6b'],
   stamina: ['#2fb3a0', 'rgba(0,0,0,0.18)'],
   breath: ['#5ab4f0', '#1c3c5a'],
+  // (A world's hunger: hunger.js.)
+  food: ['#d8902a', '#4f3410'],
+  hungry: ['#e8b03a', '#4f3410'],
+  starving: ['#d8402a', '#4a1610'],
+  sick: ['#8aa83a', '#2e3a12'],
   drowning: ['#e05a4a', '#4a1c16'],
   winded: ['#d8862a', 'rgba(0,0,0,0.18)'],
   gadget: ['#6d4fc2', '#2e2352'],
@@ -294,6 +300,9 @@ function drawStatus(ctx, game, me, W, H, opts) {
   const gadget = game.classesOn && gadgetBar(game, me);
   if (gadget) extra.push(gadget);
   if (game.streaksOn) extra.push(...streakBars(me, opts.rewardPick));
+  // (A world's hunger: hunger.js.)
+  const food = me.world ? foodBar(me.world) : null;
+  if (food) extra.push(food);
   if (me.armour > 0) extra.push([me.armour / RULES.maxArmour, 'armour', `Armour ${Math.ceil(me.armour)}%`]);
   if (b.hasJetpack) extra.push([b.fuel / 100, 'fuel', `Jet fuel ${Math.round(b.fuel)}%`]);
   // (A world's water: breath, while it's used up under water or coming back; out of it, drowning.)

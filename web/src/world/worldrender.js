@@ -510,6 +510,19 @@ function marks(g, b, x, y, h, classic, grid, k) {
       g.strokeRect(x + 1.5, y + 1.5, TILE - 3, TILE - 3);
       g.beginPath(); g.moveTo(x + 2, y + 2); g.lineTo(x + TILE - 2, y + TILE - 2); g.moveTo(x + TILE - 2, y + 2); g.lineTo(x + 2, y + TILE - 2); g.stroke();
       break;
+    case 'farmland':
+      // Tilled soil (farming.js): furrows along it, the top turned over.
+      if (!classic) { g.fillStyle = tint(b.color, 0.78); g.fillRect(x, y, TILE, 3); }
+      g.fillStyle = ink;
+      for (let i = 0; i < 3; i++) g.fillRect(x + 1, y + 3.5 + i * 4.5, TILE - 2, 1.2);
+      g.fillRect(x + 2 + r(0) % 10, y + 1, 2, 1);
+      break;
+    case 'wool':
+      // Soft: curls of it.
+      g.strokeStyle = classic ? '#b8b8b8' : tint(b.color, 0.8);
+      g.lineWidth = 0.8;
+      for (let i = 0; i < 4; i++) { g.beginPath(); g.arc(x + 3 + ((h >>> (i * 4)) % 10), y + 3 + ((h >>> (i * 4 + 2)) % 10), 1.7, 0, Math.PI * 1.5); g.stroke(); }
+      break;
     default: break;
   }
 }
@@ -967,6 +980,60 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
       g.strokeStyle = line; g.lineWidth = 1; g.stroke();
       g.fillStyle = classic ? INK : '#3a3430';
       g.fillRect(x + 3, y + 6, 10, 1.2); g.fillRect(x + 3, y + 12.5, 10, 1.2);
+      break;
+    case 'crop': {
+      // A crop (farming.js), by how far it's grown: wheat's stalks, to ripe golden ears; a carrot's
+      // or a potato's leaves, to the root showing at the ground.
+      const st = b.stage;
+      if (b.crop === 'wheat') {
+        const tall = [4, 7, 10, 12][st];
+        g.strokeStyle = classic ? INK : st === 3 ? '#a8903a' : '#6a9a3a'; g.lineWidth = 1;
+        g.beginPath();
+        for (let i = 0; i < 4; i++) { const sx = x + 2.5 + i * 3.7; g.moveTo(sx, y + TILE); g.lineTo(sx + (i - 1.5) * 0.6, y + TILE - tall); }
+        g.stroke();
+        if (st >= 2) {
+          g.fillStyle = classic ? (st === 3 ? '#fff' : '#ddd') : b.color;
+          for (let i = 0; i < 4; i++) {
+            const ex = x + 2.5 + i * 3.7 + (i - 1.5) * 0.6, ey = y + TILE - tall - 1 + ((h >>> i) & 1);
+            g.fillRect(ex - 1.2, ey - (st === 3 ? 4 : 2.5), 2.4, st === 3 ? 5 : 3.5);
+            if (classic) { g.strokeStyle = INK; g.lineWidth = 0.6; g.strokeRect(ex - 1.2, ey - (st === 3 ? 4 : 2.5), 2.4, st === 3 ? 5 : 3.5); }
+          }
+        }
+      } else {
+        const n = st + 2, spread = 1.5 + st * 1.2, tall = 4 + st * 2;
+        g.strokeStyle = classic ? INK : '#4f8f34'; g.lineWidth = 1.1;
+        g.beginPath();
+        for (let i = 0; i < n; i++) { const a = (i / (n - 1) - 0.5) * 2; g.moveTo(x + 8, y + TILE); g.lineTo(x + 8 + a * spread, y + TILE - tall + Math.abs(a) * 2); }
+        g.stroke();
+        if (st === 3) {
+          g.fillStyle = classic ? '#fff' : b.color;
+          g.beginPath();
+          if (b.crop === 'carrot') { g.moveTo(x + 5.5, y + TILE - 2.5); g.lineTo(x + 10.5, y + TILE - 2.5); g.lineTo(x + 8, y + TILE + 1); }
+          else g.ellipse(x + 8, y + TILE - 1.5, 3.5, 2, 0, 0, Math.PI * 2);
+          g.closePath(); g.fill();
+          g.strokeStyle = classic ? INK : tint(b.color, 0.6); g.lineWidth = 0.7; g.stroke();
+        }
+      }
+      break;
+    }
+    case 'campfire': {
+      // Logs crossed in a ring of stones, a fire on them.
+      g.fillStyle = classic ? '#ddd' : '#8a8f96';
+      for (let i = 0; i < 4; i++) { g.beginPath(); g.ellipse(x + 2 + i * 4, y + TILE - 1.5, 2.2, 1.5, 0, 0, Math.PI * 2); g.fill(); if (classic) { g.strokeStyle = INK; g.lineWidth = 0.6; g.stroke(); } }
+      g.fillStyle = classic ? '#fff' : '#7a5634';
+      g.strokeStyle = line; g.lineWidth = 0.8;
+      for (const [x0, x1] of [[2, 14], [14, 2]]) { g.beginPath(); g.moveTo(x + x0, y + TILE - 2); g.lineTo(x + x1 + (x1 > x0 ? -1 : 1), y + TILE - 6); g.lineTo(x + x1, y + TILE - 4.5); g.lineTo(x + x0 + (x1 > x0 ? 1 : -1), y + TILE - 0.5); g.closePath(); g.fill(); g.stroke(); }
+      g.fillStyle = '#ff7a20';
+      g.beginPath(); g.moveTo(x + 4, y + TILE - 5); g.quadraticCurveTo(x + 5, y + 4, x + 8, y + 1 + (h & 1)); g.quadraticCurveTo(x + 11, y + 4, x + 12, y + TILE - 5); g.closePath(); g.fill();
+      g.fillStyle = '#ffd860';
+      g.beginPath(); g.moveTo(x + 6, y + TILE - 5); g.quadraticCurveTo(x + 7, y + 8, x + 8, y + 5); g.quadraticCurveTo(x + 9.5, y + 8, x + 10, y + TILE - 5); g.closePath(); g.fill();
+      break;
+    }
+    case 'carpet':
+      // Wool laid on the floor: a thin strip, edged.
+      g.fillStyle = col; g.fillRect(x, y + TILE - 2.5, TILE, 2.5);
+      if (!classic) { g.fillStyle = tint(b.color, 1.3); g.fillRect(x, y + TILE - 1.7, TILE, 0.6); }
+      g.strokeStyle = line; g.lineWidth = 0.7; g.strokeRect(x + 0.35, y + TILE - 2.5, TILE - 0.7, 2.15);
       break;
     case 'sign':
       // A board on a post.
@@ -1468,7 +1535,7 @@ export class WorldView {
     const src = this.glowSrc ||= [];
     src.length = 0;
     for (const s of game.soldiers) {
-      if (!s.alive || s.spectating || s.npc?.kind === 'monster') continue;
+      if (!s.alive || s.spectating || s.npc?.kind === 'monster' || s.npc?.kind === 'animal') continue;
       const tx = Math.floor(s.x / TILE) - lit.x0, ty = Math.floor((s.y - 8) / TILE) - lit.y0;
       if (tx >= 0 && ty >= 0 && tx < lit.w && ty < lit.h) src.push(tx, ty);
     }
@@ -1654,6 +1721,14 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
     ctx.fillStyle = it.color;
     if (it.tool === 'pick') { ctx.beginPath(); ctx.moveTo(x + w * 0.35, y + w * 0.05); ctx.quadraticCurveTo(x + w * 0.95, y + w * 0.05, x + w * 0.95, y + w * 0.65); ctx.lineTo(x + w * 0.75, y + w * 0.25); ctx.closePath(); ctx.fill(); ctx.strokeStyle = INK; ctx.stroke(); }
     else if (it.tool === 'axe') { ctx.beginPath(); ctx.moveTo(x + w * 0.55, y + w * 0.1); ctx.lineTo(x + w, y + w * 0.3); ctx.lineTo(x + w * 0.8, y + w * 0.55); ctx.closePath(); ctx.fill(); ctx.strokeStyle = INK; ctx.stroke(); }
+    else if (it.tool === 'hoe') { ctx.beginPath(); ctx.moveTo(x + w * 0.62, y + w * 0.12); ctx.lineTo(x + w * 0.98, y + w * 0.12); ctx.lineTo(x + w * 0.98, y + w * 0.36); ctx.lineTo(x + w * 0.8, y + w * 0.3); ctx.closePath(); ctx.fill(); ctx.strokeStyle = INK; ctx.stroke(); }
+    else if (it.tool === 'shears') {
+      // Two blades, crossed at a pin, and their round handles.
+      ctx.strokeStyle = INK;
+      for (const [a, b] of [[[0.2, 0.85], [0.85, 0.15]], [[0.45, 0.9], [0.65, 0.12]]]) { ctx.beginPath(); ctx.moveTo(x + w * a[0], y + w * a[1]); ctx.lineTo(x + w * b[0], y + w * b[1]); ctx.lineWidth = Math.max(0.8, w / 10); ctx.stroke(); }
+      ctx.lineWidth = Math.max(0.6, w / 14);
+      for (const [cx, cy] of [[0.2, 0.85], [0.45, 0.9]]) { ctx.beginPath(); ctx.arc(x + w * cx, y + w * cy, w * 0.11, 0, Math.PI * 2); ctx.stroke(); }
+    }
     else { ctx.fillRect(x + w * 0.5, y, w * 0.45, w * 0.35); ctx.strokeStyle = INK; ctx.strokeRect(x + w * 0.5, y, w * 0.45, w * 0.35); }
     return;
   }
@@ -1717,6 +1792,7 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
     return;
   }
   if (it.kind === 'food') { drawFoodIcon(ctx, it, x, y, w); return; }
+  if (SURVIVAL_ICONS[it.key]) { ctx.strokeStyle = INK; ctx.fillStyle = c; SURVIVAL_ICONS[it.key](ctx, x, y, w, c); return; }
   if (it.kind === 'gear') { drawGearIcon(ctx, it, x, y, w); return; }
   if (it.kind === 'quest') {
     // A bundle tied with string (a letter: a folded sheet with a seal).
@@ -1779,11 +1855,96 @@ function drawGearIcon(ctx, it, x, y, w) {
   ctx.stroke();
 }
 
+/** What animals give, and farming (animals.js, farming.js): their icons (stroked in ink, filled in their colour). */
+const SURVIVAL_ICONS = {
+  leather(ctx, x, y, w) {
+    // A hide, pegged out.
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.2, y + w * 0.15); ctx.lineTo(x + w * 0.5, y + w * 0.25); ctx.lineTo(x + w * 0.8, y + w * 0.15); ctx.lineTo(x + w * 0.78, y + w * 0.5);
+    ctx.lineTo(x + w * 0.88, y + w * 0.85); ctx.lineTo(x + w * 0.5, y + w * 0.75); ctx.lineTo(x + w * 0.12, y + w * 0.85); ctx.lineTo(x + w * 0.22, y + w * 0.5);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  },
+  feather(ctx, x, y, w) {
+    ctx.beginPath(); ctx.moveTo(x + w * 0.2, y + w * 0.9); ctx.quadraticCurveTo(x + w * 0.15, y + w * 0.3, x + w * 0.75, y + w * 0.08); ctx.quadraticCurveTo(x + w * 0.85, y + w * 0.55, x + w * 0.2, y + w * 0.9); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + w * 0.2, y + w * 0.9); ctx.lineTo(x + w * 0.65, y + w * 0.25); ctx.stroke();
+  },
+  bone(ctx, x, y, w) {
+    ctx.lineCap = 'round';
+    ctx.lineWidth = w * 0.18; ctx.strokeStyle = INK; ctx.beginPath(); ctx.moveTo(x + w * 0.25, y + w * 0.75); ctx.lineTo(x + w * 0.75, y + w * 0.25); ctx.stroke();
+    ctx.lineWidth = w * 0.11; ctx.strokeStyle = '#e8e2d0'; ctx.stroke();
+    ctx.fillStyle = '#e8e2d0'; ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.6, w / 14);
+    for (const [cx, cy] of [[0.2, 0.7], [0.3, 0.8], [0.7, 0.2], [0.8, 0.3]]) { ctx.beginPath(); ctx.arc(x + w * cx, y + w * cy, w * 0.1, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    ctx.lineCap = 'butt';
+  },
+  bone_meal(ctx, x, y, w) {
+    ctx.beginPath(); ctx.moveTo(x + w * 0.12, y + w * 0.82); ctx.quadraticCurveTo(x + w * 0.5, y + w * 0.2, x + w * 0.88, y + w * 0.82); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#c8c4b8'; ctx.fillRect(x + w * 0.4, y + w * 0.55, w * 0.08, w * 0.08); ctx.fillRect(x + w * 0.56, y + w * 0.66, w * 0.08, w * 0.08);
+  },
+  egg(ctx, x, y, w) { ctx.beginPath(); ctx.ellipse(x + w * 0.5, y + w * 0.55, w * 0.28, w * 0.36, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fillRect(x + w * 0.38, y + w * 0.35, w * 0.08, w * 0.12); },
+  flint(ctx, x, y, w) {
+    ctx.beginPath(); ctx.moveTo(x + w * 0.3, y + w * 0.15); ctx.lineTo(x + w * 0.75, y + w * 0.3); ctx.lineTo(x + w * 0.85, y + w * 0.75); ctx.lineTo(x + w * 0.4, y + w * 0.88); ctx.lineTo(x + w * 0.15, y + w * 0.5); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#8a8a90'; ctx.stroke();
+  },
+  wheat_seeds(ctx, x, y, w) {
+    for (const [cx, cy] of [[0.3, 0.4], [0.55, 0.3], [0.7, 0.55], [0.4, 0.65], [0.6, 0.78]]) { ctx.beginPath(); ctx.ellipse(x + w * cx, y + w * cy, w * 0.09, w * 0.06, 0.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+  },
+};
+
 /** Food and potions' icons (items.js: their look). */
 function drawFoodIcon(ctx, it, x, y, w) {
   const c = it.color;
   ctx.strokeStyle = INK;
   switch (it.look) {
+    case 'meat': case 'chop':
+      // A cut of meat (a chop: with its bone), raw with its fat, cooked browned.
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.moveTo(x + w * 0.15, y + w * 0.45); ctx.quadraticCurveTo(x + w * 0.2, y + w * 0.15, x + w * 0.55, y + w * 0.18);
+      ctx.quadraticCurveTo(x + w * 0.92, y + w * 0.22, x + w * 0.85, y + w * 0.6); ctx.quadraticCurveTo(x + w * 0.8, y + w * 0.88, x + w * 0.45, y + w * 0.84);
+      ctx.quadraticCurveTo(x + w * 0.1, y + w * 0.8, x + w * 0.15, y + w * 0.45); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = it.raw ? '#f4e4dc' : 'rgba(255,220,180,0.55)'; ctx.lineWidth = Math.max(0.6, w / 12);
+      ctx.beginPath(); ctx.moveTo(x + w * 0.3, y + w * 0.4); ctx.quadraticCurveTo(x + w * 0.5, y + w * 0.55, x + w * 0.72, y + w * 0.4); ctx.stroke();
+      if (it.look === 'chop') { ctx.fillStyle = '#efe6d2'; ctx.strokeStyle = INK; ctx.beginPath(); ctx.arc(x + w * 0.68, y + w * 0.65, w * 0.1, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+      break;
+    case 'drumstick':
+      // A leg: the meat, and the bone out of it.
+      ctx.fillStyle = '#efe6d2';
+      ctx.fillRect(x + w * 0.58, y + w * 0.56, w * 0.24, w * 0.1); ctx.strokeRect(x + w * 0.58, y + w * 0.56, w * 0.24, w * 0.1);
+      ctx.beginPath(); ctx.arc(x + w * 0.86, y + w * 0.56, w * 0.07, 0, Math.PI * 2); ctx.arc(x + w * 0.86, y + w * 0.68, w * 0.07, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.ellipse(x + w * 0.38, y + w * 0.5, w * 0.27, w * 0.24, -0.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      break;
+    case 'fish':
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.ellipse(x + w * 0.45, y + w * 0.5, w * 0.32, w * 0.17, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + w * 0.74, y + w * 0.5); ctx.lineTo(x + w * 0.95, y + w * 0.32); ctx.lineTo(x + w * 0.95, y + w * 0.68); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = INK; ctx.fillRect(x + w * 0.24, y + w * 0.44, w * 0.06, w * 0.06);
+      break;
+    case 'claw':
+      // A crab's claw: the pincer open.
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.moveTo(x + w * 0.2, y + w * 0.85); ctx.quadraticCurveTo(x + w * 0.1, y + w * 0.35, x + w * 0.55, y + w * 0.15); ctx.lineTo(x + w * 0.5, y + w * 0.4);
+      ctx.lineTo(x + w * 0.85, y + w * 0.3); ctx.quadraticCurveTo(x + w * 0.8, y + w * 0.75, x + w * 0.2, y + w * 0.85); ctx.fill(); ctx.stroke();
+      break;
+    case 'carrot':
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.moveTo(x + w * 0.3, y + w * 0.3); ctx.lineTo(x + w * 0.62, y + w * 0.42); ctx.lineTo(x + w * 0.15, y + w * 0.92); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#4f8a34'; ctx.lineWidth = Math.max(0.8, w / 10);
+      ctx.beginPath(); ctx.moveTo(x + w * 0.48, y + w * 0.34); ctx.lineTo(x + w * 0.7, y + w * 0.1); ctx.moveTo(x + w * 0.5, y + w * 0.36); ctx.lineTo(x + w * 0.85, y + w * 0.22); ctx.stroke();
+      break;
+    case 'potato':
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.ellipse(x + w * 0.5, y + w * 0.55, w * 0.34, w * 0.25, -0.3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = it.raw ? '#8a6a3a' : '#f2d080';
+      for (const [cx, cy] of [[0.38, 0.5], [0.6, 0.62], [0.55, 0.42]]) ctx.fillRect(x + w * cx, y + w * cy, w * 0.06, w * 0.06);
+      break;
+    case 'pie':
+      // A round pie: its crust, the filling showing through the lattice.
+      ctx.fillStyle = '#d8a050';
+      ctx.beginPath(); ctx.ellipse(x + w * 0.5, y + w * 0.6, w * 0.42, w * 0.2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(x + w * 0.5, y + w * 0.56, w * 0.32, w * 0.13, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#f0c878'; ctx.lineWidth = Math.max(0.6, w / 14);
+      ctx.beginPath(); for (const d of [-0.16, 0, 0.16]) { ctx.moveTo(x + w * (0.5 + d - 0.08), y + w * 0.46); ctx.lineTo(x + w * (0.5 + d + 0.08), y + w * 0.66); } ctx.stroke();
+      break;
     case 'apple':
       ctx.fillStyle = c;
       ctx.beginPath(); ctx.arc(x + w * 0.5, y + w * 0.58, w * 0.32, 0, Math.PI * 2); ctx.fill(); ctx.stroke();

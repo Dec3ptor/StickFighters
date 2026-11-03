@@ -48,28 +48,31 @@ export function clock(t) {
 // ---- Who's who -------------------------------------------------------------------------------------
 
 export const MONSTERS = {
-  zombie: { name: 'Zombie', health: 70, speed: 0.5, weapon: 'Claws', skin: 'zombie', coins: [2, 6], loot: [['wood', 1, 3, 0.25], ['coal', 1, 2, 0.2], ['torch', 1, 3, 0.15], ['apple', 1, 2, 0.1], ['bread', 1, 1, 0.06]] },
-  skeleton: { name: 'Skeleton', health: 80, speed: 0.7, weapon: 'Beretta', skin: 'skeleton', ranged: true, coins: [4, 10], loot: [['bullets', 6, 18, 0.5], ['iron_ore', 1, 4, 0.25], ['Beretta', 1, 1, 0.03], ['healing_potion', 1, 1, 0.05]] },
+  zombie: { name: 'Zombie', health: 70, speed: 0.5, weapon: 'Claws', skin: 'zombie', coins: [2, 6], loot: [['wood', 1, 3, 0.25], ['coal', 1, 2, 0.2], ['torch', 1, 3, 0.15], ['apple', 1, 2, 0.1], ['bread', 1, 1, 0.06], ['carrot', 1, 1, 0.05], ['potato', 1, 1, 0.05]] },
+  skeleton: { name: 'Skeleton', health: 80, speed: 0.7, weapon: 'Beretta', skin: 'skeleton', ranged: true, coins: [4, 10], loot: [['bullets', 6, 18, 0.5], ['iron_ore', 1, 4, 0.25], ['bone', 1, 3, 0.6], ['Beretta', 1, 1, 0.03], ['healing_potion', 1, 1, 0.05]] },
   brute: { name: 'Brute', health: 320, speed: 0.55, weapon: 'BruteClub', skin: 'brute', coins: [20, 45], loot: [['iron_bar', 2, 5, 0.6], ['gold_bar', 1, 3, 0.35], ['ember_ore', 1, 2, 0.15], ['healing_potion', 1, 2, 0.3], ['greater_potion', 1, 1, 0.06], ['ruby', 1, 1, 0.04]] },
 };
 /** Mercenaries: a rifle, a soldier's health. */
 export const MERC = { gun: 'M4', speed: 1, most: 3 };
 const MERC_NAMES = ['Vasquez', 'Drake', 'Hicks', 'Frost', 'Apone', 'Dietrich', 'Hudson', 'Ferro', 'Spunkmeyer', 'Crowe', 'Wierzbowski'];
 
-/** Which side a soldier's on: monsters together, townsfolk together, each player with their mercenaries. */
+/** Which side a soldier's on: monsters together, townsfolk together, animals together, each player with their mercenaries. */
 export function sideOf(s) {
   const k = s.npc?.kind;
   // (A monster on someone's side, summoned in dev mode: theirs.)
-  return k === 'monster' ? (s.npc.ally != null ? `p${s.npc.ally}` : 'monsters') : k === 'merc' ? `p${s.npc.owner}` : k === 'townsfolk' ? 'town' : `p${s.id}`;
+  return k === 'monster' ? (s.npc.ally != null ? `p${s.npc.ally}` : 'monsters') : k === 'merc' ? `p${s.npc.owner}` : k === 'townsfolk' ? 'town' : k === 'animal' ? 'animals' : `p${s.id}`;
 }
 /**
  * Whether `a` can hurt `b` in `world`: not on the same side, and players (and their mercenaries)
  * only with PvP on. Townsfolk (townsfolk.js) only fight if they're guards, and only monsters:
- * nothing else hurts them, and they hurt nobody else.
+ * nothing else hurts them, and they hurt nobody else. Animals (animals.js) are hunted by players
+ * only (PvP or not), and hurt nobody, but for one angry with someone (a polar bear that's been hurt).
  */
 export function foes(world, a, b) {
   const sa = sideOf(a), sb = sideOf(b);
   if (sa === sb) return false;
+  if (sa === 'animals') return a.npc.angry != null && a.npc.angry === b.id && !b.npc;
+  if (sb === 'animals') return !a.npc;
   if (sa === 'town') return !!a.npc.guard && sb === 'monsters';
   if (sb === 'town') return !!b.npc.guard && sa === 'monsters';
   if (sa === 'monsters' || sb === 'monsters') return true;
@@ -83,7 +86,7 @@ export const isMerc = s => s.npc?.kind === 'merc';
 /** The weapon an NPC carries, ready to use (endless rounds: they don't run out). Townsfolk: theirs, if any. */
 export function armNpc(s) {
   const n = s.npc;
-  const id = n.kind === 'monster' ? MONSTERS[n.type].weapon : n.kind === 'townsfolk' ? n.weapon : n.gun || MERC.gun;
+  const id = n.kind === 'monster' ? MONSTERS[n.type].weapon : n.kind === 'townsfolk' || n.kind === 'animal' ? n.weapon : n.gun || MERC.gun;
   const def = WEAPONS[id];
   if (!def) {
     // (Nothing: their hands, or what they work with.)

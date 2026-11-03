@@ -5,7 +5,8 @@
 // Items go by key (text), which saved worlds keep: 'dirt', 'pickaxe', 'M4', 'bullets'...
 //   kind   'block' (places a block), 'wall' (a wall behind), 'tool' (pick, axe, hammer),
 //          'weapon' (one of WEAPONS), 'ammo', 'material', 'food' (eaten: heals), 'contract',
-//          'quest' (carried for a quest: quests.js), 'gear' (worn: gear.js; each piece its own, slot.g)
+//          'quest' (carried for a quest: quests.js), 'gear' (worn: gear.js; each piece its own, slot.g),
+//          'seed' (planted on farmland: farming.js)
 //   stack  how many fit in a slot
 
 import { BLOCKS, WALLS, BLOCK_BY_KEY, SHULKER_BOXES } from './blocks.js';
@@ -45,15 +46,53 @@ item('emerald', 'Emerald', 'material', { color: '#1fc45c', gem: true });
 item('topaz', 'Topaz', 'material', { color: '#f2a81e', gem: true });
 item('amethyst', 'Amethyst', 'material', { color: '#a052ea', gem: true });
 item('diamond', 'Diamond', 'material', { color: '#c4f6ff', gem: true });
-// Food and potions: eaten (used with either hand: a click), they heal (heal: how much). Bought in
-// towns (trade.js), baked, picked from trees, and dropped by monsters now and then.
-item('apple', 'Apple', 'food', { stack: 99, heal: 12, color: '#d8342c', look: 'apple' });
+// Food and potions: eaten (used with either hand: a click). Where there's hunger (hunger.js: a
+// world's setting, on unless it's turned off) food fills you up (food: points of the twenty;
+// sat: saturation, how long that lasts) and potions heal; with hunger off, food heals too (heal:
+// how much). Bought in towns (trade.js), cooked, picked, grown (farming.js), hunted (animals.js),
+// and dropped by monsters now and then. raw: better cooked (sick: the chance it makes you ill).
+item('apple', 'Apple', 'food', { stack: 99, heal: 12, food: 4, sat: 2.4, color: '#d8342c', look: 'apple' });
 // (From berry bushes: worlds made since forests.)
-item('berries', 'Berries', 'food', { stack: 99, heal: 8, color: '#b0223c', look: 'berries' });
-item('bread', 'Bread', 'food', { stack: 99, heal: 25, color: '#c88a3a', look: 'bread' });
-item('stew', 'Mushroom stew', 'food', { stack: 20, heal: 50, color: '#9a6a3a', look: 'stew' });
+item('berries', 'Berries', 'food', { stack: 99, heal: 8, food: 2, sat: 0.4, color: '#b0223c', look: 'berries' });
+item('bread', 'Bread', 'food', { stack: 99, heal: 25, food: 5, sat: 6, color: '#c88a3a', look: 'bread' });
+item('stew', 'Mushroom stew', 'food', { stack: 20, heal: 50, food: 6, sat: 7.2, color: '#9a6a3a', look: 'stew' });
 item('healing_potion', 'Healing potion', 'food', { stack: 20, heal: 80, color: '#e0303c', look: 'potion' });
 item('greater_potion', 'Greater healing potion', 'food', { stack: 20, heal: 400, color: '#ff5aa0', look: 'potion' });
+// Meat and fish (animals.js): raw, a little; cooked at a campfire or furnace (crafting.js), a meal.
+const meat = (key, name, food, sat, heal, color, look, o = {}) => item(key, name, 'food', { stack: 99, heal, food, sat, color, look, ...o });
+meat('raw_beef', 'Raw beef', 3, 1.8, 6, '#c8484a', 'meat', { raw: true });
+meat('steak', 'Steak', 8, 12.8, 30, '#7a4428', 'meat');
+meat('raw_pork', 'Raw porkchop', 3, 1.8, 6, '#e8908a', 'chop', { raw: true });
+meat('cooked_pork', 'Cooked porkchop', 8, 12.8, 30, '#a8683a', 'chop');
+meat('raw_mutton', 'Raw mutton', 2, 1.2, 5, '#c85a5a', 'meat', { raw: true });
+meat('cooked_mutton', 'Cooked mutton', 6, 9.6, 24, '#8a4a2a', 'meat');
+meat('raw_chicken', 'Raw chicken', 2, 1.2, 4, '#f0b4a4', 'drumstick', { raw: true, sick: 0.3 });
+meat('cooked_chicken', 'Cooked chicken', 6, 7.2, 24, '#c8803a', 'drumstick');
+meat('raw_venison', 'Raw venison', 3, 1.8, 6, '#a83a3a', 'meat', { raw: true });
+meat('cooked_venison', 'Venison steak', 8, 12, 30, '#6a3a22', 'meat');
+meat('raw_rabbit', 'Raw rabbit', 3, 1.8, 5, '#e8a4a0', 'drumstick', { raw: true });
+meat('cooked_rabbit', 'Cooked rabbit', 5, 6, 20, '#b8703a', 'drumstick');
+meat('raw_fish', 'Raw fish', 2, 0.4, 4, '#8aa4b8', 'fish', { raw: true });
+meat('cooked_fish', 'Cooked fish', 5, 6, 20, '#c88a4a', 'fish');
+meat('crab_meat', 'Crab meat', 2, 1.2, 4, '#e86a4a', 'claw', { raw: true });
+meat('cooked_crab', 'Cooked crab', 6, 7.2, 24, '#c84a2a', 'claw');
+// Crops (farming.js): eaten, or planted on farmland (plant: the crop they grow). And what's made of them.
+meat('carrot', 'Carrot', 3, 3.6, 8, '#f08a2a', 'carrot', { plant: 'carrot' });
+meat('potato', 'Potato', 1, 0.6, 3, '#c8a058', 'potato', { plant: 'potato', raw: true });
+meat('baked_potato', 'Baked potato', 5, 6, 20, '#d89a48', 'potato');
+meat('berry_pie', 'Berry pie', 8, 4.8, 30, '#a8302a', 'pie');
+meat('rabbit_stew', 'Rabbit stew', 10, 12, 50, '#a87a3a', 'stew', { stack: 20 });
+// (A golden apple heals even where there's hunger.)
+meat('golden_apple', 'Golden apple', 4, 9.6, 80, '#f2c230', 'apple', { heals: 40 });
+// What animals give (animals.js), and farming (farming.js): seeds (from tall grass; planted on
+// farmland), bone meal (crops grow at once), flint (from gravel), eggs (chickens lay them).
+item('leather', 'Leather', 'material', { color: '#8a5a32' });
+item('feather', 'Feather', 'material', { color: '#f2f2ee' });
+item('bone', 'Bone', 'material', { color: '#e8e2d0' });
+item('bone_meal', 'Bone meal', 'material', { color: '#f4f2ea', meal: true });
+item('egg', 'Egg', 'material', { stack: 16, color: '#efe2c4' });
+item('flint', 'Flint', 'material', { color: '#3a3a3e' });
+item('wheat_seeds', 'Wheat seeds', 'seed', { color: '#8a9a3a', plant: 'wheat' });
 // Quest items (quests.js): carried for someone, or found for them; not for sale.
 for (const [key, name, color] of [
   ['parcel', 'Parcel', '#c8a070'], ['letter', 'Sealed letter', '#f0e6c8'], ['locket', 'Silver locket', '#dfe4ec'], ['journal', 'Old journal', '#8a5a2a'],
@@ -83,6 +122,10 @@ item('crystal_pickaxe', 'Crystal pickaxe', 'tool', { stack: 1, tool: 'pick', pow
 item('diamond_pickaxe', 'Diamond pickaxe', 'tool', { stack: 1, tool: 'pick', power: 4.4, every: 8, tier: 5, color: '#c4f6ff', handle: '#2a2a34' });
 item('axe', 'Copper axe', 'tool', { stack: 1, tool: 'axe', power: 1.2, every: 15, tier: 1, color: '#d07a3a', handle: '#7a5634' });
 item('hammer', 'Builder\'s hammer', 'tool', { stack: 1, tool: 'hammer', power: 1.5, every: 12, tier: 1, color: '#8a8f96', handle: '#7a5634' });
+// (Farming and animals: a hoe tills dirt and grass into farmland; shears clip a sheep's wool:
+// farming.js, animals.js. Anything else they hit, as a hand would.)
+item('hoe', 'Hoe', 'tool', { stack: 1, tool: 'hoe', power: 1, every: 12, tier: 0, color: '#9aa0a6', handle: '#7a5634' });
+item('shears', 'Shears', 'tool', { stack: 1, tool: 'shears', power: 1, every: 10, tier: 0, color: '#c9ccd2', handle: '#5a5e66' });
 
 // Ammunition, and the game's weapons (each takes one kind of ammo, or uses itself up: grenades,
 // sheep, dynamite...; melee weapons and the rope need none).

@@ -9,7 +9,8 @@
 
 import { MONSTERS } from './monsters.js';
 import { RARITY, RARITIES } from './gear.js';
-import { SUMMONS, STRIKES, TIMES, devState } from './devtools.js';
+import { SUMMONS, ANIMAL_SUMMONS, STRIKES, TIMES, devState } from './devtools.js';
+import { ANIMALS } from './animals.js';
 import { keyLabel } from '../keys.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -66,6 +67,7 @@ export class DevPanel {
         <section class="dp-box">
           <h3 class="inv-label">Summon <span class="dp-where" data-where></span></h3>
           <div class="dp-row">${SUMMONS.map(t => btn('summon', esc(MONSTERS[t].name), ` data-type="${t}"`)).join('')}${btn('merc', 'Mercenary', '', 'A soldier who follows you and shoots monsters')}</div>
+          <div class="dp-row"><span class="dp-sub">Animals</span>${ANIMAL_SUMMONS.map(t => btn('summon', esc(ANIMALS[t].name), ` data-type="${t}"`)).join('')}</div>
           <div class="dp-row">
             <span class="dp-sub">How many</span>${[1, 5, 10].map(n => `<button type="button" class="small" data-n="${n}">${n}</button>`).join('')}
             <label class="dp-check"><input type="checkbox" data-champ> Named champions</label>

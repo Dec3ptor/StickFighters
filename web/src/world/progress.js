@@ -9,6 +9,7 @@
 
 import { WEAPONS } from '../weapons.js';
 import { gearStats } from './gear.js';
+import { tooHungry } from './hunger.js';
 
 /** The highest level there is. */
 export const MAX_LEVEL = 50;
@@ -124,10 +125,10 @@ export const lootScale = s => 1 + perkRank(s, 'scavenger') * 0.15 + (gearStats(s
 /** The chance of twice the ore or gem from a block. */
 export const doubleOreChance = s => perkRank(s, 'prospector') * 0.08;
 
-/** Each update (worldplay.js): the Second wind perk heals a player out of a fight. */
+/** Each update (worldplay.js): the Second wind perk heals a player out of a fight (not when they're hungry: hunger.js). */
 export function regenTick(game, s) {
   const r = perkRank(s, 'regen') + (s.world?.gear ? gearStats(s).regen || 0 : 0);
-  if (!r || !s.alive || game.tick % 120 !== s.id % 120) return;
+  if (!r || !s.alive || game.tick % 120 !== s.id % 120 || tooHungry(game, s)) return;
   if (game.tick - (s.lastHurtTick ?? -1e9) < 300 || s.health >= s.maxHealth) return;
   s.health = Math.min(s.maxHealth, s.health + r);
 }

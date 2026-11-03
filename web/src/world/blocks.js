@@ -214,6 +214,21 @@ export const PETALS = plant('petals', 'Fallen petals', '#f4b0cc', 'petals');
 // ---- A sail (worlds made since capitals: boats in harbours): cloth, walked through.
 export const SAIL = def('sail', 'Sail', { solid: false, hard: 1, tool: 'hand', resist: 0, drop: null, clear: true, color: '#efe6d2', pattern: 'sail' });
 
+// ---- Farming, cooking and wool (farming.js, crafting.js, animals.js) ----------------------------------
+// Farmland: dirt or grass tilled with a hoe, for crops. Crops: planted on it (seeds, a carrot, a
+// potato), they grow a stage at a time (farming.js; faster with water near), and come away by
+// hand: ripe, with what they give. A campfire cooks (a crafting station: crafting.js) and lights
+// the night; wool, from sheep, is built with, and made into beds and carpets.
+export const FARMLAND = def('farmland', 'Farmland', { hard: 2, resist: 0, drop: 'dirt', color: '#5e4026', dark: '#3e2a18', pattern: 'farmland' });
+const crop = (kind, stage, drop, color) => def(`${kind}_crop${stage}`, `${kind[0].toUpperCase()}${kind.slice(1)} (${stage === 3 ? 'ripe' : 'growing'})`,
+  { solid: false, hard: 0, tool: 'hand', resist: 0, drop, clear: true, color, pattern: 'crop', crop: kind, stage });
+export const WHEAT_CROPS = [crop('wheat', 0, 'wheat_seeds', '#7aa23a'), crop('wheat', 1, 'wheat_seeds', '#8aa83a'), crop('wheat', 2, 'wheat_seeds', '#a8aa3e'), crop('wheat', 3, 'wheat', '#d8b04a')];
+export const CARROT_CROPS = [crop('carrot', 0, 'carrot', '#5a9a3a'), crop('carrot', 1, 'carrot', '#5a9a3a'), crop('carrot', 2, 'carrot', '#4f8f34'), crop('carrot', 3, 'carrot', '#f08a2a')];
+export const POTATO_CROPS = [crop('potato', 0, 'potato', '#5a9a3a'), crop('potato', 1, 'potato', '#5a9a3a'), crop('potato', 2, 'potato', '#4f8f34'), crop('potato', 3, 'potato', '#c8a058')];
+export const CAMPFIRE = def('campfire', 'Campfire', furniture({ hard: 1, tool: 'any', resist: 2, wood: true, light: 13, color: '#d8642a', pattern: 'campfire', station: 'campfire' }));
+export const WOOL = def('wool', 'Wool', { hard: 1, tool: 'any', resist: 0, color: '#eeebe2', pattern: 'wool' });
+export const CARPET = def('carpet', 'Carpet', furniture({ hard: 0, tool: 'hand', resist: 0, color: '#b03a3a', pattern: 'carpet' }));
+
 /** The gem blocks (they glint). */
 export const GEMS = new Set([RUBY, SAPPHIRE, EMERALD, TOPAZ, AMETHYST, DIAMOND]);
 
@@ -233,6 +248,9 @@ export const LIQUID = Uint8Array.from(B, b => (b.liquid ? 1 : 0));
 export const TRUNKS = new Set([TRUNK, ...B.filter(b => b.trunk).map(b => b.id)]);
 export const LEAVES_ALL = new Set([LEAVES, PINE_LEAVES, JUNGLE_LEAVES, ...B.filter(b => b.leaf).map(b => b.id)]);
 export const CAPS = new Set(B.filter(b => b.cap).map(b => b.id));
+/** Crops (farming.js): every stage of every one; and each one's next stage (none: ripe). */
+export const CROPS = new Set(B.filter(b => b.crop).map(b => b.id));
+export const CROP_NEXT = new Map(B.filter(b => b.crop && b.stage < 3).map(b => [b.id, b.id + 1]));
 
 // ---- Walls: the layer behind (dug-out caves keep theirs; rooms are walled in) ----------------
 const W = [];

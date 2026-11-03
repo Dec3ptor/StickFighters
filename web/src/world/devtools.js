@@ -10,6 +10,7 @@ import * as K from './blocks.js';
 import { TILE, AIR } from './blocks.js';
 import { WORLD_H } from './worldgen.js';
 import { MONSTERS, spawnMonster, hireMerc, isHostile, DAY_TICKS } from './monsters.js';
+import { ANIMALS, spawnAnimal } from './animals.js';
 import { devOn, setDev, openSpotNear, moveTo, devKey } from './devmode.js';
 import { strikeAt, explode } from '../combat.js';
 import { rollGear, RARITY } from './gear.js';
@@ -22,6 +23,8 @@ import { WEAPONS } from '../weapons.js';
 
 /** What can be summoned (MONSTERS' kinds), and the strikes that can be called down. */
 export const SUMMONS = Object.keys(MONSTERS);
+/** The animals that can be summoned (animals.js). */
+export const ANIMAL_SUMMONS = Object.keys(ANIMALS);
 export const STRIKES = { AirStrike: 'Air strike', NapalmStrike: 'Napalm strike', ConcreteDonkey: 'Concrete donkey' };
 /** The times of day there are buttons for: [hour, what it's called]. */
 export const TIMES = [[7, 'morning'], [12, 'noon'], [19, 'evening'], [0, 'midnight']];
@@ -109,6 +112,14 @@ export function devAct(game, s, act, arg = null, gm = false) {
     }
     // ---- Summoning, at the crosshair (arg: { type, n, ally, champion, x, y }: x, y its tile).
     case 'summon': {
+      // (An animal: a herd of them.)
+      if (ANIMALS[arg?.type]) {
+        const n = Math.max(1, Math.min(20, arg.n | 0 || 1)), { tx, ty } = spotOf(s, arg), at = openSpotNear(world, tx, ty), def = ANIMALS[arg.type];
+        for (let i = 0; i < n; i++) spawnAnimal(game, arg.type, at.x + ((i % 2 ? 1 : -1) * Math.ceil(i / 2)) * 14, at.y);
+        game.fx?.ring(at.x, at.y - 6, '#8ad45a');
+        const name = def.name.toLowerCase();
+        return n > 1 ? `${n} ${['sheep', 'deer', 'fish'].includes(name) ? name : `${name}s`}` : `A ${name}`;
+      }
       const a = arg && typeof arg === 'object' ? arg : {}, type = MONSTERS[a.type] ? a.type : SUMMONS[0], def = MONSTERS[type];
       const n = Math.max(1, Math.min(20, a.n | 0 || 1)), { tx, ty } = spotOf(s, a), at = openSpotNear(world, tx, ty);
       let named = null;
