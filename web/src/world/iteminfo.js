@@ -10,6 +10,7 @@ import { RECIPES, STATION_NAMES, madeFrom } from './crafting.js';
 import { valueOf, SHOPS, offerFor } from './trade.js';
 import { RARITY, gearLines, gearValue, rarityOf } from './gear.js';
 import { ATT_SLOTS, attLines, effects } from './attachments.js';
+import { BUILDINGS, kitNeeds } from './kits.js';
 
 /** Each kind of thing's colour (bright: they're shown on dark panels). */
 export const CATEGORY_COLORS = {
@@ -140,8 +141,13 @@ export function itemDetails(it, n = 1, g = null) {
       break;
     }
     case 'material':
+      // (A blueprint: what its building takes, kits.js.)
+      if (it.kind === 'blueprint') {
+        kind = `Blueprint · ${BUILDINGS[it.kit]?.name ?? ''}`;
+        lines.push('Held, its building shows where it would go (R flips it); a click builds it', `Takes ${kitNeeds(it.kit).map(([k, m]) => `${m} ${itemOf(k)?.name.toLowerCase() ?? k}`).join(', ')}`, 'Kept: used again and again');
+      }
       // (Farming: farming.js.)
-      if (it.plant) lines.push('Planted on farmland (till dirt or grass with a hoe)');
+      else if (it.plant) lines.push('Planted on farmland (till dirt or grass with a hoe)');
       else if (it.meal) lines.push('Click a crop: it grows; click grass: grass and flowers');
       break;
     default: break;

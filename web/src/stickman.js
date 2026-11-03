@@ -93,8 +93,13 @@ function sample(i, t, loop) {
 const STANDING = {
   neck: [0, -14], hip: [0, -2], fk: [-5, 5], bk: [5, 5], ff: [-5, 12], bf: [5, 12],
 };
+// Sitting in a chair (worlds: decor.js): the hips down on its seat, thighs forward, shins down.
+const SITTING = {
+  neck: [1.5, -9], hip: [2.5, 3], fk: [-4.5, 3], bk: [-3.5, 4], ff: [-5, 12], bf: [-3, 12],
+};
 
 function legPose(s) {
+  if (s.sitting) return SITTING;
   if (!LEGS) return STANDING;
   const b = s.body, a = s.anim;
   if (!b.onGround) {
@@ -176,7 +181,8 @@ export function buildPose(s) {
   let pose = poses.get(s);
   if (!pose) poses.set(s, pose = newPose());
   const p = legPose(s);
-  const m = -s.facing; // poses face left; mirror when facing right
+  // (Poses face left; mirror when facing right. Sat in a chair: as it faces, whichever way they look.)
+  const m = s.sitting ? -1 : -s.facing;
   const nx = p.neck[0] * m, ny = p.neck[1], hx = p.hip[0] * m, hy = p.hip[1];
   const fkx = p.fk[0] * m, fky = p.fk[1], ffx = p.ff[0] * m, ffy = p.ff[1];
   const bkx = p.bk[0] * m, bky = p.bk[1], bfx = p.bf[0] * m, bfy = p.bf[1];

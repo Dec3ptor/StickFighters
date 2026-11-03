@@ -6,10 +6,11 @@
 import { BLOCKS, TILE } from './blocks.js';
 import { ITEMS, itemOf } from './items.js';
 import { BASES, namedGear } from './gear.js';
+import { MORE_STATIONS, MORE_STATION_NAMES, CRAFT_RECIPES } from './craftitems.js';
 
 /** The crafting stations, in the order they're usually built. (A campfire: cooking, anywhere.) */
-export const STATIONS = ['workbench', 'furnace', 'anvil', 'gunsmith', 'campfire'];
-export const STATION_NAMES = { workbench: 'Workbench', furnace: 'Furnace', anvil: 'Anvil', gunsmith: "Gunsmith's bench", campfire: 'Campfire' };
+export const STATIONS = ['workbench', 'furnace', 'anvil', 'gunsmith', 'campfire', ...MORE_STATIONS];
+export const STATION_NAMES = { workbench: 'Workbench', furnace: 'Furnace', anvil: 'Anvil', gunsmith: "Gunsmith's bench", campfire: 'Campfire', ...MORE_STATION_NAMES };
 /** How near a station has to be to craft at it (tiles from the soldier's middle, across and up or down). */
 export const STATION_REACH = { x: 5, y: 4 };
 
@@ -175,6 +176,9 @@ recipe('drum_mag', 1, [['iron_bar', 6], ['copper_bar', 3]], 'gunsmith');
 recipe('quick_mag', 1, [['iron_bar', 2], ['copper_bar', 2]], 'gunsmith');
 recipe('hollow_points', 4, [['copper_bar', 2], ['coal', 1]], 'gunsmith');
 
+// ---- Building and decorating (craftitems.js): stoves, looms, mason's benches, drafting tables ----
+for (const [key, n, of, at] of CRAFT_RECIPES) recipe(key, n, of, at);
+
 export const RECIPES = R;
 
 /**
@@ -220,6 +224,8 @@ export function stationsNear(world, x, y, out = new Set()) {
     for (let tx = cx - STATION_REACH.x; tx <= cx + STATION_REACH.x; tx++) {
       const st = BLOCKS[world.tile(tx, ty)].station;
       if (st) out.add(st);
+      // (A stove cooks what a campfire does.)
+      if (st === 'stove') out.add('campfire');
     }
   }
   return out;

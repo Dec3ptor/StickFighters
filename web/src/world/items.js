@@ -13,6 +13,7 @@ import { BLOCKS, WALLS, BLOCK_BY_KEY, SHULKER_BOXES } from './blocks.js';
 import { WEAPONS } from '../weapons.js';
 import { BASES, rarityOf } from './gear.js';
 import { ATTACHMENTS, cleanAtt } from './attachments.js';
+import { addCraftItems } from './craftitems.js';
 
 export const HOTBAR = 10;
 export const BAG = 30;
@@ -174,6 +175,9 @@ export const CRATE_LOOT = [
   ['suppressor', 1, 1, 0.4], ['hollow_points', 2, 6, 0.8], ['laser', 1, 1, 0.4],
   ['recall_scroll', 1, 2, 1], ['Skunk', 1, 2, 0.6], ['OldWoman', 1, 1, 0.4], ['AirStrike', 1, 1, 0.4], ['NapalmStrike', 1, 1, 0.3], ['Earthquake', 1, 1, 0.2], ['Kamikaze', 1, 1, 0.4],
 ];
+
+// (Building and decorating: the second half of crafting, craftitems.js.)
+addCraftItems(item, I);
 
 export const ITEMS = I;
 export const itemOf = key => I.get(key) || null;

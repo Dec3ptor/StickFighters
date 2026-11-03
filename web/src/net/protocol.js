@@ -14,7 +14,7 @@ import { ITEMS } from '../world/items.js';
 import { RARITIES } from '../world/gear.js';
 import { ACTS, ACT_ID } from '../useanim.js';
 
-export const PROTOCOL = 27;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 28;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -195,8 +195,8 @@ export function encodeWorld(game) {
       (s.burnTicks > 0 ? 32 : 0) | (s.spawnProtect > 0 ? 64 : 0) | (s.kamikaze ? 128 : 0));
     // (16: what's in their hands follows, in a world: worldplay.js's hold.)
     const hands = s.hands && (s.hands[0] || s.hands[1]) ? s.hands : null;
-    // (32: wings on their back; 64: gliding on them: worldplay.js.)
-    w.u8((s.facing > 0 ? 1 : 0) | (b.rope ? 2 : 0) | (b.padLaunch ? 4 : 0) | (s.jugger > 0 ? 8 : 0) | (hands ? 16 : 0) | (s.wings ? 32 : 0) | (b.glide ? 64 : 0));
+    // (32: wings on their back; 64: gliding on them: worldplay.js. 128: sitting in a chair: decor.js.)
+    w.u8((s.facing > 0 ? 1 : 0) | (b.rope ? 2 : 0) | (b.padLaunch ? 4 : 0) | (s.jugger > 0 ? 8 : 0) | (hands ? 16 : 0) | (s.wings ? 32 : 0) | (b.glide ? 64 : 0) | (s.sitting ? 128 : 0));
     w.f32(b.x); w.f32(b.y);
     w.i16(b.vx * 100); w.i16(b.vy * 100);
     w.u16(angleToU16(s.aim));
@@ -376,7 +376,7 @@ export function decodeSnapshot(data) {
     const f = r.u8(), g = r.u8();
     s.alive = !!(f & 1); s.crouching = !!(f & 2); s.onGround = !!(f & 4); s.jetting = !!(f & 8); s.hasJetpack = !!(f & 16);
     s.burning = !!(f & 32); s.protected = !!(f & 64); s.kamikaze = !!(f & 128);
-    s.facing = g & 1 ? 1 : -1; const roped = !!(g & 2); s.padLaunch = !!(g & 4); s.jugger = g & 8 ? 1 : 0; const handed = !!(g & 16); s.wings = !!(g & 32); s.gliding = !!(g & 64);
+    s.facing = g & 1 ? 1 : -1; const roped = !!(g & 2); s.padLaunch = !!(g & 4); s.jugger = g & 8 ? 1 : 0; const handed = !!(g & 16); s.wings = !!(g & 32); s.gliding = !!(g & 64); s.sitting = !!(g & 128);
     s.x = r.f32(); s.y = r.f32(); s.vx = r.i16() / 100; s.vy = r.i16() / 100;
     s.aim = u16ToAngle(r.u16());
     s.health = r.u8(); s.armour = r.u8();

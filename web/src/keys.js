@@ -35,6 +35,8 @@ export const ACTIONS = [
   { id: 'buy', name: 'Buy menu (Defuse)', group: 'Actions', keys: ['KeyB'] },
   { id: 'inventory', name: 'Inventory: your things, crafting (worlds)', group: 'Actions', keys: ['KeyB', 'KeyI'] },
   { id: 'journal', name: 'Journal: your quests, level and perks (worlds)', group: 'Actions', keys: ['KeyJ'] },
+  { id: 'pickBlock', name: 'Pick block: what\'s under the crosshair into your hand (worlds)', group: 'Actions', keys: ['Mouse1'] },
+  { id: 'undo', name: 'Undo what you last built (worlds, a few times back)', group: 'Actions', keys: ['KeyZ'] },
   { id: 'gadget', name: 'Gadget, or drop your gun or the bomb (Defuse)', group: 'Actions', keys: ['KeyG'], press: true },
   { id: 'streak', name: 'Use a kill streak reward', group: 'Actions', keys: ['KeyX'], press: true },
   { id: 'streakPick', name: 'Pick which kill streak reward', group: 'Actions', keys: ['KeyZ'], press: true },
@@ -54,8 +56,8 @@ export const MAX_KEYS = 4;
 // Actions that may share a key: E plants or defuses where you can, and switches weapons anywhere
 // else; Space jumps, and spectating, switches to the free camera; X uses a kill streak reward,
 // and in a world (no kill streaks) is the right hand's; B is Defuse's buy menu, and in a world
-// (nothing to buy that way) your inventory.
-const SHARED = [['use', 'next'], ['freeCam', 'jump'], ['hand2', 'streak'], ['buy', 'inventory']];
+// (nothing to buy that way) your inventory; Z picks a kill streak reward, and in a world undoes building.
+const SHARED = [['use', 'next'], ['freeCam', 'jump'], ['hand2', 'streak'], ['buy', 'inventory'], ['undo', 'streakPick']];
 const shares = (a, b) => SHARED.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
 
 /**

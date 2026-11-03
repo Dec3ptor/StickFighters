@@ -6,7 +6,8 @@
 // onto a stack of the same thing); right click splits a stack in two; shift-click sends it
 // across (between the hotbar and the bag, or between you and the chest); a number key puts what
 // the mouse is over in that hotbar slot. Drop throws the stack picked up; Sort puts the bag in
-// order. Click a recipe to make it (shift-click: five times); type to find one. Hover over
+// order. Click a recipe to make it (shift-click: five times); type to find one, or pick a tab
+// (building, furniture, decor, lights, colours, kits...: craftitems.js). Hover over
 // anything for a card of what it is: what it does, what it's worth, what it's made from. In dev
 // mode (devmode.js) it's all free: every recipe, anywhere, from nothing, and everything else
 // there is besides (crafting.js's DEV_RECIPES), to find by typing.
@@ -22,6 +23,7 @@ import { setRightHand } from './worldplay.js';
 import { itemDetails, categoryOf, itemColor } from './iteminfo.js';
 import { SLOTS, SLOT_NAMES, slotKind, gearStats, armorCut, STATS, RARITY } from './gear.js';
 import { equip, unequip } from './worldplay.js';
+import { CRAFT_CATS, craftCategory } from './craftitems.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 // The order recipes are listed in: by hand first, then by station.
@@ -46,6 +48,7 @@ export class InventoryScreen {
     this.picked = null;    // the stack picked up: { box: 'me' | 'chest', i }
     this.seen = '';        // (what the slots and recipes were last drawn for)
     this.near = new Set();
+    this.cat = 'all';      // the crafting tab picked (craftitems.js's CRAFT_CATS)
     // In someone else's world: what's done here goes to the host (fn({ op, ... })), which sends
     // our things back changed (worldnet.js). Null: done here.
     this.remote = null;
@@ -91,6 +94,7 @@ export class InventoryScreen {
         <div class="inv-craft">
           <h3 class="inv-label">Crafting <span class="craft-near" data-near></span></h3>
           <div class="craft-find"><input type="search" data-find placeholder="Find a recipe…" spellcheck="false" aria-label="Find a recipe"><label class="craft-only"><input type="checkbox" data-only> Only what I can make now</label></div>
+          <div class="craft-tabs" data-tabs role="tablist">${Object.entries(CRAFT_CATS).map(([k, n]) => `<button type="button" class="craft-tab${k === 'all' ? ' on' : ''}" data-tab="${k}" role="tab">${esc(n)}<span class="craft-count"></span></button>`).join('')}</div>
           <div class="craft-list" data-recipes>${RECIPES.map(r => this.recipeRow(r)).join('')}</div>
         </div>
       </div>`;
@@ -149,6 +153,9 @@ export class InventoryScreen {
     this.root.querySelector('[data-act="take-all"]').addEventListener('click', () => { if (this.remote) this.remote({ op: 'take-all' }); else this.everything(this.chest?.inv, this.inv); });
     this.root.querySelector('[data-act="put-all"]').addEventListener('click', () => { if (this.remote) this.remote({ op: 'put-all' }); else this.everything(this.inv, this.chest?.inv, HOTBAR); });
     this.root.querySelector('[data-only]').addEventListener('change', () => this.refresh(true));
+    // (The tabs: what kind of thing's listed. Finding by name looks through all of them.)
+    this.tabs = [...this.root.querySelectorAll('[data-tab]')];
+    for (const b of this.tabs) b.addEventListener('click', () => { this.cat = b.dataset.tab; this.refresh(true); });
     this.findEl = this.root.querySelector('[data-find]');
     this.findEl.addEventListener('input', () => this.refresh(true));
     // (Typing in it: the keys are its own, not the game's or the screen's.)
@@ -166,7 +173,7 @@ export class InventoryScreen {
 
   recipeRow(r) {
     const it = itemOf(r.key);
-    return `<button type="button" class="craft-row${r.dev ? ' dev' : ''}" data-recipe="${r.id}">
+    return `<button type="button" class="craft-row${r.dev ? ' dev' : ''}" data-recipe="${r.id}" data-cat="${craftCategory(it)}">
       <canvas width="48" height="32" aria-hidden="true"></canvas>
       <span class="craft-name">${esc(it.name)}${r.n > 1 ? ` <small>× ${r.n}</small>` : ''}</span>
       <span class="craft-of">${r.dev ? 'From nothing' : esc(madeFrom(r))}</span>
@@ -201,7 +208,7 @@ export class InventoryScreen {
     this.chest = chest;
     this.picked = null;
     this.chestEl.classList.toggle('hidden', !chest);
-    this.chestEl.querySelector('[data-chest-name]').textContent = chest?.kind === 'ender' ? 'Ender chest (yours, the same in every one)' : chest?.kind === 'shulker' ? `${chest.name} (picked up, it keeps what's in it)` : 'Chest';
+    this.chestEl.querySelector('[data-chest-name]').textContent = chest?.kind === 'ender' ? 'Ender chest (yours, the same in every one)' : chest?.kind === 'shulker' ? `${chest.name} (picked up, it keeps what's in it)` : chest?.name === 'The cabinet' ? 'Cabinet' : 'Chest';
     this.root.querySelector('h2').textContent = chest ? `Your things, and ${chest.kind === 'ender' ? 'your ender chest' : chest.kind === 'shulker' ? `the ${(chest.name || 'shulker box').toLowerCase()}` : 'the chest'}` : 'Your things';
     for (const k of this.root.querySelectorAll('[data-inv-key]')) k.textContent = keyLabel('inventory');
     for (const k of this.root.querySelectorAll('[data-hand-key]')) k.textContent = keyLabel('hand2');
@@ -329,7 +336,7 @@ export class InventoryScreen {
     const near = stationsNear(this.game.world, me.x, me.y - 8, this.near);
     // (Dev mode: everything's free. Someone else's world: when the host says so, in a creative world.)
     const free = this.free = devView(me);
-    const seen = `${inv.version}|${this.chest?.inv.version ?? ''}|${[...near].join()}|${me.world.slot}|${me.world.slot2}|${this.picked ? `${this.picked.box}${this.picked.i}` : ''}|${this.onlyEl.checked}|${this.findEl.value}|${me.world.gearV || 0}|${free}`;
+    const seen = `${inv.version}|${this.chest?.inv.version ?? ''}|${[...near].join()}|${me.world.slot}|${me.world.slot2}|${this.picked ? `${this.picked.box}${this.picked.i}` : ''}|${this.onlyEl.checked}|${this.findEl.value}|${me.world.gearV || 0}|${free}|${this.cat}`;
     if (!force && seen === this.seen) return;
     this.seen = seen;
     for (const b of this.slots) {
@@ -377,7 +384,7 @@ export class InventoryScreen {
     if (free) this.makeDevRows();
     const coins = inv.count('coins');
     this.coinsEl.textContent = `${coins} coin${coins === 1 ? '' : 's'}`;
-    const only = this.onlyEl.checked, find = this.findEl.value.trim().toLowerCase(), order = [];
+    const only = this.onlyEl.checked, find = this.findEl.value.trim().toLowerCase(), order = [], can = {};
     for (const r of this.devRows ? [...RECIPES, ...DEV_RECIPES] : RECIPES) {
       const row = this.rows.get(r);
       // (Dev mode's own rows: only in dev mode; else hidden, at the end.)
@@ -387,10 +394,19 @@ export class InventoryScreen {
       row.classList.toggle('away', !here);
       // (Found by its name, what it's made from, or its kind: 'gear', 'weapon', 'block'...)
       const found = !find || it.name.toLowerCase().includes(find) || r.of.some(([k]) => itemOf(k)?.name.toLowerCase().includes(find)) || categoryOf(it) === find || it.kind === find;
-      row.classList.toggle('hidden', (only && times === 0) || !found);
+      // (In the tab picked; finding by name, in any.)
+      const inTab = this.cat === 'all' || !!find || row.dataset.cat === this.cat;
+      if (times > 0 && !r.dev) { can[row.dataset.cat] = (can[row.dataset.cat] || 0) + 1; can.all = (can.all || 0) + 1; }
+      row.classList.toggle('hidden', (only && times === 0) || !found || !inTab);
       row.disabled = times === 0;
       row.title = free ? 'Free in dev mode (shift-click: five)' : times > 0 ? `Make ${times > 1 ? `(up to ${times} times; shift-click: five)` : ''}` : !here ? `Needs a ${STATION_NAMES[r.at].toLowerCase()} near you` : `Needs ${madeFrom(r)}`;
       order.push([times > 0 ? 0 : here ? 1 : 2, r.dev ? AT_ORDER.length : AT_ORDER.indexOf(r.at), r.id, row]);
+    }
+    // (Each tab: how many of its recipes can be made now.)
+    for (const b of this.tabs) {
+      b.classList.toggle('on', b.dataset.tab === this.cat);
+      b.setAttribute('aria-selected', b.dataset.tab === this.cat ? 'true' : 'false');
+      b.querySelector('.craft-count').textContent = can[b.dataset.tab] ? String(can[b.dataset.tab]) : '';
     }
     order.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
     const want = order.map(o => o[3]);

@@ -18,7 +18,9 @@ export const keyCy = k => k % 64;
 
 // How thick a platform is, for standing on it and drawing it.
 export const PLATFORM_H = 4;
-const SHAPE_BOXES = SHAPES.map(s => s.boxes);
+// (A tile's shape byte: its shape in the bottom four bits, its variant, a block's `variants`, in the
+// top four: its paint. Every byte's boxes, so collisions read it as it is.)
+const SHAPE_BOXES = Array.from({ length: 256 }, (_, i) => (SHAPES[i & 15] || SHAPES[0]).boxes);
 
 export class Chunk {
   constructor(cx, cy) {
@@ -70,7 +72,7 @@ export class TileWorld {
     this.listeners = [];
     // Told of a whole chunk replaced (loadChunk): fn(cx, cy).
     this.chunkListeners = [];
-    // Told of each block a blast breaks: fn(tx, ty, block). (The world's rules drop what it gives.)
+    // Told of each block a blast breaks: fn(tx, ty, block, its shape byte). (The world's rules drop what it gives.)
     this.onBreak = null;
     // The boxes handed out by the lookups: used again in turn (callers read what they need
     // straight away, as with GameMap's).
@@ -191,6 +193,18 @@ export class TileWorld {
 
   shape(tx, ty) {
     if (ty < 0 || ty >= WORLD_H) return 0;
+    return this.chunk(tx >> 5, ty >> 5).shape[((ty & 31) << 5) | (tx & 31)] & 15;
+  }
+
+  /** Which of its block's variants tile (tx, ty) is (blocks.js: 0, its own; the top half of the shape byte). */
+  paint(tx, ty) {
+    if (ty < 0 || ty >= WORLD_H) return 0;
+    return this.chunk(tx >> 5, ty >> 5).shape[((ty & 31) << 5) | (tx & 31)] >> 4;
+  }
+
+  /** A tile's shape byte as it's kept (its shape and its paint): what's sent online. */
+  shapeByte(tx, ty) {
+    if (ty < 0 || ty >= WORLD_H) return 0;
     return this.chunk(tx >> 5, ty >> 5).shape[((ty & 31) << 5) | (tx & 31)];
   }
 
@@ -219,8 +233,10 @@ export class TileWorld {
   setWall(tx, ty, wall) { return this.set('bg', tx, ty, wall); }
   setShape(tx, ty, shape) {
     if (!SOLID[this.tile(tx, ty)]) return false;
-    return this.set('shape', tx, ty, shape);
+    return this.set('shape', tx, ty, (this.shapeByte(tx, ty) & 0xf0) | (shape & 15));
   }
+  /** Make tile (tx, ty) its block's variant `paint` (0 to 15), keeping its shape. */
+  setPaint(tx, ty, paint) { return this.set('shape', tx, ty, (this.shapeByte(tx, ty) & 15) | ((paint & 15) << 4)); }
 
   /** The chunks changed since they were last saved (and marks them saved). */
   takeDirty() {
@@ -574,7 +590,7 @@ export class TileWorld {
   /** True if the box touches a ladder. */
   climbable(l, t, r, b) {
     const tx0 = Math.floor(l / TILE), tx1 = Math.floor((r - 0.01) / TILE), ty0 = Math.max(0, Math.floor(t / TILE)), ty1 = Math.min(WORLD_H - 1, Math.floor((b - 0.01) / TILE));
-    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) if (this.tile(tx, ty) === K.LADDER) return true;
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) { const id = this.tile(tx, ty); if (id === K.LADDER || id === K.SCAFFOLD) return true; }
     return false;
   }
 
@@ -668,8 +684,9 @@ export class TileWorld {
         if (this.protect?.(tx, ty)) continue;
         const cx = tx * TILE + TILE / 2 - x, cy = ty * TILE + TILE / 2 - y, reach = r - b.resist;
         if (reach <= 0 || cx * cx + cy * cy > reach * reach) continue;
+        const sb = this.shapeByte(tx, ty);
         this.setTile(tx, ty, AIR);
-        this.onBreak?.(tx, ty, id);
+        this.onBreak?.(tx, ty, id, sb);
         const l = tx * TILE, t = ty * TILE;
         area = area ? { l: Math.min(area.l, l), t: Math.min(area.t, t), r: Math.max(area.r, l + TILE), b: Math.max(area.b, t + TILE) } : { l, t, r: l + TILE, b: t + TILE };
       }

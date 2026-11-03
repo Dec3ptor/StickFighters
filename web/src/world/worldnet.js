@@ -8,7 +8,10 @@
 //     ('chest') and who they're talking to ('talk': talk.js's view of it, when it changes); to
 //     everyone, the bases when they change ('claims').
 //   player -> host: what they do in their inventory screen ('wop': moving stacks, crafting, the
-//     chest...) and in a talk ('wop' 'talk': buying, selling...), checked and done by the host.
+//     chest...) and in a talk ('wop' 'talk': buying, selling...), checked and done by the host; and
+//     building's own keys ('wop' 'pick', 'undo') and what they write on a sign ('wop' 'sign').
+//   host -> everyone: what the signs say ('signs', when it changes); host -> one player: a sign
+//     they've put up, or right clicked, to write on ('signedit').
 //
 // The host keeps each player's things in its world, by name: next time they join, they have them.
 
@@ -29,6 +32,8 @@ import { questsOf, dropQuest } from './quests.js';
 import { socialOptions, socialDo, tradeView, offerTrade, acceptTrade, cancelTrade, shareQuest } from './social.js';
 import { cleanFound } from './codex.js';
 import { cleanSettings, kitOf } from './worldrules.js';
+import { signsToSave, signsFromSave } from './decor.js';
+import { buildAction, signWrite } from './worldplay.js';
 
 const LAYERS = ['fg', 'bg', 'shape'];
 const CHUNKS_PER_MESSAGE = 40;
@@ -53,7 +58,8 @@ export class WorldHost {
     this.claimsKey = '';
     const world = game.world;
     world.listeners.push((tx, ty, layer) => {
-      const v = layer === 'fg' ? world.tile(tx, ty) : layer === 'bg' ? world.wall(tx, ty) : world.shape(tx, ty);
+      // (A tile's shape byte as it is: its shape, and its variant: tileworld.js's paint.)
+      const v = layer === 'fg' ? world.tile(tx, ty) : layer === 'bg' ? world.wall(tx, ty) : world.shapeByte(tx, ty);
       this.changes.push([tx, ty, LAYERS.indexOf(layer), v]);
     });
   }
@@ -98,7 +104,7 @@ export class WorldHost {
   /** What the welcome says about the world. */
   info() {
     const w = this.game.world;
-    return { seed: w.seed, name: w.name, gen: w.genVersion || 1, towns: !!w.towns, time: Math.floor(w.time || 0), pvp: w.pvp !== false, claims: claimsToSave(w), settings: w.settings || null };
+    return { seed: w.seed, name: w.name, gen: w.genVersion || 1, towns: !!w.towns, time: Math.floor(w.time || 0), pvp: w.pvp !== false, claims: claimsToSave(w), settings: w.settings || null, signs: signsToSave(w) };
   }
 
   /** Each update: the blocks changed go to every player's backlog; the bases, when they change, to everyone. */
@@ -117,6 +123,13 @@ export class WorldHost {
         this.claimsKey = key;
         for (const p of this.players) p.link.send({ t: 'claims', list: claims }, true);
       }
+    }
+    // (What the signs say, when it changes: decor.js.)
+    const sv = this.game.world.signsV || 0;
+    if (sv !== this.signsV) {
+      this.signsV = sv;
+      const list = signsToSave(this.game.world);
+      for (const p of this.players) p.link.send({ t: 'signs', list }, true);
     }
   }
 
@@ -138,7 +151,7 @@ export class WorldHost {
     const m = w.mine, last = w.got[w.got.length - 1];
     // (Their level and quests too: progress.js, quests.js. And who has work for them.)
     const pr = progOf(s), qs = questsOf(s), xg = w.xpGot?.at(-1);
-    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}|${w.gearV || 0}|${(w.graves || []).join(';')}|${w.foundV || 0}|${w.sleep ? `z${this.game.world.asleep?.n}/${this.game.world.asleep?.of}` : ''}|${w.dev ? `dev${w.dev.fly === false ? 0 : 1}${w.dev.speed || 1}${w.dev.god ? 1 : 0}${w.dev.invisible ? 1 : 0}${w.dev.lights ? 1 : 0}` : ''}|${w.dev || w.creative ? '' : hungerKey(w)}`;
+    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${w.kitFlip ? 1 : 0}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}|${w.gearV || 0}|${(w.graves || []).join(';')}|${w.foundV || 0}|${w.sleep ? `z${this.game.world.asleep?.n}/${this.game.world.asleep?.of}` : ''}|${w.dev ? `dev${w.dev.fly === false ? 0 : 1}${w.dev.speed || 1}${w.dev.god ? 1 : 0}${w.dev.invisible ? 1 : 0}${w.dev.lights ? 1 : 0}` : ''}|${w.dev || w.creative ? '' : hungerKey(w)}`;
     if (key !== ws.inv) {
       ws.inv = key;
       p.link.send({
@@ -158,6 +171,8 @@ export class WorldHost {
         dev: w.dev ? { fly: w.dev.fly !== false, speed: w.dev.speed || 1, god: !!w.dev.god, invisible: !!w.dev.invisible, lights: !!w.dev.lights } : 0,
         // (Their hunger, for the HUD: hunger.js. None shown in dev mode.)
         food: w.dev || w.creative ? null : hungerToSave(w),
+        // (A blueprint held: which way round its building goes: kits.js.)
+        flip: !!w.kitFlip,
       }, true);
       ws.foundV = w.foundV || 0;
     }
@@ -165,6 +180,8 @@ export class WorldHost {
     // a trade (when it changes, or ends), their party (as it changes).
     // (A waystone right clicked: where it can take them, as a player's menu is shown.)
     if (w.wayMenu) { p.link.send({ t: 'social', view: w.wayMenu }, true); w.wayMenu = null; }
+    // (A sign put up, or right clicked: theirs to write on.)
+    if (w.signEdit) { p.link.send({ t: 'signedit', tx: w.signEdit.tx, ty: w.signEdit.ty, text: w.signEdit.text || '' }, true); w.signEdit = null; }
     if (w.social) {
       const o = this.game.soldiers.find(x => x.id === w.social.id);
       if (o?.world) p.link.send({ t: 'social', view: { id: o.id, name: o.name, level: progOf(o).level, options: socialOptions(this.game, s, o) } }, true);
@@ -263,6 +280,9 @@ export class WorldHost {
       // (Gear: worn, or taken off. gear.js.)
       case 'equip': if (Number.isInteger(d.i)) equip(g, s, d.i); break;
       case 'unequip': if (SLOTS.includes(d.slot)) { const text = unequip(g, s, d.slot); if (text && !text.startsWith('Took')) g.notify(s, text); } break;
+      // (Building's keys: the block under the crosshair into their hand, the last thing built undone. A sign written on.)
+      case 'pick': case 'undo': { const text = buildAction(g, s, d.op); if (text) g.notify(s, text); break; }
+      case 'sign': signWrite(g, s, d.tx, d.ty, d.text); break;
       // (The inventory screen's right hand buttons: what right click uses.)
       case 'hand': {
         const i = d.slot;
@@ -281,8 +301,9 @@ export class WorldClient {
    * onInv(): our things changed; onChest(chest | null): a chest opened ({ inv, tx, ty }), changed,
    * or closed; onTalk(view | null): a talk began, changed (talk.js's view), or ended.
    */
-  constructor({ onInv = null, onChest = null, onTalk = null, onSocial = null, onTrade = null } = {}) {
+  constructor({ onInv = null, onChest = null, onTalk = null, onSocial = null, onTrade = null, onSign = null } = {}) {
     this.onInv = onInv;
+    this.onSign = onSign;   // ({ tx, ty, text }): a sign of ours to write on
     this.onChest = onChest;
     this.onTalk = onTalk;
     this.onSocial = onSocial;
@@ -314,6 +335,7 @@ export class WorldClient {
     world.time = Number(info.time) || 0;
     world.pvp = info.pvp !== false;
     claimsFromSave(world, info.claims);
+    signsFromSave(world, info.signs);
     this.saved = new Map();
     return world;
   }
@@ -370,6 +392,7 @@ export class WorldClient {
         w.slot = Math.max(0, Math.min(HOTBAR - 1, d.slot | 0));
         w.slot2 = Number.isInteger(d.slot2) && d.slot2 >= 0 && d.slot2 < HOTBAR ? d.slot2 : -1;
         if (typeof d.brush === 'string') w.brush = d.brush;
+        w.kitFlip = !!d.flip;
         w.home = d.home || null;
         if (Array.isArray(d.found)) w.found = cleanFound(d.found);
         // (Dev mode, ours in a creative world: flying, crafting, the codex, on our own screen: devmode.js's devView.)
@@ -409,6 +432,8 @@ export class WorldClient {
         this.onChest?.({ inv: Object.assign(Inventory.from(d.slots, 30), { version: ++this.version }), tx: d.tx | 0, ty: d.ty | 0, kind: ['chest', 'shulker', 'ender'].includes(d.kind) ? d.kind : 'chest', name: String(d.name || 'Chest').slice(0, 40) });
         break;
       case 'claims': if (game.world) claimsFromSave(game.world, d.list); break;
+      case 'signs': if (game.world) signsFromSave(game.world, d.list); break;
+      case 'signedit': if (Number.isInteger(d.tx) && Number.isInteger(d.ty)) this.onSign?.({ tx: d.tx, ty: d.ty, text: String(d.text || '').slice(0, 80) }); break;
       case 'talk': this.onTalk?.(d.close || !d.view || typeof d.view !== 'object' ? null : d.view); break;
       case 'social': if (d.view && typeof d.view === 'object') this.onSocial?.(d.view); break;
       case 'trade': this.onTrade?.(d.close || !d.view ? null : d.view); break;
