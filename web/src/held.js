@@ -173,15 +173,23 @@ export function drawWings(ctx, pose, facing, gliding, tick) {
       ctx.stroke();
     }
   } else {
-    ctx.fillStyle = '#f0ecfc';
+    // (Folded: a long feathered shape down the back, from the shoulder blades to the knees.)
+    ctx.strokeStyle = '#5e5880';
+    ctx.lineWidth = 0.8;
+    ctx.fillStyle = '#efeafc';
     ctx.beginPath();
-    ctx.moveTo(bx, by - 1.5);
-    ctx.quadraticCurveTo(bx + back * 5.5, by, bx + back * 3.6, by + 12);
-    ctx.lineTo(bx + back * 2.6, by + 10.5);
-    ctx.lineTo(bx + back * 1.6, by + 11.5);
-    ctx.lineTo(bx + back * 0.6, by + 8);
+    ctx.moveTo(bx, by - 2.5);
+    ctx.quadraticCurveTo(bx + back * 8, by - 2, bx + back * 6, by + 16);
+    ctx.lineTo(bx + back * 4.4, by + 13.5);
+    ctx.lineTo(bx + back * 3.4, by + 16.5);
+    ctx.lineTo(bx + back * 2.2, by + 12.5);
+    ctx.lineTo(bx + back * 0.8, by + 9);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(bx + back * 1.6, by + 1);
+    ctx.quadraticCurveTo(bx + back * 5, by + 2, bx + back * 4.4, by + 11);
     ctx.stroke();
   }
   ctx.globalAlpha = a;

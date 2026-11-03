@@ -148,7 +148,8 @@ export function drawSoldier(r, game, s, alpha, theme) {
     ctx.fillStyle = '#8a929c';
     ctx.fillRect(bx - 2.2, ny + 1.5, 4.4, 1.2);
     if (s.body.jetting) jetFlame(ctx, bx, ny);
-  } else {
+  } else if (!s.wings) {
+    // (Wings in its place, if they've a pair.)
     ctx.fillStyle = shades.pack;
     roundRect(ctx, bx - 1.9, ny + 1.5, 3.8, 6.5, 1.3);
     ctx.fill();
