@@ -15,6 +15,7 @@ import { setDoor, pushDoor, doorsTick, soldierIn } from './doors.js';
 import { damage } from '../combat.js';
 import { devFly, devInput, devOn, godOn } from './devmode.js';
 import { craft, stationsNear, plainGear, devGive } from './crafting.js';
+import { gunStats, fitTo, strip as stripAtt } from './attachments.js';
 import { townsfolkTick, isFolk } from './townsfolk.js';
 import { startTalk, talkTick, folkAt } from './talk.js';
 import { giveXp, countStat, applyProgress, maxHealthOf, damageScale, digScale, lootScale, doubleOreChance, regenTick, progToSave, progFromSave, KILL_XP, MINE_XP } from './progress.js';
@@ -508,8 +509,9 @@ export function hold(s) {
   }
   const { slot, item } = inHand(s);
   if (item?.kind === 'weapon') {
-    // (A dropped weapon with affixes of its own: gear.js. The game asks for it through weaponFor.)
-    const id = item.weapon, def = weaponWith(id, slot.g?.stats), key = item.ammo === 'self' ? item.key : item.ammo;
+    // (A dropped weapon with affixes of its own, gear.js, and attachments, attachments.js. The game
+    // asks for it through weaponFor.)
+    const id = item.weapon, def = weaponWith(id, gunStats(slot)), key = item.ammo === 'self' ? item.key : item.ammo;
     if (w.own?.slot !== slot || w.own.g !== slot.g) w.own = { slot, g: slot.g, fn: slot.g ? x => (x === id ? def : null) : null };
     s.weaponOverride = w.own.fn;
     let inv = s.weapons[id];
@@ -1189,6 +1191,32 @@ export function makeRecipe(game, s, r, times) {
 }
 
 /**
+ * Player s fits the attachment in slot i of their things to the gun in slot j (attachments.js);
+ * one there already in its place comes off, into their things. Returns what to tell them.
+ */
+export function fitAttachment(game, s, i, j) {
+  const inv = s?.world?.inv, a = inv?.slots[i], gun = inv?.slots[j], it = a && itemOf(a.key);
+  if (!it || it.kind !== 'attachment' || !gun || itemOf(gun.key)?.kind !== 'weapon' || i === j) return null;
+  const r = fitTo(gun, a.key);
+  if (!r.ok) return r.why;
+  inv.take(i, 1);
+  if (r.off) { const left = inv.add(r.off, 1); if (left) dropItem(game, r.off, left, s.x, s.y - 14, s.facing * 2, -2, 30); }
+  inv.version++;
+  game.sound('reload', s.x, s.y, s.id);
+  return `${it.name} fitted to the ${(gun.g?.name || itemOf(gun.key).name)}${r.off ? ` (the ${itemOf(r.off).name.toLowerCase()} came off)` : ''}`;
+}
+
+/** Player s takes everything off the gun in slot j of their things, into their things. Returns what to tell them. */
+export function stripGun(game, s, j) {
+  const inv = s?.world?.inv, gun = inv?.slots[j];
+  if (!gun?.g?.att) return null;
+  const off = stripAtt(gun);
+  for (const k of off) { const left = inv.add(k, 1); if (left) dropItem(game, k, left, s.x, s.y - 14, s.facing * 2, -2, 30); }
+  inv.version++;
+  return `Taken off: ${off.map(k => itemOf(k).name.toLowerCase()).join(', ')}`;
+}
+
+/**
  * Dev mode (devmode.js): the codex's entry `id` (an item's key; a unique or set piece's id) into
  * player s's things, free: a stack, or one piece (on the ground if there's no room). Returns what
  * to tell them, or null.
@@ -1311,7 +1339,9 @@ export function worldTick(game) {
   if (game.tick % 10 === 0) {
     const R = CHUNK * TILE;
     want.length = 0;
-    for (const s of game.soldiers) {
+    // (And round where a scope's looking, far off: main.js's world.lookAt.)
+    const looks = world.lookAt ? [{ alive: true, world: true, x: world.lookAt.x, y: world.lookAt.y }] : [];
+    for (const s of [...game.soldiers, ...looks]) {
       if (!s.alive || !s.world) continue;
       const cx = Math.floor(s.x / R), cy = Math.floor(s.y / R), way = Math.sign(s.body?.vx || 0);
       for (let y = Math.max(0, cy - 2); y <= Math.min(WORLD_H / CHUNK - 1, cy + 2); y++) {
@@ -1331,7 +1361,7 @@ export function worldTick(game) {
   }
   const t0 = performance.now();
   for (let i = 0; want.length && i < 2 && (i === 0 || performance.now() - t0 < 1); i++) { const c = want.pop(); world.chunk(c[0], c[1]); }
-  if (game.tick % 600 === 0) world.trim(game.soldiers.filter(s => s.alive).map(s => ({ x: s.x, y: s.y })), 12);
+  if (game.tick % 600 === 0) world.trim([...game.soldiers.filter(s => s.alive).map(s => ({ x: s.x, y: s.y })), ...(world.lookAt ? [world.lookAt] : [])], 12);
 }
 
 // ---- Magma ------------------------------------------------------------------------------------------

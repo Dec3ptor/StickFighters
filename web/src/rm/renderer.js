@@ -20,6 +20,7 @@ import { Lights, Weather, LIGHT, glowSprite, fireballSprite, smokeSprite, cloudS
 import { styledContext } from './hudstyle.js';
 import { css, mix } from './color.js';
 import { GameMap } from '../map.js';
+import { lasered } from '../combat.js';
 import { paintMap } from '../maptiles.js';
 import { WorldView, drawDrops, drawTarget } from '../world/worldrender.js';
 import { nightness } from '../world/monsters.js';
@@ -424,7 +425,7 @@ export class RemasteredRenderer extends Renderer {
     drawCarried(this, game);
     this.drawProjectiles(game, true);
     this.drawEffects(game);
-    for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);
+    for (const sol of shown.soldiers) if (lasered(sol)) this.drawLaser(game, sol);
     this.drawBuildGhost(game, viewer);
 
     // A world: dark underground (the glows and flashes go over it).

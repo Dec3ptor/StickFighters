@@ -2,7 +2,7 @@
 
 import { VIEW_W, VIEW_H, MOTION } from './config.js';
 import { buildPose, hypot } from './stickman.js';
-import { laserEnd } from './combat.js';
+import { laserEnd, lasered } from './combat.js';
 import { WEAPONS } from './weapons.js';
 import { clamp, lerp } from './util.js';
 import { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate, drawSupply, drawBeacon, drawStreakFlame, spriteOpts } from './sprites.js';
@@ -246,7 +246,7 @@ export class Renderer {
     drawCarried(this, game);
     this.drawProjectiles(game, true);
     this.drawEffects(game);
-    for (let i = 0; i < list.length; i++) if (list[i].current === 'SR') this.drawLaser(game, list[i]);
+    for (let i = 0; i < list.length; i++) if (lasered(list[i])) this.drawLaser(game, list[i]);
     this.drawBuildGhost(game, viewer);
     if (game.world) this.drawWorldOver(game, viewer);
     this.drawNames(game, shown.names, alpha, viewer);

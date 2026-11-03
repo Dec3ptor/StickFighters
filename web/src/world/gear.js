@@ -428,13 +428,14 @@ export const armorCut = armor => (armor > 0 ? armor / (armor + 60) : 0);
 
 const made = new Map();
 /**
- * Weapon `id` with a dropped one's affixes on it (wdmg, wrof, wreload, wmag, wacc): what the
- * game fires (combat.js asks classes.js's weaponFor, which asks the soldier's weaponOverride).
+ * Weapon `id` with a dropped one's affixes on it (wdmg, wrof, wreload, wmag, wacc), and its
+ * attachments' (attachments.js: those too, and wrange, how far it reaches; wquiet; wlaser): what
+ * the game fires (combat.js asks classes.js's weaponFor, which asks the soldier's weaponOverride).
  */
 export function weaponWith(id, stats) {
   const def = WEAPONS[id];
   if (!def || !stats) return def;
-  const k = `${id}|${stats.wdmg | 0}|${stats.wrof | 0}|${stats.wreload | 0}|${stats.wmag | 0}|${stats.wacc | 0}`;
+  const k = `${id}|${stats.wdmg | 0}|${stats.wrof | 0}|${stats.wreload | 0}|${stats.wmag | 0}|${stats.wacc | 0}|${stats.wrange | 0}|${stats.wquiet ? 1 : 0}|${stats.wlaser ? 1 : 0}`;
   let m = made.get(k);
   if (m) return m;
   m = Object.create(def);
@@ -445,6 +446,9 @@ export function weaponWith(id, stats) {
   if (stats.wreload && num('reload')) props.reload = { get: () => Math.max(1, Math.round(def.reload * (1 - Math.min(80, stats.wreload) / 100))) };
   if (stats.wmag && num('mag')) props.mag = { get: () => Math.max(1, Math.round(def.mag * (1 + stats.wmag / 100))) };
   if (stats.wacc && num('spread')) props.spread = { get: () => def.spread * (1 - Math.min(90, stats.wacc) / 100) };
+  if (stats.wrange && num('range')) props.range = { value: Math.max(1, stats.wrange) };
+  if (stats.wquiet) props.quiet = { value: true };
+  if (stats.wlaser) props.laser = { value: true };
   Object.defineProperties(m, props);
   if (made.size > 500) made.clear();
   made.set(k, m);

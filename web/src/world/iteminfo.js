@@ -9,16 +9,19 @@ import { WEAPONS } from '../weapons.js';
 import { RECIPES, STATION_NAMES, madeFrom } from './crafting.js';
 import { valueOf, SHOPS, offerFor } from './trade.js';
 import { RARITY, gearLines, gearValue, rarityOf } from './gear.js';
+import { ATT_SLOTS, attLines, effects } from './attachments.js';
 
 /** Each kind of thing's colour (bright: they're shown on dark panels). */
 export const CATEGORY_COLORS = {
   coins: '#ffd23f', gem: '#d08cff', potion: '#ff6f8e', food: '#f4b06a', weapon: '#ffb347', tool: '#7cc0ff', ammo: '#e8cf7a',
   contract: '#f2e3b3', bar: '#e4e8ef', ore: '#d6ae84', block: '#ececec', wall: '#bdbdbd', material: '#dccdaa', quest: '#ffe36e', gear: '#f0f0f0',
+  attachment: '#9fd8ff',
 };
 /** What each kind is called. */
 const CATEGORY_NAMES = {
   coins: 'Money', gem: 'Gem', potion: 'Potion', food: 'Food', weapon: 'Weapon', tool: 'Tool', ammo: 'Ammunition', contract: 'Contract',
   bar: 'Metal bar', ore: 'Ore', block: 'Block', wall: 'Wall', material: 'Material', quest: 'Quest item', gear: 'Gear',
+  attachment: 'Attachment',
 };
 
 /** The kind of thing an item is (for its colour). */
@@ -27,7 +30,7 @@ export function categoryOf(it) {
   if (it.key === 'coins') return 'coins';
   if (it.gem) return 'gem';
   if (it.kind === 'food') return it.look === 'potion' ? 'potion' : 'food';
-  if (it.kind === 'weapon' || it.kind === 'tool' || it.kind === 'ammo' || it.kind === 'contract' || it.kind === 'wall' || it.kind === 'quest' || it.kind === 'gear') return it.kind;
+  if (it.kind === 'weapon' || it.kind === 'tool' || it.kind === 'ammo' || it.kind === 'contract' || it.kind === 'wall' || it.kind === 'quest' || it.kind === 'gear' || it.kind === 'attachment') return it.kind;
   if (it.key.endsWith('_bar')) return 'bar';
   if (it.key.endsWith('_ore') || it.key === 'coal' || it.key === 'kimberlite') return 'ore';
   if (it.kind === 'block') return 'block';
@@ -67,10 +70,11 @@ export function itemDetails(it, n = 1, g = null) {
     const where = { ring: 'a finger', amulet: 'the neck', hands: 'the hands', waist: 'the waist' }[it.wear] || `the ${it.wear}`;
     return { name: g?.name || it.name, kind: `Gear · worn on ${where} · right click to wear it`, color: itemColor(it, g || 'basic'), lines: gearLines(it.key, g), worth: v ? `Worth about ${v} coins` : '', made: '' };
   }
-  // (A weapon dropped with affixes of its own: its own name and colour, then what it is.)
+  // (A weapon dropped with affixes of its own: its own name and colour, then what it is. And what's
+  // fitted to it: attachments.js.)
   if (cat === 'weapon' && g) {
-    const plain = itemDetails(it, n, null);
-    return { ...plain, name: g.name, color: itemColor(it, g), lines: [...gearLines(it.key, g), ...plain.lines], worth: `Worth about ${Math.round(valueOf(it.key) * ({ magic: 1.5, rare: 2.2, epic: 3, legendary: 4.5, unique: 6 }[g.r] || 1))} coins` };
+    const plain = itemDetails(it, n, null), fitted = attLines(g.att);
+    return { ...plain, name: g.name, color: itemColor(it, g), lines: [...gearLines(it.key, g).filter(l => !/^Basic ·/.test(l) || !fitted.length), ...plain.lines, ...(fitted.length ? ['Fitted (right click to take them off):', ...fitted] : [])], worth: `Worth about ${Math.round(valueOf(it.key) * ({ magic: 1.5, rare: 2.2, epic: 3, legendary: 4.5, unique: 6 }[g.r] || 1))} coins` };
   }
   // (A shulker box with things in it: what's in it.)
   if (it.box && g?.box?.length) {
@@ -103,6 +107,15 @@ export function itemDetails(it, n = 1, g = null) {
       break;
     case 'ammo': lines.push('Ammunition, carried for the guns that use it'); break;
     case 'contract': lines.push('Use it (like a weapon) to hire a mercenary'); break;
+    case 'attachment': {
+      const a = it.att;
+      kind = `Attachment · ${ATT_SLOTS[a.slot].toLowerCase()}`;
+      const said = effects(a).join(', ');
+      if (said) lines.push(said[0].toUpperCase() + said.slice(1));
+      if (a.needs === 'mag') lines.push('Only for guns with a magazine (pistols)');
+      lines.push('Pick it up, then click a gun to fit it (one in each place)');
+      break;
+    }
     case 'quest': lines.push('Carried for a quest (your journal says what for)', 'Nobody will buy it'); break;
     case 'coins': lines.push('Money: for townsfolk\'s shops, healing, a bed, hiring guards'); break;
     case 'gem': lines.push('Precious: traders pay the most for it', 'Diamonds make the best pickaxe'); break;

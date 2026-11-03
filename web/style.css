@@ -486,6 +486,9 @@ html[data-game="remastered"] .codex-cats button.on, html[data-game="remastered"]
 .codex-row { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--line, rgba(0, 0, 0, 0.2)); border-left: 4px solid var(--c, #888); background: var(--soft); opacity: 0.72; }
 .codex-row.found { opacity: 1; }
 .codex-take { flex: none; align-self: center; margin-left: auto; padding: 2px 10px; font-size: 12px; }
+/* A gun with attachments fitted (attachments.js). */
+.inv-slot.fitted::before { content: '⌖'; position: absolute; top: 1px; right: 4px; font-size: 12px; line-height: 1; color: #2f62ee; pointer-events: none; }
+html[data-game="remastered"] .inv-slot.fitted::before { color: #7fc8ff; }
 /* The dev menu (worlds, in dev mode: devpanel.js). */
 .buy.devpanel { width: min(980px, calc(100vw - 24px)); }
 .dp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; }

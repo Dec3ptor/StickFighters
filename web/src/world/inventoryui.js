@@ -32,9 +32,11 @@ export class InventoryScreen {
    * root: the screen's element. drop(i): throw slot i's stack; craft(recipe, times): make it;
    * close(): it was closed.
    */
-  constructor(root, { drop, craft, close, stack = null }) {
+  constructor(root, { drop, craft, close, stack = null, attach = null, detach = null }) {
     this.root = root;
     this.onStack = stack;
+    this.onAttach = attach;   // (i, j): the attachment in our slot i onto the gun in slot j (attachments.js)
+    this.onDetach = detach;   // (j): everything off the gun in our slot j
     this.onDrop = drop;
     this.onCraft = craft;
     this.onClose = close;
@@ -97,7 +99,14 @@ export class InventoryScreen {
       const box = b.dataset.box, i = +b.dataset.slot;
       b.addEventListener('click', e => this.click(box, i, e.shiftKey));
       // (Right click: a stack split in two; a piece of gear, worn.)
-      b.addEventListener('contextmenu', e => { e.preventDefault(); if (box === 'me' && itemOf(this.inv?.slots[i]?.key)?.kind === 'gear') this.wear(i); else this.split(box, i); });
+      b.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        const sl = this.inv?.slots[i], kind = itemOf(sl?.key)?.kind;
+        if (box === 'me' && kind === 'gear') this.wear(i);
+        // (A gun with attachments: they all come off.)
+        else if (box === 'me' && kind === 'weapon' && sl.g?.att) this.detach(i);
+        else this.split(box, i);
+      });
       b.addEventListener('mouseenter', e => { this.hover = { box, i }; this.describe(box, i); this.tipFor(this.box(box)?.slots[i], e); });
       b.addEventListener('mousemove', e => this.moveTip(e));
       b.addEventListener('mouseleave', () => { this.hover = null; this.hideTip(); });
@@ -222,8 +231,12 @@ export class InventoryScreen {
     } else if (!this.picked) { if (inv.slots[i]) this.picked = { box, i }; }
     else if (this.picked.box === box && this.picked.i === i) this.picked = null;
     else {
-      if (this.remote) this.remote({ op: 'move', a: [this.picked.box, this.picked.i], b: [box, i] });
-      else moveBetween(this.box(this.picked.box), this.picked.i, inv, i);
+      // (An attachment put on a gun: fitted to it, attachments.js. Anything else: moved, or swapped.)
+      const p = this.picked, from = this.box(p.box)?.slots[p.i];
+      if (p.box === 'me' && box === 'me' && itemOf(from?.key)?.kind === 'attachment' && itemOf(inv.slots[i]?.key)?.kind === 'weapon') {
+        if (this.remote) this.remote({ op: 'attach', a: p.i, b: i }); else this.onAttach?.(p.i, i);
+      } else if (this.remote) this.remote({ op: 'move', a: [p.box, p.i], b: [box, i] });
+      else moveBetween(this.box(p.box), p.i, inv, i);
       this.picked = null;
     }
     this.refresh(true);
@@ -236,6 +249,14 @@ export class InventoryScreen {
     const want = w.slot2 === i ? -1 : i;
     if (this.remote) this.remote({ op: 'hand', slot: want });
     else if (this.game) setRightHand(this.game, this.me, want < 0 ? 'x' : String(want), true);
+    this.refresh(true);
+  }
+
+  /** Everything off the gun in our slot i (attachments.js). */
+  detach(i) {
+    this.picked = null;
+    if (this.remote) this.remote({ op: 'detach', i }); else this.onDetach?.(i);
+    this.hideTip();
     this.refresh(true);
   }
 
@@ -315,7 +336,9 @@ export class InventoryScreen {
       const box = b.dataset.box, i = +b.dataset.slot, from = this.box(box);
       if (!from) continue;
       const s = from.slots[i], it = s && itemOf(s.key);
-      const look = s ? `${s.key}|${s.n}|${s.mag ?? ''}` : '';
+      // (A gun with attachments, attachments.js: marked, and drawn again when they change.)
+      const look = s ? `${s.key}|${s.n}|${s.mag ?? ''}|${s.g?.r ?? ''}|${s.g?.att ? Object.values(s.g.att).join(',') : ''}` : '';
+      b.classList.toggle('fitted', !!s?.g?.att);
       b.classList.toggle('picked', this.picked?.box === box && this.picked.i === i);
       b.classList.toggle('in-hand', box === 'me' && i === me.world.slot);
       b.classList.toggle('in-right', box === 'me' && i === me.world.slot2);

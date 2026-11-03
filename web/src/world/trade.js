@@ -112,8 +112,11 @@ export const SHOPS = {
       ['Magnum', 0.5, 1], ['Uzi', 0.5, 1], ['MP5K', 0.4, 1], ['Shotgun', 0.7, 1], ['M4', 0.4, 1], ['AK47', 0.4, 1], ['Longbow', 0.5, 1],
       ['SR', 0.25, 1], ['HEGrenade', 0.6, 3], ['Flashbang', 0.5, 3], ['SmokeGrenade', 0.5, 3], ['Dynamite', 0.5, 3], ['Mine', 0.4, 2],
       ['GrenadeLauncher', 0.3, 2], ['PetrolBomb', 0.4, 2], ['Bazooka', 0.2, 1], ['Flamer', 0.2, 1], ['merc_contract', 0.5, 2],
+      // (Attachments: attachments.js.)
+      ['red_dot', 0.5, 1], ['scope2', 0.5, 1], ['scope4', 0.3, 1], ['foregrip', 0.5, 1], ['compensator', 0.3, 1], ['ext_mag', 0.4, 1],
+      ['quick_mag', 0.3, 1], ['hollow_points', 0.4, 4], ['laser', 0.3, 1], ['suppressor', 0.25, 1],
     ],
-    rare: [['Minigun', 1], ['MagicBullet', 1], ['HolyHandGrenade', 1], ['BananaBomb', 2], ['Mortar', 1], ['HomingMissile', 2]],
+    rare: [['Minigun', 1], ['MagicBullet', 1], ['HolyHandGrenade', 1], ['BananaBomb', 2], ['Mortar', 1], ['HomingMissile', 2], ['scope8', 1], ['scope16', 1], ['drum_mag', 1], ['long_barrel', 1]],
   },
   trader: {
     name: 'Market stall', markup: 1.3, rate: 0.45, buys: () => true,

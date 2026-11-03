@@ -190,6 +190,20 @@ await devRow.click();
 const freebies = await page.evaluate(() => ({ diamond: window.stickSoldiers.state.me.world.inv.count('diamond'), ender: window.stickSoldiers.state.me.world.inv.count('ender_chest') }));
 check(freebies.diamond === 99 && freebies.ender === 1, `made for free (${JSON.stringify(freebies)})`);
 await page.screenshot({ path: `${outDir}/world-dev-crafting.png` });
+// An attachment (attachments.js): a sniper rifle and a 2× scope made (free), the scope picked up and
+// put on the rifle, then right click on the rifle takes it off again.
+for (const [find, name] of [['sniper', 'Sniper Rifle'], ['2× scope', '2× scope']]) {
+  await page.fill('#inventory [data-find]', find);
+  await page.locator('#inventory .craft-row:not(.hidden)', { hasText: name }).first().click();
+}
+const at = await page.evaluate(() => { const s = window.stickSoldiers.state.me.world.inv.slots; return { gun: s.findIndex(x => x?.key === 'SR'), scope: s.findIndex(x => x?.key === 'scope2') }; });
+await page.click(`#inventory .inv-slot[data-box="me"][data-slot="${at.scope}"]`);
+await page.click(`#inventory .inv-slot[data-box="me"][data-slot="${at.gun}"]`);
+const fitted = await page.evaluate(i => window.stickSoldiers.state.me.world.inv.slots[i]?.g?.att?.sight || null, at.gun);
+const marked = await page.locator(`#inventory .inv-slot[data-box="me"][data-slot="${at.gun}"]`).evaluate(el => el.classList.contains('fitted'));
+await page.click(`#inventory .inv-slot[data-box="me"][data-slot="${at.gun}"]`, { button: 'right' });
+const off = await page.evaluate(i => ({ att: window.stickSoldiers.state.me.world.inv.slots[i]?.g?.att || null, scopes: window.stickSoldiers.state.me.world.inv.count('scope2') }), at.gun);
+check(fitted === 'scope2' && marked && !off.att && off.scopes === 1, `a scope fitted to the rifle, and taken off (${JSON.stringify({ fitted, marked, off })})`);
 // (Escape in the box: emptied, and the keys are the game's again.)
 await page.locator('#inventory [data-find]').press('Escape');
 await page.keyboard.press('KeyI');

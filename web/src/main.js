@@ -42,7 +42,7 @@ import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
 import { TileWorld } from './world/tileworld.js';
 import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT, genOf } from './world/worldsave.js';
-import { playerToSave, worldFromSave, dropItem, chestAt, boxFor, boxKind, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, rehire, REACH, makeRecipe, devTake, stackToChests } from './world/worldplay.js';
+import { playerToSave, worldFromSave, dropItem, chestAt, boxFor, boxKind, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, rehire, REACH, makeRecipe, devTake, stackToChests, fitAttachment, stripGun } from './world/worldplay.js';
 import { warp, waystonesToSave, waystonesFromSave } from './world/waystones.js';
 import { WORLD_SETTINGS, cleanSettings, settingsSummary, kitOf } from './world/worldrules.js';
 import { itemOf } from './world/items.js';
@@ -51,6 +51,7 @@ import { TalkScreen } from './world/talkui.js';
 import { talkView, talkDo, endTalk } from './world/talk.js';
 import { JournalScreen } from './world/questui.js';
 import { DevPanel } from './world/devpanel.js';
+import { scopeOf } from './world/attachments.js';
 import { devAct } from './world/devtools.js';
 import { questsOf, dropQuest } from './world/quests.js';
 import { spendPoint } from './world/progress.js';
@@ -1071,6 +1072,9 @@ async function importWorldFile(file) {
 let invScreen = null;
 const getInventory = () => (invScreen ||= new InventoryScreen($('inventory'), {
   drop: i => dropFromInventory(i), craft: (r, times) => craftItem(r, times), close: () => closeInventory(),
+  // (Attachments on guns: attachments.js.)
+  attach: (i, j) => { const g = state.game, me = state.me; if (g?.world && me?.world) { const t = fitAttachment(g, me, i, j); if (t) localNote(t); } },
+  detach: i => { const g = state.game, me = state.me; if (g?.world && me?.world) { const t = stripGun(g, me, i); if (t) localNote(t); } },
   // (Your bag into the chests near you that have some of the same: worldplay.js.)
   stack: () => { const g = state.game, me = state.me; if (g?.world && me?.world) localNote(stackToChests(g, me)); },
 }));
@@ -2178,7 +2182,32 @@ function frame(now) {
   // (Online, the hit-stop holds the picture: the game itself can't stop.)
   if (state.mode !== 'offline' && now < state.hitStopUntil && state.drawnOnce) { pacer.drawn(now, 0); return; }
 
-  const sniping = me.alive && me.current === 'SR' && input.held('aim') && !state.menuOpen && !state.chatOpen;
+  // Scoped (a world's gun with a scope fitted, attachments.js), aiming with right click: the mouse
+  // at the screen's edge pushes the view out that way (the closer to the edge, the faster), as far
+  // as the scope reaches, a little closer; anywhere else it holds still, to aim. Let go: it's back.
+  const scope = g.world && me.alive && !watchMode && !state.menuOpen && !state.chatOpen && input.held('aim') ? scopeOf(me.world?.inv?.slots[me.world.slot]) : null;
+  const sv = state.scopeView ||= { x: 0, y: 0, on: false, reach: 0 };
+  if (scope) {
+    const W = renderer.w, H = renderer.h, mx = input.mouse.x - W / 2, my = input.mouse.y - H / 2, max = scope.reach * 16;
+    // (How far into the band round the screen's edge the mouse is: 0 short of it, 1 at the edge.)
+    const bx = Math.max(24, W * 0.09), by = Math.max(24, H * 0.09);
+    const push = Math.min(1, Math.max(0, (Math.abs(mx) - (W / 2 - bx)) / bx, (Math.abs(my) - (H / 2 - by)) / by));
+    if (push > 0) {
+      const d = Math.hypot(mx, my) || 1, step = Math.max(500, max * 0.6) * push * push * dt / 1000;
+      sv.x += (mx / d) * step;
+      sv.y += (my / d) * step;
+    }
+    const L = Math.hypot(sv.x, sv.y);
+    if (L > max) { sv.x *= max / L; sv.y *= max / L; }
+    sv.on = true;
+    sv.reach = scope.reach;
+  } else {
+    sv.on = false;
+    if (sv.x || sv.y) { sv.x *= 0.7; sv.y *= 0.7; if (Math.hypot(sv.x, sv.y) < 2) sv.x = sv.y = 0; }
+  }
+  // (The chunks out there made ready, as round a player: worldplay.js.)
+  if (g.world) g.world.lookAt = Math.hypot(sv.x, sv.y) > 600 ? { x: me.x + sv.x, y: me.y + sv.y } : null;
+  const sniping = !scope && me.alive && me.current === 'SR' && input.held('aim') && !state.menuOpen && !state.chatOpen;
   // Aiming down the sights: right click held with a gun (Settings).
   const sights = !sniping && me.alive && input.held('aim') && SIGHTED.has(weaponFor(me, me.current)?.kind) && !watchMode && !g.over &&
     !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open;
@@ -2192,7 +2221,8 @@ function frame(now) {
   input.devZoom = 0;
   // (Flying in dev mode: the camera stays right with you, rather than trailing behind, which at
   // that speed leaves you at the edge of the screen, and drifting on after you stop.)
-  renderer.updateCamera(g, ax, ay, state.menuOpen || watchMode ? null : input.mouse, sniping, dt, sights ? aimZoomNow() : 1, devView(me) && view === me ? 0 : undefined);
+  // (Through a scope too: the view goes just where it's pushed, and stops where it stops.)
+  renderer.updateCamera(g, ax + sv.x, ay + sv.y, state.menuOpen || watchMode || sv.on ? null : input.mouse, sniping, dt, scope ? scope.mag : sights ? aimZoomNow() : 1, (devView(me) && view === me) || sv.on ? 0 : undefined);
   const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
   renderer.fogFrom = view;
@@ -2210,6 +2240,8 @@ function frame(now) {
     replay: g.over && !!g.finalKill && !state.replayTried,
     killMark: killK >= 0 && killK < 1 && !state.menuOpen && !watchMode ? { x: input.mouse.x, y: input.mouse.y, k: killK } : null,
     showScores: input.held('scores') && !state.chatOpen, showItems: input.held('showItems') && !state.chatOpen, watching, chat: state.chat,
+    // (Looking through a scope: how far out, and how far it goes.)
+    scope: sv.on ? { blocks: Math.round(Math.hypot(sv.x, sv.y) / 16), reach: sv.reach } : null,
     spectating: me.spectating ? { free: !!free, target: watching } : null,
     online: state.mode !== 'offline',
     hostId: state.mode === 'host' ? me.id : state.mode === 'client' ? g.soldiers.find(s => !s.isBot && !s.remote)?.id : null,

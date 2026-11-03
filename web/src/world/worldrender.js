@@ -1283,6 +1283,49 @@ export function drawTileIcon(ctx, it, x, y, w, classic) {
 }
 
 /** An item's picture, w square at (x, y) (detail: blocks and walls as they look in the world; else plain, for little ones). */
+/** A weapon attachment's picture (attachments.js): a scope, a muzzle, a grip or laser, a magazine. */
+function drawAttachment(ctx, it, x, y, w) {
+  const a = it.att, c = it.color || '#666';
+  ctx.strokeStyle = INK;
+  ctx.fillStyle = c;
+  if (a.slot === 'sight') {
+    // A tube with a lens at each end (a red dot: a short one, the dot showing).
+    const long = a.scope?.reach >= 30, L = long ? w * 0.84 : w * 0.5, x0 = x + (w - L) / 2, cy = y + w * 0.45, r = w * (0.12 + Math.min(4, a.tier) * 0.015);
+    ctx.fillRect(x0, cy - r, L, r * 2); ctx.strokeRect(x0, cy - r, L, r * 2);
+    ctx.fillStyle = '#9fd8ff';
+    ctx.fillRect(x0 - 1, cy - r * 1.3, w * 0.08, r * 2.6); ctx.strokeRect(x0 - 1, cy - r * 1.3, w * 0.08, r * 2.6);
+    ctx.fillRect(x0 + L - w * 0.08 + 1, cy - r * 1.3, w * 0.08, r * 2.6); ctx.strokeRect(x0 + L - w * 0.08 + 1, cy - r * 1.3, w * 0.08, r * 2.6);
+    ctx.fillStyle = '#555'; ctx.fillRect(x + w * 0.42, cy + r, w * 0.16, w * 0.2);
+    if (!long) { ctx.fillStyle = '#ff2a2a'; ctx.beginPath(); ctx.arc(x + w / 2, cy, r * 0.5, 0, Math.PI * 2); ctx.fill(); }
+    return;
+  }
+  if (a.slot === 'muzzle') {
+    // A tube, its end cut in vents (a compensator) or plain (a suppressor; a long barrel, thinner).
+    const thin = a.long ? 0.1 : 0.17, cy = y + w * 0.5;
+    ctx.fillRect(x + w * 0.08, cy - w * thin, w * 0.84, w * thin * 2); ctx.strokeRect(x + w * 0.08, cy - w * thin, w * 0.84, w * thin * 2);
+    if (!a.quiet && !a.long) { ctx.fillStyle = INK; for (let i = 0; i < 3; i++) ctx.fillRect(x + w * (0.55 + i * 0.12), cy - w * 0.08, w * 0.05, w * 0.16); }
+    return;
+  }
+  if (a.slot === 'under') {
+    if (a.laser) {
+      ctx.fillRect(x + w * 0.15, y + w * 0.35, w * 0.45, w * 0.25); ctx.strokeRect(x + w * 0.15, y + w * 0.35, w * 0.45, w * 0.25);
+      ctx.strokeStyle = '#ff2a2a'; ctx.beginPath(); ctx.moveTo(x + w * 0.6, y + w * 0.47); ctx.lineTo(x + w * 0.98, y + w * 0.47); ctx.stroke();
+      return;
+    }
+    // A grip: a block, and the handle down from it.
+    ctx.fillRect(x + w * 0.25, y + w * 0.18, w * 0.5, w * 0.2); ctx.strokeRect(x + w * 0.25, y + w * 0.18, w * 0.5, w * 0.2);
+    ctx.fillRect(x + w * 0.4, y + w * 0.38, w * 0.2, w * 0.5); ctx.strokeRect(x + w * 0.4, y + w * 0.38, w * 0.2, w * 0.5);
+    return;
+  }
+  // A magazine (a drum: round), or rounds (hollow points: three bullets).
+  if (it.key === 'hollow_points') {
+    for (let i = 0; i < 3; i++) { const bx = x + w * (0.2 + i * 0.22); ctx.fillRect(bx, y + w * 0.3, w * 0.14, w * 0.45); ctx.strokeRect(bx, y + w * 0.3, w * 0.14, w * 0.45); }
+    return;
+  }
+  if (it.key === 'drum_mag') { ctx.beginPath(); ctx.arc(x + w / 2, y + w * 0.55, w * 0.32, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); return; }
+  ctx.beginPath(); ctx.moveTo(x + w * 0.35, y + w * 0.1); ctx.lineTo(x + w * 0.62, y + w * 0.1); ctx.lineTo(x + w * 0.72, y + w * 0.9); ctx.lineTo(x + w * 0.45, y + w * 0.9); ctx.closePath(); ctx.fill(); ctx.stroke();
+}
+
 export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
   const c = it.color || '#888';
   if (detail && (it.kind === 'block' || it.kind === 'wall')) { drawTileIcon(ctx, it, x, y, w, classic); return; }
@@ -1306,6 +1349,7 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
     else { ctx.fillRect(x + w * 0.5, y, w * 0.45, w * 0.35); ctx.strokeStyle = INK; ctx.strokeRect(x + w * 0.5, y, w * 0.45, w * 0.35); }
     return;
   }
+  if (it.kind === 'attachment') { drawAttachment(ctx, it, x, y, w); return; }
   if (it.key.endsWith('_bar')) {
     // An ingot.
     ctx.fillStyle = c;

@@ -17,7 +17,7 @@ import { Inventory, HOTBAR, itemOf } from './items.js';
 import { packBytes, unpackBytes } from './worldsave.js';
 import { recipeById } from './crafting.js';
 import { devAct } from './devtools.js';
-import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, boxFor, boxKind, claimsToSave, claimsFromSave, REACH, setRightHand, makeRecipe, devTake, equip, unequip, stackToChests } from './worldplay.js';
+import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, boxFor, boxKind, claimsToSave, claimsFromSave, REACH, setRightHand, makeRecipe, devTake, equip, unequip, stackToChests, fitAttachment, stripGun } from './worldplay.js';
 import { warp } from './waystones.js';
 import { SLOTS } from './gear.js';
 import { cleanGear } from './items.js';
@@ -232,6 +232,9 @@ export class WorldHost {
         if (made) g.notify(s, `Made ${made * r.n} × ${itemOf(r.key).name}`);
         break;
       }
+      // (An attachment fitted to a gun, or all taken off one: attachments.js.)
+      case 'attach': { const t = fitAttachment(g, s, d.a | 0, d.b | 0); if (t) g.notify(s, t); break; }
+      case 'detach': { const t = stripGun(g, s, d.i | 0); if (t) g.notify(s, t); break; }
       // (Dev mode: something from the codex, free.)
       case 'devtake': { const t = devTake(g, s, d.id); if (t) g.notify(s, t); break; }
       // (Dev mode, theirs in a creative world: the dev menu, devtools.js. Not other players: that's the host's.)

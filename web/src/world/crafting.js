@@ -129,6 +129,23 @@ recipe('Dynamite', 3, [['coal', 4], ['sand', 2]], 'gunsmith');
 recipe('Mine', 2, [['iron_bar', 2], ['coal', 2]], 'gunsmith');
 recipe('Teleport', 1, [['crystal_ore', 5], ['gold_bar', 2]], 'gunsmith');
 recipe('merc_contract', 1, [['coins', 60], ['gold_bar', 1]], 'gunsmith');
+// Attachments (attachments.js): sights and scopes (glass and metal; the best, gems), muzzles,
+// under the barrel, magazines and rounds.
+recipe('red_dot', 1, [['iron_bar', 2], ['glass', 2], ['ruby', 1]], 'gunsmith');
+recipe('scope2', 1, [['iron_bar', 3], ['glass', 3]], 'gunsmith');
+recipe('scope4', 1, [['iron_bar', 4], ['glass', 4], ['gold_bar', 1]], 'gunsmith');
+recipe('scope8', 1, [['silver_bar', 3], ['glass', 6], ['gold_bar', 2]], 'gunsmith');
+recipe('scope16', 1, [['gold_bar', 4], ['crystal_ore', 4], ['sapphire', 1]], 'gunsmith');
+recipe('hawkeye', 1, [['gold_bar', 6], ['crystal_ore', 8], ['sapphire', 2], ['diamond', 2]], 'gunsmith');
+recipe('suppressor', 1, [['iron_bar', 5], ['coal', 3]], 'gunsmith');
+recipe('compensator', 1, [['iron_bar', 4], ['copper_bar', 2]], 'gunsmith');
+recipe('long_barrel', 1, [['iron_bar', 6], ['silver_bar', 1]], 'gunsmith');
+recipe('foregrip', 1, [['planks', 3], ['iron_bar', 1]], 'gunsmith');
+recipe('laser', 1, [['copper_bar', 2], ['glass', 1], ['ruby', 1]], 'gunsmith');
+recipe('ext_mag', 1, [['iron_bar', 3]], 'gunsmith');
+recipe('drum_mag', 1, [['iron_bar', 6], ['copper_bar', 3]], 'gunsmith');
+recipe('quick_mag', 1, [['iron_bar', 2], ['copper_bar', 2]], 'gunsmith');
+recipe('hollow_points', 4, [['copper_bar', 2], ['coal', 1]], 'gunsmith');
 
 export const RECIPES = R;
 

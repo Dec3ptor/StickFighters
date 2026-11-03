@@ -30,6 +30,7 @@ const hotScale = W => Math.min(1, (W - 24) / (HOTBAR * HOT_SIZE + (HOTBAR - 1) *
  * opts.showItems: the key's held that names everything on the ground).
  */
 export function drawWorldHud(r, ctx, game, me, W, H, opts = {}) {
+  if (opts.scope) drawScope(ctx, opts.scope, W, H);
   if (game.world.drops?.length) drawDropNames(r, ctx, game, me, W, H, !!opts.showItems);
   if (me.world?.marks?.length) drawMarks(r, ctx, game, me, W, H);
   if (me.alive && me.world?.quests?.list.length) drawQuestPointer(r, ctx, game, me, W, H);
@@ -339,6 +340,24 @@ function drawTalkHint(ctx, game, me, W, H) {
 }
 
 /** Dev mode's card (devmode.js): what it's set to, and its keys. */
+/** Looking through a scope (attachments.js): the edges darkened, and how far out the view is. */
+function drawScope(ctx, sc, W, H) {
+  const r = Math.min(W, H) * 0.55, g = ctx.createRadialGradient(W / 2, H / 2, r * 0.75, W / 2, H / 2, Math.hypot(W, H) / 2);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.font = '600 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  const text = `Scope · ${sc.blocks} block${sc.blocks === 1 ? '' : 's'} out, of ${sc.reach} · the mouse at the screen's edge looks further · let go of right click to come back`;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  const tw = ctx.measureText(text).width;
+  ctx.fillRect(W / 2 - tw / 2 - 8, H - 132, tw + 16, 22);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(text, W / 2, H - 116);
+}
+
 function drawDev(ctx, me, zoom) {
   const lines = devLines(me, zoom);
   ctx.textAlign = 'left';

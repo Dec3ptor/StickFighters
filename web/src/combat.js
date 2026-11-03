@@ -175,7 +175,8 @@ export function fire(game, s, input = {}) {
   // (Building makes its own sound, where the block goes.)
   if (def.kind !== 'build' && (def.kind !== 'flame' || game.tick % 6 === 0)) game.sound(def.sound, muzzle.x, muzzle.y);
   // How far the shot is heard (by bots that only know what they see and hear).
-  game.noise(s.x, s.y, def.kind === 'melee' ? 150 : def.kind === 'arrow' ? 260 : def.kind === 'thrown' || def.kind === 'placed' || def.kind === 'build' ? 320 : def.kind === 'flame' ? 450 : def.kind === 'rail' ? 1200 : 950, s);
+  // (A suppressor, a world's attachment: heard from a quarter as far.)
+  game.noise(s.x, s.y, (def.kind === 'melee' ? 150 : def.kind === 'arrow' ? 260 : def.kind === 'thrown' || def.kind === 'placed' || def.kind === 'build' ? 320 : def.kind === 'flame' ? 450 : def.kind === 'rail' ? 1200 : 950) * (def.quiet ? 0.25 : 1), s);
   if (GUN_KINDS.has(def.kind)) game.fx?.muzzle(muzzle.x, muzzle.y, s.aim, (def.pellets || 0) > 1 || def.kind === 'rocket', s.id);
   if (!def.mag && inv.ammo <= 0 && !s.body.rope) s.selectBest();
   return true;
@@ -510,6 +511,9 @@ function railShot(game, s, x0, y0, dx, dy, def, id) {
 }
 
 /** Where the sniper laser lands (for drawing): first wall or soldier along the aim. */
+/** Whether soldier s's gun in hand has a laser: the sniper rifle's own, or a world's laser sight (attachments.js). */
+export const lasered = s => s.current === 'SR' || !!s.weaponOverride?.(s.current)?.laser;
+
 export function laserEnd(game, s) {
   const dx = Math.cos(s.aim), dy = Math.sin(s.aim);
   const x0 = s.shoulderX + dx * 26, y0 = s.shoulderY + dy * 26;

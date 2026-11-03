@@ -128,7 +128,10 @@ const BUILT_WALLS = new Set(WALLS.filter(w => w.id !== NO_WALL && !w.natural).ma
 export function monstersTick(game) {
   const world = game.world;
   if (game.tick % SPAWN_EVERY !== 0) return;
+  // (Where a scope's looking, far off, counts as somewhere someone is: monsters there stay, and come,
+  // as round a player: main.js's world.lookAt, attachments.js.)
   const players = game.soldiers.filter(s => s.alive && s.world);
+  if (world.lookAt) players.push({ x: world.lookAt.x, y: world.lookAt.y });
   const night = isNight(world.time || 0);
   // Gone: the dead (a while after), those far from everyone, zombies caught out in daylight.
   for (const s of game.soldiers) {

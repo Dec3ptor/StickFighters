@@ -11,6 +11,7 @@
 import { BLOCKS, WALLS, BLOCK_BY_KEY, SHULKER_BOXES } from './blocks.js';
 import { WEAPONS } from '../weapons.js';
 import { BASES, rarityOf } from './gear.js';
+import { ATTACHMENTS, cleanAtt } from './attachments.js';
 
 export const HOTBAR = 10;
 export const BAG = 30;
@@ -61,6 +62,8 @@ for (const [key, name, color] of [
 // Gear (gear.js): worn on the head, body or feet, rings and amulets. Each piece is one of a kind
 // (its rarity, name and affixes kept in its slot: slot.g), so they don't stack.
 for (const [key, b] of Object.entries(BASES)) item(key, b.name, 'gear', { stack: 1, wear: b.kind, color: b.color });
+// Weapon attachments (attachments.js): fitted to a gun in the inventory (picked up, put on it).
+for (const [key, a] of Object.entries(ATTACHMENTS)) item(key, a.name, 'attachment', { stack: 10, color: a.color, att: a });
 // A recall scroll: read (a click, either hand), after a few moments it takes you home (your bed, an
 // inn you rested at, or where the world starts): worldplay.js. Sold at temples and markets.
 item('recall_scroll', 'Recall scroll', 'scroll', { stack: 20, color: '#e8dcc0' });
@@ -117,6 +120,9 @@ export const CRATE_LOOT = [
   ['Longbow', 1, 1, 1], ['SR', 1, 1, 1], ['Bazooka', 1, 1, 1], ['GrenadeLauncher', 1, 1, 1], ['Flamer', 1, 1, 1],
   ['ClusterBomb', 2, 4, 2], ['Dynamite', 2, 4, 2], ['Mine', 2, 5, 2], ['Sheep', 1, 2, 1], ['NinjaRope', 1, 1, 1], ['iron_pickaxe', 1, 1, 1],
   // (The rarest: only ever found in crates.)
+  // (Attachments for guns: attachments.js. The best scopes only from crafting, and the rarest finds.)
+  ['red_dot', 1, 1, 0.8], ['scope2', 1, 1, 0.8], ['scope4', 1, 1, 0.5], ['scope8', 1, 1, 0.2], ['foregrip', 1, 1, 0.7], ['ext_mag', 1, 1, 0.6],
+  ['suppressor', 1, 1, 0.4], ['hollow_points', 2, 6, 0.8], ['laser', 1, 1, 0.4],
   ['recall_scroll', 1, 2, 1], ['Skunk', 1, 2, 0.6], ['OldWoman', 1, 1, 0.4], ['AirStrike', 1, 1, 0.4], ['NapalmStrike', 1, 1, 0.3], ['Earthquake', 1, 1, 0.2], ['Kamikaze', 1, 1, 0.4],
 ];
 
@@ -140,6 +146,9 @@ export function cleanGear(g) {
   for (const [k, v] of Object.entries(g.stats || {})) if (/^[a-z]{2,6}$/.test(k) && Number.isFinite(v)) out.stats[k] = Math.max(-100, Math.min(500, Math.round(v)));
   if (typeof g.set === 'string') out.set = g.set.slice(0, 24);
   if (typeof g.unique === 'string') out.unique = g.unique.slice(0, 24);
+  // (A gun's attachments: attachments.js.)
+  const att = cleanAtt(g.att);
+  if (att) out.att = att;
   // (A shulker box's things: [[key, n, mag, g]], none of them shulker boxes.)
   if (Array.isArray(g.box)) {
     out.box = [];

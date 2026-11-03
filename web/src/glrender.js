@@ -13,6 +13,7 @@ import { GLContext, QuadBatch, QP } from './glctx.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
 import { fillSeams, hatch, courses } from './map.js';
 import { WorldView, drawDrops } from './world/worldrender.js';
+import { lasered } from './combat.js';
 
 const INK = 0x111111;
 // Particles drawn as sprites (the rest are drawn as shapes, like on the canvas).
@@ -159,7 +160,7 @@ export class GLRenderer extends Renderer {
     drawCarried(this, game);
     this.drawProjectiles(game, true);
     this.drawEffects(game);
-    for (const sol of shown.soldiers) if (sol.current === 'SR') this.drawLaser(game, sol);
+    for (const sol of shown.soldiers) if (lasered(sol)) this.drawLaser(game, sol);
     this.drawBuildGhost(game, viewer);
     if (game.world) this.drawWorldOver(game, viewer);
     if (this.drawNames) this.drawNames(game, shown.names, alpha, viewer);
