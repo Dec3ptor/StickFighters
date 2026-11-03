@@ -29,6 +29,7 @@ import { questsOf, dropQuest } from './quests.js';
 import { socialOptions, socialDo, tradeView, offerTrade, acceptTrade, cancelTrade, shareQuest } from './social.js';
 import { cleanFound } from './codex.js';
 import { cleanSettings, kitOf } from './worldrules.js';
+import { boatsFor, boatsFromNet } from './boats.js';
 
 const LAYERS = ['fg', 'bg', 'shape'];
 const CHUNKS_PER_MESSAGE = 40;
@@ -120,15 +121,16 @@ export class WorldHost {
     }
   }
 
-  /** For a ready player's next events: the blocks changed since the last. */
+  /** For a ready player's next events: the blocks changed since the last, and the boats near them when they've changed (boats.js). */
   events(p) {
     const w = p.wsync;
     if (!w) return null;
     if (w.overflow) this.sendChunks(p);
-    if (!w.tiles.length) return null;
+    const bt = boatsFor(this.game, p.soldier, w);
+    if (!w.tiles.length) return bt ? { bt } : null;
     const tc = w.tiles;
     w.tiles = [];
-    return { tc };
+    return bt ? { tc, bt } : { tc };
   }
 
   /** A ready player's own things, and the chest they have open, when they've changed. */
@@ -336,6 +338,11 @@ export class WorldClient {
       const layer = LAYERS[c[2]];
       if (layer) world.set(layer, c[0] | 0, c[1] | 0, c[3] | 0);
     }
+  }
+
+  /** The host's boats near us (with the events, as of its update `tick`): boats.js. */
+  boats(list, tick) {
+    if (this.game?.world) boatsFromNet(this.game, list, tick, this.me);
   }
 
   /** A snapshot's world part: the time, and what's lying on the ground. */

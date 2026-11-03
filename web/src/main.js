@@ -44,6 +44,7 @@ import { TileWorld } from './world/tileworld.js';
 import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT, genOf } from './world/worldsave.js';
 import { playerToSave, worldFromSave, dropItem, chestAt, boxFor, boxKind, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, rehire, REACH, makeRecipe, devTake, stackToChests, fitAttachment, stripGun } from './world/worldplay.js';
 import { warp, waystonesToSave, waystonesFromSave } from './world/waystones.js';
+import { boatsToSave, boatsFromSave } from './world/boats.js';
 import { skyHears } from './world/sky.js';
 import { WORLD_SETTINGS, cleanSettings, settingsSummary, kitOf } from './world/worldrules.js';
 import { itemOf } from './world/items.js';
@@ -971,6 +972,7 @@ async function startWorld(rec, { online = false } = {}) {
   chestsFromSave(world, rec.chests);
   gravesFromSave(world, rec.graves);
   waystonesFromSave(world, rec.waystones);
+  boatsFromSave(world, rec.boats);
   // (What's lost on dying: in a grave.)
   world.death = settings.death;
   claimsFromSave(world, rec.claims);
@@ -1047,6 +1049,7 @@ function saveWorldNow(last = false) {
   w.rec.graves = gravesToSave(w.game.world);
   w.rec.waystones = waystonesToSave(w.game.world);
   w.rec.claims = claimsToSave(w.game.world);
+  w.rec.boats = boatsToSave(w.game.world);
   w.rec.time = Math.round(w.game.world.time || 0);
   w.rec.towns = w.game.world.townState || {};
   w.rec.played = Date.now();

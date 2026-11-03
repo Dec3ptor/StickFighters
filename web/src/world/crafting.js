@@ -188,6 +188,13 @@ recipe('pressure_mine', 2, [['iron_bar', 2], ['coal', 3]], 'gunsmith');
 recipe('breach_charge', 2, [['iron_bar', 3], ['coal', 6], ['sand', 2]], 'gunsmith');
 recipe('demo_charge', 1, [['iron_bar', 6], ['gold_bar', 2], ['coal', 12]], 'gunsmith');
 
+// ---- Boats (boats.js), at a workbench: a raft of logs lashed with leather or wool, a rowing
+// boat of planks, and a sailboat, a rowing boat with a mast and a sail of wool. ----
+recipe('raft', 1, [['wood', 5], ['leather', 2]], 'workbench');
+recipe('raft', 1, [['wood', 5], ['wool', 2]], 'workbench');
+recipe('rowboat', 1, [['planks', 20]], 'workbench');
+recipe('sailboat', 1, [['rowboat', 1], ['wood', 2], ['wool', 6]], 'workbench');
+
 export const RECIPES = R;
 
 /**

@@ -20,6 +20,7 @@ import { Blocks } from './rm/blocks.js';
 import { makeMaterials } from './rm/textures.js';
 import { themeFor } from './rm/themes.js';
 import { WorldView, drawDrops, drawTarget } from './world/worldrender.js';
+import { drawBoats } from './world/boatart.js';
 import { drawSkyBehind, drawSkyFront, drawSkyGlow } from './world/sky.js';
 
 export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate };
@@ -360,11 +361,14 @@ export class Renderer {
     (this.worldView ||= new WorldView('classic')).drawBlocks(this, game);
     this.worldView.drawMagma(this.ctx, game, true);
     drawDrops(this.ctx, game, 'classic', this.alpha ?? 1, this.view);
+    // (Boats: what's behind whoever's in them, boatart.js.)
+    drawBoats(this.ctx, game, 'classic', this.alpha ?? 1, this.view, true);
   }
 
   /** Over a world, once everything in it is drawn: the dark underground, and the block the crosshair's on. */
   drawWorldOver(game, viewer) {
-    // The water, over everything in it.
+    // Boats, over whoever's in them (boatart.js); then the water, over everything in it.
+    drawBoats(this.ctx, game, 'classic', this.alpha ?? 1, this.view);
     this.worldView?.drawWater(this.ctx, game, true);
     // (Leaves falling, motes in caves, the cloud layer's nearer clouds, under the light: sky.js.)
     drawSkyFront(this.ctx, this, game, true);

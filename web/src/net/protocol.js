@@ -14,7 +14,7 @@ import { ITEMS } from '../world/items.js';
 import { RARITIES } from '../world/gear.js';
 import { ACTS, ACT_ID } from '../useanim.js';
 
-export const PROTOCOL = 27;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 28;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);

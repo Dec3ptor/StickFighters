@@ -13,6 +13,7 @@ import { GLContext, QuadBatch, QP } from './glctx.js';
 import { drawObjectives, drawCarried } from './objdraw.js';
 import { fillSeams, hatch, courses } from './map.js';
 import { WorldView, drawDrops } from './world/worldrender.js';
+import { drawBoats } from './world/boatart.js';
 import { drawSkyBehind } from './world/sky.js';
 import { lasered } from './combat.js';
 
@@ -227,6 +228,8 @@ export class GLRenderer extends Renderer {
     this.worldView.drawBlocks(this, game);
     this.worldView.drawMagma(this.ctx, game, true);
     drawDrops(this.ctx, game, 'classic', this.alpha ?? 1, this.view);
+    // (Boats: what's behind whoever's in them, boatart.js.)
+    drawBoats(this.ctx, game, 'classic', this.alpha ?? 1, this.view, true);
   }
 
   /** A world's picture on screen (in screen pixels), its texture made, or brought up to date. */

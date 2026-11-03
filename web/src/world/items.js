@@ -170,6 +170,12 @@ item('demo_charge', 'Demolition charge', 'siege', { stack: 5, color: '#5a5e3a' }
 item('battering_ram', 'Battering ram', 'tool', { stack: 1, tool: 'ram', power: 8, every: 30, tier: 0, color: '#6e7680', handle: '#5c3f22' });
 item('charter', 'Stronghold charter', 'charter', { stack: 5, color: '#e8dcc0' });
 
+// Boats (boats.js): put on water (a click, either hand, on its top), got into with a right click,
+// rowed left and right, got out of with a jump. boat: its kind.
+item('raft', 'Raft', 'boat', { stack: 1, color: '#a8804e', boat: 'raft' });
+item('rowboat', 'Rowing boat', 'boat', { stack: 1, color: '#8a5a32', boat: 'rowboat' });
+item('sailboat', 'Sailboat', 'boat', { stack: 1, color: '#f2ede0', boat: 'sailboat' });
+
 /** What a supply crate (found in ruins and caves) can hold: [key, least, most, how likely (a weight)]. */
 export const CRATE_LOOT = [
   ['bullets', 40, 120, 8], ['shells', 10, 30, 4], ['rockets', 3, 8, 2], ['arrows', 20, 40, 2], ['fuel', 80, 160, 1],

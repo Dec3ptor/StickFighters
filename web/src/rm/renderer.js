@@ -23,6 +23,7 @@ import { GameMap } from '../map.js';
 import { lasered } from '../combat.js';
 import { paintMap } from '../maptiles.js';
 import { WorldView, drawDrops, drawTarget } from '../world/worldrender.js';
+import { drawBoats } from '../world/boatart.js';
 import { drawSkyBehind, drawSkyFront, drawSkyGlow, windOf } from '../world/sky.js';
 import { nightness } from '../world/monsters.js';
 import { TILE, BLOCKS, MAGMA, FURNACE } from '../world/blocks.js';
@@ -350,6 +351,8 @@ export class RemasteredRenderer extends Renderer {
       }
     }
     drawDrops(this.ctx, game, 'remastered', this.alpha ?? 1, this.view);
+    // (Boats: what's behind whoever's in them, boatart.js.)
+    drawBoats(this.ctx, game, 'remastered', this.alpha ?? 1, this.view, true);
   }
 
   /** Behind the menus: the scenery of the map picked (or a sunset city), slowly panning. */
@@ -431,7 +434,9 @@ export class RemasteredRenderer extends Renderer {
     for (const sol of shown.soldiers) if (lasered(sol)) this.drawLaser(game, sol);
     this.drawBuildGhost(game, viewer);
 
-    // A world: its water, over everything in it; dark underground (the glows and flashes go over it).
+    // A world: its boats, over whoever's in them (boatart.js); its water, over everything in it;
+    // dark underground (the glows and flashes go over it).
+    if (world) drawBoats(ctx, game, 'remastered', alpha, this.view);
     if (world) this.worldView.drawWater(ctx, game, false);
     // (Leaves falling, motes in caves, the cloud layer's nearer clouds, under the light.)
     if (world) drawSkyFront(ctx, this, game, false);

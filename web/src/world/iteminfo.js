@@ -10,18 +10,21 @@ import { RECIPES, STATION_NAMES, madeFrom } from './crafting.js';
 import { valueOf, SHOPS, offerFor } from './trade.js';
 import { RARITY, gearLines, gearValue, rarityOf } from './gear.js';
 import { ATT_SLOTS, attLines, effects } from './attachments.js';
+import { BOATS } from './boats.js';
 
 /** Each kind of thing's colour (bright: they're shown on dark panels). */
 export const CATEGORY_COLORS = {
   coins: '#ffd23f', gem: '#d08cff', potion: '#ff6f8e', food: '#f4b06a', weapon: '#ffb347', tool: '#7cc0ff', ammo: '#e8cf7a',
   contract: '#f2e3b3', bar: '#e4e8ef', ore: '#d6ae84', block: '#ececec', wall: '#bdbdbd', material: '#dccdaa', quest: '#ffe36e', gear: '#f0f0f0',
   attachment: '#9fd8ff',
+  boat: '#8fd8c8',
 };
 /** What each kind is called. */
 const CATEGORY_NAMES = {
   coins: 'Money', gem: 'Gem', potion: 'Potion', food: 'Food', weapon: 'Weapon', tool: 'Tool', ammo: 'Ammunition', contract: 'Contract',
   bar: 'Metal bar', ore: 'Ore', block: 'Block', wall: 'Wall', material: 'Material', quest: 'Quest item', gear: 'Gear',
   attachment: 'Attachment',
+  boat: 'Boat',
 };
 
 /** The kind of thing an item is (for its colour). */
@@ -31,6 +34,7 @@ export function categoryOf(it) {
   if (it.gem) return 'gem';
   if (it.kind === 'food') return it.look === 'potion' ? 'potion' : 'food';
   if (it.kind === 'bucket') return 'tool';
+  if (it.kind === 'boat') return 'boat';
   if (it.kind === 'weapon' || it.kind === 'tool' || it.kind === 'ammo' || it.kind === 'contract' || it.kind === 'wall' || it.kind === 'quest' || it.kind === 'gear' || it.kind === 'attachment') return it.kind;
   if (it.key.endsWith('_bar')) return 'bar';
   if (it.key.endsWith('_ore') || it.key === 'coal' || it.key === 'kimberlite') return 'ore';
@@ -139,6 +143,8 @@ export function itemDetails(it, n = 1, g = null) {
       break;
     }
     case 'quest': lines.push('Carried for a quest (your journal says what for)', 'Nobody will buy it'); break;
+    // (Boats: boats.js.)
+    case 'boat': lines.push(BOATS[it.boat]?.about || 'A boat', 'Click the water (either hand) to put it on', 'Right click it to get in; left and right row it; jump to get out', 'A few hits break it, back into this'); break;
     case 'coins': lines.push('Money: for townsfolk\'s shops, healing, a bed, hiring guards'); break;
     case 'gem': lines.push('Precious: traders pay the most for it', 'Diamonds make the best pickaxe'); break;
     case 'bar': lines.push('Smelted metal, for tools, guns and more'); break;
