@@ -688,7 +688,10 @@ export class Game {
     const name = weapon ? WEAPONS[weapon]?.name ?? weapon : null;
     // (In the objective modes, the objective decides the team score, not kills.)
     const teamFrags = this.rules.teams && this.rules.killScore !== false;
-    if (killer && killer !== victim) {
+    // (A world's animals, hunted: no frag, no word in the kill feed, no streak.)
+    const prey = victim.npc?.kind === 'animal';
+    if (prey) text = null;
+    else if (killer && killer !== victim) {
       killer.frags++;
       if (teamFrags) this.teamScore[killer.team]++;
       this.stats.kills++;
@@ -712,9 +715,9 @@ export class Game {
       else if (opts.selfDestruct) { this.stats.suicides++; text = `${victim.name} self-destructed`; }
       else { this.stats.suicides++; text = `${victim.name} blew themselves up`; }
     }
-    this.addFeed({ text, tick: this.tick, killer, victim, weapon: name });
+    if (text) this.addFeed({ text, tick: this.tick, killer, victim, weapon: name });
     // Kill streaks: the victim's ends, the killer's goes on (callouts, rewards: streaks.js).
-    onStreakKill(this, victim, killer, weapon, opts);
+    if (!prey) onStreakKill(this, victim, killer, weapon, opts);
     this.rules.onKill(this, victim, killer, weapon, opts);
     // Classes on: bots choose where to respawn (their beacon, now and then a teammate's).
     if (this.classesOn && victim.isBot) victim.deployAt = botDeploy(this, victim, this.rng);

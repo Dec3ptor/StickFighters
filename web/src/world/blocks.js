@@ -292,8 +292,9 @@ export const PURE = Uint8Array.from(B, b => (b.fluid && b.pattern === 'water' ? 
 export const WATERS = B.filter(b => b.fluid === 'water' && b.pattern === 'water').map(b => b.id);
 // Where flowing water runs: into the open, and washing away small plants and torches (dropped,
 // as broken: worldplay.js). Anything else holds it back.
-const WASHED = new Set([TALL_GRASS, FLOWER, DEAD_BUSH, MUSHROOM, WHEAT, TORCH, FERN, BUSH, BERRY_BUSH, DRY_TALL_GRASS, PETALS]);
-export const WASH = Uint8Array.from(B, b => (b.id === AIR || WASHED.has(b.id) ? 1 : 0));
+const WASHED = new Set([TALL_GRASS, FLOWER, DEAD_BUSH, MUSHROOM, WHEAT, TORCH, FERN, BUSH, BERRY_BUSH, DRY_TALL_GRASS, PETALS, THORNS, GLOWCAP]);
+// (And crops, farming.js's: a field flooded is a field lost.)
+export const WASH = Uint8Array.from(B, b => (b.id === AIR || WASHED.has(b.id) || b.crop ? 1 : 0));
 /** How slippery each block is underfoot (0 to 1: ice). */
 export const SLIP = Float32Array.from(B, b => b.slip || 0);
 /**
