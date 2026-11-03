@@ -16,6 +16,7 @@ import { BLOCKS, WALLS, TILE, SOLID, NO_WALL } from './blocks.js';
 import { WORLD_H } from './worldgen.js';
 import { WEAPONS } from '../weapons.js';
 import { BODY } from '../config.js';
+import { iceBrake } from '../physics.js';
 import { pushDoor } from './doors.js';
 import { difficultyOf } from './worldrules.js';
 
@@ -225,9 +226,9 @@ function nearestFoe(game, s, rx, ry, ok = null) {
 
 const seesFrom = (game, s, o) => game.world.clearLine(s.shoulderX, s.shoulderY, o.x, o.y - 14);
 
-/** Walking toward dir (-1, 0, 1): jumps when it's stopped by something, or what it's after is above. */
+/** Walking toward dir (-1, 0, 1): jumps when it's stopped by something, or what it's after is above. (Stopping on ice: braking.) */
 function walk(game, s, ctl, inp, dir, speed, above) {
-  inp.move = dir * speed;
+  inp.move = (dir || iceBrake(s.body, game.world)) * speed;
   if (dir && !isMonster(s)) pushDoor(game, s, dir);
   if (dir && s.body.onGround) {
     ctl.stuck = Math.abs(s.x - ctl.lastX) < 0.15 ? ctl.stuck + 1 : 0;

@@ -135,7 +135,9 @@ function devTarget(s, inp) {
 /**
  * Dev mode's part in a soldier's update (worldplay.js's input hook calls it first): left click
  * wipes out the blocks in the brush (where there are none, the walls behind), right click
- * builds with the block (or wall) in hand. Returns the input for the rest of the update.
+ * builds with the block (or wall) in hand; with a bucket, pours water out (a full one: sources,
+ * into the open and flowing water) or takes it away (an empty one: any water). Nothing's used up.
+ * Returns the input for the rest of the update.
  */
 export function devInput(game, s, inp, held) {
   const w = s.world, dev = w.dev, world = game.world;
@@ -152,6 +154,14 @@ export function devInput(game, s, inp, held) {
         if (y < 0 || y >= WORLD_H) continue;
         if (held.kind === 'wall') { if (world.wall(x, y) === NO_WALL) world.setWall(x, y, held.wall); }
         else if (world.tile(x, y) === AIR && !(SOLID[held.block] && soldierAt(game, x, y))) world.setTile(x, y, held.block);
+      }
+    }
+  } else if (inp.alt && held?.kind === 'bucket') {
+    const F = K.FLUIDS[K.FLUID[K.BLOCK_BY_KEY.get(held.fluid)?.id] || 0];
+    for (let y = Math.max(1, ty - r); y <= Math.min(WORLD_H - 2, ty + r); y++) {
+      for (let x = tx - r; x <= tx + r; x++) {
+        const id = world.tile(x, y);
+        if (F ? K.WASH[id] || (K.FLUID[id] && !K.SOURCE[id]) : K.PURE[id]) world.setTile(x, y, F ? F.source : AIR);
       }
     }
   }

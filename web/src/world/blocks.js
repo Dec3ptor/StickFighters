@@ -45,7 +45,8 @@ export const SLATE = def('slate', 'Slate', { hard: 6, resist: 10, color: '#4f535
 export const SAND = def('sand', 'Sand', { hard: 2, resist: 0, color: '#dcc68a', pattern: 'stipple', natural: true });
 export const SANDSTONE = def('sandstone', 'Sandstone', { hard: 4, resist: 5, color: '#c9a86a', pattern: 'strata', natural: true });
 export const SNOW = def('snow', 'Snow', { hard: 2, resist: 0, color: '#eef3f7', pattern: 'plain', natural: true });
-export const ICE = def('ice', 'Ice', { hard: 3, resist: 4, color: '#9fd0ea', pattern: 'glass', natural: true });
+// (Slippery underfoot: physics.js. slip: how much, 0 to 1.)
+export const ICE = def('ice', 'Ice', { hard: 3, resist: 4, color: '#9fd0ea', pattern: 'glass', natural: true, slip: 1 });
 export const MUD = def('mud', 'Mud', { hard: 2, resist: 0, color: '#5a4636', pattern: 'dots', natural: true });
 export const JUNGLE_GRASS = def('jungle_grass', 'Jungle grass', { hard: 2, resist: 0, drop: 'mud', color: '#3f8f3a', dark: '#4a3a2c', pattern: 'grass', natural: true });
 export const RED_SAND = def('red_sand', 'Red sand', { hard: 2, resist: 0, color: '#c97a45', pattern: 'stipple', natural: true });
@@ -154,11 +155,12 @@ export const SHULKER_BOXES = new Set([SHULKER_BOX, RED_SHULKER_BOX, BLUE_SHULKER
 export const WAYSTONE = def('waystone', 'Waystone', furniture({ hard: 10, tier: 1, resist: 60, light: 7, color: '#8a93a6', pattern: 'waystone' }));
 
 // ---- Water and what grows in it (worlds made since seas: worldgen.js's gen 4) ------------------
-// Water: swum in (physics.js), not dug or blasted, and flows (tileworld.js's flow: into the open
-// beside or below it, when a block that held it back goes). What grows in it is in water too
-// (liquid: swum through, drawn under the water): seagrass, kelp, coral fans, reeds at the edges,
-// and lily pads on top (stood on, like a platform). Coral grows into blocks, on reefs in warm seas.
-const wet = o => ({ solid: false, hard: 0, tool: 'hand', resist: 0, drop: null, clear: true, natural: true, liquid: true, ...o });
+// Water: swum in (physics.js), not dug or blasted. Still water is a source: the land's seas, lakes
+// and pools, and wells, are; it stays as it is, and flows out where a way opens up beside or below
+// it (tileworld.js's flow: flowing water, below). What grows in it is in water too (liquid: swum
+// through, drawn under the water; a source): seagrass, kelp, coral fans, reeds at the edges, and
+// lily pads on top (stood on, like a platform). Coral grows into blocks, on reefs in warm seas.
+const wet = o => ({ solid: false, hard: 0, tool: 'hand', resist: 0, drop: null, clear: true, natural: true, liquid: true, fluid: 'water', amount: 8, source: true, ...o });
 export const WATER = def('water', 'Water', wet({ tool: 'none', tier: 9, resist: 999, color: '#2f6fd0', pattern: 'water' }));
 export const SEAGRASS = def('seagrass', 'Seagrass', wet({ color: '#3f9a4a', pattern: 'seagrass' }));
 export const KELP = def('kelp', 'Kelp', wet({ color: '#4f7a2a', pattern: 'kelp' }));
@@ -214,6 +216,16 @@ export const PETALS = plant('petals', 'Fallen petals', '#f4b0cc', 'petals');
 // ---- A sail (worlds made since capitals: boats in harbours): cloth, walked through.
 export const SAIL = def('sail', 'Sail', { solid: false, hard: 1, tool: 'hand', resist: 0, drop: null, clear: true, color: '#efe6d2', pattern: 'sail' });
 
+// ---- Flowing water (tileworld.js's flow: Minecraft's way) -----------------------------------------
+// What runs out of a source: flowing water along the ground, a level less with each tile it goes
+// (7 beside its source, down to 1 at its far edge: drawn shallower and shallower, its top sloping
+// down to its edge), and falling water, a column down to wherever it lands. Never dug, blasted or
+// made by the land: only ever what's flowed (and dries up again when what fed it is gone).
+const flowing = n => def(`water_${n}`, 'Flowing water', wet({ tool: 'none', tier: 9, resist: 999, color: '#2f6fd0', pattern: 'water', amount: n, source: false }));
+/** Flowing water by its level (1 to 7; [0]: none). */
+export const WATER_FLOW = [AIR, flowing(1), flowing(2), flowing(3), flowing(4), flowing(5), flowing(6), flowing(7)];
+export const WATER_FALL = def('water_fall', 'Falling water', wet({ tool: 'none', tier: 9, resist: 999, color: '#2f6fd0', pattern: 'water', source: false, falling: true }));
+
 /** The gem blocks (they glint). */
 export const GEMS = new Set([RUBY, SAPPHIRE, EMERALD, TOPAZ, AMETHYST, DIAMOND]);
 
@@ -229,6 +241,40 @@ export const LIGHT = Uint8Array.from(B, b => b.light);
 export const CLEAR = Uint8Array.from(B, b => (b.clear || !b.solid ? 1 : 0));
 // Water, and what's in it: swum in, drawn under water, flowed out of.
 export const LIQUID = Uint8Array.from(B, b => (b.liquid ? 1 : 0));
+
+// ---- Fluids (tileworld.js's flow) -------------------------------------------------------------------
+// Each kind of fluid: its source, its flowing blocks by level, its falling one; how much it drops
+// a tile (levels), how far ahead it looks for a way down (tiles), how many of the flow's waves it
+// takes a step (1: every one), and whether two sources make another between them (on something).
+// Only water, so far.
+export const FLUIDS = [null, { key: 'water', source: WATER, flow: WATER_FLOW, fall: WATER_FALL, drop: 1, reach: 4, every: 1, renew: true }];
+/** Which fluid each block is (an index into FLUIDS; 0: none). What grows in water is water, a source. */
+export const FLUID = Uint8Array.from(B, b => (b.fluid ? FLUIDS.findIndex(f => f?.key === b.fluid) : 0));
+/** How much of it a block is: 8, a source or falling; flowing, its level (7 to 1). */
+export const AMOUNT = Uint8Array.from(B, b => (b.fluid ? b.amount || 8 : 0));
+export const SOURCE = Uint8Array.from(B, b => (b.source ? 1 : 0));
+export const FALLING = Uint8Array.from(B, b => (b.falling ? 1 : 0));
+/** A fluid's own blocks (not what grows in it): drawn over everything, each frame (worldrender.js's drawWater). */
+export const PURE = Uint8Array.from(B, b => (b.fluid && b.pattern === 'water' ? 1 : 0));
+/** All water's own blocks: still, flowing at each level, falling. */
+export const WATERS = B.filter(b => b.fluid === 'water' && b.pattern === 'water').map(b => b.id);
+// Where flowing water runs: into the open, and washing away small plants and torches (dropped,
+// as broken: worldplay.js). Anything else holds it back.
+const WASHED = new Set([TALL_GRASS, FLOWER, DEAD_BUSH, MUSHROOM, WHEAT, TORCH, FERN, BUSH, BERRY_BUSH, DRY_TALL_GRASS, PETALS]);
+export const WASH = Uint8Array.from(B, b => (b.id === AIR || WASHED.has(b.id) ? 1 : 0));
+/** How slippery each block is underfoot (0 to 1: ice). */
+export const SLIP = Float32Array.from(B, b => b.slip || 0);
+/**
+ * How full of fluid tile id is (0 to 1: its top, from the bottom of the tile), with `above` (the
+ * block over it): a source, falling water, or any with more of it above, full; flowing, by its
+ * level ((level + 1) / 9). Not a fluid: 0.
+ */
+export function fluidHeight(id, above) {
+  const f = FLUID[id];
+  if (!f) return 0;
+  if (AMOUNT[id] >= 8 || FLUID[above] === f) return 1;
+  return (AMOUNT[id] + 1) / 9;
+}
 /** Trees' trunks (felled whole), their leaves (and the like: a crown), and giant mushrooms' caps. */
 export const TRUNKS = new Set([TRUNK, ...B.filter(b => b.trunk).map(b => b.id)]);
 export const LEAVES_ALL = new Set([LEAVES, PINE_LEAVES, JUNGLE_LEAVES, ...B.filter(b => b.leaf).map(b => b.id)]);

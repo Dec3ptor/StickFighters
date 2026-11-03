@@ -5,7 +5,7 @@
 // them; those players change are kept, and saved (worldsave.js).
 
 import * as K from './blocks.js';
-import { TILE, SOLID, PLATFORMS, LIQUID, SHAPES, BLOCKS, AIR, BEDROCK } from './blocks.js';
+import { TILE, SOLID, PLATFORMS, LIQUID, SHAPES, BLOCKS, AIR, BEDROCK, FLUIDS, FLUID, AMOUNT, SOURCE, FALLING, WASH, SLIP } from './blocks.js';
 import { WorldGen, CHUNK, WORLD_H, HALF_W } from './worldgen.js';
 import { segmentT, SEG } from '../map.js';
 
@@ -76,8 +76,12 @@ export class TileWorld {
     // straight away, as with GameMap's).
     this.ring = Array.from({ length: 4096 }, () => ({ l: 0, t: 0, r: 0, b: 0, id: -1, bounce: 0, hard: false, built: false, look: null, tx: 0, ty: 0, block: 0, platform: false }));
     this.ringAt = 0;
-    // Water to flow next (flowTick): tiles opened up beside it, as keys (flowKey).
+    // Water to look at in the flow's next wave (flowTick): tiles changed, and the water beside
+    // them, as keys (flowKey). And the waves so far.
     this.flowing = new Set();
+    this.waves = 0;
+    // (Told of each block flowing water washes away: fn(tx, ty, block). The world's rules drop it.)
+    this.onWash = null;
     this._hit = { t: 0, x: 0, y: 0, nx: 0, ny: 0, solid: null };
     this.lastKey = NaN;
     this.lastChunk = null;
@@ -97,6 +101,7 @@ export class TileWorld {
       if (s) { c.fg.set(s.fg); c.bg.set(s.bg); c.shape.set(s.shape); c.edited = true; }
       else this.gen.fillChunk(cx, cy, c.fg, c.bg, c.shape);
       this.chunks.set(k, c);
+      this.wakeChunk(c, !!s);
     }
     this.lastKey = k;
     this.lastChunk = c;
@@ -169,6 +174,7 @@ export class TileWorld {
     const c = new Chunk(d.cx, d.cy);
     c.fg = d.fg; c.bg = d.bg; c.shape = d.shape;
     this.chunks.set(k, c);
+    this.wakeChunk(c, false);
   }
 
   /** The block at tile (tx, ty): air above the world, bedrock below it. */
@@ -332,19 +338,73 @@ export class TileWorld {
     return null;
   }
 
-  /** True if the point (in pixels) is in water (or something growing in it). */
+  /**
+   * True if the point (in pixels) is in water (or something growing in it): under its top, in
+   * flowing water as shallow as its level (with more above it, all of the tile).
+   */
   liquidAt(x, y) {
     const ty = Math.floor(y / TILE);
     if (ty < 0 || ty >= WORLD_H) return false;
-    const tx = Math.floor(x / TILE);
-    return LIQUID[this.chunk(tx >> 5, ty >> 5).fg[((ty & 31) << 5) | (tx & 31)]] === 1;
+    const tx = Math.floor(x / TILE), id = this.chunk(tx >> 5, ty >> 5).fg[((ty & 31) << 5) | (tx & 31)];
+    if (LIQUID[id] !== 1) return false;
+    const a = AMOUNT[id];
+    if (a >= 8 || ty === 0 || FLUID[this.tile(tx, ty - 1)] === FLUID[id]) return true;
+    return y - ty * TILE >= TILE - (TILE * (a + 1)) / 9;
   }
 
-  // ---- Water flowing --------------------------------------------------------------------------
-  // Water stays where it is until a way opens up beside or below it (a block dug, blown away):
-  // then it flows, a tile at a time (flowTick, a wave every few updates): down into the open
-  // under it, and sideways from water that's resting on something (not falling). The sea and
-  // lakes never run dry. Only in chunks that are made: it doesn't make the world as it goes.
+  /**
+   * How slippery the ground is under feet at height y (px; just under them), across [l, r], x their
+   * middle: the block under the middle's slip (ice: 1), or on an edge (nothing solid under the
+   * middle), the most of those under the feet. 0: not slippery.
+   */
+  slipAt(x, l, r, y) {
+    const ty = Math.floor(y / TILE);
+    if (ty < 0 || ty >= WORLD_H) return 0;
+    const mid = this.tile(Math.floor(x / TILE), ty);
+    if (SOLID[mid]) return SLIP[mid];
+    let most = 0;
+    for (let tx = Math.floor(l / TILE), t1 = Math.floor((r - 0.01) / TILE); tx <= t1; tx++) {
+      const id = this.tile(tx, ty);
+      if (SOLID[id] && SLIP[id] > most) most = SLIP[id];
+    }
+    return most;
+  }
+
+  /**
+   * Which way the water at the point (px) runs, Minecraft's way: -1 or 1 (left or right: flowing
+   * water, downhill: toward lower water, or the open beside it), 2 (falling), 0 (still, or none).
+   */
+  currentAt(x, y) {
+    const ty = Math.floor(y / TILE);
+    if (ty < 0 || ty >= WORLD_H) return 0;
+    const tx = Math.floor(x / TILE), id = this.chunk(tx >> 5, ty >> 5).fg[((ty & 31) << 5) | (tx & 31)], f = FLUID[id];
+    if (!f || SOURCE[id]) return 0;
+    if (FALLING[id]) return 2;
+    if (!this.liquidAt(x, y)) return 0;
+    // (Each side: how much lower its water is, or the open, where it'll run.)
+    const own = AMOUNT[id];
+    let way = 0;
+    for (let d = -1; d <= 1; d += 2) {
+      const n = this.tile(tx + d, ty);
+      if (FLUID[n] === f) way += d * (own - (FALLING[n] ? 8 : AMOUNT[n]));
+      else if (WASH[n]) way += d * own;
+    }
+    return way > 0 ? 1 : way < 0 ? -1 : 0;
+  }
+
+  // ---- Water flowing (Minecraft's way) ------------------------------------------------------------
+  // Still water (a source: the land's seas, lakes and pools) stays as it is until a way opens up
+  // beside or below it. Then it flows, a step a wave (flowTick: every few updates), as Minecraft's:
+  //   * down first, into the open under it: falling water, a column down to wherever it lands;
+  //   * where it can't fall (on the ground; a source on water too), out to the sides, a level less
+  //     each tile (7 beside its source or where it lands, down to 1: seven tiles out at most), and
+  //     only toward the nearest way down within four tiles, if there is one (both ways if there
+  //     isn't, or they're as near); flowing water on more water goes no further;
+  //   * each tile's level worked out again from what's round it (the best beside it, less one; with
+  //     water above it, falling): what fed it gone, it dries up, a level at a time;
+  //   * between two sources, on something (or on a source), flowing water becomes a source.
+  // Each change wakes the water round it for the next wave. Only in chunks that are made (it waits
+  // at the edge of one that isn't, and goes on when it is made); not into towns or bases.
 
   /** The block at (tx, ty) if its chunk is made, else -1 (without making it). */
   peek(tx, ty) {
@@ -353,46 +413,160 @@ export class TileWorld {
     return c ? c.fg[((ty & 31) << 5) | (tx & 31)] : -1;
   }
 
-  /** Tile (tx, ty) just became block v: the water it's opened a way for, or that it is, to flow. */
+  /** Tile (tx, ty) just became block v: it, and the water beside, above and under it, looked at in the next wave. */
   wakeWater(tx, ty, v) {
-    if (LIQUID[v]) {
-      // (Water here: into the open under it and beside it; and beside the tile above, which
-      // it now holds up.)
-      for (let i = 0; i < FLOW_NEXT.length; i += 2) this.flowing.add(flowKey(tx + FLOW_NEXT[i], ty + FLOW_NEXT[i + 1]));
-    } else if (v === AIR && (LIQUID[this.peek(tx, ty - 1)] || LIQUID[this.peek(tx - 1, ty)] || LIQUID[this.peek(tx + 1, ty)])) {
-      this.flowing.add(flowKey(tx, ty));
+    if (FLUID[v]) this.flowing.add(flowKey(tx, ty));
+    for (let i = 0; i < NEAR.length; i += 2) {
+      const x = tx + NEAR[i], y = ty + NEAR[i + 1];
+      if (FLUID[this.peek(x, y)]) this.flowing.add(flowKey(x, y));
     }
-  }
-
-  /** Whether water flows into the open tile (tx, ty): from above, or from resting water beside it. */
-  flowsInto(tx, ty) {
-    if (LIQUID[this.peek(tx, ty - 1)]) return true;
-    for (let dx = -1; dx <= 1; dx += 2) {
-      if (!LIQUID[this.peek(tx + dx, ty)]) continue;
-      const under = this.peek(tx + dx, ty + 1);
-      if (SOLID[under] || LIQUID[under] || PLATFORMS[under]) return true;
-    }
-    return false;
   }
 
   /**
-   * One wave of water flowing: each tile waiting that water flows into is filled (at most `most`
-   * of them; the rest wait for the next wave). Returns how many were filled.
+   * Chunk c just made: the water along its edges and the edges of those beside it, looked at (it
+   * may run on from one into the other); from a save (`saved`), all its flowing water too (it was
+   * on its way when it was saved).
+   */
+  wakeChunk(c, saved) {
+    const x0 = c.cx * CHUNK, y0 = c.cy * CHUNK, fg = c.fg;
+    if (saved) for (let i = 0; i < fg.length; i++) if (FLUID[fg[i]] && !SOURCE[fg[i]]) this.flowing.add(flowKey(x0 + (i & 31), y0 + (i >> 5)));
+    for (let side = 0; side < 4; side++) {
+      // (Above, right, below, left.)
+      const n = this.chunks.get(chunkKey(c.cx + (side === 1 ? 1 : side === 3 ? -1 : 0), c.cy + (side === 2 ? 1 : side === 0 ? -1 : 0)));
+      if (!n) continue;
+      for (let j = 0; j < CHUNK; j++) {
+        // (This chunk's tile along that edge, and the one over the edge from it.)
+        const lx = side === 1 ? CHUNK - 1 : side === 3 ? 0 : j, ly = side === 2 ? CHUNK - 1 : side === 0 ? 0 : j;
+        const ox = side === 1 ? 0 : side === 3 ? CHUNK - 1 : j, oy = side === 2 ? 0 : side === 0 ? CHUNK - 1 : j;
+        if (FLUID[fg[(ly << 5) | lx]]) this.flowing.add(flowKey(x0 + lx, y0 + ly));
+        if (FLUID[n.fg[(oy << 5) | ox]]) this.flowing.add(flowKey(n.cx * CHUNK + ox, n.cy * CHUNK + oy));
+      }
+    }
+  }
+
+  /** Whether flowing water can run into (tx, ty) (block id there): the open, or what it washes away; not into towns or bases. */
+  canEnter(tx, ty, id) {
+    return id >= 0 && WASH[id] === 1 && ty > 0 && ty < WORLD_H - 1 && tx >= -HALF_W && tx < HALF_W && !this.protect?.(tx, ty);
+  }
+
+  /** Whether fluid f could go along through (tx, ty) (block id): where it can run, or where it's flowing already (not a source). */
+  passes(tx, ty, id, f) {
+    if (id < 0) return false;
+    if (FLUID[id]) return FLUID[id] === f && !SOURCE[id];
+    return this.canEnter(tx, ty, id);
+  }
+
+  /** Whether there's a way down under (tx, ty) for fluid f: where it can run, or more of it. */
+  holeUnder(tx, ty, f) {
+    const id = this.peek(tx, ty + 1);
+    return FLUID[id] === f || this.canEnter(tx, ty + 1, id);
+  }
+
+  /**
+   * What fluid f makes (tx, ty) now, from what's round it (Minecraft's getNewLiquid): a source
+   * (between two of them, on something), falling (more of it above), flowing (the best beside it,
+   * a level less), or AIR; -1 if what's round it isn't all made yet.
+   */
+  fluidFor(tx, ty, f) {
+    const F = FLUIDS[f], l = this.peek(tx - 1, ty), r = this.peek(tx + 1, ty), up = this.peek(tx, ty - 1), dn = this.peek(tx, ty + 1);
+    if (l < 0 || r < 0 || up < 0 || dn < 0) return -1;
+    let sources = 0, most = 0;
+    if (FLUID[l] === f) { sources += SOURCE[l]; most = AMOUNT[l]; }
+    if (FLUID[r] === f) { sources += SOURCE[r]; most = Math.max(most, AMOUNT[r]); }
+    if (sources >= 2 && F.renew && (FLUID[dn] === f ? SOURCE[dn] === 1 : !FLUID[dn] && !WASH[dn])) return F.source;
+    if (FLUID[up] === f) return F.fall;
+    const a = most - F.drop;
+    return a > 0 ? F.flow[a] : AIR;
+  }
+
+  /** Fluid block v into (tx, ty) (where `was` was: what it washes away, dropped: onWash). */
+  pour(tx, ty, was, v) {
+    this.setTile(tx, ty, v);
+    if (was !== AIR) this.onWash?.(tx, ty, was);
+  }
+
+  /** The fluid at (tx, ty) worked out again from what's round it, then run on from there (Minecraft's tick). Returns the tiles changed. */
+  flowAt(tx, ty) {
+    const id = this.peek(tx, ty), f = id > 0 ? FLUID[id] : 0;
+    if (!f) return 0;
+    let n = 0, cur = id;
+    if (!SOURCE[id]) {
+      const now = this.fluidFor(tx, ty, f);
+      if (now < 0) return 0;
+      if (now !== id) {
+        this.setTile(tx, ty, now);
+        n++;
+        if (now === AIR) return n;
+        cur = now;
+      }
+    }
+    return n + this.spread(tx, ty, cur, f);
+  }
+
+  /** Fluid block id at (tx, ty) running on: down if it can, else out to the sides. Returns the tiles changed. */
+  spread(tx, ty, id, f) {
+    const F = FLUIDS[f], dn = this.peek(tx, ty + 1);
+    if (dn < 0) return 0;
+    if (this.canEnter(tx, ty + 1, dn)) {
+      const v = this.fluidFor(tx, ty + 1, f);
+      if (v <= 0) return 0;
+      this.pour(tx, ty + 1, dn, v);
+      return 1;
+    }
+    // (Flowing on more of itself: no further. A source on it spreads.)
+    if (FLUID[dn] === f && !SOURCE[id]) return 0;
+    if ((FALLING[id] ? 8 : AMOUNT[id]) - F.drop <= 0) return 0;
+    // Each way along it can go: how far that way to the nearest way down (0: right beside it).
+    let best = NO_DROP, ways = 0;
+    for (let d = -1; d <= 1; d += 2) {
+      const x = tx + d;
+      if (!this.passes(x, ty, this.peek(x, ty), f)) continue;
+      const far = this.holeUnder(x, ty, f) ? 0 : this.slope(x, ty, d, f, F.reach);
+      if (far < best) { best = far; ways = 0; }
+      if (far === best) ways |= d < 0 ? 1 : 2;
+    }
+    let n = 0;
+    for (let d = -1; d <= 1; d += 2) {
+      if (!(ways & (d < 0 ? 1 : 2))) continue;
+      const x = tx + d, was = this.peek(x, ty);
+      if (!this.canEnter(x, ty, was)) continue;
+      const v = this.fluidFor(x, ty, f);
+      if (v <= 0) continue;
+      this.pour(x, ty, was, v);
+      n++;
+    }
+    return n;
+  }
+
+  /** How many tiles on along way d from (tx, ty) to a way down for fluid f (Minecraft's slope distance): NO_DROP if none within `reach`. */
+  slope(tx, ty, d, f, reach) {
+    for (let x = tx + d, k = 1; ; x += d, k++) {
+      if (!this.passes(x, ty, this.peek(x, ty), f)) return NO_DROP;
+      if (this.holeUnder(x, ty, f)) return k;
+      if (k >= reach) return NO_DROP;
+    }
+  }
+
+  /**
+   * One wave of the flow: each tile waiting looked at (flowAt), till `most` tiles have changed (the
+   * rest wait for the next wave; a slower fluid's, for its own). What changes wakes the water round
+   * it, for the next wave. Returns how many tiles changed.
    */
   flowTick(most = FLOW_WAVE) {
     if (!this.flowing.size) return 0;
-    const wave = [...this.flowing];
+    const wave = this.wave ||= [];
+    wave.length = 0;
+    for (const k of this.flowing) wave.push(k);
     this.flowing.clear();
-    let n = 0;
-    for (const k of wave) {
-      if (n >= most) { this.flowing.add(k); continue; }
-      const tx = Math.floor(k / 512) - HALF_W, ty = k % 512;
-      if (this.peek(tx, ty) !== AIR || tx < -HALF_W || tx >= HALF_W || ty < 1 || ty >= WORLD_H - 1) continue;
-      // (Not into towns, or players' bases: nobody floods them.)
-      if (this.protect?.(tx, ty)) continue;
-      if (!this.flowsInto(tx, ty)) continue;
-      this.setTile(tx, ty, K.WATER);
-      n++;
+    this.waves++;
+    let n = 0, looked = 0;
+    for (let i = 0; i < wave.length; i++) {
+      const k = wave[i];
+      if (n >= most || looked >= most * 6) { this.flowing.add(k); continue; }
+      const tx = Math.floor(k / 512) - HALF_W, ty = k % 512, every = FLUIDS[FLUID[this.peek(tx, ty)] || 0]?.every || 1;
+      if (every > 1 && this.waves % every) { this.flowing.add(k); continue; }
+      looked++;
+      n += this.flowAt(tx, ty);
     }
     return n;
   }
@@ -518,8 +692,9 @@ export class TileWorld {
 
 const PLAT = [0, 0, TILE, PLATFORM_H];
 const NONE = [];
-// Water flowing: a tile's key in the waiting list; where water goes from a tile it's filled
-// ([dx, dy] pairs: under, beside, beside the one above); the most filled in a wave.
+// Water flowing: a tile's key in the waiting list; the tiles beside, above and under one ([dx, dy]
+// pairs); the most tiles changed in a wave; no way down found.
 const flowKey = (tx, ty) => (tx + HALF_W) * 512 + ty;
-const FLOW_NEXT = [0, 1, -1, 0, 1, 0, -1, -1, 1, -1];
+const NEAR = [-1, 0, 1, 0, 0, -1, 0, 1];
 const FLOW_WAVE = 240;
+const NO_DROP = 1000;

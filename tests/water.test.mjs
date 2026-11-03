@@ -178,7 +178,7 @@ test('water puts out fire', () => {
   assert.equal(me.burnTicks, 0);
 });
 
-test('water flows where a way\'s opened for it: down, and along what holds it up; a pit beside the sea fills', () => {
+test('water flows where a way\'s opened for it: the sea into a pit dug beside it, down the gap, then along its floor, shallower further from the sea', () => {
   const { game, world } = play();
   const sp = firstSea(world.gen);
   // Dig a pit into the beach beside the water's edge, then open it to the sea.
@@ -190,7 +190,13 @@ test('water flows where a way\'s opened for it: down, and along what holds it up
   assert.equal(world.tile(x - 2, SEA_ROW + 3), AIR, 'dry, while the sea\'s held back');
   for (let y = SEA_ROW; y <= SEA_ROW + 3; y++) world.setTile(x, y, AIR);
   for (let i = 0; i < 400; i++) game.update();
-  for (let xx = x - 3; xx <= x; xx++) for (let y = SEA_ROW; y <= SEA_ROW + 3; y++) assert.equal(world.tile(xx, y), K.WATER, `filled at ${xx},${y}`);
+  // (Minecraft's way: out of the sea into the gap, falling down it, then along the pit's floor a
+  // level less each tile. Only sources fill a pit up: flowing water doesn't stack.)
+  for (let y = SEA_ROW; y <= SEA_ROW + 3; y++) assert.ok(LIQUID[world.tile(x, y)], `water in the gap at ${x},${y}`);
+  assert.equal(world.tile(x, SEA_ROW + 2), K.WATER_FALL, 'falling down it');
+  const lv = xx => K.AMOUNT[world.tile(xx, SEA_ROW + 3)];
+  assert.deepEqual([lv(x - 1), lv(x - 2), lv(x - 3)], [7, 6, 5], 'along the floor, a level less each tile from the sea');
+  assert.equal(world.tile(x - 2, SEA_ROW + 1), AIR, 'flowing water doesn\'t pile up');
   // Never up, above the sea's top.
   assert.equal(world.tile(x - 2, SEA_ROW - 1), AIR, 'not above the sea');
 });
@@ -208,7 +214,7 @@ test('water doesn\'t flow into towns', () => {
   world.setTile(tx, y - 1, K.WATER);
   world.setTile(tx, y, AIR);
   for (let i = 0; i < 100; i++) game.update();
-  assert.notEqual(world.tile(tx, y), K.WATER, 'not into the town');
+  assert.ok(!LIQUID[world.tile(tx, y)], 'not into the town');
 });
 
 test('building in water: blocks go in (in place of the water), not torches or chests; what grows in it, picked, leaves water', () => {
@@ -259,6 +265,6 @@ test('online: water flowing on the host is seen by everyone', async () => {
   world.setTile(tx, ty, K.WATER);
   await step(60);
   const cw = client.game.world;
-  for (let y = ty + 1; y <= ty + 3; y++) assert.equal(world.tile(tx, y), K.WATER, `flowed down, on the host (${y})`);
-  for (let y = ty + 1; y <= ty + 3; y++) assert.equal(cw.tile(tx, y), K.WATER, `and the guest sees it (${y})`);
+  for (let y = ty + 1; y <= ty + 3; y++) assert.equal(world.tile(tx, y), K.WATER_FALL, `falling down, on the host (${y})`);
+  for (let y = ty + 1; y <= ty + 3; y++) assert.equal(cw.tile(tx, y), K.WATER_FALL, `and the guest sees it (${y})`);
 });

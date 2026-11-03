@@ -14,7 +14,7 @@ import { BASES, DROP_WEAPONS, namedGear, foundId } from './gear.js';
 /** The codex's kinds of thing, in the order its buttons show them. */
 export const CODEX_CATS = { all: 'All', gear: 'Gear', weapon: 'Weapons', unique: 'Uniques', set: 'Sets', block: 'Blocks', material: 'Materials', food: 'Food', tool: 'Tools', other: 'Other' };
 
-const CAT_OF = { gear: 'gear', weapon: 'weapon', block: 'block', wall: 'block', material: 'material', food: 'food', tool: 'tool' };
+const CAT_OF = { gear: 'gear', weapon: 'weapon', block: 'block', wall: 'block', material: 'material', food: 'food', tool: 'tool', bucket: 'tool' };
 const WEAR = { head: 'head', body: 'body', hands: 'hands', waist: 'waist', feet: 'feet', ring: 'finger (two can be worn)', amulet: 'neck' };
 const SHOP_FOR = { head: 'smiths', body: 'smiths', hands: 'smiths', waist: 'smiths', feet: 'smiths', ring: 'market traders', amulet: 'market traders' };
 // (Things the tables don't say.)
@@ -25,6 +25,7 @@ const EXTRA = {
   merc_contract: 'Used, it hires a mercenary who follows you and fights',
   Teleport: 'Rare: market traders sometimes have one',
   log: 'Wood, built with: broken, a log you built gives a log back',
+  water_bucket: 'An empty bucket, filled from still water: a sea, a lake, a pool',
 };
 
 let entries = null;
