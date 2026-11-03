@@ -10,7 +10,7 @@ import { PERKS, xpToNext, MAX_LEVEL, maxHealthOf } from './progress.js';
 import { keyLabel } from '../keys.js';
 import { gearRewardText, RARITY, rarityOf } from './gear.js';
 import { codexEntries, CODEX_CATS } from './codex.js';
-import { devOn } from './devmode.js';
+import { devView } from './devmode.js';
 import { itemColor, itemDetails } from './iteminfo.js';
 import { drawIcon } from './worldrender.js';
 import { WEAPONS } from '../weapons.js';
@@ -77,7 +77,7 @@ export class JournalScreen {
     const p = w.prog, qs = w.quests;
     // (The codex: only when what's found changes, so its search box keeps what's typed.)
     if (this.tab === 'codex') {
-      const ck = `codex|${w.found?.length || 0}|${devOn(this.me) || !!w.devCraft}`;
+      const ck = `codex|${w.found?.length || 0}|${devView(this.me)}`;
       if (!force && ck === this.seen) return;
       this.seen = ck;
       for (const b of this.root.querySelectorAll('[data-tab]')) b.classList.toggle('on', b.dataset.tab === this.tab);
@@ -111,7 +111,7 @@ export class JournalScreen {
     if (!el) return;
     const all = codexEntries(), found = new Set(this.me?.world?.found || []), q = this.q.trim().toLowerCase();
     // (Dev mode, devmode.js: anything in it, free.)
-    const dev = devOn(this.me) || !!this.me?.world?.devCraft;
+    const dev = devView(this.me);
     for (const b of this.body.querySelectorAll('[data-cat]')) b.classList.toggle('on', b.dataset.cat === this.cat);
     const n = all.filter(e => found.has(e.id)).length;
     this.body.querySelector('[data-found]').textContent = `Found ${n} of ${all.length}${dev ? ' · dev mode: Take gives you any of it' : ''}`;

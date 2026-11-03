@@ -334,8 +334,8 @@ export class PlayerController {
     // Next weapon, to start with) it switches weapons.
     const using = !!game.rules.useHere?.(game, s);
     inp.use = k.held('use') && !!game.rules.useHere;
-    // (In a world's dev mode the wheel zooms: main.js takes devZoom.)
-    const dev = !!s.world?.dev;
+    // (In a world's dev mode the wheel zooms: main.js takes devZoom. Ours, or the host's say-so: devmode.js's devView.)
+    const dev = !!(s.world?.dev || s.world?.hostDev);
     const prev = k.took('prev');
     if (prev) { if (dev && prev === 'WheelUp') k.devZoom += 1; else if (second) inp.switchTo = '%-'; else inp.cycle = -1; }
     else {

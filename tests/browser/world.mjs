@@ -164,6 +164,18 @@ report.chest = { at: [chestAtTile.tx, chestAtTile.ty], glass: inChest };
 // here a diamond, which has no recipe), and anything taken from the codex (a unique). Then off.
 await page.keyboard.press('Backquote');
 await page.waitForFunction(() => !!window.stickSoldiers.state.me.world.dev);
+// Flying fast, the camera stays right with you (rather than trailing behind); then back where you were.
+const flyFrom = await page.evaluate(() => ({ x: window.stickSoldiers.state.me.body.x, y: window.stickSoldiers.state.me.body.y }));
+await page.keyboard.down('KeyW'); await page.keyboard.down('ShiftLeft');
+await page.waitForTimeout(700);
+const trail = await page.evaluate(() => {
+  const { state, renderer } = window.stickSoldiers, me = state.me, c = renderer.cam;
+  return { x: Math.round(me.x - c.x + c.lx * c.look), y: Math.round(me.y - 20 - c.y + c.ly * c.look), up: Math.round(me.body.vy) };
+});
+await page.keyboard.up('ShiftLeft'); await page.keyboard.up('KeyW');
+await page.waitForTimeout(300);
+await page.evaluate(p => { const b = window.stickSoldiers.state.me.body; b.x = p.x; b.y = p.y; b.vx = b.vy = 0; }, flyFrom);
+check(trail.up < -10 && Math.abs(trail.x) < 40 && Math.abs(trail.y) < 40, `dev mode: the camera keeps up with flying (${JSON.stringify(trail)})`);
 await page.keyboard.press('KeyI');
 await page.waitForSelector('#inventory:not(.hidden)');
 await page.fill('#inventory [data-find]', 'diamond');
@@ -197,7 +209,7 @@ await page.keyboard.press('KeyI');
 await page.waitForSelector('#inventory:not(.hidden)');
 check(await page.locator('#inventory .craft-row.dev:not(.hidden)').count() === 0, 'dev mode off: none of its own in the list');
 await page.keyboard.press('KeyI');
-report.dev = { ...freebies, unique };
+report.dev = { ...freebies, unique, trail };
 
 // 4. Save and quit (the menu), then play it again: just as it was left.
 await page.keyboard.press('Escape');
@@ -284,24 +296,27 @@ const folk = await page.evaluate(async () => {
 check(!!folk, 'townsfolk in the village');
 if (folk) {
   await page.waitForTimeout(500);
-  for (let i = 0; i < 12; i++) {
-    const p = await page.evaluate(id => {
-      const { renderer: r, state } = window.stickSoldiers, npc = state.game.soldiers.find(s => s.id === id);
-      return { x: r.w / 2 + (npc.x - r.cam.x) * r.scale, y: r.h / 2 + (npc.y - 8 - r.cam.y) * r.scale };
-    }, folk.id);
-    await page.mouse.move(p.x, p.y);
-    await page.waitForTimeout(60);
-    const on = await page.evaluate(async id => {
-      const T = await import('./src/world/talk.js');
-      const { state } = window.stickSoldiers, t = state.me.world.target;
-      return t && T.folkAt(state.game, state.me, t.x, t.y)?.id === id;
-    }, folk.id);
-    if (on) break;
+  // (They walk about: aimed at again, and asked again, if they'd stepped away as we clicked.)
+  for (let tries = 0; tries < 3; tries++) {
+    for (let i = 0; i < 12; i++) {
+      const p = await page.evaluate(id => {
+        const { renderer: r, state } = window.stickSoldiers, npc = state.game.soldiers.find(s => s.id === id);
+        return { x: r.w / 2 + (npc.x - r.cam.x) * r.scale, y: r.h / 2 + (npc.y - 8 - r.cam.y) * r.scale };
+      }, folk.id);
+      await page.mouse.move(p.x, p.y);
+      await page.waitForTimeout(60);
+      const on = await page.evaluate(async id => {
+        const T = await import('./src/world/talk.js');
+        const { state } = window.stickSoldiers, t = state.me.world.target;
+        return t && T.folkAt(state.game, state.me, t.x, t.y)?.id === id;
+      }, folk.id);
+      if (on) break;
+    }
+    await page.mouse.down({ button: 'right' });
+    await page.waitForTimeout(80);
+    await page.mouse.up({ button: 'right' });
+    if (await page.waitForSelector('#talk:not(.hidden)', { timeout: 4000 }).then(() => true, () => false)) break;
   }
-  await page.mouse.down({ button: 'right' });
-  await page.waitForTimeout(80);
-  await page.mouse.up({ button: 'right' });
-  await page.waitForSelector('#talk:not(.hidden)', { timeout: 4000 }).catch(() => {});
   const opened = await page.evaluate(() => ({ open: !document.getElementById('talk').classList.contains('hidden'), name: document.querySelector('#talk [data-name]')?.textContent, said: document.querySelector('#talk [data-said]')?.textContent, options: [...document.querySelectorAll('#talk [data-op]')].map(b => b.dataset.op) }));
   report.talk = { ...folk, ...opened };
   check(opened.open && folk.name.startsWith(opened.name), `the talk screen opened for ${folk.name} (${JSON.stringify(opened)})`);

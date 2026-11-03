@@ -362,7 +362,8 @@ export class WorldClient {
         if (typeof d.brush === 'string') w.brush = d.brush;
         w.home = d.home || null;
         if (Array.isArray(d.found)) w.found = cleanFound(d.found);
-        w.devCraft = d.dev === 1;
+        // (Dev mode, ours in a creative world: flying, crafting, the codex, on our own screen: devmode.js's devView.)
+        w.hostDev = d.dev === 1;
         // (Asleep: the host keeps them in bed; here, the screen goes dark.)
         w.sleep = d.sleep && typeof d.sleep === 'object' ? { since: w.sleep?.since ?? Date.now(), n: d.sleep.n | 0, of: d.sleep.of | 0 } : null;
         w.graves = Array.isArray(d.graves) ? d.graves.filter(g => Array.isArray(g) && Number.isInteger(g[0]) && Number.isInteger(g[1])).slice(-8) : [];

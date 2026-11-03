@@ -57,7 +57,7 @@ import { socialOptions, socialDo, tradeView, offerTrade, acceptTrade, cancelTrad
 import { progOf } from './world/progress.js';
 import { WorldHost, WorldClient } from './world/worldnet.js';
 import { seedOf } from './world/noise.js';
-import { setDev, devKey } from './world/devmode.js';
+import { setDev, devKey, devView } from './world/devmode.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -2144,12 +2144,14 @@ function frame(now) {
   const ax = free ? free.x : lerp(view.prevX ?? view.x, view.x, alpha) + (view.drawDX || 0);
   const ay = free ? free.y : lerp(view.prevY ?? view.y, view.y, alpha) + (view.drawDY || 0);
   // (A world's dev mode: the wheel, or + and -, zoom a long way out and back in.)
-  if (me.world?.dev) {
+  if (devView(me)) {
     if (input.devZoom) state.devZoom = Math.max(0.08, Math.min(3, (state.devZoom || 1) * Math.pow(1.2, input.devZoom)));
     renderer.zoomScale = state.devZoom || 1;
   } else renderer.zoomScale = 1;
   input.devZoom = 0;
-  renderer.updateCamera(g, ax, ay, state.menuOpen || watchMode ? null : input.mouse, sniping, dt, sights ? aimZoomNow() : 1);
+  // (Flying in dev mode: the camera stays right with you, rather than trailing behind, which at
+  // that speed leaves you at the edge of the screen, and drifting on after you stop.)
+  renderer.updateCamera(g, ax, ay, state.menuOpen || watchMode ? null : input.mouse, sniping, dt, sights ? aimZoomNow() : 1, devView(me) && view === me ? 0 : undefined);
   const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
   renderer.fogFrom = view;

@@ -16,7 +16,7 @@ import { WEAPONS } from '../weapons.js';
 import { drawWeapon } from '../sprites.js';
 import { drawIcon } from './worldrender.js';
 import { RECIPES, DEV_RECIPES, STATIONS, STATION_NAMES, stationsNear, timesCanMake, madeFrom } from './crafting.js';
-import { devOn } from './devmode.js';
+import { devView } from './devmode.js';
 import { keyLabel, isKey, keyOf } from '../keys.js';
 import { setRightHand } from './worldplay.js';
 import { itemDetails, categoryOf, itemColor } from './iteminfo.js';
@@ -307,7 +307,7 @@ export class InventoryScreen {
     if (!inv || !this.game?.world) return;
     const near = stationsNear(this.game.world, me.x, me.y - 8, this.near);
     // (Dev mode: everything's free. Someone else's world: when the host says so, in a creative world.)
-    const free = this.free = devOn(me) || !!me.world.devCraft;
+    const free = this.free = devView(me);
     const seen = `${inv.version}|${this.chest?.inv.version ?? ''}|${[...near].join()}|${me.world.slot}|${me.world.slot2}|${this.picked ? `${this.picked.box}${this.picked.i}` : ''}|${this.onlyEl.checked}|${this.findEl.value}|${me.world.gearV || 0}|${free}`;
     if (!force && seen === this.seen) return;
     this.seen = seen;

@@ -13,39 +13,89 @@ import { MOTION, BODY } from '../config.js';
 
 /** How far the crosshair reaches (tiles), and the biggest brush (tiles each way from the middle). */
 export const DEV_REACH = 70, DEV_BRUSH_MAX = 6;
+/** Flying: how fast (pixels an update at full game speed; sprinting), and how much of the way to that each update goes (it speeds up and slows down over a tenth of a second or so). */
+export const FLY_SPEED = 10, FLY_SPRINT = 30, FLY_EASE = 0.35;
 
 export const devOn = s => !!s?.world?.dev;
+/**
+ * Dev mode as our own screen has it: ours, or (in someone else's world) the host's say-so, ours
+ * in a creative world (worldnet.js's hostDev): flying, the camera, crafting and the codex.
+ */
+export const devView = s => !!(s?.world?.dev || s?.world?.hostDev);
 
-/** Dev mode on or off for soldier s (a player). */
+/** Dev mode on or off for soldier s (a player). Off inside the ground: out to the nearest place there's room for them. */
 export function setDev(game, s, on) {
   const w = s.world;
   if (!w) return;
   w.dev = on ? { brush: 1, lights: true } : null;
-  if (!on) { s.body.vx = s.body.vy = 0; }
-  game.notify(s, on ? 'Dev mode: fly with the movement keys (sprint: faster), wheel: zoom, left click: wipe out, right click: build' : 'Dev mode off');
+  let out = false;
+  if (!on) { s.body.vx = s.body.vy = 0; out = outOfBlocks(game.world, s); }
+  game.notify(s, on ? 'Dev mode: fly with the movement keys (sprint: faster), wheel: zoom, left click: wipe out, right click: build' : `Dev mode off${out ? ' (out of the ground, to the nearest place with room for you)' : ''}`);
+}
+
+// (Out of the ground: the tiles round about, nearest first, as far as this many each way.)
+const OUT_REACH = 24;
+const OUT_STEPS = [];
+for (let dy = -OUT_REACH; dy <= OUT_REACH; dy++) for (let dx = -OUT_REACH; dx <= OUT_REACH; dx++) OUT_STEPS.push([dx, dy]);
+OUT_STEPS.sort((a, b) => a[0] * a[0] + a[1] * a[1] - (b[0] * b[0] + b[1] * b[1]));
+
+/**
+ * Soldier s, if they're in the ground (blocks where they are): out to the nearest spot with room
+ * for them, standing in a tile (none near: up on the surface). Returns true if they were moved.
+ */
+export function outOfBlocks(world, s) {
+  const b = s.body;
+  const fits = (x, y) => y + BODY.top >= 0 && y + BODY.bottom < WORLD_H * TILE && !world.overlap(x - BODY.halfW, y + BODY.top, x + BODY.halfW, y + BODY.bottom);
+  if (fits(b.x, b.y)) return false;
+  const tx = Math.floor(b.x / TILE), ty = Math.floor((b.y + BODY.bottom) / TILE);
+  for (const [dx, dy] of OUT_STEPS) {
+    // (Feet at the bottom of tile (tx + dx, ty + dy), in the middle of it.)
+    const x = (tx + dx) * TILE + TILE / 2, y = (ty + dy + 1) * TILE - BODY.bottom - 1;
+    if (fits(x, y)) { moveTo(s, x, y); return true; }
+  }
+  moveTo(s, tx * TILE + TILE / 2, world.surface(tx) * TILE - BODY.bottom - 1);
+  return true;
 }
 
 /**
  * Flying (the world mode's moveSoldier hook): through anything, in any direction (jump: up,
- * crouch: down), faster sprinting. Returns true if it moved the soldier (else the game does).
+ * crouch: down; across and up at once, no faster), faster sprinting, speeding up and slowing
+ * down smoothly. Returns true if it moved the soldier (else the game does).
  */
 export function devFly(game, s, inp) {
   if (!devOn(s)) return false;
   // (Where it was, its aim and animation, as walking keeps them: without them it's drawn, and the
   // camera follows it, somewhere between where it is and where dev mode began.)
   s.beginMove(inp);
-  const b = s.body, speed = (inp.sprint ? 30 : 10) * MOTION.timeScale;
+  flyBody(s.body, inp);
+  s.animate();
+  return true;
+}
+
+/**
+ * A flying body's update (dev mode's: here, and online, where a guest's own screen moves them
+ * straight away, net/client.js, as the host does).
+ */
+export function flyBody(b, inp) {
   const dx = Math.sign(inp.move || 0), dy = (inp.jump ? -1 : 0) + (inp.crouch ? 1 : 0);
-  b.vx = dx * speed;
-  b.vy = dy * speed;
+  const speed = (inp.sprint ? FLY_SPRINT : FLY_SPEED) * MOTION.timeScale * (dx && dy ? Math.SQRT1_2 : 1);
+  b.vx = toward(b.vx, dx * speed);
+  b.vy = toward(b.vy, dy * speed);
   b.x += b.vx;
-  b.y = Math.max(-BODY.top, Math.min(WORLD_H * TILE - BODY.bottom - 1, b.y + b.vy));
+  // (The top and bottom of the world: stopped there.)
+  const y = b.y + b.vy;
+  b.y = Math.max(-BODY.top, Math.min(WORLD_H * TILE - BODY.bottom - 1, y));
+  if (b.y !== y) b.vy = 0;
   b.onGround = false;
   b.jetting = false;
   b.crouching = false;
   b.rope = null;
-  s.animate();
-  return true;
+}
+
+/** A flying speed (v) on its way to another (to): there, once it's next to it (stopped, or at full speed). */
+function toward(v, to) {
+  const n = v + (to - v) * FLY_EASE;
+  return Math.abs(to - n) < 0.05 ? to : n;
 }
 
 /** The tile under the crosshair, as far as dev mode reaches. */

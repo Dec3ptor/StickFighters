@@ -870,6 +870,9 @@ test('dev mode: flies through the ground, wipes out any block, builds for nothin
   ctl.script = { crouch: true }; run(game, 60);
   assert.ok(me.y > y0 + 10 * TILE, `flew down through the ground (${Math.round((me.y - y0) / TILE)} blocks)`);
   ctl.script = { move: 1, sprint: true }; run(game, 30);
+  // (Slowing down to a stop.)
+  ctl.script = {}; run(game, 20);
+  assert.equal(me.x, me.prevX, 'stopped');
   // Bedrock goes too, a brush at a time.
   const tx = Math.floor(me.x / TILE) + 3, ty = Math.floor(me.y / TILE);
   world.setTile(tx, ty, K.BEDROCK);

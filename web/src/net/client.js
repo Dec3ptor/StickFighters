@@ -7,6 +7,7 @@
 
 import { Game } from '../game.js';
 import { stepBody } from '../physics.js';
+import { flyBody } from '../world/devmode.js';
 import { WEAPONS } from '../weapons.js';
 import { MOTION, TICK_RATE } from '../config.js';
 import { encodeInputs, decodeSnapshot, messageType, PROTOCOL, SNAPSHOT_EVERY } from './protocol.js';
@@ -229,7 +230,9 @@ export class NetClient {
       me.buildPlank = !!inp.plank; // (the Builder: for our own screen)
       // (A Juggernaut keeps its minigun in hand, as on the host.)
       if (inp.switchTo && me.has(inp.switchTo) && !(me.jugger > 0)) { me.current = inp.switchTo; this.switchSeq = inp.seq; }
-      me.move(this.heavy(this.allowed(inp)), g.map);
+      // (Flying, in dev mode in a creative world: as the host moves us.)
+      if (me.world?.hostDev) { me.beginMove(inp); flyBody(me.body, inp); me.animate(); }
+      else me.move(this.heavy(this.allowed(inp)), g.map);
       if (me.body.jetting && g.tick % 2 === 0) g.fx?.fire(me.x + me.facing * 3, me.y - 4);
     }
     this.trails();
@@ -341,7 +344,8 @@ export class NetClient {
       hasJetpack: a.hasJetpack, fuel: a.fuel, momentum: a.momentum, rope: a.rope ? { ...a.rope } : null,
       stamina: a.stamina, winded: a.winded, sprinting: a.sprinting,
     });
-    for (const inp of this.pending) stepBody(b, this.heavy(this.allowed(inp)), this.game.map);
+    if (me.world?.hostDev) for (const inp of this.pending) flyBody(b, inp);
+    else for (const inp of this.pending) stepBody(b, this.heavy(this.allowed(inp)), this.game.map);
     if (!wasAlive) { me.prevX = b.x; me.prevY = b.y; me.drawDX = me.drawDY = 0; return; }
     // Small differences are smoothed out over a few frames; big ones (a teleport, a respawn) jump.
     const ex = oldX - b.x, ey = oldY - b.y;
