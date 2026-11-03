@@ -90,6 +90,8 @@ recipe('iron_pickaxe', 1, [['iron_bar', 10], ['wood', 3]], 'anvil');
 recipe('gold_pickaxe', 1, [['gold_bar', 10], ['wood', 3]], 'anvil');
 recipe('crystal_pickaxe', 1, [['crystal_ore', 12], ['gold_bar', 6]], 'anvil');
 recipe('diamond_pickaxe', 1, [['diamond', 4], ['gold_bar', 4], ['silver_bar', 2], ['wood', 3]], 'anvil');
+// (A bucket: for water, worldplay.js.)
+recipe('bucket', 1, [['iron_bar', 3]], 'anvil');
 recipe('metal', 2, [['iron_bar', 1]], 'anvil');
 recipe('blast_bricks', 4, [['stone_bricks', 4], ['iron_bar', 1], ['coal', 2]], 'anvil');
 recipe('gunsmith', 1, [['iron_bar', 10], ['gold_bar', 4], ['planks', 10]], 'anvil');

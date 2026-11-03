@@ -56,6 +56,8 @@ function values() {
     }
     if (!changed) break;
   }
+  // (A bucket of water: what the bucket is.)
+  if (v.has('bucket')) v.set('water_bucket', v.get('bucket'));
   return (VALUES = v);
 }
 
@@ -102,6 +104,7 @@ export const SHOPS = {
       ['gold_pickaxe', 0.3, 1], ['axe', 0.6, 1], ['hammer', 0.6, 1], ['anvil', 0.5, 1], ['furnace', 0.6, 1], ['Knife', 0.6, 1],
       ['BattleAxe', 0.4, 1], ['Sledgehammer', 0.4, 1], ['BaseballBat', 0.4, 1], ['metal', 0.6, 4], ['blast_bricks', 0.4, 3],
       ['lantern', 0.5, 3], ['NinjaRope', 0.4, 1], ['coal', 0.7, 6],
+      ['bucket', 0.6, 2],
     ],
     rare: [['crystal_pickaxe', 1], ['diamond_pickaxe', 1], ['FirePunch', 1]],
   },

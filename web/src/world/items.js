@@ -73,6 +73,10 @@ item('recall_scroll', 'Recall scroll', 'scroll', { stack: 20, color: '#e8dcc0' }
 item('coins', 'Coins', 'material', { color: '#f2c230' });
 // A mercenary's contract: used (like a weapon), it hires one, who follows you and shoots monsters.
 item('merc_contract', 'Mercenary contract', 'contract', { stack: 10, color: '#e8dcc0' });
+// Buckets (worldplay.js's useBucket): an empty one fills from still water (a click, either hand, on
+// a source in reach); a full one pours it out where it's clicked, to flow from there. fluid: what's in it.
+item('bucket', 'Bucket', 'bucket', { stack: 16, color: '#c9ccd2' });
+item('water_bucket', 'Water bucket', 'bucket', { stack: 1, color: '#2f6fd0', fluid: 'water' });
 
 // Tools. power: damage a hit does to a block (a block's `hard` is how many basic hits it
 // takes); every: updates between hits (at full speed); tier: the hardest blocks it can mine.

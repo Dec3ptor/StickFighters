@@ -23,6 +23,7 @@ import { hourOf, isMonster, DAY_TICKS } from './monsters.js';
 import { pushDoor } from './doors.js';
 import { BODY } from '../config.js';
 import { startAct } from '../useanim.js';
+import { iceBrake } from '../physics.js';
 
 /**
  * The work people do in towns: what they're called, how they look, how far they go from home, and
@@ -310,10 +311,10 @@ export class FolkController {
     return px(Math.max(t.x0 + 2, Math.min(t.x1 - 2, x)));
   }
 
-  /** Walking toward dir (-1, 0, 1): doors in the way open, and it jumps when it's stopped by something low. */
+  /** Walking toward dir (-1, 0, 1): doors in the way open, and it jumps when it's stopped by something low. (Stopping on ice: braking.) */
   walk(game, s, inp, dir, speed) {
     inp.move = dir * speed;
-    if (!dir) { this.stuck = 0; return; }
+    if (!dir) { this.stuck = 0; inp.move = iceBrake(s.body, game.world) * 0.6; return; }
     pushDoor(game, s, dir);
     if (s.body.onGround) {
       this.stuck = Math.abs(s.x - this.lastX) < 0.1 ? this.stuck + 1 : 0;

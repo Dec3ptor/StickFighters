@@ -42,10 +42,11 @@ const MAX_DRAG = 32;           // tiles a dragged shape can reach either way
 const PLACE_EVERY = 5;         // updates between blocks placed while holding the button (at full speed)
 const DROP_LIFE = 5 * 60 * 60; // things on the ground go after five minutes (at full speed)
 const MAX_DROPS = 400;
+const CARRY = 0.9;             // px an update flowing water carries along what's lying in it (at full speed)
 
 // Plants and the like: broken by anything, put in the way of nothing (building replaces them;
-// and water, and what grows in it: blocks only, there).
-const SOFT = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.VINE, K.WHEAT, K.WATER, K.SEAGRASS, K.KELP, K.CORAL_FAN, K.REEDS, K.LILY_PAD,
+// and water, still or flowing, and what grows in it: blocks only, there).
+const SOFT = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.VINE, K.WHEAT, ...K.WATERS, K.SEAGRASS, K.KELP, K.CORAL_FAN, K.REEDS, K.LILY_PAD,
   K.FERN, K.BUSH, K.DRY_TALL_GRASS, K.PETALS]);
 // What grows in water, on the bottom (or on more of itself: kelp): gone with what held it up
 // (water again, where it was).
@@ -605,8 +606,10 @@ function updateDrops(game) {
       drops[n++] = d;
       continue;
     }
-    // Falling, and coming to rest on whatever's solid.
+    // Falling, and coming to rest on whatever's solid. (Flowing water carries it along.)
     d.vy = Math.min(d.vy + MOTION.itemGravity, MOTION.itemMaxFall);
+    const current = world.currentAt?.(d.x, d.y) || 0;
+    if (current === 1 || current === -1) { d.vx = current * CARRY * ts; d.rest = false; }
     const nx = d.x + d.vx;
     if (SOLID[world.tileAt(nx, d.y)]) d.vx = 0; else d.x = nx;
     const ny = d.y + d.vy + 3;
@@ -697,7 +700,8 @@ function dig(game, s, it, inp) {
  */
 export function breakBlock(game, tx, ty, by = null) {
   const world = game.world, id = world.tile(tx, ty), b = BLOCKS[id];
-  if (id === AIR || b.resist >= 1e9) return false;
+  // (Water itself isn't broken: it's scooped up, with a bucket.)
+  if (id === AIR || b.resist >= 1e9 || K.PURE[id]) return false;
   const x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
   if (K.TRUNKS.has(id)) return fell(game, tx, ty);
   if (DOORS.has(id)) {
@@ -1105,7 +1109,7 @@ export function worldInput(game, s, inp) {
   if (w.cool > 0) w.cool -= 1;
   // (Dev mode, devmode.js: wipes out and builds its own way.)
   if (w.dev) {
-    const isBlocks = it => it && (it.kind === 'block' || it.kind === 'wall'), l = inHand(s).item, r = rightHand(s).item;
+    const isBlocks = it => it && (it.kind === 'block' || it.kind === 'wall' || it.kind === 'bucket'), l = inHand(s).item, r = rightHand(s).item;
     return devInput(game, s, inp, isBlocks(l) ? l : isBlocks(r) ? r : null);
   }
   w.target = targetOf(s, inp);
@@ -1197,6 +1201,9 @@ function useItem(game, s, item, inp, pressed) {
         game.sound('spawn', s.x, s.y, s.id);
       }
     }
+    fire = false;
+  } else if (item?.kind === 'bucket') {
+    if (pressed) useBucket(game, s, item);
     fire = false;
   } else if (item?.kind === 'tool') {
     if (item.tool === 'hammer') { if (hammer(game, s, item, inp)) fire = false; }
@@ -1360,10 +1367,10 @@ export function worldTick(game) {
   magmaBurns(game);
   waterTick(game);
   const world = game.world;
-  // Water flowing where a way's opened for it (the host's: online, everyone else is told of each
-  // tile, as of any other change).
+  // Water flowing where a way's opened for it, a step every few updates (the host's: online,
+  // everyone else is told of each tile, as of any other change).
   if (game.mirror) world.flowing?.clear();
-  else if (game.tick % FLOW_EVERY === 0) world.flowTick?.();
+  else if ((world.flowClock = (world.flowClock || 0) + MOTION.timeScale) >= FLOW_EVERY) { world.flowClock -= FLOW_EVERY; world.flowTick?.(); }
   world.time = (world.time || 0) + 1;
   // (Always day, or always night, as the world was made: worldrules.js.)
   if (game.tick % 30 === 0 && !game.mirror) world.time = keepTime(world, world.time, DAY_TICKS, hourOf);
@@ -1459,7 +1466,7 @@ export const BREATH = 100;
 const BREATH_SECONDS = 15;  // under water this long (at full speed), and you start to drown
 const DROWN_EVERY = 40;     // updates between hurts, out of breath
 const DROWN_DAMAGE = 12;
-const FLOW_EVERY = 4;       // updates between waves of water flowing (tileworld.js's flowTick)
+const FLOW_EVERY = 5;       // updates between steps of water flowing, at full speed (tileworld.js's flowTick)
 
 /**
  * Soldiers in water: put out, if they're burning. Players with their heads under it lose breath
@@ -1482,6 +1489,40 @@ function waterTick(game) {
     damage(game, s, DROWN_DAMAGE, null, 'Drowning');
     if (s.alive) game.sound('cough', s.x, s.y);
   }
+}
+
+// ---- Buckets ---------------------------------------------------------------------------------------
+
+/**
+ * A bucket used (a click, either hand) on the tile aimed at, in reach: an empty one fills from still
+ * water there (a source: the sea's, a lake's, one poured out; what's round it may run back in), a
+ * full one pours a source out there (into the open, or flowing water), to flow from there.
+ */
+function useBucket(game, s, item) {
+  const w = s.world, t = w.target, world = game.world;
+  if (!t?.near) return;
+  const id = world.tile(t.tx, t.ty), F = K.FLUIDS[K.FLUID[K.BLOCK_BY_KEY.get(item.fluid)?.id] || 0];
+  // (Full: into the open, or flowing water of its own; empty: from a source, not what grows in it.)
+  if (F ? !(K.WASH[id] || (K.FLUID[id] && !K.SOURCE[id])) : !(K.PURE[id] && K.SOURCE[id])) return;
+  if (!mayChange(world, s, t.tx, t.ty)) { notYours(game, s, t.tx, t.ty); return; }
+  const from = item.key, to = F ? 'bucket' : `${BLOCKS[id].key}_bucket`;
+  if (!itemOf(to)) return;
+  // The one in hand changes (one of a stack: the new one where there's room, else dropped).
+  const i = [w.slot, w.slot2].find(j => j >= 0 && w.inv.slots[j]?.key === from) ?? w.inv.slots.findIndex(sl => sl?.key === from), sl = w.inv.slots[i];
+  if (!sl) return;
+  if (sl.n === 1) w.inv.slots[i] = { key: to, n: 1 };
+  else {
+    sl.n--;
+    if (w.inv.add(to, 1) > 0) dropItem(game, to, 1, s.x, s.y - 14, s.facing, -1.5, 30);
+  }
+  w.inv.version++;
+  const x = t.tx * TILE + TILE / 2, y = t.ty * TILE + TILE / 2;
+  if (F && id !== AIR && !K.FLUID[id]) world.onWash?.(t.tx, t.ty, id);
+  world.setTile(t.tx, t.ty, F ? F.source : AIR);
+  // (Tipped out, or dipped in: the hand goes to it.)
+  startAct(s, F ? 'place' : 'reach', 14);
+  game.sound('splash', x, y);
+  game.fx?.splash?.(x, y, 2);
 }
 
 // ---- The mode -------------------------------------------------------------------------------------
@@ -1538,6 +1579,8 @@ export const worldMode = {
     // carries this one's release, as every module's does: tools/stamp.mjs.)
     if (typeof window !== 'undefined' && world.startWorker) world.startWorker(new URL(`./genworker.js${new URL(import.meta.url).search}`, import.meta.url));
     world.protect = (tx, ty) => !!world.gen?.townProtecting(tx, ty) || (world.claims.size > 0 && !!claimAt(world, tx, ty));
+    // (Flowing water washes away small plants and torches: what they give, dropped where they were.)
+    world.onWash = (tx, ty, id) => { const b = BLOCKS[id]; if (b.drop) dropItem(game, b.drop, 1, tx * TILE + TILE / 2, ty * TILE + TILE / 2, 0, -1); };
     world.onBreak = (tx, ty, id) => {
       const b = BLOCKS[id], x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
       if (id === K.LOOT_CRATE) openCrate(game, x, y);

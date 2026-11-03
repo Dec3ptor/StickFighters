@@ -30,6 +30,7 @@ export function categoryOf(it) {
   if (it.key === 'coins') return 'coins';
   if (it.gem) return 'gem';
   if (it.kind === 'food') return it.look === 'potion' ? 'potion' : 'food';
+  if (it.kind === 'bucket') return 'tool';
   if (it.kind === 'weapon' || it.kind === 'tool' || it.kind === 'ammo' || it.kind === 'contract' || it.kind === 'wall' || it.kind === 'quest' || it.kind === 'gear' || it.kind === 'attachment') return it.kind;
   if (it.key.endsWith('_bar')) return 'bar';
   if (it.key.endsWith('_ore') || it.key === 'coal' || it.key === 'kimberlite') return 'ore';
@@ -97,8 +98,9 @@ export function itemDetails(it, n = 1, g = null) {
       break;
     }
     case 'tool':
-      kind = it.tool === 'pick' ? 'Tool · pickaxe' : it.tool === 'axe' ? 'Tool · axe' : 'Tool · hammer';
-      if (it.tool === 'pick') lines.push(`Digs ${TIERS[it.tier] || ''}-tier blocks and softer`, `Digging power ${round(it.power)}`);
+      kind = it.kind === 'bucket' ? 'Tool · bucket' : it.tool === 'pick' ? 'Tool · pickaxe' : it.tool === 'axe' ? 'Tool · axe' : 'Tool · hammer';
+      if (it.kind === 'bucket') lines.push(...(it.fluid ? ['Click where it\'s to go (either hand): it pours out, and flows from there'] : ['Click still water (either hand) to fill it: a sea, a lake, a pool', 'Not flowing water: it runs out of still water']));
+      else if (it.tool === 'pick') lines.push(`Digs ${TIERS[it.tier] || ''}-tier blocks and softer`, `Digging power ${round(it.power)}`);
       else if (it.tool === 'axe') lines.push('Fells trees, breaks wooden things', `Chopping power ${round(it.power)}`);
       else lines.push('Shapes blocks into halves and ramps', 'Takes down walls');
       break;
