@@ -160,6 +160,12 @@ for (const [id, d] of Object.entries(WEAPONS)) {
   item(id, d.name, 'weapon', { weapon: id, stack: self ? 20 : 1, ammo: ammoOf(id) });
 }
 
+// Boats (boats.js): put on water (a click, either hand, on its top), got into with a right click,
+// rowed left and right, got out of with a jump. boat: its kind.
+item('raft', 'Raft', 'boat', { stack: 1, color: '#a8804e', boat: 'raft' });
+item('rowboat', 'Rowing boat', 'boat', { stack: 1, color: '#8a5a32', boat: 'rowboat' });
+item('sailboat', 'Sailboat', 'boat', { stack: 1, color: '#f2ede0', boat: 'sailboat' });
+
 /** What a supply crate (found in ruins and caves) can hold: [key, least, most, how likely (a weight)]. */
 export const CRATE_LOOT = [
   ['bullets', 40, 120, 8], ['shells', 10, 30, 4], ['rockets', 3, 8, 2], ['arrows', 20, 40, 2], ['fuel', 80, 160, 1],

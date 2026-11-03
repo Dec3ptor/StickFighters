@@ -191,6 +191,8 @@ export async function exportWorld(id) {
     kind: FILE_KIND, format: 1, gen: rec.gen | 0 || 1, name: rec.name, seed: rec.seed, created: rec.created, played: rec.played, player: rec.player, chests: rec.chests || [], claims: rec.claims || [], players: rec.players || {}, pvp: rec.pvp !== false, time: rec.time || 0, towns: rec.towns || {},
     chunks: [...chunks].map(([k, c]) => [k, packBytes(c.fg), packBytes(c.bg), packBytes(c.shape)]),
   };
+  // (Its boats: boats.js.)
+  if (rec.boats?.length) data.boats = rec.boats;
   const file = `${rec.name.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'world'}${FILE_EXT}`;
   return { text: JSON.stringify(data), file };
 }
@@ -218,6 +220,7 @@ export async function importWorld(text) {
     time: Number.isFinite(data.time) ? data.time : 0, format: 1, gen: Math.max(1, Math.min(WORLD_GEN, data.gen | 0 || 1)),
     towns: data.towns && typeof data.towns === 'object' && !Array.isArray(data.towns) ? data.towns : {},
   };
+  if (Array.isArray(data.boats)) rec.boats = data.boats;
   await saveWorld(rec, chunks);
   return rec;
 }

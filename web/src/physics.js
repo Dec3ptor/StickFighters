@@ -20,6 +20,8 @@ export function makeBody(x, y) {
     // Worlds: standing on a one-way platform; dropping through one (updates left); on a ladder;
     // in water (its middle), and with the head under it.
     onPlatform: false, dropping: 0, climbing: false, swimming: false, under: false, leaping: false,
+    // (Worlds: in a boat, { id, kind, seat }: world/boats.js.)
+    boat: null,
   };
 }
 
@@ -43,6 +45,8 @@ export function stepBody(body, input, map) {
   body.bounced = false;
   body.jumped = false;
   body.landed = 0;
+  // Worlds' boats: in one, the body goes as the boat does (world/boats.js).
+  if (body.boat && map.rideBoat) { map.rideBoat(body, input); return; }
 
   // Worlds' ladders: hold jump to climb, crouch to go down (no falling while on one).
   const ladder = !!map.climbable && map.climbable(body.x - BODY.halfW, body.y + bodyTop(body), body.x + BODY.halfW, body.y + BODY.bottom);

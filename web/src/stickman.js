@@ -103,7 +103,8 @@ function legPose(s) {
     return mix(LEGS[ANIM.air][0], LEGS[ANIM.air][1], Math.max(0, Math.min(1, (b.vy + 3) / 8)));
   }
   if (b.crouching) {
-    return Math.abs(b.vx) > 0.3 ? sample(ANIM.crouchWalk, a.run * 2, true) : LEGS[ANIM.crouch][0];
+    // (Sat in a boat, worlds': still, however fast it goes.)
+    return Math.abs(b.vx) > 0.3 && !b.boat ? sample(ANIM.crouchWalk, a.run * 2, true) : LEGS[ANIM.crouch][0];
   }
   if (Math.abs(b.vx) > 0.3) return sample(ANIM.run, a.run, true);
   if (a.land > 0) return mix(LEGS[ANIM.land][0], LEGS[ANIM.land][1], Math.sin(Math.PI * (1 - a.land / 10)) * 0.8);

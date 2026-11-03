@@ -175,6 +175,13 @@ recipe('drum_mag', 1, [['iron_bar', 6], ['copper_bar', 3]], 'gunsmith');
 recipe('quick_mag', 1, [['iron_bar', 2], ['copper_bar', 2]], 'gunsmith');
 recipe('hollow_points', 4, [['copper_bar', 2], ['coal', 1]], 'gunsmith');
 
+// ---- Boats (boats.js), at a workbench: a raft of logs lashed with leather or wool, a rowing
+// boat of planks, and a sailboat, a rowing boat with a mast and a sail of wool. ----
+recipe('raft', 1, [['wood', 5], ['leather', 2]], 'workbench');
+recipe('raft', 1, [['wood', 5], ['wool', 2]], 'workbench');
+recipe('rowboat', 1, [['planks', 20]], 'workbench');
+recipe('sailboat', 1, [['rowboat', 1], ['wood', 2], ['wool', 6]], 'workbench');
+
 export const RECIPES = R;
 
 /**

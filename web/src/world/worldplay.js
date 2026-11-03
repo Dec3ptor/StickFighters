@@ -37,6 +37,7 @@ import { lairsTick } from './lairs.js';
 import { useSurvival, survivalTick, blockDrops } from './survival.js';
 import { exert, hurtNow, cantEat, feed, fill, hungerToSave, hungerFromSave } from './hunger.js';
 import { isAnimal, animalDrops } from './animals.js';
+import { rideBoat, boatsTick, boatInput, launch as launchBoat } from './boats.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -1171,6 +1172,14 @@ export function worldInput(game, s, inp) {
   const right = rightHand(s).item, alt = !!inp.alt, altPressed = alt && !w.prevAlt;
   w.prevAlt = alt;
   if (!alt) w.altDone = false;
+  // (Boats, boats.js: right click one to get in; the use button on one, with no gun in hand, hits it.)
+  const onBoat = boatInput(game, s, inp, item, altPressed, !!inp.fire && !w.prevFire, BOAT_HOOKS);
+  if (onBoat) {
+    if (onBoat === 'alt') w.altDone = true;
+    w.prevFire = !!inp.fire;
+    inp.alt = false; inp.fire = false; inp.firePressed = false;
+    return inp;
+  }
   let useRight = false;
   // (Right click on another player: what you can do with them, social.js; not with a gun in hand
   // in a PvP world: that's aiming. On one of the townsfolk, whatever's in hand: talking, talk.js.)
@@ -1201,6 +1210,17 @@ export function worldInput(game, s, inp) {
   if (!fire) inp.firePressed = false;
   return inp;
 }
+
+// (What boats.js does through this file: how far a click reaches, and a boat broken back into the
+// hands of whoever broke it.)
+const BOAT_HOOKS = {
+  reach: REACH,
+  give: (game, s, key) => {
+    const left = s.world.inv.add(key, 1);
+    if (left > 0) dropItem(game, key, left, s.x, s.y - 14, 0, -1.5, 30);
+    else gotItem(game, s, key, 1);
+  },
+};
 
 // (What survival.js does through this file: things on the ground, breaking blocks, base protection.)
 const SURVIVAL = {
@@ -1262,6 +1282,10 @@ function useItem(game, s, item, inp, pressed) {
     fire = false;
   } else if (item?.kind === 'bucket') {
     if (pressed) useBucket(game, s, item);
+    fire = false;
+  } else if (item?.kind === 'boat') {
+    // (A boat: onto the water where it's clicked, boats.js.)
+    if (pressed) launchBoat(game, s, item, BOAT_HOOKS);
     fire = false;
   } else if (item?.kind === 'tool') {
     if (item.tool === 'hammer') { if (hammer(game, s, item, inp)) fire = false; }
@@ -1430,6 +1454,8 @@ export function worldTick(game) {
   doorsTick(game);
   magmaBurns(game);
   waterTick(game);
+  // (Boats: floating, drifting, rowed: boats.js.)
+  boatsTick(game);
   const world = game.world;
   // Water flowing where a way's opened for it, a step every few updates (the host's: online,
   // everyone else is told of each tile, as of any other change).
@@ -1653,6 +1679,9 @@ export const worldMode = {
     setQuestHooks({ drop: (g, key, n, x, y, gear) => dropItem(g, key, n, x, y, 0, -2, 30, gear || null), chestAt });
     world.drops ||= [];
     world.claims ||= new Map();
+    // (Boats, and a body in one moving as it does: physics.js asks the world, boats.js answers.)
+    world.boats ||= new Map();
+    world.rideBoat = (body, inp) => rideBoat(game, body, inp);
     // (In a page: chunks made off the game's thread, before they're wanted: genworker.js. Its address
     // carries this one's release, as every module's does: tools/stamp.mjs.)
     if (typeof window !== 'undefined' && world.startWorker) world.startWorker(new URL(`./genworker.js${new URL(import.meta.url).search}`, import.meta.url));

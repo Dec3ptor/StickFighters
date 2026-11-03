@@ -15,6 +15,7 @@ import { skyLevel } from './monsters.js';
 import { itemColor, isPrecious } from './iteminfo.js';
 import { setItemPainter } from '../held.js';
 import { drawWeapon } from '../sprites.js';
+import { drawBoatIcon } from './boatart.js';
 import { WEAPONS } from '../weapons.js';
 
 export const PATCH = 16;                 // tiles across a picture
@@ -1899,6 +1900,7 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
   if (SURVIVAL_ICONS[it.key]) { ctx.strokeStyle = INK; ctx.fillStyle = c; SURVIVAL_ICONS[it.key](ctx, x, y, w, c); return; }
   if (it.kind === 'gear') { drawGearIcon(ctx, it, x, y, w); return; }
   if (it.kind === 'bucket') { drawBucketIcon(ctx, it, x, y, w); return; }
+  if (it.kind === 'boat') { drawBoatIcon(ctx, it, x, y, w, classic); return; }
   if (it.kind === 'quest') {
     // A bundle tied with string (a letter: a folded sheet with a seal).
     ctx.fillStyle = c;
@@ -1944,6 +1946,8 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
 
 // How big things are in a hand (world units: a block's 16 across).
 const HAND_SIZE = { block: 6.5, wall: 6.5, food: 6, gear: 6, quest: 5.5, material: 5, ammo: 5, attachment: 6, scroll: 5.5, contract: 5.5, bucket: 6.5 };
+// (A boat, carried: boatart.js.)
+HAND_SIZE.boat = 11;
 
 // Blocks and walls in hand: as they look in the world, drawn once each into a little picture.
 const HAND_TILES = new Map();

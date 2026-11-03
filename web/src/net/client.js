@@ -136,8 +136,9 @@ export class NetClient {
         if (!this.game) break;
         // Holes in the map change how everything moves: blown straight away, not when the effects show.
         if (data.cv) this.applyCarves(data.cv.from, data.cv.list);
-        // (So do a world's blocks.)
+        // (So do a world's blocks. And its boats: ours goes as we row it.)
         if (data.tc) this.opts.world?.tiles(data.tc);
+        if (data.bt) this.opts.world?.boats?.(data.bt, data.tick);
         this.events.push(data);
         this.queueFx(data);
         this.tape?.addEvents(data);
