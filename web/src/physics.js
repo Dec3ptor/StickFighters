@@ -4,6 +4,9 @@
 import { BODY, PHYS, RULES } from './config.js';
 import { hypot } from './map.js';
 
+// Gliding (worlds' wings): how fast across (of the running speed), in a dive, and how fast down (of the fastest fall).
+const GLIDE_SPEED = 1.8, GLIDE_DIVE = 2.6, GLIDE_FALL = 0.13;
+
 export function makeBody(x, y) {
   return {
     x, y, vx: 0, vy: 0,
@@ -83,6 +86,12 @@ export function stepBody(body, input, map) {
   if (body.rope && !wasGround) {
     // Swinging: left and right pump the swing instead of steering.
     body.vx += (input.move || 0) * PHYS.airAccel * 0.25;
+  } else if (body.glide && !wasGround && !wet) {
+    // Gliding (a world's wings: body.glide, worldplay.js): steered left and right, and faster in a
+    // dive (crouch).
+    const target = (input.move || 0) * PHYS.runSpeed * (input.crouch ? GLIDE_DIVE : GLIDE_SPEED + 0.25 * (body.glide - 1));
+    const dv = target - body.vx, accel = PHYS.airAccel * 1.2;
+    body.vx += dv > accel ? accel : dv < -accel ? -accel : dv;
   } else if (wet) {
     // Swimming: slower, and the water slows whatever comes into it fast (a blast, a run and a dive).
     const target = (input.move || 0) * PHYS.runSpeed * PHYS.swimSpeed + push;
@@ -131,6 +140,8 @@ export function stepBody(body, input, map) {
 
   if (body.climbing) body.vy = input.jump ? -PHYS.climbSpeed : input.crouch ? PHYS.climbSpeed : 0;
   else if (wet && !body.leaping) swim(body, input, map, current === 2);
+  // (Gliding: falling slowly; diving, faster.)
+  else if (body.glide && !wasGround) body.vy = Math.min(body.vy + PHYS.gravity * (input.crouch ? 0.6 : 0.18), PHYS.maxFall * (input.crouch ? 0.65 : GLIDE_FALL));
   else body.vy = Math.min(body.vy + PHYS.gravity, PHYS.maxFall);
   // (A leap out of the water goes on until it's on the way down again.)
   if (body.leaping && body.vy >= 0) body.leaping = false;

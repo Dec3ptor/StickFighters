@@ -75,11 +75,12 @@ export async function getWorld(id) {
 /**
  * Which version of the world generator a world is made with: 2 has towns (towns.js), 3 ores in
  * veins and nodes, gems, diamond pipes and geodes, 4 seas, beaches, lakes and swamps, 5 more
- * biomes and dense forests, 6 capitals and harbours (worldgen.js, towns.js). Worlds made before
+ * biomes and dense forests, 6 capitals and harbours (worldgen.js, towns.js), 7 dangerous lands,
+ * crystal fields, sky islands and monster towers (worldgen.js, lairs.js). Worlds made before
  * keep the land they were made with (what's new would cut through what's been built, or move
  * what's been seen).
  */
-export const WORLD_GEN = 6;
+export const WORLD_GEN = 7;
 /** A world's generator version (from its record: 1 if it has none). */
 export const genOf = rec => Math.max(1, Math.min(WORLD_GEN, rec?.gen | 0 || 1));
 /** Whether a world (its record) has towns. */

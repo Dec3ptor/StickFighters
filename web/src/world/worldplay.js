@@ -8,7 +8,7 @@ import * as K from './blocks.js';
 import { BLOCKS, SOLID, PLATFORMS, LIQUID, TILE, AIR, NO_WALL } from './blocks.js';
 import { Inventory, itemOf, HOTBAR, CRATE_LOOT, boxDetails } from './items.js';
 import { WORLD_H, CHUNK } from './worldgen.js';
-import { MOTION, BODY } from '../config.js';
+import { MOTION, BODY, PHYS } from '../config.js';
 import { WEAPONS } from '../weapons.js';
 import { monstersTick, armNpc, foes, isMonster, monsterLoot, hireMerc, mercsOf, MERC, DAY_TICKS, hourOf } from './monsters.js';
 import { setDoor, pushDoor, doorsTick, soldierIn } from './doors.js';
@@ -32,6 +32,7 @@ import { settingOf, difficultyOf, keepTime, KITS } from './worldrules.js';
 import { setDev } from './devmode.js';
 import { heldLook } from './hands.js';
 import { startAct, endAct } from '../useanim.js';
+import { lairsTick } from './lairs.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -715,6 +716,7 @@ export function breakBlock(game, tx, ty, by = null) {
     // (What grows in water leaves water where it was.)
     world.setTile(tx, ty, LIQUID[id] ? K.WATER : AIR);
     if (id === K.LOOT_CRATE) openCrate(game, x, y);
+    else if (id === K.TREASURE) openTreasure(game, x, y);
     // (A shulker box: picked up whole, what's in it kept in it.)
     else if (K.SHULKER_BOXES.has(id)) dropShulker(game, tx, ty, id, x, y);
     else if (b.drop) {
@@ -861,6 +863,22 @@ function openCrate(game, x, y) {
     dropItem(game, piece.key, 1, x, y - 4, (game.rng() - 0.5) * 4, -2.5, 0, piece.g);
   }
   game.sound('respawnItem', x, y);
+}
+
+/**
+ * A treasure chest opened (worlds made since towers: at the top of a monster tower, on a sky
+ * island): fine gear, gems, gold and coins; and now and then, wings (gear.js: Spirewings).
+ */
+function openTreasure(game, x, y) {
+  const rng = game.rng, drop = (key, n, g = null) => dropItem(game, key, n, x, y - 4, (rng() - 0.5) * 5, -2.5 - rng() * 2, 0, g);
+  drop('coins', 60 + Math.floor(rng() * 120));
+  drop('gold_bar', 2 + Math.floor(rng() * 4));
+  for (let i = 0, n = 2 + Math.floor(rng() * 3); i < n; i++) drop(['ruby', 'sapphire', 'emerald', 'topaz', 'amethyst', 'diamond'][Math.floor(rng() * 6)], 1);
+  const seed = dropSeed(game.world.gen.seed + game.tick, Math.floor(x), Math.floor(y));
+  for (let i = 0; i < 2; i++) { const p = rollGear(seed + i, 18 + Math.floor(rng() * 10), 220, rng() < 0.3 ? 'legendary' : 'rare', null, rng() < 0.35); drop(p.key, 1, p.g); }
+  if (rng() < 0.3) { const w = rollGear(seed + 7, 24, 0, 'unique', 'spirewings'); drop(w.key, 1, w.g); }
+  game.sound('respawnItem', x, y);
+  game.fx?.sparks?.(x, y, 0, -1);
 }
 
 // ---- Building --------------------------------------------------------------------------------------
@@ -1023,7 +1041,7 @@ function hammer(game, s, it, inp) {
   w.cool = it.every / MOTION.timeScale;
   startAct(s, 'hammer', it.every);
   if (SOLID[id]) {
-    if (DOORS.has(id) || id === K.LOOT_CRATE || BLOCKS[id].resist >= 1e9) return true;
+    if (DOORS.has(id) || id === K.LOOT_CRATE || id === K.TREASURE || BLOCKS[id].resist >= 1e9) return true;
     world.setShape(t.tx, t.ty, (world.shape(t.tx, t.ty) + 1) % K.SHAPES.length);
     game.sound('tink', x, y);
     return true;
@@ -1106,6 +1124,7 @@ export function worldInput(game, s, inp) {
   if (inp.switchTo || inp.cycle) { w.mine = null; w.drag = null; }
   inp = { ...inp, switchTo: null, cycle: 0 };
   hold(s);
+  glideInput(game, s, inp);
   if (w.cool > 0) w.cool -= 1;
   // (Dev mode, devmode.js: wipes out and builds its own way.)
   if (w.dev) {
@@ -1169,6 +1188,23 @@ export function worldInput(game, s, inp) {
   inp.fire = fire;
   if (!fire) inp.firePressed = false;
   return inp;
+}
+
+/**
+ * Wings (gear.js's glide, worlds made since towers: from the monster towers): jump held in the air,
+ * once past the top of a jump, glides (body.glide: physics.js); the better wings beat for a lift
+ * (jump pressed again, now and then). s.wings: whether they're worn (drawn on the back).
+ */
+function glideInput(game, s, inp) {
+  const b = s.body, w = s.world, level = gearStats(s).glide || 0;
+  s.wings = level > 0;
+  const can = level > 0 && !b.onGround && !b.swimming && !b.climbing && !b.rope && !w.dev && !w.sleep;
+  b.glide = can && inp.jump && (b.vy > -0.6 || b.glide) ? level : 0;
+  if (b.glide >= 2 && inp.jumpPressed && (w.flapAt || 0) <= game.tick) {
+    b.vy = Math.min(b.vy, -PHYS.jumpSpeed * 0.7);
+    w.flapAt = game.tick + Math.round(40 / MOTION.timeScale);
+    game.sound('swing', s.x, s.y);
+  }
 }
 
 /**
@@ -1346,6 +1382,8 @@ function eat(game, s, item) {
 function mirrorInput(game, s, inp) {
   const w = s.world;
   w.target = targetOf(s, inp);
+  // (Gliding, worked out here too: smooth on the player's own screen.)
+  glideInput(game, s, inp);
   if (inp.seq == null || inp.seq > (w.seenSeq || 0)) {
     w.seenSeq = inp.seq ?? 0;
     if (typeof inp.switchTo === 'string' && inp.switchTo[0] === '%') setRightHand(game, s, inp.switchTo.slice(1), true);
@@ -1375,6 +1413,8 @@ export function worldTick(game) {
   // (Always day, or always night, as the world was made: worldrules.js.)
   if (game.tick % 30 === 0 && !game.mirror) world.time = keepTime(world, world.time, DAY_TICKS, hourOf);
   monstersTick(game);
+  // (Worlds made since towers: the monster towers' and the dangerous lands' own: lairs.js.)
+  lairsTick(game);
   townsfolkTick(game);
   questsTick(game);
   raidsTick(game);
@@ -1457,7 +1497,15 @@ function magmaBurns(game) {
     s.burnBy = null;
     if (game.tick % 30 === 0) game.sound('flame', s.x, s.y);
   }
+  // (The blight's thorns: they cut whoever pushes through them, now and then.)
+  if (game.tick % (MAGMA_EVERY * 5)) return;
+  for (const s of game.soldiers) {
+    if (!s.alive || s.npc?.kind === 'monster' || s.world?.dev) continue;
+    if (world.tileAt(s.x - 4, s.y) !== K.THORNS && world.tileAt(s.x + 4, s.y) !== K.THORNS && world.tileAt(s.x, s.y + BODY.bottom - 3) !== K.THORNS) continue;
+    damage(game, s, THORN_DAMAGE, null, 'Thorns', {});
+  }
 }
+const THORN_DAMAGE = 3;
 
 // ---- Water: breath, and drowning ------------------------------------------------------------------
 
@@ -1531,7 +1579,7 @@ function useBucket(game, s, item) {
 let thorny = false;
 
 // (How likely each monster is to drop a piece of gear: gear.js. A named one always does, and better.)
-const GEAR_CHANCE = { zombie: 0.025, skeleton: 0.05, brute: 0.2 };
+const GEAR_CHANCE = { zombie: 0.025, skeleton: 0.05, brute: 0.2, wraith: 0.06, fiend: 0.08, tyrant: 1 };
 
 /** Gear dropped by a monster killed (by: the player who killed it, their magic find). */
 function dropGear(game, victim, by, x, y) {
@@ -1542,7 +1590,9 @@ function dropGear(game, victim, by, x, y) {
   const ilvl = dropLevel(depth, victim.npc.type, level) + (champ ? 4 : 0);
   const seed = dropSeed(world.gen.seed + game.tick, victim.id, Math.floor(victim.x));
   // (Named monsters: rare at least. The story's: something special.)
-  const special = victim.name === 'The Ember King' ? ['unique', 'ember_crown'] : victim.name === 'The Warden' ? ['unique', 'warden'] : null;
+  const special = victim.name === 'The Ember King' ? ['unique', 'ember_crown'] : victim.name === 'The Warden' ? ['unique', 'warden']
+    // (A monster tower's lord: its wings, now and then; something legendary, always.)
+    : victim.npc.type === 'tyrant' ? (game.rng() < 0.4 ? ['unique', 'stormwings'] : ['legendary', null]) : null;
   // (Now and then a weapon with affixes of its own instead.)
   const weapon = !special && game.rng() < 0.3;
   const piece = special ? rollGear(seed, ilvl, mf, special[0], special[1]) : rollGear(seed, ilvl, mf + (champ ? 150 : 0), champ && game.rng() < 0.5 ? 'rare' : null, null, weapon);
@@ -1584,6 +1634,7 @@ export const worldMode = {
     world.onBreak = (tx, ty, id) => {
       const b = BLOCKS[id], x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
       if (id === K.LOOT_CRATE) openCrate(game, x, y);
+      else if (id === K.TREASURE) openTreasure(game, x, y);
       else if (id === K.CHEST) { dropItem(game, 'chest', 1, x, y); spillChest(game, tx, ty); }
       else if (K.SHULKER_BOXES.has(id)) dropShulker(game, tx, ty, id, x, y);
       else if (id === K.ENDER_CHEST) dropItem(game, 'ender_chest', 1, x, y);

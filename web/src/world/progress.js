@@ -30,7 +30,7 @@ export const PERKS = {
 };
 
 /** Experience for killing each kind of monster. */
-export const KILL_XP = { zombie: 10, skeleton: 15, brute: 60, champion: 250 };
+export const KILL_XP = { zombie: 10, skeleton: 15, brute: 60, wraith: 25, fiend: 35, tyrant: 900, champion: 250 };
 /** Experience for mining each kind of block (by the item it drops): ores and gems only. */
 export const MINE_XP = {
   coal: 1, copper_ore: 2, iron_ore: 3, silver_ore: 4, gold_ore: 6, crystal_ore: 8, ember_ore: 10, kimberlite: 2,

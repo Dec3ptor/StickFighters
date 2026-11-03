@@ -550,6 +550,7 @@ export class NetClient {
         // what that is: useanim.js, hands.js).
         s.anim.act = sb.anim.act; s.anim.use = sb.anim.use; s.anim.recoil = Math.max(s.anim.recoil, sb.anim.recoil);
         showHands(s, sb);
+        s.wings = sb.wings;
         s.body.jetting = s.body.jetting || false;
         // How far ahead of where the host had us at this moment we're drawn: our own shots and
         // their flashes are moved by this, to come from our gun.
@@ -587,6 +588,9 @@ export class NetClient {
       s.anim.act = sb.anim.act;
       s.anim.use = smooth && sa.anim.act === sb.anim.act && sb.anim.use >= sa.anim.use ? lerp(sa.anim.use, sb.anim.use, t) : sb.anim.use;
       showHands(s, sb);
+      // (Wings, and gliding on them.)
+      s.wings = sb.wings;
+      body.glide = sb.gliding ? 1 : 0;
       s.anim.idle = g.tick;
     }
   }

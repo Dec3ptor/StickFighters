@@ -16,7 +16,7 @@ export const SKINS = [
   { id: 'knight', name: 'Knight', blurb: 'A steel helm with a plume in your colour.' },
 ];
 // Worlds' monsters' looks (world/monsters.js: not ones to pick in Settings).
-export const MONSTER_SKINS = ['zombie', 'skeleton', 'brute'];
+export const MONSTER_SKINS = ['zombie', 'skeleton', 'brute', 'wraith', 'fiend', 'tyrant'];
 // Worlds' townsfolk (world/townsfolk.js), one look for each kind of work, each with a tunic in
 // its own colour (also their name tag's colour in Remastered).
 export const TOWN_SKINS = ['villager', 'farmer', 'elder', 'merchant', 'smith', 'gunsmith', 'innkeeper', 'healer', 'guard', 'lord', 'trader'];
@@ -33,7 +33,7 @@ export const isSkin = id => typeof id === 'string' && IDS.has(id);
 export const skinFor = (s, own) => (s.skin && s.skin !== 'auto' && IDS.has(s.skin) ? s.skin : own);
 
 /** Each skin's own colour, in free-for-all in the original (no team colours there). */
-export const SKIN_ACCENT = { classic: '#111111', soldier: '#3d7ff0', ninja: '#c8282e', robot: '#25b8e0', cowboy: '#c8282e', knight: '#c8282e', zombie: '#4f7a34', skeleton: '#d8d4c8', brute: '#8a2a1a', ...TUNICS };
+export const SKIN_ACCENT = { classic: '#111111', soldier: '#3d7ff0', ninja: '#c8282e', robot: '#25b8e0', cowboy: '#c8282e', knight: '#c8282e', zombie: '#4f7a34', skeleton: '#d8d4c8', brute: '#8a2a1a', wraith: '#6a4a8a', fiend: '#c8401c', tyrant: '#3a2a4a', ...TUNICS };
 
 const HAT = '#6b4423', HAT_DARK = '#4a2e17', STEEL = '#b9c2cb', METAL = '#9aa4ae', SKIN_TONE = '#f0d2b0';
 const HAIR = '#5a3a22', GREY = '#e8e6e0', GOLD = '#f2c230', STRAW = '#e2c25a';
@@ -264,6 +264,53 @@ export function drawSkinHead(ctx, h, skin, facing, o) {
       ctx.beginPath(); ctx.moveTo(h.x + f * 0.2, h.y - 2.2); ctx.lineTo(h.x + f * 2.6, h.y - 1.2); ctx.stroke();
       ctx.fillStyle = '#ffd040';
       ctx.fillRect(h.x + f * 1.6 - 0.6, h.y - 1, 1.2, 1.2);
+      break;
+    }
+    case 'wraith': {
+      // A ragged dark hood over nothing, two cold eyes glowing in it, its tail of rags trailing.
+      ctx.fillStyle = '#2a2236';
+      ctx.beginPath();
+      ctx.moveTo(h.x - r * 1.05, h.y + r * 0.9);
+      ctx.quadraticCurveTo(h.x - r * 1.1, h.y - r * 1.3, h.x + f * r * 0.2, h.y - r * 1.25);
+      ctx.quadraticCurveTo(h.x + r * 1.15, h.y - r * 0.9, h.x + r * 1.05, h.y + r * 0.9);
+      ctx.lineTo(h.x - f * r * 0.3, h.y + r * 0.5);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      const glow = 0.6 + 0.4 * Math.sin((o.tick || 0) * 0.2);
+      ctx.fillStyle = `rgba(160,230,255,${glow.toFixed(2)})`;
+      ctx.fillRect(h.x + f * 0.6 - 0.6, h.y - 1.2, 1.3, 1.1);
+      ctx.fillRect(h.x + f * 2.4 - 0.6, h.y - 1, 1.3, 1.1);
+      break;
+    }
+    case 'fiend': {
+      // Charred black, cracks of fire through it, curled horns, ember eyes.
+      ctx.fillStyle = '#2e2422';
+      ctx.beginPath();
+      ctx.moveTo(h.x - r * 0.5, h.y - r * 0.7); ctx.quadraticCurveTo(h.x - r * 1.4, h.y - r * 1.2, h.x - r * 0.9, h.y - r * 1.9);
+      ctx.moveTo(h.x + r * 0.5, h.y - r * 0.7); ctx.quadraticCurveTo(h.x + r * 1.4, h.y - r * 1.2, h.x + r * 0.9, h.y - r * 1.9);
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(h.x, h.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#ff7a2a';
+      ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.moveTo(h.x - r * 0.6, h.y + r * 0.2); ctx.lineTo(h.x - r * 0.1, h.y + r * 0.6); ctx.lineTo(h.x + r * 0.3, h.y + r * 0.3); ctx.stroke();
+      ctx.fillStyle = '#ffb040';
+      ctx.fillRect(h.x + f * 0.5 - 0.6, h.y - 1.4, 1.3, 1.2);
+      ctx.fillRect(h.x + f * 2.4 - 0.6, h.y - 1.2, 1.3, 1.2);
+      break;
+    }
+    case 'tyrant': {
+      // A tower's lord: a great dark helm with a crown of spikes, its eyes burning violet.
+      const R = r * 1.4;
+      ctx.fillStyle = '#3a2f46';
+      ctx.beginPath();
+      for (let i = -2; i <= 2; i++) { const bx = h.x + i * R * 0.38; ctx.moveTo(bx - R * 0.18, h.y - R * 0.75); ctx.lineTo(bx, h.y - R * (1.35 + (i === 0 ? 0.3 : 0))); ctx.lineTo(bx + R * 0.18, h.y - R * 0.75); }
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(h.x, h.y, R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#1a1420';
+      ctx.fillRect(h.x - R * 0.8, h.y - R * 0.25, R * 1.6, R * 0.4);
+      ctx.fillStyle = '#d070ff';
+      ctx.fillRect(h.x + f * R * 0.15 - 0.7, h.y - R * 0.2, 1.4, 1.2);
+      ctx.fillRect(h.x + f * R * 0.6 - 0.7, h.y - R * 0.2, 1.4, 1.2);
       break;
     }
     case 'ninja': {

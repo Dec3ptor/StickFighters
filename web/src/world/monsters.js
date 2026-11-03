@@ -53,6 +53,11 @@ export const MONSTERS = {
   zombie: { name: 'Zombie', health: 70, speed: 0.5, weapon: 'Claws', skin: 'zombie', coins: [2, 6], loot: [['wood', 1, 3, 0.25], ['coal', 1, 2, 0.2], ['torch', 1, 3, 0.15], ['apple', 1, 2, 0.1], ['bread', 1, 1, 0.06]] },
   skeleton: { name: 'Skeleton', health: 80, speed: 0.7, weapon: 'Beretta', skin: 'skeleton', ranged: true, coins: [4, 10], loot: [['bullets', 6, 18, 0.5], ['iron_ore', 1, 4, 0.25], ['Beretta', 1, 1, 0.03], ['healing_potion', 1, 1, 0.05]] },
   brute: { name: 'Brute', health: 320, speed: 0.55, weapon: 'BruteClub', skin: 'brute', coins: [20, 45], loot: [['iron_bar', 2, 5, 0.6], ['gold_bar', 1, 3, 0.35], ['ember_ore', 1, 2, 0.15], ['healing_potion', 1, 2, 0.3], ['greater_potion', 1, 1, 0.06], ['ruby', 1, 1, 0.04]] },
+  // Worlds made since towers (lairs.js): the blight's wraiths (fast, and they don't let go), the
+  // ashen wastes' fiends (fire up close), and the lords of the monster towers.
+  wraith: { name: 'Wraith', health: 110, speed: 0.85, weapon: 'Claws', skin: 'wraith', coins: [6, 14], loot: [['glowcap', 1, 2, 0.3], ['healing_potion', 1, 1, 0.1], ['amethyst', 1, 1, 0.05]] },
+  fiend: { name: 'Ash fiend', health: 150, speed: 0.6, weapon: 'Flamer', skin: 'fiend', coins: [10, 22], loot: [['coal', 2, 5, 0.5], ['ember_ore', 1, 2, 0.2], ['fuel', 20, 60, 0.3], ['topaz', 1, 1, 0.05]] },
+  tyrant: { name: 'Tower lord', health: 1600, speed: 0.5, weapon: 'BruteClub', skin: 'tyrant', coins: [150, 300], loot: [['gold_bar', 4, 9, 1], ['diamond', 1, 2, 0.5], ['greater_potion', 1, 2, 0.6], ['emerald', 1, 3, 0.5]] },
 };
 /** Mercenaries: a rifle, a soldier's health. */
 export const MERC = { gun: 'M4', speed: 1, most: 3 };

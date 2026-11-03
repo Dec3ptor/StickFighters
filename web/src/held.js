@@ -147,3 +147,42 @@ function drawOpenScroll(ctx, fx, tick) {
   }
   ctx.globalAlpha = a;
 }
+
+/**
+ * Wings on a soldier's back (a world's: gear.js), drawn behind them (pose: buildPose's; the
+ * context in the soldier's own place): folded down the back, or spread wide behind them while
+ * they glide, beating slowly.
+ */
+export function drawWings(ctx, pose, facing, gliding, tick) {
+  const L = pose.lines[0], nx = L[0], ny = L[1], hx = L[2], hy = L[3];
+  const bx = nx + (hx - nx) * 0.22, by = ny + (hy - ny) * 0.22, back = -facing, a = ctx.globalAlpha;
+  ctx.strokeStyle = '#7a7498';
+  ctx.lineWidth = 0.7;
+  if (gliding) {
+    const beat = Math.sin(tick * 0.16) * 1.6;
+    for (const far of [true, false]) {
+      const lift = far ? -3.5 : 0, len = far ? 15 : 18;
+      ctx.fillStyle = far ? '#cfc8e8' : '#f6f2ff';
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.quadraticCurveTo(bx + back * len * 0.4, by - 11 + lift + beat, bx + back * len, by - 8 + lift + beat);
+      // (Its feathers' tips, ragged, back to the body.)
+      for (let i = 1; i <= 5; i++) { const t = i / 5; ctx.lineTo(bx + back * len * (1 - t * 0.88), by - 8 + lift + beat + t * 10 + (i % 2) * 1.6); }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  } else {
+    ctx.fillStyle = '#f0ecfc';
+    ctx.beginPath();
+    ctx.moveTo(bx, by - 1.5);
+    ctx.quadraticCurveTo(bx + back * 5.5, by, bx + back * 3.6, by + 12);
+    ctx.lineTo(bx + back * 2.6, by + 10.5);
+    ctx.lineTo(bx + back * 1.6, by + 11.5);
+    ctx.lineTo(bx + back * 0.6, by + 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.globalAlpha = a;
+}

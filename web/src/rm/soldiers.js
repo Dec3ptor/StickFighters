@@ -7,7 +7,7 @@
 import { buildPose } from '../stickman.js';
 import { lerp } from '../util.js';
 import { drawStreakFlame } from '../sprites.js';
-import { drawHeld } from '../held.js';
+import { drawHeld, drawWings } from '../held.js';
 import { css, mix, shade, rgb } from './color.js';
 import { drawSkinHead, drawHeadHalo, drawVest, drawTunic, TUNICS } from '../skins.js';
 
@@ -125,6 +125,9 @@ export function drawSoldier(r, game, s, alpha, theme) {
   ctx.stroke();
   ctx.fillStyle = halo;
   ctx.beginPath(); ctx.arc(pose.head.x, pose.head.y, pose.head.r + 1.6, 0, Math.PI * 2); ctx.fill();
+
+  // (A world's wings on their back.)
+  if (s.wings) drawWings(ctx, pose, facing, !!s.body.glide, game.tick);
 
   // The far arm and leg, a little darker.
   ctx.strokeStyle = c.back;
@@ -250,6 +253,8 @@ export function drawLineSoldier(r, game, s, alpha, theme, skin) {
   for (const l of L) line(ctx, l);
   ctx.stroke();
   drawHeadHalo(ctx, h, skin, halo, 1.6);
+  // (A world's wings on their back.)
+  if (s.wings) drawWings(ctx, pose, facing, !!s.body.glide, game.tick);
   // A jetpack on the back.
   if (s.body.hasJetpack) {
     const bx = L[0][0] - facing * 3.4, ny = L[0][1];

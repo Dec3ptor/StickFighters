@@ -2,7 +2,7 @@
 
 import { VIEW_W, VIEW_H, MOTION } from './config.js';
 import { buildPose, hypot } from './stickman.js';
-import { drawHeld } from './held.js';
+import { drawHeld, drawWings } from './held.js';
 import { laserEnd, lasered } from './combat.js';
 import { WEAPONS } from './weapons.js';
 import { clamp, lerp } from './util.js';
@@ -678,6 +678,9 @@ export class Renderer {
       const bx = -s.facing * 3.5 + (s.facing > 0 ? -2.5 : 0);
       ctx.fillRect(bx, -14, 2.5, 8);
     }
+
+    // (A world's wings on their back.)
+    if (s.wings) drawWings(ctx, pose, s.facing, !!s.body.glide, game.tick);
 
     // What's in their hands first (held.js), so the front hand overlaps it. (Back to the soldier's
     // own place after each thing: the same sums as saving and restoring would give.)

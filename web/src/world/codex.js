@@ -26,6 +26,11 @@ const EXTRA = {
   Teleport: 'Rare: market traders sometimes have one',
   log: 'Wood, built with: broken, a log you built gives a log back',
   water_bucket: 'An empty bucket, filled from still water: a sea, a lake, a pool',
+  // (Worlds made since towers.)
+  dark_bricks: 'Mined from the walls of monster towers, in the dangerous lands',
+  dark_brick_wall: 'Knocked out from inside monster towers, with a hammer',
+  glowcap: 'Picked in the blighted lands and crystal fields; wraiths drop them',
+  calcite: 'Mined in crystal fields',
 };
 
 let entries = null;
@@ -60,7 +65,9 @@ export function codexEntries() {
     if (it.kind === 'gear') {
       const base = BASES[key];
       where.unshift(`Worn on the ${WEAR[base.kind] || base.kind}`);
-      where.push(`Dropped by monsters from item level ${base.level}${base.level > 10 ? ' (deeper down, or tougher monsters)' : ''}, in any rarity; sold by ${SHOP_FOR[base.kind]} and general stores`);
+      // (Wings: only ever in the towers' treasure, and from their lords.)
+      if (base.imp?.glide) where.push('Never dropped at random: found in the treasure at the top of a monster tower, and dropped by the towers\' lords');
+      else where.push(`Dropped by monsters from item level ${base.level}${base.level > 10 ? ' (deeper down, or tougher monsters)' : ''}, in any rarity; sold by ${SHOP_FOR[base.kind]} and general stores`);
     }
     if (it.kind === 'weapon' && DROP_WEAPONS.includes(key)) where.push('Dropped by monsters with affixes of its own (magic, rare, epic, legendary, unique); sold so by gunsmiths');
     if (it.kind === 'quest') where.push('Carried for a quest: given, or found where the quest says');

@@ -396,12 +396,78 @@ export const WORLD_THEMES = {
   },
 };
 
+// Worlds made since towers (worldgen.js's gen 7): the dangerous lands' looks, and crystal fields'.
+Object.assign(THEMES, {
+  // The blight: a bruised violet sky, dead trees, motes drifting in the gloom.
+  blight: {
+    name: 'Blighted lands',
+    sky: [[0, '#241a30'], [0.55, '#54405f'], [1, '#86708a']],
+    sun: { x: 0.66, y: 0.22, r: 26, color: '#e8dcf0', glow: '#8a6aa0', glowR: 220 },
+    clouds: { color: '#6a5a78', alpha: 0.45, count: 9, top: 0.04, bottom: 0.32 },
+    haze: '#5e4e6a',
+    layers: [
+      { p: 0.07, gen: 'hills', height: 170, color: '#43344f', haze: 0.45 },
+      { p: 0.2, gen: 'canopy', height: 220, color: '#2a2134', haze: 0.25 },
+      { p: 0.42, gen: 'canopy', height: 200, color: '#18121e', haze: 0.08, tall: true },
+    ],
+    ground: '#100a14',
+    fore: { gen: 'grass', height: 70, color: '#08060a' },
+    mist: { color: '#7a6888', alpha: 0.45 },
+    weather: 'motes',
+    material: 'mossrock', top: 'grass', tint: '#56465e',
+    light: { x: 0.4, y: -0.9, color: '#d0c0e0', strength: 0.3 },
+    ink: '#100a14', halo: '#c4b4d4', haloAlpha: 0.26, rim: '#c4a4dc',
+    vignette: 0.58, dark: 0.14,
+  },
+  // The ashen wastes: a smouldering sky, ash and embers on the wind.
+  ashlands: {
+    name: 'Ashen wastes',
+    sky: [[0, '#241612'], [0.5, '#5e3424'], [0.85, '#a85a34'], [1, '#d8844a']],
+    sun: { x: 0.3, y: 0.3, r: 34, color: '#ffd8a0', glow: '#ff7a3a', glowR: 320 },
+    clouds: { color: '#4e423e', alpha: 0.55, count: 10, top: 0.04, bottom: 0.4 },
+    haze: '#7e5240',
+    layers: [
+      { p: 0.07, gen: 'peaks', height: 300, color: '#43302c', haze: 0.4, snow: '#5e4038' },
+      { p: 0.2, gen: 'ridge', height: 220, color: '#2a1e1c', haze: 0.22, rough: 0.7 },
+    ],
+    ground: '#120a08',
+    fore: { gen: 'rocks', height: 60, color: '#0a0606' },
+    mist: { color: '#a8603e', alpha: 0.3 },
+    weather: 'embers',
+    material: 'rock', top: 'sand', tint: '#56423c',
+    light: { x: -0.3, y: -0.9, color: '#ffb880', strength: 0.45 },
+    ink: '#120a08', halo: '#ffc8a0', haloAlpha: 0.28, rim: '#ff9a5a',
+    vignette: 0.5, dark: 0.08,
+  },
+  // Crystal fields: a clear, cold sky, white stone, light glinting.
+  crystal: {
+    name: 'Crystal fields',
+    sky: [[0, '#4676b4'], [0.55, '#9ccdec'], [1, '#e6f6ff']],
+    sun: { x: 0.74, y: 0.2, r: 30, color: '#ffffff', glow: '#cfeeff', glowR: 320 },
+    clouds: { color: '#ffffff', alpha: 0.45, count: 7, top: 0.06, bottom: 0.36 },
+    haze: '#d6ecf8',
+    layers: [
+      { p: 0.07, gen: 'peaks', height: 320, color: '#a4c4dc', haze: 0.45, snow: '#f4fbff' },
+      { p: 0.2, gen: 'hills', height: 140, color: '#86aac6', haze: 0.3 },
+    ],
+    ground: '#18222c',
+    fore: { gen: 'rocks', height: 50, color: '#0c1218' },
+    mist: { color: '#e4f6ff', alpha: 0.3 },
+    weather: 'motes',
+    material: 'rock', top: 'snow', tint: '#8aa0b0',
+    light: { x: 0.5, y: -0.9, color: '#f0faff', strength: 0.5 },
+    ink: '#10181e', halo: '#ffffff', haloAlpha: 0.3, rim: '#d8f4ff',
+    vignette: 0.32, dark: 0,
+  },
+});
+
 // Each biome's look (worldgen.js's biomes).
 const BIOME_THEMES = {
   plains: 'meadow', forest: 'meadow', mountains: 'meadow', desert: 'desert', badlands: 'desert', jungle: 'jungle', snow: 'arctic',
   ocean: 'ocean', warm_ocean: 'ocean', frozen_ocean: 'arctic', swamp: 'swamp',
   birch_forest: 'meadow', dark_forest: 'darkforest', taiga: 'taiga', snowy_taiga: 'arctic', giant_taiga: 'taiga', savanna: 'savanna',
   cherry_grove: 'cherry', meadow: 'meadow', bamboo_jungle: 'jungle', mushroom_fields: 'mushroom',
+  blight: 'blight', ashlands: 'ashlands', crystal_fields: 'crystal',
 };
 
 const worldThemes = new Map();

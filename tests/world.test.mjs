@@ -86,15 +86,16 @@ test('a world has biomes side by side, everyone starting on solid ground in the 
     for (let x = tx - 40; x < tx + 40; x++) assert.ok(Math.abs(world.gen.surfaceAt(x + 1) - world.gen.surfaceAt(x)) <= 3, `seed ${seed}: gentle ground at ${x}`);
   }
   // (Each biome in worlds made since it came: seas and swamps since seas, gen 4; the forests and
-  // the rest since forests, gen 5. Not in worlds made before.)
+  // the rest since forests, gen 5; the dangerous lands and crystal fields since towers, gen 7.
+  // Not in worlds made before.)
   const seen = {};
-  for (const gen of [1, 4, 5]) {
+  for (const gen of [1, 4, 5, 7]) {
     const world = new TileWorld({ seed: 5, gen }), set = seen[gen] = new Set();
     for (let x = -32000; x < 32000; x += 37) set.add(world.gen.biomeAt(x).key);
   }
   for (const b of BIOMES) {
     assert.ok(seen[b.since || 1].has(b.key), `${b.name} somewhere in 64,000 tiles (in worlds made since gen ${b.since || 1})`);
-    if (b.since) assert.ok(!seen[b.since === 5 ? 4 : 1].has(b.key), `${b.name}: not in worlds made before`);
+    if (b.since) assert.ok(!seen[b.since === 7 ? 5 : b.since === 5 ? 4 : 1].has(b.key), `${b.name}: not in worlds made before`);
   }
 });
 

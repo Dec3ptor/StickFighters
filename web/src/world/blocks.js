@@ -226,6 +226,23 @@ const flowing = n => def(`water_${n}`, 'Flowing water', wet({ tool: 'none', tier
 export const WATER_FLOW = [AIR, flowing(1), flowing(2), flowing(3), flowing(4), flowing(5), flowing(6), flowing(7)];
 export const WATER_FALL = def('water_fall', 'Falling water', wet({ tool: 'none', tier: 9, resist: 999, color: '#2f6fd0', pattern: 'water', source: false, falling: true }));
 
+// ---- The wild lands (worlds made since towers: worldgen.js's gen 7) --------------------------------
+// The blight: grey-violet grass, dead trees, thorns that cut whoever pushes through them, glowcaps
+// in the gloom. The ashen wastes: ash over basalt, charred trees (coal, chopped), magma breaking
+// through. Crystal fields: white calcite with clusters of crystal glowing on it (mined: crystal).
+// And the monsters' towers: dark bricks, and the treasure at the top.
+export const BLIGHT_GRASS = def('blight_grass', 'Blighted grass', { hard: 2, resist: 0, drop: 'dirt', color: '#5e4c70', dark: '#3e3230', pattern: 'grass', natural: true });
+export const DEAD_TRUNK = trunk('dead_trunk', 'Dead tree', '#4a423e');
+export const BLIGHT_LEAVES = leaves('blight_leaves', 'Blighted leaves', '#5a3a66');
+export const THORNS = plant('thorns', 'Thorns', '#5a3046', 'bush', { thorns: true });
+export const GLOWCAP = plant('glowcap', 'Glowcap', '#b07aff', 'mushroom', { light: 8, drop: 'glowcap' });
+export const ASH = def('ash', 'Ash', { hard: 2, resist: 0, color: '#78726e', pattern: 'stipple', natural: true });
+export const CHARRED_TRUNK = trunk('charred_trunk', 'Charred tree', '#2e2826', 'bark', { drop: 'coal' });
+export const CALCITE = def('calcite', 'Calcite', { hard: 4, resist: 6, color: '#e6e4dc', pattern: 'cracks', natural: true });
+export const CRYSTAL_CLUSTER = def('crystal_cluster', 'Crystal cluster', { hard: 8, resist: 10, tier: 2, drop: 'crystal_ore', clear: true, light: 10, color: '#8ae6ff', pattern: 'glass', natural: true });
+export const DARK_BRICKS = def('dark_bricks', 'Dark bricks', { hard: 9, resist: 22, tier: 1, color: '#4a4652', pattern: 'bricks' });
+export const TREASURE = def('treasure', 'Treasure chest', { hard: 3, tool: 'any', resist: 30, drop: null, light: 3, color: '#c8962e', pattern: 'chest', natural: true });
+
 /** The gem blocks (they glint). */
 export const GEMS = new Set([RUBY, SAPPHIRE, EMERALD, TOPAZ, AMETHYST, DIAMOND]);
 
@@ -302,6 +319,8 @@ export const TIMBER_WALL = wall('timber_wall', 'Timber-framed wall', '#d3c7ab');
 export const LOG_WALL = wall('log_wall', 'Log wall', '#6a4a2c');
 export const COBBLE_WALL = wall('cobble_wall', 'Cobblestone wall', '#5f5e5a');
 export const MUD_BRICK_WALL = wall('mud_brick_wall', 'Mud brick wall', '#6b4a32');
+// (Worlds made since towers: inside the monsters' towers.)
+export const DARK_BRICK_WALL = wall('dark_brick_wall', 'Dark brick wall', '#2e2b33');
 export const WALLS = W;
 export const WALL_BY_KEY = new Map(W.map(w => [w.key, w]));
 

@@ -67,6 +67,11 @@ export const BIOMES = [
   { key: 'meadow', since: 5, name: 'Flower meadow', climate: 1, base: 10, amp: 9, scale: 170, shape: 'rolling', top: K.GRASS, soil: K.DIRT, soilDepth: 6, wall: K.DIRT_WALL, trees: 0.08, tree: 'big_oak', plants: 0.45, flowers: 0.4 },
   { key: 'bamboo_jungle', since: 5, name: 'Bamboo jungle', climate: 2, base: 6, amp: 18, scale: 80, shape: 'rolling', top: K.JUNGLE_GRASS, soil: K.MUD, soilDepth: 9, wall: K.MUD_WALL, trees: 0.3, tree: 'jungle', plants: 0.4, flowers: 0.04 },
   { key: 'mushroom_fields', since: 5, name: 'Mushroom fields', climate: 1, base: 0, amp: 6, scale: 120, shape: 'rolling', top: K.MYCELIUM, soil: K.DIRT, soilDepth: 5, wall: K.DIRT_WALL, trees: 0.4, tree: 'giant_mushroom', plants: 0.15, plant: K.MUSHROOM, flowers: 0 },
+  // Worlds made since towers (gen 7): dangerous lands (danger: monsters come by day as well as by
+  // night, more of them, and worse: lairs.js), and now and then, rare crystal fields.
+  { key: 'blight', since: 7, name: 'Blighted lands', climate: 1, base: 2, amp: 14, scale: 90, shape: 'rolling', top: K.BLIGHT_GRASS, soil: K.DIRT, soilDepth: 5, wall: K.DIRT_WALL, trees: 0.4, tree: 'dead', plants: 0.4, plant: K.THORNS, flowers: 0, danger: 1 },
+  { key: 'ashlands', since: 7, name: 'Ashen wastes', climate: 2, base: 14, amp: 26, scale: 64, shape: 'ridged', top: K.ASH, soil: K.ASH, soilDepth: 3, under: K.BASALT, wall: K.BASALT_WALL, trees: 0.08, tree: 'charred', plants: 0.1, plant: K.DEAD_BUSH, flowers: 0, danger: 2 },
+  { key: 'crystal_fields', since: 7, name: 'Crystal fields', climate: 0, base: 8, amp: 12, scale: 80, shape: 'rolling', top: K.CALCITE, soil: K.CALCITE, soilDepth: 6, wall: K.STONE_WALL, trees: 0.2, tree: 'crystal', plants: 0.08, plant: K.GLOWCAP, flowers: 0, rare: true },
 ];
 export const BIOME_BY_KEY = new Map(BIOMES.map((b, i) => [b.key, { ...b, index: i }]));
 const BY_CLIMATE = [[6, 2, 6], [0, 1, 1, 2, 0], [3, 4, 5, 3]];
@@ -81,6 +86,12 @@ const BY_CLIMATE_5 = [
   ['desert', 'badlands', 'jungle', 'savanna', 'savanna', 'bamboo_jungle', 'desert', 'swamp'],
 ].map(l => l.map(biomeIndex));
 const MUSHROOMS = biomeIndex('mushroom_fields');
+// Worlds made since towers: the dangerous lands (the blight in the mild and cold lands, the ashen
+// wastes in the hot), and crystal fields.
+const BLIGHT = biomeIndex('blight'), ASHLANDS = biomeIndex('ashlands'), CRYSTALS = biomeIndex('crystal_fields');
+// A monster tower's floors: one every FLOOR_H rows (its floor, and room over it).
+export const FLOOR_H = 8;
+const TOWER_W = 15;
 
 /**
  * Worlds made since forests: each biome's trees. cell: tiles to a tree at most (forests are
@@ -107,9 +118,13 @@ const TREES = {
   meadow: { cell: 9, p: 0.1, kinds: [['big_oak', 1], ['birch', 1]] },
   swamp: { cell: 5, p: 0.4, kinds: [['swamp', 1]] },
   mushroom_fields: { cell: 7, p: 0.42, kinds: [['giant_mushroom', 1]] },
+  // (Worlds made since towers.)
+  blight: { cell: 6, p: 0.55, kinds: [['dead', 3], ['blight_oak', 2]] },
+  ashlands: { cell: 12, p: 0.3, kinds: [['charred', 1]] },
+  crystal_fields: { cell: 8, p: 0.5, kinds: [['crystal', 1]] },
 };
 // How far each kind of tree reaches either side of its trunk (tiles); the most any does.
-const TREE_REACH = { oak: 4, big_oak: 7, birch: 3, tall_birch: 3, dark_oak: 7, spruce: 4, snowy_spruce: 4, mega_spruce: 6, pine: 4, jungle: 5, big_jungle: 7, swamp: 4, cactus: 2, acacia: 8, cherry: 5, palm: 8, giant_mushroom: 5 };
+const TREE_REACH = { oak: 4, big_oak: 7, birch: 3, tall_birch: 3, dark_oak: 7, spruce: 4, snowy_spruce: 4, mega_spruce: 6, pine: 4, jungle: 5, big_jungle: 7, swamp: 4, cactus: 2, acacia: 8, cherry: 5, palm: 8, giant_mushroom: 5, dead: 3, blight_oak: 4, charred: 2, crystal: 2 };
 const TREE_MAX_REACH = 8;
 
 /**
@@ -134,12 +149,26 @@ const UNDERGROWTH = {
   desert: { p: 0.08, list: [[K.DEAD_BUSH, 1]] },
   badlands: { p: 0.05, list: [[K.DEAD_BUSH, 1]] },
   mountains: { p: 0.05, list: [[K.TALL_GRASS, 1]] },
+  // (Worlds made since towers.)
+  blight: { p: 0.42, list: [[K.THORNS, 4], [K.DEAD_BUSH, 3], [K.GLOWCAP, 1.2], [K.TALL_GRASS, 1]] },
+  ashlands: { p: 0.1, list: [[K.DEAD_BUSH, 1]] },
+  crystal_fields: { p: 0.08, list: [[K.GLOWCAP, 1]] },
 };
 // Where fallen logs lie, and boulders sit (worlds made since forests): the biomes.
 const LOGS = new Set(['forest', 'birch_forest', 'dark_forest', 'taiga', 'giant_taiga', 'jungle']);
 const BOULDERS = new Set(['taiga', 'giant_taiga', 'dark_forest', 'forest', 'mountains', 'snowy_taiga', 'meadow']);
 // The ground's top blocks things grow on.
-const GROUNDS = new Set([K.GRASS, K.JUNGLE_GRASS, K.PODZOL, K.DRY_GRASS, K.MYCELIUM, K.MOSS, K.SAND, K.RED_SAND, K.SNOW, K.STONE]);
+const GROUNDS = new Set([K.GRASS, K.JUNGLE_GRASS, K.PODZOL, K.DRY_GRASS, K.MYCELIUM, K.MOSS, K.SAND, K.RED_SAND, K.SNOW, K.STONE, K.BLIGHT_GRASS, K.ASH, K.CALCITE]);
+
+// Monster towers' names: Raven Spire, the Black Keep...
+const TOWER_A = ['Raven', 'Bone', 'Storm', 'Grim', 'Hollow', 'Iron', 'Thorn', 'Dusk', 'Ash', 'Wolf', 'Crow', 'Ember', 'Gloom', 'Widow'];
+const TOWER_B = ['Spire', 'Tower', 'Keep', 'Watch', 'Fang', 'Hold', 'Needle', 'Tooth'];
+const DARK = ['Black', 'Blighted', 'Burning', 'Cursed', 'Howling', 'Forsaken'];
+/** Tower k's name (a dangerous land's: darker). */
+function towerName(seed, k, danger) {
+  const a = (danger ? DARK : TOWER_A)[hash3(seed, k, 240) % (danger ? DARK.length : TOWER_A.length)], b = TOWER_B[hash3(seed, k, 241) % TOWER_B.length];
+  return danger ? `The ${a} ${b}` : `${a} ${b}`;
+}
 
 /** Pick from [[thing, how often], ...] by r (0 to 1). */
 function pick(list, r) {
@@ -158,8 +187,8 @@ export class WorldGen {
    * gen: the version of the generator the world was made with (worldsave.js's WORLD_GEN): 1 the
    * first; 2 has towns (towns.js); 3 ores in veins and nodes, gems, diamond pipes and geodes;
    * 4 seas, beaches, lakes and swamps; 5 more biomes, dense forests and many more kinds of tree;
-   * 6 capitals and harbours. Worlds keep the land they were made with. (towns: true, an older way
-   * to say 2.)
+   * 6 capitals and harbours; 7 dangerous lands, crystal fields, sky islands and monster towers.
+   * Worlds keep the land they were made with. (towns: true, an older way to say 2.)
    */
   constructor(seed, { towns = false, gen = 0, noTowns = false } = {}) {
     this.seed = seed | 0;
@@ -170,6 +199,9 @@ export class WorldGen {
     this.seas = this.version >= 4;
     this.forests = this.version >= 5;
     this.capitals = this.version >= 6;
+    this.wilds = this.version >= 7;
+    this.towerPlans = new Map(); // region -> its monster tower (or null)
+    this.isles = new Map();      // region -> its sky island (or null)
     this.caps = new Map();      // region -> whether a capital starts there
     this.raw = new Map();       // region -> its own biome (before a capital takes it over)
     this.biomes = new Map();    // region -> its biome
@@ -256,6 +288,10 @@ export class WorldGen {
       if (this.seas && Math.abs(k - this.spawnRegion) > 1 && fbm1(this.seed + 13, k * 0.2, 2) > SEA_NOISE) b = BIOMES[SEAS[climate]];
       // (Worlds made since forests: now and then, mushroom fields, in the mild lands away from the start.)
       else if (this.forests && climate === 1 && Math.abs(k - this.spawnRegion) > 3 && hash3(this.seed, k, 7) % 100 < 3) b = BIOMES[MUSHROOMS];
+      // (Worlds made since towers: dangerous lands now and then, well away from the start; rarer,
+      // crystal fields, in the mild and cold lands.)
+      else if (this.wilds && Math.abs(k - this.spawnRegion) > 4 && hash3(this.seed, k, 17) % 100 < 8) b = BIOMES[climate === 2 ? ASHLANDS : BLIGHT];
+      else if (this.wilds && climate !== 2 && Math.abs(k - this.spawnRegion) > 6 && hash3(this.seed, k, 19) % 100 < 3) b = BIOMES[CRYSTALS];
       else {
         const list = (this.forests ? BY_CLIMATE_5 : this.seas ? BY_CLIMATE_4 : BY_CLIMATE)[climate];
         b = BIOMES[list[hash3(this.seed, k, 5) % list.length]];
@@ -568,9 +604,16 @@ export class WorldGen {
         if (b.mossy && noise2(s + 131, x / 14, 0.5) > 0.1) return K.MOSS;
         if (b.top === K.PODZOL && noise2(s + 132, x / 20, 1.5) < -0.25) return K.GRASS;
       }
+      // (The ashen wastes: magma breaking through the ash, and bare basalt.)
+      if (b.key === 'ashlands') {
+        const n = noise2(s + 140, x / 9, 0.5);
+        if (n > 0.5) return K.MAGMA;
+        if (n < -0.45) return K.BASALT;
+      }
       return b.top;
     }
     if (depth < col.soilDepth) return b.soil;
+    if (b.under === K.BASALT && depth < col.soilDepth + 30) return noise2(s + 141, x / 7, y / 7) > 0.55 ? K.MAGMA : K.BASALT;
     if (b.under === K.SANDSTONE && depth < col.soilDepth + 22) return K.SANDSTONE;
     if (b.under === 'bands' && depth < 30) {
       const band = Math.floor((y + Math.floor(noise2(s + 28, x / 40, 0.5) * 4)) / 3) % 3;
@@ -747,6 +790,8 @@ export class WorldGen {
     if (rand3(s, cell, 52 + cw) >= p) return null;
     const kind = pick(T.kinds, rand3(s, x, 57)), w = WIDE.has(kind) ? 2 : 1, reach = TREE_REACH[kind];
     if (col.town && x >= col.town.x0 - reach - 2 && x <= col.town.x1 + reach + 2) return null;
+    // (Worlds made since towers: none against a tower, its crown in through the windows.)
+    if (this.wilds && this.towerNear(x, reach + 2)) return null;
     // (On ground level enough for it: a wide trunk's two columns on the same level.)
     const surf = col.surf;
     for (let d = -1; d <= w; d++) if (d && Math.abs(this.surfaceAt(x + d) - surf) > (d >= 1 && d < w ? 0 : 1)) return null;
@@ -770,6 +815,10 @@ export class WorldGen {
       case 'cherry': t.h = 4 + (r % 3); t.r = 4; break;
       case 'palm': t.h = 6 + (r % 4); break;
       case 'giant_mushroom': t.h = 4 + (r % 4); t.red = ((r >>> 6) & 1) === 1; break;
+      case 'dead': t.h = 6 + (r % 5); break;
+      case 'blight_oak': t.h = 6 + (r % 3); t.r = 3; break;
+      case 'charred': t.h = 3 + (r % 4); break;
+      case 'crystal': t.h = 3 + (r % 6); break;
     }
     t.top = t.base - t.h - 6;
     return t;
@@ -839,6 +888,28 @@ export class WorldGen {
         const ax = Math.abs(dx - bend(t.h - 1)), ay = y - (t.base - t.h - 1);
         return (ay === -1 && ax <= 1) || (ay === 0 && ax <= 3) || (ay === 1 && ax >= 3 && ax <= 4) || (ay === 2 && ax >= 4 && ax <= 5) ? K.PALM_LEAVES : K.AIR;
       }
+      case 'dead': {
+        // Grey and bare: a trunk, a crooked branch one way and (on a tall one) another the other, nothing on them.
+        if (dx === 0 && y >= top) return K.DEAD_TRUNK;
+        const out = dx * t.lean, b1 = top + 2, b2 = top + 4;
+        if (out >= 1 && out <= 2 && y === b1 - out) return K.DEAD_TRUNK;
+        if (t.h > 7 && out <= -1 && out >= -2 && y === b2 + out) return K.DEAD_TRUNK;
+        return K.AIR;
+      }
+      case 'blight_oak':
+        // A dark twisted trunk, its crown ragged and violet, with holes in it.
+        if (dx === 0 && y >= top) return K.DEAD_TRUNK;
+        return ell(dx, y - (top - 1), t.r + 0.5, 2.6) && hash3(s, x * 7 + y, 141) % 3 ? K.BLIGHT_LEAVES : K.AIR;
+      case 'charred':
+        // Burnt black and broken off, a stub of a branch.
+        if (dx === 0 && y >= top) return K.CHARRED_TRUNK;
+        return y === top + 1 && dx === t.lean ? K.CHARRED_TRUNK : K.AIR;
+      case 'crystal': {
+        // A spire of crystal, wider at its foot.
+        const i = t.base - 1 - y;
+        if (i < 0 || i >= t.h) return K.AIR;
+        return Math.abs(dx) <= (i < 2 && t.h > 4 ? 1 : 0) ? K.CRYSTAL_CLUSTER : K.AIR;
+      }
       case 'giant_mushroom': {
         // A thick pale stem, and a cap to stand on: a red dome with its rim hanging down, or a wide flat brown one.
         if (dx === 0 && y >= top) return K.MUSHROOM_STEM;
@@ -898,6 +969,7 @@ export class WorldGen {
   groundThing(x, col) {
     const s = this.seed, key = col.biome.key, surf = col.surf;
     if (col.town || col.beach || this.waterTop(x, col) < WORLD_H) return null;
+    if (this.wilds && this.towerNear(x, 1)) return null;
     if (key === 'bamboo_jungle' && noise2(s + 135, x / 22, 0.5) > -0.15 && rand3(s, x, 136) < 0.55 && !this.treeAt5(x)) return [K.BAMBOO, surf - 4 - (hash3(s, x, 137) % 9), surf - 1];
     if (LOGS.has(key)) {
       for (let xs = x - 4; xs <= x; xs++) {
@@ -1039,8 +1111,158 @@ export class WorldGen {
   }
 
   /** The ruins, cabins, shipwrecks and harbours touching the tile box (inclusive). */
+  // ---- Monster towers and sky islands (worlds made since towers) -------------------------------------
+
+  /**
+   * Region k's monster tower, if it has one: in every dangerous land, and now and then elsewhere
+   * (not by the sea, nor in a town's region, nor near where everyone starts), on ground as level as
+   * the region has. Floors one over another, FLOOR_H rows apart, a ladder up through each (one
+   * side, then the other); monsters in it (lairs.js), a crate on every other floor, the treasure
+   * on the top floor, and the roof with its battlements over that. { kind: 'tower', k, x0, x1, base
+   * (the ground floor's row), floors, top (the roof's row), y0, y1, mat, wall, danger, name }.
+   */
+  tower(k) {
+    if (!this.wilds) return null;
+    let t = this.towerPlans.get(k);
+    if (t !== undefined) return t;
+    t = null;
+    const s = this.seed, b = this.regionBiome(k), danger = b.danger || 0;
+    if (!b.sea && Math.abs(k - this.spawnRegion) > 2 && !this.townOf(k) && (danger || hash3(s, k, 201) % 100 < 22)) {
+      const lo = this.edge(k) + 40, hi = this.edge(k + 1) - 40 - TOWER_W;
+      let best = null;
+      for (let i = 0; hi > lo && i < 6; i++) {
+        const x0 = lo + (hash3(s, k, 202 + i) % (hi - lo));
+        let min = Infinity, max = -Infinity, ok = true;
+        for (let x = x0 - 2; x <= x0 + TOWER_W + 1 && ok; x++) {
+          const c = this.column(x);
+          min = Math.min(min, c.surf); max = Math.max(max, c.surf);
+          if (c.town || (this.seas && this.waterTop(x, c) < WORLD_H)) ok = false;
+        }
+        for (let r = Math.floor((x0 - 20) / RUIN_CELL); r <= Math.floor((x0 + TOWER_W + 20) / RUIN_CELL) && ok; r++) {
+          const ru = this.ruin(r);
+          if (ru && ru.x1 >= x0 - 4 && ru.x0 <= x0 + TOWER_W + 4) ok = false;
+        }
+        if (ok && (!best || max - min < best.max - best.min)) best = { x0, min, max };
+      }
+      if (best && best.max - best.min <= 10) {
+        const floors = (danger ? 8 : 6) + (hash3(s, k, 210) % 3), base = best.min, top = base - floors * FLOOR_H;
+        const mat = danger ? K.DARK_BRICKS : b.key === 'desert' || b.key === 'badlands' ? K.SANDSTONE_BRICKS : K.STONE_BRICKS;
+        const wall = danger ? K.DARK_BRICK_WALL : b.key === 'desert' || b.key === 'badlands' ? K.SANDSTONE_BRICK_WALL : K.STONE_BRICK_WALL;
+        t = { kind: 'tower', k, x0: best.x0, x1: best.x0 + TOWER_W - 1, base, floors, top, y0: top - 3, y1: best.max + 1, mat, wall, danger, name: towerName(s, k, danger) };
+      }
+    }
+    if (this.towerPlans.size > 128) this.towerPlans.clear();
+    this.towerPlans.set(k, t);
+    return t;
+  }
+
+  /** The monster tower with column x in it, or within m tiles of it, or null. */
+  towerNear(x, m = 0) {
+    if (!this.wilds) return null;
+    const k = this.regionAt(x);
+    for (const j of [k, k - 1, k + 1]) {
+      const t = this.tower(j);
+      if (t && x >= t.x0 - m && x <= t.x1 + m) return t;
+    }
+    return null;
+  }
+
+  /** What tower T puts at (x, y): [block or -1, wall or -1]. */
+  towerTile(T, x, y) {
+    const { x0, x1, base, top, mat, wall } = T, s = this.seed;
+    // Its foundations, down to the lowest ground under it.
+    if (y > base) return [mat, -1];
+    // Battlements round the roof.
+    if (y < top) return (y === top - 1 && (x === x0 || x === x1 || (x - x0) % 3 === 0)) || (y === top - 2 && (x === x0 || x === x1)) ? [mat, -1] : [K.AIR, -1];
+    const d = base - y, i = Math.floor(d / FLOOR_H), r = d % FLOOR_H, mid = (x0 + x1) >> 1;
+    // (Each floor's way up: a ladder from the floor below through a hole in it, one side then the other.)
+    const hole = n => (n % 2 ? x0 + 2 : x1 - 2);
+    if (r === 0 && d > 0) {
+      // A floor (the roof, the last): solid but for the hole the ladder comes up through.
+      if (x === x0 || x === x1) return [mat, -1];
+      return x === hole(i) ? [K.LADDER, wall] : [i === T.floors ? mat : K.PLANKS, wall];
+    }
+    if (d === 0) return [mat, -1];
+    // The outer walls: a doorway on the ground floor, slits of windows above.
+    if (x === x0 || x === x1) {
+      if (i === 0 && x === x0 && r <= 3) return [K.AIR, wall];
+      if (i > 0 && (r === 4 || r === 5) && (i + (x === x0 ? 0 : 1)) % 2 === 0) return [K.AIR, wall];
+      return [mat, -1];
+    }
+    // Inside, floor i: the ladder up to the next floor; old walls behind, cracked here and there.
+    const back = rand3(s, x * 13 + y, 220) < 0.12 ? K.NO_WALL : wall;
+    if (x === hole(i + 1) && i < T.floors) return [K.LADDER, back];
+    if (r === 1) {
+      // What stands on each floor: the treasure on the top one, a crate on every other, barrels and books.
+      if (i === T.floors - 1 && x === mid) return [K.TREASURE, back];
+      if (i % 2 === 1 && x === (hole(i + 1) === x0 + 2 ? x1 - 2 : x0 + 2)) return [K.LOOT_CRATE, back];
+      if (rand3(s, x * 7 + i, 221) < 0.12 && Math.abs(x - mid) > 1) return [rand3(s, x, 222 + i) < 0.5 ? K.BARREL : K.BOOKSHELF, back];
+    }
+    // (Torches by the walls, on every other floor.)
+    if (r === 5 && i % 2 === 0 && (x === x0 + 1 || x === x1 - 1)) return [K.TORCH, wall];
+    return [K.AIR, back];
+  }
+
+  /**
+   * Region k's sky island, if it has one: a lump of earth floating high over the land (not near
+   * where everyone starts), grass on top, a tree and treasure on it. { kind: 'isle', k, cx, top
+   * (its grass's row), rx (half its width), depth, x0, x1, y0, y1 }.
+   */
+  isle(k) {
+    if (!this.wilds) return null;
+    let I = this.isles.get(k);
+    if (I !== undefined) return I;
+    I = null;
+    const s = this.seed;
+    if (Math.abs(k - this.spawnRegion) > 2 && hash3(s, k, 230) % 100 < 18) {
+      const mid = (this.edge(k) + this.edge(k + 1)) >> 1, cx = mid - 60 + (hash3(s, k, 231) % 121), rx = 8 + (hash3(s, k, 232) % 7);
+      let high = Infinity;
+      for (let x = cx - rx - 8; x <= cx + rx + 8; x += 2) high = Math.min(high, this.surfaceAt(x));
+      const top = Math.min(high, SURFACE) - 46 - (hash3(s, k, 233) % 30);
+      // (Never over a town, its treasure under the town's protection, nor over a tower.)
+      const clear = !(this.towns && this.townNear(cx, rx + 12)) && !this.towerNear(cx, rx + 6);
+      if (top > 30 && clear) I = { kind: 'isle', k, cx, top, rx, depth: Math.round(rx * 0.9), x0: cx - rx, x1: cx + rx, y0: top - 9, y1: top + rx + 1 };
+    }
+    if (this.isles.size > 128) this.isles.clear();
+    this.isles.set(k, I);
+    return I;
+  }
+
+  /** What sky island I puts at (x, y). */
+  isleTile(I, x, y) {
+    const s = this.seed, dx = x - I.cx, ax = Math.abs(dx);
+    // The grass on its top, a little lower at its edges; its underside hanging down to a ragged point.
+    const surf = I.top + (ax >= I.rx - 1 ? 1 : 0);
+    const under = I.top + Math.round(I.depth * (1 - (ax / (I.rx + 0.5)) ** 1.6)) + (hash3(s, x, 234) % 2);
+    if (y >= surf) {
+      if (y > under) return [-1, -1];
+      if (y === surf) return [K.GRASS, -1];
+      if (y < surf + 3) return [K.DIRT, -1];
+      return [rand3(s, x * 31 + y, 235) < 0.05 ? K.GOLD : K.STONE, -1];
+    }
+    // On it: a tree off to one side, the treasure, grass and flowers.
+    const tx = I.cx - Math.round(I.rx / 2) * (I.k % 2 ? 1 : -1);
+    if (x === tx && y >= surf - 5) return [K.TRUNK, -1];
+    if (ell(x - tx, y - (surf - 6), 2.6, 1.9)) return [K.LEAVES, -1];
+    if (y === surf - 1) {
+      if (x === I.cx + (I.k % 2 ? 3 : -3)) return [K.TREASURE, -1];
+      const r = rand3(s, x, 236);
+      if (ax < I.rx - 1 && r < 0.45) return [r < 0.12 ? K.FLOWER : K.TALL_GRASS, -1];
+    }
+    return [-1, -1];
+  }
+
   structuresIn(x0, y0, x1, y1) {
     const out = [];
+    // (Worlds made since towers: monster towers, and sky islands.)
+    if (this.wilds) {
+      for (let k = this.regionAt(x0) - 1; k <= this.regionAt(x1) + 1; k++) {
+        const t = this.tower(k);
+        if (t && t.x1 >= x0 && t.x0 <= x1 && t.y1 >= y0 && t.y0 <= y1) out.push(t);
+        const I = this.isle(k);
+        if (I && I.x1 >= x0 && I.x0 <= x1 && I.y1 >= y0 && I.y0 <= y1) out.push(I);
+      }
+    }
     if (this.capitals) {
       for (let k = this.regionAt(x0) - 2; k <= this.regionAt(x1) + 2; k++) {
         const h = this.harborOf(this.townIn(k));
@@ -1072,6 +1294,8 @@ export class WorldGen {
   structureTile(st, x, y) {
     const s = this.seed;
     if (st.kind === 'wreck') return this.wreckTile(st, x, y);
+    if (st.kind === 'tower') return this.towerTile(st, x, y);
+    if (st.kind === 'isle') return this.isleTile(st, x, y);
     if (st.kind === 'harbor') return this.harborTile(st, x, y);
     if (st.kind === 'ruin') {
       const { x0, x1, base, mat, wall } = st, top = base - 6;

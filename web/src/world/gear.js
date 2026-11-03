@@ -71,6 +71,9 @@ const BASE_LIST = [
   ['amulet', 'Amulet', 'amulet', 0, 5, '#f2c230'], ['jade_amulet', 'Jade amulet', 'amulet', 0, 9, '#3aa86a', { regen: 1 }],
   ['gold_amulet', 'Gold amulet', 'amulet', 0, 13, '#f2c230', { coin: 10 }], ['ruby_pendant', 'Ruby pendant', 'amulet', 0, 18, '#e0213c', { hp: 20 }],
   ['star_amulet', 'Star amulet', 'amulet', 0, 24, '#c4f6ff', { xp: 10 }], ['ember_heart', 'Ember heart', 'amulet', 0, 28, '#ff7a2a', { fire: 25, gun: 8 }],
+  // Wings: worn in place of a coat, they let you glide (worldplay.js). Never dropped at random:
+  // only found in the treasure at the top of a monster tower (worlds made since towers).
+  ['wings', 'Wings', 'body', 0, 99, '#e8e2ff', { glide: 1 }],
 ];
 /** The bases by key: { name, kind, armor, level, color, imp }. */
 export const BASES = Object.fromEntries(BASE_LIST.map(([key, name, kind, armor, level, color, imp]) => [key, { name, kind, armor, level, color, imp: imp || null }]));
@@ -90,6 +93,7 @@ export const STATS = {
   regen: { show: v => `Heals ${v} health every two seconds` },
   xp: { show: v => `+${v}% experience` },
   fire: { show: v => `${v}% less harm from fire and magma` },
+  glide: { show: v => (v > 1 ? 'Glide (hold jump in the air), and beat them for a lift (jump again)' : 'Glide: hold jump in the air') },
   // (A weapon's own.)
   wdmg: { show: v => `+${v}% damage` },
   wrof: { show: v => `+${v}% rate of fire` },
@@ -181,6 +185,9 @@ export const UNIQUES = {
   oathkeeper: { name: 'Oathkeeper', base: 'silver_ring', stats: { hp: 25, armor: 8, regen: 1 } },
   starfall: { name: 'Starfall', base: 'diamond_ring', stats: { crit: 12, gun: 15 } },
   dragonskin: { name: 'Dragonskin Coat', base: 'dragonhide', stats: { fire: 50, armor: 12, hp: 50 } },
+  // (Wings: from the monsters' towers.)
+  spirewings: { name: 'Spirewings', base: 'wings', stats: { hp: 20, armor: 4 } },
+  stormwings: { name: 'Stormwings', base: 'wings', stats: { glide: 1, hp: 35, armor: 8 } },
   // Weapons.
   widowmaker: { name: 'The Widowmaker', weapon: 'SR', stats: { wdmg: 60, crit: 20, wrof: 20 } },
   thunderclap: { name: 'Thunderclap', weapon: 'Shotgun', stats: { wdmg: 40, wrof: 30, wacc: 30 } },
@@ -205,7 +212,10 @@ export const UNIQUES = {
 };
 
 /** Uniques only certain foes drop (worldplay.js's dropGear): the codex says who. */
-export const UNIQUE_FROM = { warden: 'The Warden (the story)', ember_crown: 'The Ember King (the story)', embermaul: 'The Ember King (the story)' };
+export const UNIQUE_FROM = {
+  warden: 'The Warden (the story)', ember_crown: 'The Ember King (the story)', embermaul: 'The Ember King (the story)',
+  spirewings: 'The treasure at the top of a monster tower', stormwings: 'The lord of a monster tower',
+};
 
 /** The sets: their pieces (and their names), what each piece gives, and what wearing 2, 3 or 4 adds. */
 export const SETS = {
