@@ -40,9 +40,9 @@ export class Fog {
     return this;
   }
 
-  /** True if the point is in plain sight from the eye. */
+  /** True if the point is in plain sight from the eye (in a world, seen through glass and leaves too). */
   sees(x, y) {
-    return this.map.clearLine(this.eye.x, this.eye.y, x, y);
+    return this.map.sight ? this.map.sight(this.eye.x, this.eye.y, x, y) >= 1 : this.map.clearLine(this.eye.x, this.eye.y, x, y);
   }
 
   /**

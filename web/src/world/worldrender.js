@@ -1388,6 +1388,34 @@ export function sightBox(solid, w, h, ex, ey, out) {
   for (let x = 0; x < w; x++) { ray(x, 0); ray(x, h - 1); }
   for (let y = 1; y < h - 1; y++) { ray(0, y); ray(w - 1, y); }
 }
+/**
+ * The same, for an eye outside the box (far off, looking down a scope: scope.js), in the world's
+ * pixels: a line from it to each tile on the box's edge, as far as it sees through the world (its
+ * sight), marking the tiles it crosses in the box, and the first block it meets.
+ */
+export function sightFrom(world, x0, y0, w, h, ex, ey, out) {
+  out.fill(0, 0, w * h);
+  const ax = ex / TILE - x0, ay = ey / TILE - y0;
+  const ray = (tx, ty) => {
+    const bx = tx + 0.5, by = ty + 0.5, dx = bx - ax, dy = by - ay, L = Math.max(1, Math.abs(dx), Math.abs(dy));
+    const seen = world.sight(ex, ey, (x0 + bx) * TILE, (y0 + by) * TILE);
+    // (Its part in the box, up to where it's stopped, and a little into what stopped it.)
+    let t0 = 0, t1 = Math.min(1, seen + 0.6 / L);
+    for (const [p, q] of [[-dx, ax], [dx, w - ax], [-dy, ay], [dy, h - ay]]) {
+      if (p === 0) { if (q < 0) return; continue; }
+      const r = q / p;
+      if (p < 0) { if (r > t1) return; if (r > t0) t0 = r; } else { if (r < t0) return; if (r < t1) t1 = r; }
+    }
+    const n = Math.max(1, Math.ceil(L * (t1 - t0) * 2));
+    for (let i = 0; i <= n; i++) {
+      const s = t0 + (t1 - t0) * i / n, cx = Math.floor(ax + dx * s), cy = Math.floor(ay + dy * s);
+      if (cx >= 0 && cy >= 0 && cx < w && cy < h) out[cy * w + cx] = 1;
+    }
+  };
+  for (let x = 0; x < w; x++) { ray(x, 0); ray(x, h - 1); }
+  for (let y = 1; y < h - 1; y++) { ray(0, y); ray(w - 1, y); }
+}
+
 // How dark what's out of sight is, in each game (seeing only what can be seen).
 const SIGHT_CLASSIC = 0.82, SIGHT_RM = 0.9;
 
@@ -1769,7 +1797,10 @@ export class WorldView {
       lit.sightKey = sightKey;
       if (eye) {
         const vis = lit.vis?.length >= lit.w * lit.h ? lit.vis : (lit.vis = new Uint8Array(lit.w * lit.h));
-        sightBox(lit.solid, lit.w, lit.h, eye.x / TILE - lit.x0, eye.y / TILE - lit.y0, vis);
+        const bx = eye.x / TILE - lit.x0, by = eye.y / TILE - lit.y0;
+        // (The eye out of the box, down a scope far off: its lines through the world on the way.)
+        if (bx >= 0 && by >= 0 && bx < lit.w && by < lit.h) sightBox(lit.solid, lit.w, lit.h, bx, by, vis);
+        else sightFrom(world, lit.x0, lit.y0, lit.w, lit.h, eye.x, eye.y, vis);
       } else lit.vis = null;
       sightAll = true;
     }

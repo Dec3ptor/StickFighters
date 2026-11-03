@@ -57,6 +57,8 @@ import { talkView, talkDo, endTalk } from './world/talk.js';
 import { JournalScreen } from './world/questui.js';
 import { DevPanel } from './world/devpanel.js';
 import { scopeOf } from './world/attachments.js';
+import { newScopeView, scopeStart, scopeWheel, scopeFrame, SCOPE_EYE } from './world/scope.js';
+import { rightHand } from './world/worldplay.js';
 import { devAct } from './world/devtools.js';
 import { questsOf, dropQuest } from './world/quests.js';
 import { spendPoint } from './world/progress.js';
@@ -2200,37 +2202,41 @@ function frame(now) {
   // (Online, the hit-stop holds the picture: the game itself can't stop.)
   if (state.mode !== 'offline' && now < state.hitStopUntil && state.drawnOnce) { pacer.drawn(now, 0); return; }
 
-  // Scoped (a world's gun with a scope fitted, attachments.js), aiming with right click: the mouse
-  // at the screen's edge pushes the view out that way (the closer to the edge, the faster), as far
-  // as the scope reaches, a little closer; anywhere else it holds still, to aim. Let go: it's back.
-  const scope = g.world && me.alive && !watchMode && !state.menuOpen && !state.chatOpen && input.held('aim') ? scopeOf(me.world?.inv?.slots[me.world.slot]) : null;
-  const sv = state.scopeView ||= { x: 0, y: 0, on: false, reach: 0 };
-  if (scope) {
-    const W = renderer.w, H = renderer.h, mx = input.mouse.x - W / 2, my = input.mouse.y - H / 2, max = scope.reach * 16;
-    // (How far into the band round the screen's edge the mouse is: 0 short of it, 1 at the edge.)
-    const bx = Math.max(24, W * 0.09), by = Math.max(24, H * 0.09);
-    const push = Math.min(1, Math.max(0, (Math.abs(mx) - (W / 2 - bx)) / bx, (Math.abs(my) - (H / 2 - by)) / by));
-    if (push > 0) {
-      const d = Math.hypot(mx, my) || 1, step = Math.max(500, max * 0.6) * push * push * dt / 1000;
-      sv.x += (mx / d) * step;
-      sv.y += (my / d) * step;
-    }
-    const L = Math.hypot(sv.x, sv.y);
-    if (L > max) { sv.x *= max / L; sv.y *= max / L; }
-    sv.on = true;
-    sv.reach = scope.reach;
-  } else {
-    sv.on = false;
-    if (sv.x || sv.y) { sv.x *= 0.7; sv.y *= 0.7; if (Math.hypot(sv.x, sv.y) < 2) sv.x = sv.y = 0; }
-  }
-  // (The chunks out there made ready, as round a player: worldplay.js.)
-  if (g.world) g.world.lookAt = Math.hypot(sv.x, sv.y) > 600 ? { x: me.x + sv.x, y: me.y + sv.y } : null;
-  const sniping = !scope && me.alive && me.current === 'SR' && input.held('aim') && !state.menuOpen && !state.chatOpen;
-  // Aiming down the sights: right click held with a gun (Settings).
-  const sights = !sniping && me.alive && input.held('aim') && SIGHTED.has(weaponFor(me, me.current)?.kind) && !watchMode && !g.over &&
-    !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open;
+  // (Where the view follows: who's watched, or the free camera.)
   const ax = free ? free.x : lerp(view.prevX ?? view.x, view.x, alpha) + (view.drawDX || 0);
   const ay = free ? free.y : lerp(view.prevY ?? view.y, view.y, alpha) + (view.drawDY || 0);
+  // Down a scope (a world's gun with one fitted, or a sniper rifle's own: attachments.js), right
+  // click held (with nothing in the right hand, which right click would use): the view zooms in
+  // on what's under the crosshair, and steers out from there as the crosshair nears the screen's
+  // edge, as far as the scope reaches and only where you could see from where you stand
+  // (scope.js). The wheel zooms. Let go of right click and the view comes back.
+  const scope = g.world && view === me && me.alive && !watchMode && !state.menuOpen && !state.chatOpen && input.held('aim') && !rightHand(me).item
+    ? scopeOf(me.world?.inv?.slots[me.world.slot]) : null;
+  const sv = state.scopeView ||= newScopeView();
+  input.scoping = !!scope;
+  if (scope) {
+    const W = renderer.w, H = renderer.h, base = renderer.baseScale * renderer.zoomScale, mx = input.mouse.x - W / 2, my = input.mouse.y - H / 2;
+    if (!sv.on) scopeStart(sv, scope, renderer.cam.x, renderer.cam.y, renderer.cam.zoom / renderer.zoomScale, mx, my, base);
+    // (Another scoped gun picked up, still looking: its scope's reach and zoom.)
+    else if (sv.reach !== scope.reach || sv.mag !== scope.mag) { sv.reach = scope.reach; sv.mag = scope.mag; sv.zoom = Math.min(sv.zoom, scope.mag); }
+    // (The wheel: a notch at a time, however finely a touchpad sends it.)
+    if (input.scopeZoom && now - (sv.wheelAt || 0) > 70) { scopeWheel(sv, Math.sign(input.scopeZoom), mx, my, base); sv.wheelAt = now; }
+    scopeFrame(sv, g.world, ax, ay - SCOPE_EYE, mx, my, W, H, base, dt, !!input.mouse.out);
+    // (The camera follows who it follows, this far off: its middle on the view's.)
+    sv.x = sv.vx - ax;
+    sv.y = sv.vy + 20 - ay;
+  } else {
+    sv.on = false;
+    sv.anchor = null;
+    if (sv.x || sv.y) { sv.x *= 0.7; sv.y *= 0.7; if (Math.hypot(sv.x, sv.y) < 2) sv.x = sv.y = 0; }
+  }
+  input.scopeZoom = 0;
+  // (The chunks out there made ready, as round a player: worldplay.js.)
+  if (g.world) g.world.lookAt = sv.on && Math.hypot(sv.vx - ax, sv.vy - ay) > 600 ? { x: sv.vx, y: sv.vy } : null;
+  const sniping = !g.world && me.alive && me.current === 'SR' && input.held('aim') && !state.menuOpen && !state.chatOpen;
+  // Aiming down the sights: right click held with a gun (Settings); in a world, with nothing in the right hand.
+  const sights = !sniping && me.alive && input.held('aim') && SIGHTED.has(weaponFor(me, me.current)?.kind) && !watchMode && !g.over &&
+    !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open && !(g.world && rightHand(me).item);
   // (A world's dev mode: the wheel, or + and -, zoom a long way out and back in.)
   if (devView(me)) {
     if (input.devZoom) state.devZoom = Math.max(0.08, Math.min(3, (state.devZoom || 1) * Math.pow(1.2, input.devZoom)));
@@ -2240,10 +2246,11 @@ function frame(now) {
   // (Flying in dev mode: the camera stays right with you, rather than trailing behind, which at
   // that speed leaves you at the edge of the screen, and drifting on after you stop.)
   // (Through a scope too: the view goes just where it's pushed, and stops where it stops.)
-  renderer.updateCamera(g, ax + sv.x, ay + sv.y, state.menuOpen || watchMode || sv.on ? null : input.mouse, sniping, dt, scope ? scope.mag : sights ? aimZoomNow() : 1, (devView(me) && view === me) || sv.on ? 0 : undefined);
+  renderer.updateCamera(g, ax + sv.x, ay + sv.y, state.menuOpen || watchMode || sv.on ? null : input.mouse, sniping, dt, sv.on ? sv.z : sights ? aimZoomNow() : 1, (devView(me) && view === me) || sv.on ? 0 : undefined, sv.on);
   const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
   renderer.fogFrom = view;
+  renderer.scopeSight = sv.on;
   renderer.render(g, alpha, me);
   if (client) me.ping = client.ping;
   // Holding K to self-destruct: shown as it counts down (it goes off after a second).
@@ -2259,7 +2266,7 @@ function frame(now) {
     killMark: killK >= 0 && killK < 1 && !state.menuOpen && !watchMode ? { x: input.mouse.x, y: input.mouse.y, k: killK } : null,
     showScores: input.held('scores') && !state.chatOpen, showItems: input.held('showItems') && !state.chatOpen, watching, chat: state.chat,
     // (Looking through a scope: how far out, and how far it goes.)
-    scope: sv.on ? { blocks: Math.round(Math.hypot(sv.x, sv.y) / 16), reach: sv.reach } : null,
+    scope: sv.on ? { blocks: Math.round(Math.hypot(sv.vx - ax, sv.vy - ay + SCOPE_EYE) / 16), reach: sv.reach, zoom: sv.z, blocked: sv.blocked } : null,
     spectating: me.spectating ? { free: !!free, target: watching } : null,
     online: state.mode !== 'offline',
     hostId: state.mode === 'host' ? me.id : state.mode === 'client' ? g.soldiers.find(s => !s.isBot && !s.remote)?.id : null,
@@ -2319,9 +2326,10 @@ function frame(now) {
     }
     // (The system's own pointer is the crosshair, unless the mouse is locked to the game: the
     // browser hides it then, and the game draws it.)
-    const pointer = !input.locked;
-    showPointer(pointer ? crosshairCursor(edition === 'remastered' ? 'remastered' : 'classic', sniping, window.devicePixelRatio || 1) : '');
-    renderer.drawCrosshair(input.mouse.x, input.mouse.y, sniping, reload, pointer);
+    // (Red down a sniper rifle's scope, or any scope in a world.)
+    const pointer = !input.locked, red = sniping || sv.on;
+    showPointer(pointer ? crosshairCursor(edition === 'remastered' ? 'remastered' : 'classic', red, window.devicePixelRatio || 1) : '');
+    renderer.drawCrosshair(input.mouse.x, input.mouse.y, red, reload, pointer);
   } else {
     showPointer('');
   }

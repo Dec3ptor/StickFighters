@@ -45,6 +45,8 @@ export class Input {
     this.mouse = { x: 0, y: 0, left: false, right: false, moved: false, clicked: false, rightClicked: false };
     this.wheel = 0;
     this.devZoom = 0; // (the wheel in a world's dev mode: steps in, + , or out, -)
+    this.scoping = false; // (down a world's scope: main.js says so, and the wheel zooms it instead)
+    this.scopeZoom = 0;   // (the wheel's notches down a scope: in, -, or out, +; main.js takes them)
     this.enabled = false;
     // The mouse locked to the game (the browser's pointer lock): its cursor is hidden and
     // only the game gets the mouse, which moves the crosshair by how far the mouse moves.
@@ -83,7 +85,11 @@ export class Input {
         this.mouse.y = e.clientY - r.top;
       }
       this.mouse.moved = true;
+      this.mouse.out = false;
     });
+    // (The mouse gone out of the window: a scope stops steering, rather than run on: main.js.)
+    document.addEventListener('mouseout', e => { if (!e.relatedTarget) this.mouse.out = true; });
+    window.addEventListener('blur', () => { this.mouse.out = true; });
     document.addEventListener('pointerlockchange', () => {
       const now = !!this.canvas && document.pointerLockElement === this.canvas;
       if (now === this.locked) return;
@@ -334,13 +340,16 @@ export class PlayerController {
     // Next weapon, to start with) it switches weapons.
     const using = !!game.rules.useHere?.(game, s);
     inp.use = k.held('use') && !!game.rules.useHere;
-    // (In a world's dev mode the wheel zooms: main.js takes devZoom. Ours, or the host's say-so: devmode.js's devView.)
-    const dev = !!(s.world?.dev || s.world?.hostDev);
+    // (In a world's dev mode the wheel zooms: main.js takes devZoom. Ours, or the host's say-so: devmode.js's devView.
+    // Down a scope too, whatever the wheel's set to do: main.js takes scopeZoom, and nothing's switched.)
+    const dev = !!(s.world?.dev || s.world?.hostDev), scoped = k.scoping;
+    if (scoped && k.wheel) k.scopeZoom += k.wheel;
+    const wheel = key => scoped && (key === 'WheelUp' || key === 'WheelDown');
     const prev = k.took('prev');
-    if (prev) { if (dev && prev === 'WheelUp') k.devZoom += 1; else if (second) inp.switchTo = '%-'; else inp.cycle = -1; }
+    if (prev) { if (wheel(prev)) { /* (the scope's) */ } else if (dev && prev === 'WheelUp') k.devZoom += 1; else if (second) inp.switchTo = '%-'; else inp.cycle = -1; }
     else {
       const next = k.took('next');
-      if (next && dev && next === 'WheelDown') k.devZoom -= 1;
+      if (next && wheel(next)) { /* (the scope's) */ } else if (next && dev && next === 'WheelDown') k.devZoom -= 1;
       else if (next && !(using && keysFor('use').includes(next))) { if (second) inp.switchTo = '%+'; else inp.cycle = 1; }
     }
     k.wheel = 0;

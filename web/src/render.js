@@ -183,13 +183,14 @@ export class Renderer {
    * the mouse and stops when it stops. (Eased, the world goes on sliding under the crosshair
    * after the hand stops.) How far it looks eases too: further down a scope or the sights, not
    * at all with the menu open.
+   * exact: the zoom is `sights` now, not eased there (a world's scope eases its own: scope.js).
    */
-  updateCamera(game, fx, fy, mouse, sniping, dt = 1000 / 60, sights = 1, follow = feel.follow) {
+  updateCamera(game, fx, fy, mouse, sniping, dt = 1000 / 60, sights = 1, follow = feel.follow, exact = false) {
     const f = dt / (1000 / 60);
     const ease = k => 1 - Math.pow(1 - k, f);
     const c = this.cam;
     const zoomTarget = (sniping ? 0.72 : sights) * this.zoomScale;
-    c.zoom = lerp(c.zoom, zoomTarget, ease(0.12));
+    c.zoom = exact ? zoomTarget : lerp(c.zoom, zoomTarget, ease(0.12));
     // (Settled: exactly there, so the map's tiles can be made for it.)
     if (Math.abs(c.zoom - zoomTarget) < 0.001) c.zoom = zoomTarget;
     // (The point followed, and the mouse's offset from the middle of the screen, in the map's units:
@@ -263,7 +264,9 @@ export class Renderer {
    */
   startFog(game, alpha, viewer) {
     // (Spectating with the free camera: no fog.)
-    this.fogNow = game.options?.fog && !this.noFog && (this.fogFrom || viewer) ? (this.fog ||= new Fog()).update(game, this.fogFrom || viewer, alpha) : null;
+    // (Down a scope in a world, too: only what can be seen from where you stand, main.js's scopeSight.)
+    const on = game.options?.fog || (this.scopeSight && game.world);
+    this.fogNow = on && !this.noFog && (this.fogFrom || viewer) ? (this.fog ||= new Fog()).update(game, this.fogFrom || viewer, alpha) : null;
     // (A world: what's out of sight is darkened with the light, worldrender.js, not shadowed block by block.)
     if (!game.world) this.fogNow?.drawShadows(this.ctx, this.view);
     return this.fogNow;

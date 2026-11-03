@@ -399,7 +399,7 @@ function drawTalkHint(ctx, game, me, W, H) {
 }
 
 /** Dev mode's card (devmode.js): what it's set to, and its keys. */
-/** Looking through a scope (attachments.js): the edges darkened, and how far out the view is. */
+/** Looking through a scope (scope.js): the edges darkened, how far it's zoomed and how far out the view is. */
 function drawScope(ctx, sc, W, H) {
   const r = Math.min(W, H) * 0.55, g = ctx.createRadialGradient(W / 2, H / 2, r * 0.75, W / 2, H / 2, Math.hypot(W, H) / 2);
   g.addColorStop(0, 'rgba(0,0,0,0)');
@@ -409,7 +409,8 @@ function drawScope(ctx, sc, W, H) {
   ctx.font = '600 13px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  const text = `Scope · ${sc.blocks} block${sc.blocks === 1 ? '' : 's'} out, of ${sc.reach} · the mouse at the screen's edge looks further · let go of right click to come back`;
+  const far = sc.blocked ? `${sc.blocks} blocks out: can't see past that` : sc.blocks >= sc.reach - 1 ? `${sc.reach} blocks out: as far as it reaches` : `${sc.blocks} of ${sc.reach} blocks out`;
+  const text = `Scope ${(sc.zoom || 1).toFixed(1)}× · ${far} · crosshair toward the edge: look further · wheel: zoom · let go of right click: back`;
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   const tw = ctx.measureText(text).width;
   ctx.fillRect(W / 2 - tw / 2 - 8, H - 132, tw + 16, 22);

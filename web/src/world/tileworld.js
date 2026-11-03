@@ -5,7 +5,7 @@
 // them; those players change are kept, and saved (worldsave.js).
 
 import * as K from './blocks.js';
-import { TILE, SOLID, PLATFORMS, LIQUID, SHAPES, BLOCKS, AIR, BEDROCK, FLUIDS, FLUID, AMOUNT, SOURCE, FALLING, WASH, SLIP } from './blocks.js';
+import { TILE, SOLID, CLEAR, PLATFORMS, LIQUID, SHAPES, BLOCKS, AIR, BEDROCK, FLUIDS, FLUID, AMOUNT, SOURCE, FALLING, WASH, SLIP } from './blocks.js';
 import { WorldGen, CHUNK, WORLD_H, HALF_W } from './worldgen.js';
 import { segmentT, SEG } from '../map.js';
 
@@ -656,6 +656,46 @@ export class TileWorld {
 
   /** True if nothing solid blocks the straight line between two points. */
   clearLine(x0, y0, x1, y1) { return this.walk(x0, y0, x1, y1, false) < 0; }
+
+  /**
+   * How far along the segment (x0,y0)->(x1,y1) can be seen, 0 to 1 (1: all of it): up to the
+   * first block in the way (solid, and not seen through as glass, windows and leaves are), or the
+   * first chunk not made yet (what's there isn't known yet; nothing's made by looking). A scope's
+   * view: scope.js.
+   */
+  sight(x0, y0, x1, y1) {
+    const dx = x1 - x0, dy = y1 - y0;
+    let tx = Math.floor(x0 / TILE), ty = Math.floor(y0 / TILE);
+    const ex = Math.floor(x1 / TILE), ey = Math.floor(y1 / TILE);
+    const sx = dx > 0 ? 1 : dx < 0 ? -1 : 0, sy = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+    let tMaxX = sx ? ((sx > 0 ? (tx + 1) * TILE : tx * TILE) - x0) / dx : Infinity;
+    let tMaxY = sy ? ((sy > 0 ? (ty + 1) * TILE : ty * TILE) - y0) / dy : Infinity;
+    const tdx = sx ? TILE / Math.abs(dx) : Infinity, tdy = sy ? TILE / Math.abs(dy) : Infinity;
+    // (tIn: where the line came into the tile it's in.)
+    let tIn = 0, lastKey = -1, c = null;
+    for (let steps = Math.abs(ex - tx) + Math.abs(ey - ty) + 2; steps > 0; steps--) {
+      // (Below the world, bedrock; above it, sky.)
+      if (ty >= WORLD_H) return tIn;
+      if (ty >= 0) {
+        const k = chunkKey(tx >> 5, ty >> 5);
+        if (k !== lastKey) { lastKey = k; c = this.chunks.get(k) || null; }
+        if (!c) return tIn;
+        const i = ((ty & 31) << 5) | (tx & 31), id = c.fg[i];
+        if (!CLEAR[id]) {
+          const parts = SHAPE_BOXES[c.shape[i]];
+          let best = -1;
+          for (let n = 0; n < parts.length; n++) {
+            const p = parts[n], h = segmentT(x0, y0, dx, dy, tx * TILE + p[0], ty * TILE + p[1], tx * TILE + p[2], ty * TILE + p[3]);
+            if (h >= 0 && (best < 0 || h < best)) best = h;
+          }
+          if (best >= 0) return best;
+        }
+      }
+      if (tx === ex && ty === ey) break;
+      if (tMaxX < tMaxY) { if (tMaxX > 1) break; tIn = tMaxX; tMaxX += tdx; tx += sx; } else { if (tMaxY > 1) break; tIn = tMaxY; tMaxY += tdy; ty += sy; }
+    }
+    return 1;
+  }
 
   /** True if both points are in the same tile and it's open (a raycast between them can't hit). */
   emptyBetween(x0, y0, x1, y1) {
