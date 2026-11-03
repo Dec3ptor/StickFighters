@@ -175,6 +175,19 @@ recipe('drum_mag', 1, [['iron_bar', 6], ['copper_bar', 3]], 'gunsmith');
 recipe('quick_mag', 1, [['iron_bar', 2], ['copper_bar', 2]], 'gunsmith');
 recipe('hollow_points', 4, [['copper_bar', 2], ['coal', 1]], 'gunsmith');
 
+// ---- Defending a base, and raiding one (bases.js) ----
+recipe('reinforced_bricks', 4, [['stone_bricks', 4], ['iron_bar', 2]], 'anvil');
+recipe('iron_door', 1, [['iron_bar', 8]], 'anvil');
+recipe('spikes', 4, [['iron_bar', 2], ['planks', 2]], 'anvil');
+recipe('alarm_bell', 1, [['gold_bar', 2], ['iron_bar', 2], ['planks', 4]], 'anvil');
+recipe('arrow_turret', 1, [['planks', 12], ['iron_bar', 4], ['Longbow', 1]], 'anvil');
+recipe('charter', 1, [['gold_bar', 4], ['iron_bar', 8], ['emerald', 1]], 'anvil');
+recipe('battering_ram', 1, [['wood', 12], ['iron_bar', 10]], 'anvil');
+recipe('gun_turret', 1, [['iron_bar', 14], ['gold_bar', 3], ['copper_bar', 6]], 'gunsmith');
+recipe('pressure_mine', 2, [['iron_bar', 2], ['coal', 3]], 'gunsmith');
+recipe('breach_charge', 2, [['iron_bar', 3], ['coal', 6], ['sand', 2]], 'gunsmith');
+recipe('demo_charge', 1, [['iron_bar', 6], ['gold_bar', 2], ['coal', 12]], 'gunsmith');
+
 export const RECIPES = R;
 
 /**

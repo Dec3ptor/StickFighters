@@ -11,7 +11,7 @@ import { WORLD_H, CHUNK } from './worldgen.js';
 import { MOTION, BODY, PHYS } from '../config.js';
 import { WEAPONS } from '../weapons.js';
 import { monstersTick, armNpc, foes, isMonster, monsterLoot, hireMerc, mercsOf, MERC, DAY_TICKS, hourOf } from './monsters.js';
-import { setDoor, pushDoor, doorsTick, soldierIn } from './doors.js';
+import { setDoor, pushDoor, doorsTick, soldierIn, DOORS, isShutDoor } from './doors.js';
 import { damage } from '../combat.js';
 import { devFly, devInput, devOn, devView, godOn } from './devmode.js';
 import { craft, stationsNear, plainGear, devGive } from './crafting.js';
@@ -37,6 +37,11 @@ import { lairsTick } from './lairs.js';
 import { useSurvival, survivalTick, blockDrops } from './survival.js';
 import { exert, hurtNow, cantEat, feed, fill, hungerToSave, hungerFromSave } from './hunger.js';
 import { isAnimal, animalDrops } from './animals.js';
+// (Bases: claims, their flags, defences, raids: bases.js.)
+import {
+  CLAIM_R, claimAt, mayChange, mayBuild, digShare, mayUnlock, shielded, whyNot, isFlag, inTheWay, newBase, defenceSpot, defencePut,
+  baseBlockGone, claimsToSave, claimsFromSave, useBase, interactBase, basesTick, baseRaidKill, baseRaidInfo, alarm,
+} from './bases.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -58,52 +63,20 @@ const SOFT = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.VINE, K.WHEAT, ...K
 const SEABED = new Set([K.SEAGRASS, K.KELP, K.CORAL_FAN, K.REEDS]);
 // What needs something to stand on (or hang from) and goes when it's taken away.
 const NEEDS_GROUND = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.MUSHROOM, K.CACTUS, K.WHEAT, K.FERN, K.BUSH, K.BERRY_BUSH, K.DRY_TALL_GRASS, K.PETALS, ...K.CROPS]);
-const DOORS = new Set([K.DOOR, K.DOOR_OPEN]);
 // (Leaves, of every kind of tree, and vines; a crown, felled with its tree, takes giant mushrooms' caps too.)
 const LEAF = new Set([...K.LEAVES_ALL, K.VINE]);
 const CROWN = new Set([...LEAF, ...K.CAPS]);
 
-// ---- Bases (claims) -----------------------------------------------------------------------------
+// ---- Bases (claims): bases.js -----------------------------------------------------------------------
 
-/** How far a base flag claims round it (blocks, each way, across and up and down). */
-export const CLAIM_R = 20;
-
-/** The claim covering tile (tx, ty) ({ tx, ty, owner }), or null. */
-export function claimAt(world, tx, ty) {
-  for (const c of world.claims?.values() || []) if (Math.abs(c.tx - tx) <= CLAIM_R && Math.abs(c.ty - ty) <= CLAIM_R) return c;
-  return null;
-}
-
-const sameName = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
-
-/** Whether soldier s may change tile (tx, ty) (dig, build, open a chest): not in a town, nor someone else's base. */
-export function mayChange(world, s, tx, ty) {
-  if (!s) return true;
-  if (world.gen?.townProtecting(tx, ty)) return false;
-  if (!world.claims?.size) return true;
-  const c = claimAt(world, tx, ty);
-  return !c || sameName(c.owner, s.name);
-}
-
-/** A world's claims as saved: [[tx, ty, owner], ...]. */
-export const claimsToSave = world => [...(world.claims?.values() || [])].map(c => [c.tx, c.ty, c.owner]);
-
-/** A world's claims from a save (those whose flag is still there). */
-export function claimsFromSave(world, list) {
-  world.claims = new Map();
-  if (!Array.isArray(list)) return;
-  for (const row of list) {
-    if (!Array.isArray(row) || !Number.isInteger(row[0]) || !Number.isInteger(row[1]) || typeof row[2] !== 'string') continue;
-    world.claims.set(`${row[0]},${row[1]}`, { tx: row[0], ty: row[1], owner: row[2].slice(0, 14) });
-  }
-}
+// (What other files have from here.)
+export { CLAIM_R, claimAt, mayChange, claimsToSave, claimsFromSave };
 
 /** Tell s it's a town, or someone else's base (once in a while, not for every click). */
 function notYours(game, s, tx, ty) {
-  const town = game.world.gen?.townProtecting(tx, ty), c = town ? null : claimAt(game.world, tx, ty);
   if (s.world && game.tick - (s.world.toldClaim || -1e9) > 90) {
     s.world.toldClaim = game.tick;
-    game.notify(s, town ? `You can't dig or build in ${town.name}` : `That's ${c?.owner ?? 'someone'}'s base`);
+    game.notify(s, whyNot(game.world, s, tx, ty));
   }
   return false;
 }
@@ -679,7 +652,9 @@ function dig(game, s, it, inp) {
   const b = BLOCKS[world.tile(t.tx, t.ty)];
   const how = t.near ? digs(it, b) : null;
   if (!how) return false;
-  if (!mayChange(world, s, t.tx, t.ty)) return notYours(game, s, t.tx, t.ty) || true;
+  // (Someone else's base: not at all, unless it's open to a raid; then its walls hold, a while: bases.js.)
+  const share = digShare(world, s, t.tx, t.ty, b.id);
+  if (!share) return notYours(game, s, t.tx, t.ty) || true;
   if (w.cool > 0) return true;
   w.cool = it.every / MOTION.timeScale;
   // (A pickaxe's swing, or an axe's chop: struck now, lifted, brought down for the next.)
@@ -694,9 +669,11 @@ function dig(game, s, it, inp) {
   }
   if (!w.mine || w.mine.tx !== t.tx || w.mine.ty !== t.ty || w.mine.layer !== 'fg') w.mine = { tx: t.tx, ty: t.ty, layer: 'fg', dmg: 0, of: b.hard };
   // (Faster with the Miner perk: progress.js.)
-  w.mine.dmg += it.power * digScale(s);
+  w.mine.dmg += it.power * digScale(s) * share;
   w.mine.at = game.tick;
   game.fx?.sparks?.(x, y, 0, -1);
+  // (Breaking into someone's base: its side hears of it.)
+  if (!mayChange(world, s, t.tx, t.ty)) alarm(game, claimAt(world, t.tx, t.ty), s);
   if (w.mine.dmg >= Math.max(0.5, b.hard)) {
     breakBlock(game, t.tx, t.ty, s);
     w.mine = null;
@@ -721,7 +698,7 @@ export function breakBlock(game, tx, ty, by = null) {
     while (DOORS.has(world.tile(tx, top - 1))) top--;
     while (DOORS.has(world.tile(tx, bottom + 1))) bottom++;
     for (let yy = top; yy <= bottom; yy++) world.setTile(tx, yy, AIR);
-    dropItem(game, 'door', 1, x, (top + bottom + 1) * TILE / 2);
+    dropItem(game, b.drop || 'door', 1, x, (top + bottom + 1) * TILE / 2);
   } else {
     // (What grows in water leaves water where it was.)
     world.setTile(tx, ty, LIQUID[id] ? K.WATER : AIR);
@@ -743,7 +720,8 @@ export function breakBlock(game, tx, ty, by = null) {
       }
     }
     if (id === K.CHEST) spillChest(game, tx, ty);
-    if (id === K.CLAIM_FLAG) world.claims?.delete(`${tx},${ty}`);
+    // (A base's flag: the base goes with it. A turret: what's in it, dropped. bases.js.)
+    baseBlockGone(game, tx, ty, id, BASES);
     if (id === K.WAYSTONE) removeWaystone(world, tx, ty);
   }
   game.sound(b.wood ? 'thunk' : 'smash', x, y);
@@ -764,7 +742,7 @@ function settle(game, tx, ty) {
     if (K.SHULKER_BOXES.has(id)) dropShulker(game, x, y, id, x * TILE + TILE / 2, y * TILE + TILE / 2);
     else if (b.drop) dropItem(game, b.drop, 1, x * TILE + TILE / 2, y * TILE + TILE / 2);
     if (id === K.CHEST) spillChest(game, x, y);
-    if (id === K.CLAIM_FLAG) world.claims?.delete(`${x},${y}`);
+    baseBlockGone(game, x, y, id, BASES);
     if (id === K.WAYSTONE) removeWaystone(world, x, y);
     settle(game, x, y);
   }
@@ -772,6 +750,8 @@ function settle(game, tx, ty) {
 
 /** Whether block `id` at (x, y) still has what it needs to stay up. */
 function supported(world, x, y, id) {
+  // (A base's flag is planted: it stays, whatever's dug from under it.)
+  if (isFlag(id)) return true;
   if (BLOCKS[id].furniture) return SOLID[world.tile(x, y + 1)] || PLATFORMS[world.tile(x, y + 1)];
   if (NEEDS_GROUND.has(id)) return SOLID[world.tile(x, y + 1)] || (id === K.CACTUS && world.tile(x, y + 1) === K.CACTUS) || (id === K.CACTUS && (world.tile(x - 1, y) === K.CACTUS || world.tile(x + 1, y) === K.CACTUS));
   if (id === K.VINE) return world.tile(x, y - 1) === K.VINE || SOLID[world.tile(x, y - 1)] || LEAF.has(world.tile(x, y - 1));
@@ -909,7 +889,7 @@ export function canPlace(game, it, tx, ty) {
   if (cur !== AIR && !SOFT.has(cur)) return false;
   // (In water, only blocks: a torch or a chest there would leave a dry hole in it.)
   if (LIQUID[cur] && !SOLID[id]) return false;
-  if (id === K.DOOR) return doorSpot(game, tx, ty) != null;
+  if (isShutDoor(id)) return doorSpot(game, tx, ty) != null;
   if (SOLID[id] && soldierIn(game, tx, ty, ty)) return false;
   if (id === K.TORCH) return SOLID[world.tile(tx, ty + 1)] || SOLID[world.tile(tx - 1, ty)] || SOLID[world.tile(tx + 1, ty)] || world.wall(tx, ty) !== NO_WALL;
   if (id === K.LANTERN || id === K.BANNER || id === K.FENCE) return hangsOrStands(world, tx, ty, id);
@@ -942,20 +922,22 @@ function doorSpot(game, tx, ty) {
 function placeOne(game, s, it, tx, ty) {
   const w = s.world, world = game.world;
   if (w.inv.count(it.key) <= 0 || !canPlace(game, it, tx, ty)) return false;
-  if (!mayChange(world, s, tx, ty)) return notYours(game, s, tx, ty);
+  // (Someone else's base: nothing, unless it's open to a raid: then blocks, a ladder over its wall...)
+  if (!mayBuild(world, s, tx, ty, it)) return notYours(game, s, tx, ty);
   // A base flag: not where it would take in someone else's base.
   if (it.block === K.CLAIM_FLAG) {
-    for (const c of world.claims?.values() || []) {
-      if (!sameName(c.owner, s.name) && Math.abs(c.tx - tx) <= 2 * CLAIM_R && Math.abs(c.ty - ty) <= 2 * CLAIM_R) {
-        game.notify(s, `Too near ${c.owner}'s base`);
-        return false;
-      }
-    }
+    const c = inTheWay(world, s, tx, ty);
+    if (c) { game.notify(s, `Too near ${c.owner}'s base`); return false; }
+  }
+  // Turrets, traps, an alarm bell: in a base of your own side's.
+  if (K.DEFENCES.has(it.block) && !defenceSpot(world, s, tx, ty)) {
+    if (game.tick - (w.toldClaim || -1e9) > 90) { w.toldClaim = game.tick; game.notify(s, `${it.name}: only in your own base (put up a base flag first)`); }
+    return false;
   }
   if (it.kind === 'wall') world.setWall(tx, ty, it.wall);
-  else if (it.block === K.DOOR) {
+  else if (isShutDoor(it.block)) {
     const bottom = doorSpot(game, tx, ty);
-    for (let y = bottom - 2; y <= bottom; y++) world.setTile(tx, y, K.DOOR);
+    for (let y = bottom - 2; y <= bottom; y++) world.setTile(tx, y, it.block);
   } else world.setTile(tx, ty, it.block);
   if (it.box) {
     // (A shulker box: the one in hand, what's in it put in the box put down.)
@@ -972,10 +954,8 @@ function placeOne(game, s, it, tx, ty) {
     }
   } else w.inv.remove(it.key, 1);
   if (it.block === K.WAYSTONE) game.notify(s, `${addWaystone(world, tx, ty, s.name).name}: right click it to go to any other waystone`);
-  if (it.block === K.CLAIM_FLAG) {
-    (world.claims ||= new Map()).set(`${tx},${ty}`, { tx, ty, owner: s.name });
-    game.notify(s, `Your base: nobody else can build, dig or open chests within ${CLAIM_R} blocks of the flag`);
-  }
+  if (it.block === K.CLAIM_FLAG) newBase(game, s, tx, ty);
+  if (K.DEFENCES.has(it.block)) defencePut(game, s, tx, ty, it.block);
   return true;
 }
 
@@ -1011,7 +991,7 @@ export function shapeTiles(brush, a, b) {
 /** Holding blocks or walls: build where the crosshair is (or drag out a line, rectangle or box). */
 function build(game, s, it, inp, pressed = inp.firePressed) {
   const w = s.world, t = w.target;
-  const brush = it.block === K.DOOR || it.block === K.TORCH ? 'single' : w.brush;
+  const brush = isShutDoor(it.block) || it.block === K.TORCH ? 'single' : w.brush;
   if (brush === 'single') {
     w.drag = null;
     if (!inp.fire || w.cool > 0 || !t.near) return;
@@ -1109,8 +1089,11 @@ function interactWith(game, s) {
     useBed(game, s, t.tx, t.ty);
     return true;
   }
+  // (A turret, a base's flag, a locked iron door: bases.js.)
+  const base = interactBase(game, s, t.tx, t.ty, id);
+  if (base !== undefined) return base;
   if (!DOORS.has(id)) return false;
-  setDoor(game, t.tx, t.ty, id === K.DOOR);
+  setDoor(game, t.tx, t.ty, isShutDoor(id));
   return true;
 }
 
@@ -1202,6 +1185,13 @@ export function worldInput(game, s, inp) {
   return inp;
 }
 
+// (What bases.js does through this file: breaking blocks, things on the ground, telling someone no.)
+const BASES = {
+  breakBlock: (game, tx, ty, s) => breakBlock(game, tx, ty, s),
+  dropItem: (game, key, n, x, y) => dropItem(game, key, n, x, y, (game.rng() - 0.5) * 2, -1.5),
+  notYours: (game, s, tx, ty) => notYours(game, s, tx, ty),
+};
+
 // (What survival.js does through this file: things on the ground, breaking blocks, base protection.)
 const SURVIVAL = {
   drop: (game, key, n, x, y) => dropItem(game, key, n, x, y, (game.rng() - 0.5) * 2, -1.5),
@@ -1232,6 +1222,10 @@ function glideInput(game, s, inp) {
  */
 function useItem(game, s, item, inp, pressed) {
   const w = s.world;
+  // (Siege charges, a battering ram, a stronghold charter, ammo for a turret, a hammer or pickaxe on
+  // a base's flag: bases.js.)
+  const bv = useBase(game, s, item, inp, pressed, BASES);
+  if (bv !== undefined) return bv;
   // (Hoes, seeds, bone meal, shears, and animals' food: survival.js.)
   const sv = useSurvival(game, s, item, inp, pressed, SURVIVAL);
   if (sv !== undefined) return sv;
@@ -1417,7 +1411,7 @@ function mirrorInput(game, s, inp) {
     const right = rightHand(s).item, useRight = !!right && !!inp.alt && !inp.fire;
     const item = useRight ? right : inHand(s).item, held = useRight || inp.fire, pressed = useRight ? inp.alt && !w.mirrorAlt : inp.firePressed;
     w.mirrorAlt = !!inp.alt;
-    const dragging = item && (item.kind === 'block' || item.kind === 'wall') && w.brush !== 'single' && item.block !== K.DOOR && item.block !== K.TORCH;
+    const dragging = item && (item.kind === 'block' || item.kind === 'wall') && w.brush !== 'single' && !isShutDoor(item.block) && item.block !== K.TORCH;
     if (!dragging || !held) w.drag = null;
     else if (!w.drag && pressed && w.target.near) w.drag = { tx: w.target.tx, ty: w.target.ty };
   }
@@ -1446,6 +1440,8 @@ export function worldTick(game) {
   survivalTick(game, SURVIVAL);
   questsTick(game);
   raidsTick(game);
+  // (Bases: turrets, traps, siege charges, the dead coming for one: bases.js.)
+  basesTick(game, BASES);
   sleepTick(game);
   // (Each player's party and the raid near them, as their HUD shows it: worked out now and then.)
   if (game.tick % 30 === 11) {
@@ -1453,7 +1449,8 @@ export function worldTick(game) {
     for (const s of game.soldiers) {
       if (!s.world || s.npc) continue;
       s.world.partyList = partyView(game, s);
-      s.world.raidInfo = t && Math.abs(s.x / TILE - (t.x0 + t.x1) / 2) < (t.x1 - t.x0) / 2 + 100 ? { name: raid.name, left: raidersLeft(game), total: raid.total } : null;
+      s.world.raidInfo = t && Math.abs(s.x / TILE - (t.x0 + t.x1) / 2) < (t.x1 - t.x0) / 2 + 100 ? { name: raid.name, left: raidersLeft(game), total: raid.total }
+        : world.baseRaid ? baseRaidInfo(game, s) : null;
     }
   }
   for (const s of game.soldiers) {
@@ -1656,11 +1653,15 @@ export const worldMode = {
     // (In a page: chunks made off the game's thread, before they're wanted: genworker.js. Its address
     // carries this one's release, as every module's does: tools/stamp.mjs.)
     if (typeof window !== 'undefined' && world.startWorker) world.startWorker(new URL(`./genworker.js${new URL(import.meta.url).search}`, import.meta.url));
-    world.protect = (tx, ty) => !!world.gen?.townProtecting(tx, ty) || (world.claims.size > 0 && !!claimAt(world, tx, ty));
+    // (Towns and bases keep blasts and flowing water out; a base open to a raid, only from its flag
+    // and chests. And an iron door in a base opens only for its side: bases.js.)
+    world.protect = (tx, ty) => shielded(world, tx, ty);
+    world.mayUnlock = (s, tx, ty) => mayUnlock(game, s, tx, ty);
     // (Flowing water washes away small plants and torches: what they give, dropped where they were.)
     world.onWash = (tx, ty, id) => { const b = BLOCKS[id]; if (b.drop) dropItem(game, b.drop, 1, tx * TILE + TILE / 2, ty * TILE + TILE / 2, 0, -1); };
     world.onBreak = (tx, ty, id) => {
       const b = BLOCKS[id], x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
+      baseBlockGone(game, tx, ty, id, BASES);
       if (id === K.LOOT_CRATE) openCrate(game, x, y);
       else if (id === K.TREASURE) openTreasure(game, x, y);
       else if (id === K.CHEST) { dropItem(game, 'chest', 1, x, y); spillChest(game, tx, ty); }
@@ -1737,7 +1738,9 @@ export const worldMode = {
     const x = victim.x, y = victim.y - 10;
     const drop = (key, n) => dropItem(game, key, n, x, y, (game.rng() - 0.5) * 3, -2 - game.rng() * 1.5);
     // (Whose kill it was: a player's, or their mercenary's.)
-    const by = killer?.world ? killer : killer?.npc?.kind === 'merc' ? game.soldiers.find(o => o.id === killer.npc.owner && o.world) : null;
+    // (Or their base's turrets' and traps', if they're near: bases.js.)
+    const by = killer?.world ? killer : killer?.npc?.kind === 'merc' ? game.soldiers.find(o => o.id === killer.npc.owner && o.world)
+      : killer?.npc?.kind === 'turret' ? game.soldiers.find(o => o.world && !o.npc && o.name.toLowerCase() === String(killer.npc.owner).toLowerCase() && Math.hypot(o.x - x, o.y - y) < 60 * TILE) || null : null;
     if (isMonster(victim)) {
       monsterLoot(game, victim, drop, by ? lootScale(by) : 1);
       dropGear(game, victim, by, x, y);
@@ -1750,6 +1753,7 @@ export const worldMode = {
         shareKill(game, by, victim, xp);
       }
       raidKill(game, victim, by);
+      baseRaidKill(game, victim, by);
     }
     // (An animal: meat, leather, wool... animals.js.)
     else if (isAnimal(victim)) animalDrops(game, victim, by, drop);

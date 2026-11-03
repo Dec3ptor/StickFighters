@@ -13,6 +13,9 @@
 //   raids       raids on towns at night (raids.js)
 //   kit         what a new character starts with
 //   hunger      players get hungry, eat to keep going and to heal (hunger.js), or never do
+//   raiding     whether players can break into each other's bases (bases.js): never, only while
+//               one of a base's side is in the world, only at night, or any time (PvP on only)
+//   baseRaids   the dead coming for a base someone's in, now and then at night (bases.js)
 
 /** The settings: what each is called, its choices (key: what it says), and the one it starts at. */
 export const WORLD_SETTINGS = {
@@ -25,6 +28,8 @@ export const WORLD_SETTINGS = {
   raids: { label: 'Raids on towns', options: { on: 'Yes', off: 'No' }, def: 'on', tip: 'Now and then at night, the dead come for a town you\'re near' },
   kit: { label: 'You start with', options: { full: 'Tools, guns, enough to build', basic: 'A pickaxe, an axe, torches', none: 'Nothing at all' }, def: 'full', tip: 'What a new character has' },
   hunger: { label: 'Hunger', options: { on: 'Yes: eat to keep going', off: 'No: food just heals' }, def: 'on', tip: 'Hungry, you stop healing by yourself; starving, you\'re hurt. Food fills you up (cook meat: it\'s better)' },
+  raiding: { label: 'Raiding bases', options: { online: 'While their owners are on', night: 'Only at night', anytime: 'Any time', off: 'Never: bases are safe' }, def: 'online', tip: 'With PvP on, whether players can break into each other\'s bases and bring down their flags (then their chests are anyone\'s). With PvP off, bases are always safe' },
+  baseRaids: { label: 'Monsters raid bases', options: { on: 'Yes', off: 'No' }, def: 'on', tip: 'Now and then at night, the dead come for a base someone\'s in: they break through to its flag' },
 };
 
 /** Monsters at each difficulty: how often they come, how hard they hit, how much health they have. */
@@ -53,7 +58,8 @@ export function settingsSummary(s) {
   const c = cleanSettings(s), out = [];
   for (const [k, d] of Object.entries(WORLD_SETTINGS)) {
     if (c[k] === d.def || k === 'death') continue;
-    out.push(k === 'vision' ? 'Line of sight' : k === 'towns' ? 'No towns' : k === 'raids' ? 'No raids' : k === 'hunger' ? 'No hunger' : k === 'kit' ? `Start: ${c[k]}` : d.options[c[k]].replace(/ \(.*\)$/, ''));
+    out.push(k === 'vision' ? 'Line of sight' : k === 'towns' ? 'No towns' : k === 'raids' ? 'No raids' : k === 'hunger' ? 'No hunger' : k === 'kit' ? `Start: ${c[k]}`
+      : k === 'raiding' ? (c[k] === 'off' ? 'Bases safe' : `Raiding: ${c[k] === 'night' ? 'at night' : 'any time'}`) : k === 'baseRaids' ? 'No base raids' : d.options[c[k]].replace(/ \(.*\)$/, ''));
   }
   return out.join(' · ');
 }

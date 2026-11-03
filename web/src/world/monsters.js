@@ -76,6 +76,9 @@ export function sideOf(s) {
  * only (PvP or not), and hurt nobody, but for one angry with someone (a polar bear that's been hurt).
  */
 export function foes(world, a, b) {
+  // (A base's turrets and traps, bases.js: they say what they hurt; nothing hurts them.)
+  if (a.npc?.hits) return a.npc.hits(b);
+  if (b.npc?.hits) return false;
   const sa = sideOf(a), sb = sideOf(b);
   if (sa === sb) return false;
   if (sa === 'animals') return a.npc.angry != null && a.npc.angry === b.id && !b.npc;
@@ -274,6 +277,15 @@ export class MonsterController {
       const dx = lead.x - s.x;
       walk(game, s, this, inp, Math.abs(dx) > 4 * TILE ? Math.sign(dx) : 0, def.speed * 1.4, lead.y < s.y - 40);
       if (Math.abs(dx) > 4) inp.aim = dx < 0 ? Math.PI : 0;
+      return inp;
+    }
+    // (A raider on a base, with nobody near to fight: on to the base's flag, and at it, swinging. bases.js.)
+    const goal = !foe && s.npc.goal;
+    if (goal) {
+      const dx = goal.x - s.x, dy = goal.y - s.y, there = Math.abs(dx) < 1.2 * TILE && Math.abs(dy) < 2.5 * TILE;
+      walk(game, s, this, inp, there ? 0 : Math.sign(dx), def.speed, dy < -40);
+      inp.aim = dx < 0 ? Math.PI : 0;
+      if (there) { inp.fire = true; inp.firePressed = game.tick % 30 === 0; }
       return inp;
     }
     if (!foe) {

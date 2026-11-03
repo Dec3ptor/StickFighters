@@ -16,6 +16,7 @@ import { itemColor, isPrecious, stackName } from './iteminfo.js';
 import { xpToNext, MAX_LEVEL } from './progress.js';
 import { RARITY } from './gear.js';
 import { goalText, goalPlace, goalMet, questReady, turnInTo } from './quests.js';
+import { levelOf, maxHpOf, radiusOf, onSide, raidsAllowed, underAttack } from './bases.js';
 
 const FONT = 'Arial, Helvetica, sans-serif';
 export const HOT_SIZE = 46;
@@ -42,6 +43,8 @@ export function drawWorldHud(r, ctx, game, me, W, H, opts = {}) {
   if (me.world?.levelUp) drawLevelUp(ctx, game, me, W, H);
   if (me.world?.partyList?.length) drawParty(ctx, me, W);
   if (me.world?.raidInfo) drawRaid(ctx, game, me, W);
+  // (Bases: their flags' health over them, and yours under attack, said at the top: bases.js.)
+  if (game.world.claims?.size) drawBases(r, ctx, game, me, W, H);
   if (me.alive && me.world && !me.world.dev) drawTalkHint(ctx, game, me, W, H);
   if (me.world) drawGot(ctx, game, me, W, H);
   drawWhere(ctx, game, me, W);
@@ -322,6 +325,62 @@ function drawRaid(ctx, game, me, W) {
   ctx.fillText(line, W / 2, 63);
 }
 
+// ---- Bases (bases.js) -----------------------------------------------------------------------------
+
+const sameName = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+/** Whether base c is on player me's side: theirs, or a party mate's (as far as their screen knows). */
+const mySide = (world, me, c) => onSide(world, c, me.name) || !!me.world?.partyList?.some(p => sameName(p.name, c.owner));
+
+/** A base, as the line at the top says where you are: whose, its level, how it stands. */
+function baseLabel(world, me, c) {
+  const mine = mySide(world, me, c), who = mine ? (sameName(c.owner, me.name) ? 'your base' : `${c.owner}'s base (your party's)`) : `${c.owner}'s base`;
+  const lv = levelOf(c) > 1 ? ` (level ${levelOf(c)})` : '';
+  const state = c.down ? 'its flag has fallen' : c.open ? 'open to raids' : !mine && raidsAllowed(world) ? 'safe for now' : '';
+  return `${who}${lv}${state ? ` · ${state}` : ''}`;
+}
+
+/**
+ * Bases' flags on the screen: a health bar over each that's been hit (fallen: said so). And a base
+ * of your side's under attack, at the top: wherever you are, if it has an alarm bell; else, near it.
+ */
+function drawBases(r, ctx, game, me, W, H) {
+  const world = game.world, k = r.scale;
+  let alert = null;
+  for (const c of world.claims.values()) {
+    const max = maxHpOf(c), hp = Math.max(0, c.hp ?? max), hot = underAttack(world, c);
+    if (hot && !alert && mySide(world, me, c) && (c.bell || (Math.abs(me.x / TILE - c.tx) < 90 && Math.abs(me.y / TILE - c.ty) < 90))) alert = c;
+    if (hp >= max && !hot && !c.down) continue;
+    const sx = W / 2 + (c.tx * TILE + 8 - r.cam.x) * k, sy = H / 2 + (c.ty * TILE - 4 - r.cam.y) * k;
+    if (sx < -40 || sx > W + 40 || sy < -30 || sy > H + 30) continue;
+    const bw = 40, bx = Math.round(sx - bw / 2), by = Math.round(sy - 12);
+    ctx.fillStyle = 'rgba(16,18,24,0.75)';
+    ctx.fillRect(bx - 1, by - 1, bw + 2, 7);
+    if (c.down) {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `bold 10px ${FONT}`;
+      ctx.fillStyle = '#cfd6e0';
+      ctx.fillText('Fallen', sx, by - 7);
+      continue;
+    }
+    const f = hp / max;
+    ctx.fillStyle = f > 0.5 ? '#5ad16a' : f > 0.25 ? '#f2c230' : '#e05a4a';
+    ctx.fillRect(bx, by, Math.max(1, Math.round(bw * f)), 5);
+  }
+  if (!alert) return;
+  const pulse = 0.5 + 0.5 * Math.sin(game.tick * 0.2), max = maxHpOf(alert), hp = Math.max(0, Math.round(alert.hp ?? max));
+  const line = text(`base!${alert.owner}${hp}`, () => `${sameName(alert.owner, me.name) ? 'Your base' : `${alert.owner}'s base`} is under attack!  Flag ${hp}/${max}`);
+  const y = me.world?.raidInfo ? 82 : 50;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold 15px ${FONT}`;
+  const w = ctx.measureText(line).width + 30;
+  ctx.fillStyle = `rgba(150,20,12,${0.68 + 0.25 * pulse})`;
+  ctx.fillRect(W / 2 - w / 2, y, w, 26);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(line, W / 2, y + 13);
+}
+
 /** Pointing at one of the townsfolk (talk.js): how to talk to them, over the hotbar. */
 function drawTalkHint(ctx, game, me, W, H) {
   const t = me.world.target;
@@ -574,7 +633,7 @@ function drawWhere(ctx, game, me, W) {
   const c = world.claims?.size ? claimAt(world, tx, ty) : null;
   // (In a town: its name, and it's said on the screen as you come into it.)
   const town = deep < 14 ? world.gen.townNear(tx, 2) : null;
-  const base = town ? `${town.name} (${town.kind})` : c ? (c.owner.toLowerCase() === String(me.name).toLowerCase() ? 'your base' : `${c.owner}'s base`) : '';
+  const base = town ? `${town.name} (${town.kind})` : c ? baseLabel(world, me, c) : '';
   const line = text(`w${col.biome.name}|${where}|${along}|${time}|${base}`, () => `${base ? `${base}  ·  ` : ''}${col.biome.name}  ·  ${where}  ·  ${along}  ·  ${time}`);
   if (town !== arrival.town) { arrival.town = town; arrival.at = town ? performance.now() : 0; }
   ctx.textAlign = 'center';
@@ -690,6 +749,10 @@ function drawMiniMap(ctx, game, me, W, H) {
     ctx.fillStyle = k === 'monster' ? '#ff3b2f' : k === 'merc' ? '#3d7ff0' : k === 'townsfolk' ? '#f2c230' : k === 'animal' ? '#8ad45a' : mate ? '#5ad1ff' : '#ffffff';
     ctx.fillRect(x0 + ox * MAP_SCALE - 1.5, y0 + oy * MAP_SCALE - 2, 3, 3);
   }
+  // Bases: their claims outlined, their flags marked (yours and your party's blue, others' red,
+  // fallen ones grey; under attack, flashing). Yours off the map: a mark at its edge, the way to
+  // it; with PvP on, others' you've seen too.
+  if (world.claims?.size) drawMapBases(ctx, game, me, x0, y0);
   // Your graves: a pale cross.
   for (const [gx, gy] of me.world?.graves || []) {
     const ox = gx - mm.tx + MAP_W / 2, oy = gy - mm.ty + MAP_H / 2;
@@ -712,3 +775,38 @@ function drawMiniMap(ctx, game, me, W, H) {
   ctx.strokeRect(x0 - 0.5, y0 - 0.5, w + 1, h + 1);
 }
 const SKY = [156, 203, 232], NIGHT_SKY = [22, 30, 56], CAVE = [26, 22, 20];
+
+// The bases a player's seen on their map (in this world): kept, to show at its edge.
+const seenBases = { world: null, keys: new Set() };
+
+/** Bases on the small map (its top left at (x0, y0), as drawMiniMap has it worked out: mm). */
+function drawMapBases(ctx, game, me, x0, y0) {
+  const world = game.world, S = MAP_SCALE;
+  if (seenBases.world !== world) { seenBases.world = world; seenBases.keys.clear(); }
+  for (const c of world.claims.values()) {
+    const r = radiusOf(c), ox = c.tx - mm.tx + MAP_W / 2, oy = c.ty - mm.ty + MAP_H / 2, key = `${c.tx},${c.ty}`;
+    const mine = mySide(world, me, c), flash = underAttack(world, c) && Math.floor(game.tick / 15) % 2 === 0;
+    const color = flash ? '#ffffff' : c.down ? '#a0a6b0' : mine ? '#5ad1ff' : '#ff5a3c';
+    ctx.fillStyle = color;
+    const l = ox - r, t = oy - r, rr = ox + r + 1, b = oy + r + 1;
+    if (rr < 0 || l > MAP_W || b < 0 || t > MAP_H) {
+      // Off the map: a mark at its edge (yours; others' you've seen, with PvP on).
+      if (!mine && !(seenBases.keys.has(key) && world.pvp !== false)) continue;
+      const px = Math.max(1.5, Math.min(MAP_W - 1.5, ox)), py = Math.max(1.5, Math.min(MAP_H - 1.5, oy));
+      ctx.fillRect(x0 + px * S - 2, y0 + py * S - 2, 4, 4);
+      continue;
+    }
+    seenBases.keys.add(key);
+    // (Its edges, as far as they're on the map.)
+    const cx0 = Math.max(0, l), cx1 = Math.min(MAP_W, rr), cy0 = Math.max(0, t), cy1 = Math.min(MAP_H, b);
+    if (t >= 0) ctx.fillRect(x0 + cx0 * S, y0 + t * S, (cx1 - cx0) * S, 1);
+    if (b <= MAP_H) ctx.fillRect(x0 + cx0 * S, y0 + b * S - 1, (cx1 - cx0) * S, 1);
+    if (l >= 0) ctx.fillRect(x0 + l * S, y0 + cy0 * S, 1, (cy1 - cy0) * S);
+    if (rr <= MAP_W) ctx.fillRect(x0 + rr * S - 1, y0 + cy0 * S, 1, (cy1 - cy0) * S);
+    // Its flag.
+    if (ox >= 0 && ox < MAP_W && oy >= 0 && oy < MAP_H) {
+      ctx.fillRect(x0 + ox * S - 0.5, y0 + oy * S - 5, 1.2, 6);
+      ctx.fillRect(x0 + ox * S + 0.5, y0 + oy * S - 5, 3.5, 2.5);
+    }
+  }
+}

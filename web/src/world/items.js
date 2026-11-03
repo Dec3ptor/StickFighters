@@ -160,6 +160,16 @@ for (const [id, d] of Object.entries(WEAPONS)) {
   item(id, d.name, 'weapon', { weapon: id, stack: self ? 20 : 1, ammo: ammoOf(id) });
 }
 
+// Raiding a base, and making one stronger (bases.js). Siege charges: put on a wall, a door or a
+// flag (a click, in reach), they go off when their fuse is out, breaking everything round them
+// (reinforced bricks and iron doors too) and hitting a base's flag hard. A battering ram: swung at
+// built blocks (the toughest go in a few hits) and flags. A stronghold charter: used in your base,
+// it raises it a level.
+item('breach_charge', 'Breaching charge', 'siege', { stack: 10, color: '#c8402c' });
+item('demo_charge', 'Demolition charge', 'siege', { stack: 5, color: '#5a5e3a' });
+item('battering_ram', 'Battering ram', 'tool', { stack: 1, tool: 'ram', power: 8, every: 30, tier: 0, color: '#6e7680', handle: '#5c3f22' });
+item('charter', 'Stronghold charter', 'charter', { stack: 5, color: '#e8dcc0' });
+
 /** What a supply crate (found in ruins and caves) can hold: [key, least, most, how likely (a weight)]. */
 export const CRATE_LOOT = [
   ['bullets', 40, 120, 8], ['shells', 10, 30, 4], ['rockets', 3, 8, 2], ['arrows', 20, 40, 2], ['fuel', 80, 160, 1],

@@ -203,7 +203,9 @@ test('PvP off: players can\'t hurt each other (monsters still can); a base flag 
   assert.equal(claimAt(on.world, tx + 5, ty)?.owner, g2.name, 'their base');
   assert.ok(!mayChange(on.world, on.me, tx + 5, ty) && mayChange(on.world, g2, tx + 5, ty), 'theirs to change, not the host\'s');
   assert.equal(claimAt(on.client.game.world, tx + 5, ty)?.owner, g2.name, 'the guest sees it as theirs too');
-  // Blasts don't break it.
+  // Blasts don't break it (where bases can't be raided: bases.js; the world's raiding setting, off).
+  on.world.settings = { ...(on.world.settings || {}), raiding: 'off' };
+  await on.step(31);
   on.world.setTile(tx + 3, ty, K.PLANKS);
   on.world.carve((tx + 3) * TILE + 8, ty * TILE + 8, 40);
   assert.equal(on.world.tile(tx + 3, ty), K.PLANKS, 'blast-proof');

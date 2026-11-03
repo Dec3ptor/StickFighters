@@ -258,6 +258,26 @@ export const CAMPFIRE = def('campfire', 'Campfire', furniture({ hard: 1, tool: '
 export const WOOL = def('wool', 'Wool', { hard: 1, tool: 'any', resist: 0, color: '#eeebe2', pattern: 'wool' });
 export const CARPET = def('carpet', 'Carpet', furniture({ hard: 0, tool: 'hand', resist: 0, color: '#b03a3a', pattern: 'carpet' }));
 
+// ---- Defending a base, and raiding one (bases.js) ----------------------------------------------------
+// Reinforced bricks: stone bricks banded with iron, all but blast-proof; in someone else's base being
+// raided, only a battering ram or a siege charge breaks them (iron doors too). An iron door: a door
+// (three tall) that in a base opens only for its side. Turrets shoot what comes for the base (with
+// the arrows or bullets they're loaded with); spikes hurt whoever walks through them, and a pressure
+// mine blows up under them (never the base's own side); an alarm bell tells the base's side it's
+// attacked, wherever they are. A fallen flag: a base's flag brought down (mended, it's raised again).
+export const REINFORCED = def('reinforced_bricks', 'Reinforced bricks', { hard: 40, resist: 90, tier: 2, color: '#6a6e76', pattern: 'reinforced' });
+export const IRON_DOOR = def('iron_door', 'Iron door', { hard: 40, resist: 60, tier: 2, color: '#8a9098', pattern: 'iron_door' });
+export const IRON_DOOR_OPEN = def('iron_door_open', 'Iron door (open)', { solid: false, hard: 40, resist: 60, tier: 2, drop: 'iron_door', clear: true, color: '#8a9098', pattern: 'door_open' });
+export const ARROW_TURRET = def('arrow_turret', 'Arrow turret', furniture({ hard: 6, resist: 20, tier: 1, color: '#8a6238', pattern: 'turret' }));
+export const GUN_TURRET = def('gun_turret', 'Gun turret', furniture({ hard: 10, resist: 30, tier: 1, color: '#5c646e', pattern: 'gunturret' }));
+export const SPIKES = def('spikes', 'Spikes', furniture({ hard: 3, resist: 10, color: '#9aa0a8', pattern: 'spikes' }));
+export const PRESSURE_MINE = def('pressure_mine', 'Pressure mine', furniture({ hard: 2, resist: 4, color: '#5a5e3a', pattern: 'plate' }));
+export const ALARM_BELL = def('alarm_bell', 'Alarm bell', furniture({ hard: 4, resist: 12, color: '#d8a838', pattern: 'bell' }));
+export const FLAG_DOWN = def('flag_down', 'Fallen base flag', furniture({ hard: 3, resist: 30, wood: true, drop: 'claim_flag', color: '#8a7a70', pattern: 'flag_down' }));
+/** Turrets; and the defences, which only go in a base of your own side's (bases.js). */
+export const TURRETS = new Set([ARROW_TURRET, GUN_TURRET]);
+export const DEFENCES = new Set([ARROW_TURRET, GUN_TURRET, SPIKES, PRESSURE_MINE, ALARM_BELL]);
+
 /** The gem blocks (they glint). */
 export const GEMS = new Set([RUBY, SAPPHIRE, EMERALD, TOPAZ, AMETHYST, DIAMOND]);
 

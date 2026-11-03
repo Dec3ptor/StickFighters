@@ -471,6 +471,37 @@ function marks(g, b, x, y, h, classic, grid, k) {
       g.fillStyle = classic ? INK : tint(b.color, 0.55);
       g.fillRect(x + 3, y + 3, 1.5, 1.5); g.fillRect(x + 11.5, y + 3, 1.5, 1.5); g.fillRect(x + 3, y + 11.5, 1.5, 1.5); g.fillRect(x + 11.5, y + 11.5, 1.5, 1.5);
       break;
+    case 'reinforced': {
+      // Stone bricks, banded across with iron, riveted (bases.js: only siege tools break them in a raid).
+      g.fillStyle = ink;
+      g.fillRect(x, y + 7, TILE, 1);
+      g.fillRect(x, y + 15, TILE, 1);
+      const odd = (y / TILE) & 1;
+      g.fillRect(x + (odd ? 4 : 11), y, 1, 7);
+      g.fillRect(x + (odd ? 11 : 4), y + 8, 1, 7);
+      g.fillStyle = classic ? '#c4c4c4' : '#454952';
+      g.fillRect(x, y + 3, TILE, 2.5);
+      g.fillRect(x, y + 10.5, TILE, 2.5);
+      g.fillStyle = classic ? INK : '#b8bcc4';
+      for (const rx of [2, 8, 14]) { g.fillRect(x + rx - 0.75, y + 3.5, 1.5, 1.5); g.fillRect(x + rx - 0.75, y + 11, 1.5, 1.5); }
+      break;
+    }
+    case 'iron_door': {
+      // A riveted iron plate in its frame; on the middle of the three, a handle and a keyhole.
+      g.strokeStyle = classic ? INK : tint(b.color, 0.5);
+      g.lineWidth = 0.9;
+      g.strokeRect(x + 2.5, y + 0.5, TILE - 5, TILE - 1);
+      if (!classic) { g.fillStyle = 'rgba(0,0,0,0.16)'; g.fillRect(x + 3, y + 7.25, TILE - 6, 1.5); }
+      g.fillStyle = classic ? '#9a9a9a' : tint(b.color, 0.55);
+      g.fillRect(x + 4, y + 2, 1.2, 1.2); g.fillRect(x + 10.8, y + 2, 1.2, 1.2); g.fillRect(x + 4, y + 12.8, 1.2, 1.2); g.fillRect(x + 10.8, y + 12.8, 1.2, 1.2);
+      const W = grid.w;
+      if (grid.fg[k - W] === K.IRON_DOOR && grid.fg[k + W] === K.IRON_DOOR) {
+        g.fillStyle = classic ? INK : '#2a2e34';
+        g.fillRect(x + TILE - 6.5, y + 5.5, 2.5, 3);
+        g.fillRect(x + TILE - 5.75, y + 10, 1, 2.5);
+      }
+      break;
+    }
     case 'door': {
       g.strokeStyle = classic ? INK : tint(b.color, 0.6);
       g.lineWidth = 0.8;
@@ -934,6 +965,72 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
       g.fillStyle = b.color;
       g.beginPath(); g.moveTo(x + 4.5, y + 1.5); g.lineTo(x + 14, y + 4.5); g.lineTo(x + 4.5, y + 7.5); g.closePath(); g.fill();
       g.strokeStyle = classic ? INK : tint(b.color, 0.55); g.lineWidth = 1; g.stroke();
+      break;
+    case 'turret': {
+      // An arrow turret: a crossbow on a wooden stand (facing one way or the other).
+      const f = h & 1 ? 1 : -1, cx = x + 8;
+      g.strokeStyle = line; g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(cx - 5, y + TILE); g.lineTo(cx, y + 8); g.lineTo(cx + 5, y + TILE); g.moveTo(cx, y + 8); g.lineTo(cx, y + TILE); g.stroke();
+      g.fillStyle = col;
+      g.fillRect(cx - 5, y + 5, 10, 4);
+      g.lineWidth = 1; g.strokeRect(cx - 4.5, y + 5.5, 9, 3);
+      g.strokeStyle = classic ? INK : '#4a3018'; g.lineWidth = 1.3;
+      g.beginPath(); g.moveTo(cx + f * 4, y + 1.5); g.quadraticCurveTo(cx + f * 8, y + 7, cx + f * 4, y + 12.5); g.stroke();
+      g.strokeStyle = classic ? '#9a9a9a' : '#e8e2d0'; g.lineWidth = 0.6;
+      g.beginPath(); g.moveTo(cx + f * 4, y + 1.5); g.lineTo(cx + f * 1, y + 7); g.lineTo(cx + f * 4, y + 12.5); g.stroke();
+      g.fillStyle = classic ? INK : '#c9ccd2';
+      g.beginPath(); g.moveTo(cx + f * 7.5, y + 7); g.lineTo(cx + f * 5.5, y + 5.8); g.lineTo(cx + f * 5.5, y + 8.2); g.closePath(); g.fill();
+      break;
+    }
+    case 'gunturret': {
+      // A gun turret: a steel base, a domed head, its barrel out (one way or the other), a red eye.
+      const f = h & 1 ? 1 : -1, cx = x + 8;
+      g.fillStyle = classic ? '#fff' : tint(b.color, 0.8);
+      g.fillRect(x + 3, y + 11, 10, 5);
+      g.strokeStyle = line; g.lineWidth = 1; g.strokeRect(x + 3.5, y + 11.5, 9, 4);
+      g.fillStyle = classic ? INK : '#2a2e34';
+      g.fillRect(f > 0 ? cx + 2 : cx - 8, y + 6.5, 6, 2.2);
+      g.fillStyle = col;
+      g.beginPath(); g.arc(cx, y + 9.5, 4.8, Math.PI, 0); g.lineTo(cx + 4.8, y + 11.2); g.lineTo(cx - 4.8, y + 11.2); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#ff4030'; g.fillRect(cx + f * 1.5 - 0.75, y + 7.2, 1.5, 1.5);
+      break;
+    }
+    case 'spikes':
+      // Iron spikes in a row, set in a board.
+      g.fillStyle = classic ? '#fff' : '#5c4a3a';
+      g.fillRect(x, y + TILE - 2.5, TILE, 2.5);
+      g.strokeStyle = line; g.lineWidth = 0.8;
+      g.strokeRect(x + 0.4, y + TILE - 2.5, TILE - 0.8, 2.1);
+      g.fillStyle = col;
+      for (let i = 0; i < 4; i++) {
+        const sx = x + 2 + i * 4;
+        g.beginPath(); g.moveTo(sx - 1.7, y + TILE - 2.5); g.lineTo(sx, y + 6 + ((h >> i) & 1) * 2); g.lineTo(sx + 1.7, y + TILE - 2.5); g.closePath(); g.fill(); g.stroke();
+      }
+      break;
+    case 'plate':
+      // A pressure mine: a low disc on the floor, its trigger plate on top, a red light.
+      g.fillStyle = col;
+      g.beginPath(); g.ellipse(x + 8, y + TILE - 1, 6.5, 3, 0, Math.PI, 0); g.closePath(); g.fill();
+      g.strokeStyle = line; g.lineWidth = 0.9; g.stroke();
+      g.fillStyle = classic ? INK : '#3a3c28'; g.fillRect(x + 5, y + TILE - 5, 6, 1.4);
+      g.fillStyle = '#e03020'; g.fillRect(x + 7.3, y + TILE - 2.8, 1.4, 1.4);
+      break;
+    case 'bell':
+      // A bell, hung in a little wooden frame.
+      g.strokeStyle = classic ? INK : '#5c3f22'; g.lineWidth = 1.4;
+      g.beginPath(); g.moveTo(x + 2, y + TILE); g.lineTo(x + 2, y + 1.5); g.lineTo(x + 14, y + 1.5); g.lineTo(x + 14, y + TILE); g.stroke();
+      g.fillStyle = col;
+      g.beginPath(); g.moveTo(x + 8, y + 3); g.quadraticCurveTo(x + 4.5, y + 3.5, x + 4.5, y + 9); g.lineTo(x + 3.5, y + 11); g.lineTo(x + 12.5, y + 11); g.lineTo(x + 11.5, y + 9); g.quadraticCurveTo(x + 11.5, y + 3.5, x + 8, y + 3); g.closePath(); g.fill();
+      g.strokeStyle = line; g.lineWidth = 0.9; g.stroke();
+      g.fillStyle = classic ? INK : '#6a4a10'; g.beginPath(); g.arc(x + 8, y + 11.6, 1.2, 0, Math.PI * 2); g.fill();
+      break;
+    case 'flag_down':
+      // A base's flag brought down: its pole snapped and leaning, the flag torn on the ground.
+      g.strokeStyle = classic ? INK : '#5c4a3a'; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(x + 3, y + TILE - 0.5); g.lineTo(x + 6, y + 7); g.moveTo(x + 7.5, y + TILE - 1); g.lineTo(x + 15, y + TILE - 3.5); g.stroke();
+      g.fillStyle = classic ? '#ddd' : b.color;
+      g.beginPath(); g.moveTo(x + 4, y + TILE); g.lineTo(x + 12, y + TILE - 3); g.lineTo(x + 10, y + TILE - 1); g.lineTo(x + 13, y + TILE); g.closePath(); g.fill();
+      g.strokeStyle = line; g.lineWidth = 0.8; g.stroke();
       break;
     case 'door_open':
       g.fillStyle = classic ? '#fff' : b.color;
@@ -1819,6 +1916,7 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
     ctx.strokeRect(x, y, w, w);
     return;
   }
+  if (BASE_ICONS[it.key]) { ctx.strokeStyle = INK; ctx.fillStyle = c; BASE_ICONS[it.key](ctx, x, y, w, c); return; }
   if (it.kind === 'tool') {
     ctx.strokeStyle = it.handle || '#7a5634';
     ctx.beginPath(); ctx.moveTo(x + w * 0.2, y + w * 0.9); ctx.lineTo(x + w * 0.75, y + w * 0.25); ctx.stroke();
@@ -2030,6 +2128,40 @@ function drawGearIcon(ctx, it, x, y, w) {
 }
 
 /** What animals give, and farming (animals.js, farming.js): their icons (stroked in ink, filled in their colour). */
+// Raiding and holding a base (bases.js): siege charges, the battering ram, a stronghold charter.
+const BASE_ICONS = {
+  breach_charge(ctx, x, y, w) {
+    // Three red sticks bound with tape, a fuse out of the middle.
+    for (let i = 0; i < 3; i++) { ctx.fillStyle = '#c8402c'; ctx.fillRect(x + w * (0.18 + i * 0.22), y + w * 0.3, w * 0.2, w * 0.6); ctx.strokeRect(x + w * (0.18 + i * 0.22), y + w * 0.3, w * 0.2, w * 0.6); }
+    ctx.fillStyle = '#3a3a3a'; ctx.fillRect(x + w * 0.14, y + w * 0.52, w * 0.72, w * 0.12);
+    ctx.beginPath(); ctx.moveTo(x + w * 0.5, y + w * 0.3); ctx.quadraticCurveTo(x + w * 0.55, y + w * 0.1, x + w * 0.72, y + w * 0.08); ctx.stroke();
+    ctx.fillStyle = '#ffd060'; ctx.beginPath(); ctx.arc(x + w * 0.74, y + w * 0.08, w * 0.06, 0, Math.PI * 2); ctx.fill();
+  },
+  demo_charge(ctx, x, y, w, c) {
+    // A heavy box with a dial and a red light.
+    ctx.fillStyle = c; ctx.fillRect(x + w * 0.1, y + w * 0.3, w * 0.8, w * 0.55); ctx.strokeRect(x + w * 0.1, y + w * 0.3, w * 0.8, w * 0.55);
+    ctx.fillStyle = '#d8d8c8'; ctx.beginPath(); ctx.arc(x + w * 0.38, y + w * 0.57, w * 0.14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e03020'; ctx.fillRect(x + w * 0.64, y + w * 0.45, w * 0.12, w * 0.12);
+    ctx.beginPath(); ctx.moveTo(x + w * 0.3, y + w * 0.3); ctx.lineTo(x + w * 0.3, y + w * 0.18); ctx.lineTo(x + w * 0.7, y + w * 0.18); ctx.lineTo(x + w * 0.7, y + w * 0.3); ctx.stroke();
+  },
+  battering_ram(ctx, x, y, w) {
+    // A log, its end capped with iron.
+    ctx.save(); ctx.translate(x + w / 2, y + w / 2); ctx.rotate(-Math.PI / 4);
+    ctx.fillStyle = '#7a5634'; ctx.fillRect(-w * 0.45, -w * 0.13, w * 0.7, w * 0.26); ctx.strokeRect(-w * 0.45, -w * 0.13, w * 0.7, w * 0.26);
+    ctx.fillStyle = '#6e7680'; ctx.fillRect(w * 0.22, -w * 0.18, w * 0.24, w * 0.36); ctx.strokeRect(w * 0.22, -w * 0.18, w * 0.24, w * 0.36);
+    ctx.restore();
+  },
+  charter(ctx, x, y, w, c) {
+    // A scroll, unrolled, a gold seal on its ribbon.
+    ctx.fillStyle = c; ctx.fillRect(x + w * 0.2, y + w * 0.12, w * 0.6, w * 0.74); ctx.strokeRect(x + w * 0.2, y + w * 0.12, w * 0.6, w * 0.74);
+    ctx.beginPath();
+    for (let i = 0; i < 3; i++) { ctx.moveTo(x + w * 0.3, y + w * (0.26 + i * 0.12)); ctx.lineTo(x + w * 0.7, y + w * (0.26 + i * 0.12)); }
+    ctx.stroke();
+    ctx.fillStyle = '#2f62ee'; ctx.fillRect(x + w * 0.44, y + w * 0.62, w * 0.1, w * 0.3);
+    ctx.fillStyle = '#f2c230'; ctx.beginPath(); ctx.arc(x + w * 0.5, y + w * 0.66, w * 0.12, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  },
+};
+
 const SURVIVAL_ICONS = {
   leather(ctx, x, y, w) {
     // A hide, pegged out.

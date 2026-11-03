@@ -2,13 +2,20 @@
 // as you leave it. Walking into a closed door opens it too (for players, their mercenaries and
 // townsfolk, never monsters), and a door opened that way shuts again by itself once nobody's
 // in it: so a town's houses and a city's gates can be walked through, and still keep monsters
-// out at night.
+// out at night. An iron door is the same, but in a base it opens only for the base's side
+// (world.mayUnlock: bases.js).
 
 import * as K from './blocks.js';
 import { TILE } from './blocks.js';
 import { BODY } from '../config.js';
 
-const DOORS = new Set([K.DOOR, K.DOOR_OPEN]);
+// Each kind of door: shut, and open.
+const PAIRS = [[K.DOOR, K.DOOR_OPEN], [K.IRON_DOOR, K.IRON_DOOR_OPEN]];
+/** Every door's blocks, shut or open. */
+export const DOORS = new Set(PAIRS.flat());
+const OPENED = new Map(PAIRS), SHUT = new Map(PAIRS.map(([a, b]) => [b, a]));
+/** Whether block id is a shut door (of any kind: what's put up, as a door). */
+export const isShutDoor = id => OPENED.has(id);
 const SHUT_AFTER = 40; // updates with nobody in it before a door opened by walking into it shuts
 
 /** The door at (tx, ty): { top, bottom } (its rows), or null. */
@@ -41,8 +48,8 @@ export function setDoor(game, tx, ty, open, auto = false) {
   const key = `${tx},${d.top}`;
   const autos = (world.autoDoors ||= new Map());
   if (!auto) autos.delete(key);
-  const id = open ? K.DOOR_OPEN : K.DOOR;
-  if (world.tile(tx, d.top) === id) return false;
+  const now = world.tile(tx, d.top), shut = SHUT.get(now) ?? now, id = open ? OPENED.get(shut) : shut;
+  if (now === id) return false;
   if (!open && soldierIn(game, tx, d.top, d.bottom)) return false;
   for (let y = d.top; y <= d.bottom; y++) world.setTile(tx, y, id);
   if (open && auto) autos.set(key, { tx, top: d.top, bottom: d.bottom, clear: 0 });
@@ -55,8 +62,8 @@ export function pushDoor(game, s, dir) {
   if (!dir || !s.alive) return false;
   const world = game.world, tx = Math.floor((s.x + dir * (BODY.halfW + 2)) / TILE);
   for (const y of [s.y + BODY.bottom - 3, s.y - 6]) {
-    const ty = Math.floor(y / TILE);
-    if (world.tile(tx, ty) === K.DOOR) return setDoor(game, tx, ty, true, true);
+    const ty = Math.floor(y / TILE), id = world.tile(tx, ty);
+    if (id === K.DOOR || (id === K.IRON_DOOR && (world.mayUnlock?.(s, tx, ty) ?? true))) return setDoor(game, tx, ty, true, true);
   }
   return false;
 }
@@ -66,7 +73,7 @@ export function doorsTick(game) {
   const world = game.world, autos = world.autoDoors;
   if (!autos?.size || game.tick % 10 !== 0) return;
   for (const [key, d] of autos) {
-    if (world.tile(d.tx, d.top) !== K.DOOR_OPEN) { autos.delete(key); continue; }
+    if (!SHUT.has(world.tile(d.tx, d.top))) { autos.delete(key); continue; }
     if (soldierIn(game, d.tx, d.top, d.bottom)) { d.clear = 0; continue; }
     d.clear += 10;
     if (d.clear >= SHUT_AFTER && setDoor(game, d.tx, d.top, false, true)) autos.delete(key);

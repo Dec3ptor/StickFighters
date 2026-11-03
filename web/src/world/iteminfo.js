@@ -56,6 +56,17 @@ export function isPrecious(it, g = null) {
 }
 
 const TIERS = ['', 'copper', 'iron', 'gold', 'crystal', 'diamond'];
+// (A base, and defending it: bases.js.)
+const BASE_LINES = {
+  claim_flag: ['Claims the blocks round it as your base (and your party\'s)', 'Mend it with a builder\'s hammer; a stronghold charter raises it a level'],
+  arrow_turret: ['Only in your own base: shoots monsters, and (PvP) intruders', 'Click it with arrows to load it, or put a chest of them beside it'],
+  gun_turret: ['Only in your own base: shoots monsters, and (PvP) intruders', 'Click it with bullets to load it, or put a chest of them beside it'],
+  spikes: ['Only in your own base: hurts and slows whoever walks through (not your side)'],
+  pressure_mine: ['Only in your own base: blows up under whoever steps on it (not your side)'],
+  alarm_bell: ['Only in your own base: when it\'s attacked, you hear of it wherever you are'],
+  reinforced_bricks: ['Shrugs off blasts; in a raid, only siege tools break it'],
+  iron_door: ['In your base, it opens only for you and your party', 'In a raid, only siege tools break it'],
+};
 const round = v => (v >= 10 ? Math.round(v) : v >= 1 ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100);
 
 /**
@@ -98,12 +109,14 @@ export function itemDetails(it, n = 1, g = null) {
       break;
     }
     case 'tool':
-      kind = it.kind === 'bucket' ? 'Tool · bucket' : it.tool === 'pick' ? 'Tool · pickaxe' : it.tool === 'axe' ? 'Tool · axe' : it.tool === 'hoe' ? 'Tool · hoe' : it.tool === 'shears' ? 'Tool · shears' : 'Tool · hammer';
+      kind = it.kind === 'bucket' ? 'Tool · bucket' : it.tool === 'pick' ? 'Tool · pickaxe' : it.tool === 'axe' ? 'Tool · axe' : it.tool === 'hoe' ? 'Tool · hoe' : it.tool === 'shears' ? 'Tool · shears' : it.tool === 'ram' ? 'Tool · battering ram' : 'Tool · hammer';
       if (it.kind === 'bucket') lines.push(...(it.fluid ? ['Click where it\'s to go (either hand): it pours out, and flows from there'] : ['Click still water (either hand) to fill it: a sea, a lake, a pool', 'Not flowing water: it runs out of still water']));
       else if (it.tool === 'pick') lines.push(`Digs ${TIERS[it.tier] || ''}-tier blocks and softer`, `Digging power ${round(it.power)}`);
       else if (it.tool === 'axe') lines.push('Fells trees, breaks wooden things', `Chopping power ${round(it.power)}`);
       else if (it.tool === 'hoe') lines.push('Tills dirt and grass into farmland', 'Plant seeds, carrots or potatoes on it');
       else if (it.tool === 'shears') lines.push('Click a sheep: its wool (it grows back)');
+      // (Raiding a base: bases.js.)
+      else if (it.tool === 'ram') lines.push('Knocks in built blocks, reinforced bricks and iron doors too, in a few swings', 'Batters a base\'s flag', 'Not on a base that can\'t be raided now, nor in towns');
       else lines.push('Shapes blocks into halves and ramps', 'Takes down walls');
       break;
     case 'food': case 'potion':
@@ -137,12 +150,16 @@ export function itemDetails(it, n = 1, g = null) {
       if (b && !b.solid && !b.platform) lines.push(b.pattern === 'plant' ? 'A plant' : 'Stands on the floor');
       else if (b?.platform) lines.push('Stood on, jumped up through');
       else lines.push('A block to build with');
+      if (BASE_LINES[it.key]) lines.push(...BASE_LINES[it.key]);
       break;
     }
     case 'material':
       // (Farming: farming.js.)
       if (it.plant) lines.push('Planted on farmland (till dirt or grass with a hoe)');
       else if (it.meal) lines.push('Click a crop: it grows; click grass: grass and flowers');
+      // (Raiding a base, and making yours stronger: bases.js.)
+      else if (it.kind === 'siege') { kind = 'Siege · explosive'; lines.push('Click a wall, a door or a base\'s flag (in reach): it goes off in a few seconds', 'Breaks everything round it, reinforced bricks and iron doors too, and hits a flag hard', 'Not on a base that can\'t be raided now, nor in towns'); }
+      else if (it.kind === 'charter') { kind = 'Charter'; lines.push('Use it in your base (or click its flag): the base goes up a level', 'A wider claim, a tougher flag (three levels)'); }
       break;
     default: break;
   }
