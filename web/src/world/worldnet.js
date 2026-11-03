@@ -16,6 +16,7 @@ import { TileWorld } from './tileworld.js';
 import { Inventory, HOTBAR, itemOf } from './items.js';
 import { packBytes, unpackBytes } from './worldsave.js';
 import { recipeById } from './crafting.js';
+import { devAct } from './devtools.js';
 import { worldState, worldFromSave, playerToSave, rehire, dropItem, chestAt, boxFor, boxKind, claimsToSave, claimsFromSave, REACH, setRightHand, makeRecipe, devTake, equip, unequip, stackToChests } from './worldplay.js';
 import { warp } from './waystones.js';
 import { SLOTS } from './gear.js';
@@ -136,7 +137,7 @@ export class WorldHost {
     const m = w.mine, last = w.got[w.got.length - 1];
     // (Their level and quests too: progress.js, quests.js. And who has work for them.)
     const pr = progOf(s), qs = questsOf(s), xg = w.xpGot?.at(-1);
-    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}|${w.gearV || 0}|${(w.graves || []).join(';')}|${w.foundV || 0}|${w.sleep ? `z${this.game.world.asleep?.n}/${this.game.world.asleep?.of}` : ''}|${w.dev ? 'dev' : ''}`;
+    const key = `${w.inv.version}|${w.slot}|${w.slot2}|${w.brush}|${m ? `${m.tx},${m.ty},${m.dmg},${m.of}` : ''}|${w.got.length}:${last ? `${last.n}@${last.tick}` : ''}|${w.home ? `${w.home.x},${w.home.y}` : ''}|${pr.level}.${pr.xp}.${pr.points}.${JSON.stringify(pr.perks)}|${qs.v}.${qs.track}|${w.marksKey || ''}|${xg ? xg.tick : ''}|${w.levelUp?.tick ?? ''}|${w.raidInfo ? `${w.raidInfo.name}${w.raidInfo.left}` : ''}|${w.gearV || 0}|${(w.graves || []).join(';')}|${w.foundV || 0}|${w.sleep ? `z${this.game.world.asleep?.n}/${this.game.world.asleep?.of}` : ''}|${w.dev ? `dev${w.dev.fly === false ? 0 : 1}${w.dev.speed || 1}${w.dev.god ? 1 : 0}${w.dev.invisible ? 1 : 0}${w.dev.lights ? 1 : 0}` : ''}`;
     if (key !== ws.inv) {
       ws.inv = key;
       p.link.send({
@@ -151,8 +152,9 @@ export class WorldHost {
         sleep: w.sleep ? { since: w.sleep.since, n: this.game.world.asleep?.n || 1, of: this.game.world.asleep?.of || 1 } : null,
         // (What they've found, for the codex: only when it's more.)
         found: ws.foundV !== (w.foundV || 0) ? w.found || [] : undefined,
-        // (In dev mode, theirs in a creative world: crafting's free, and the codex gives anything.)
-        dev: w.dev ? 1 : 0,
+        // (In dev mode, theirs in a creative world: crafting's free, the codex gives anything, they
+        // fly (or not, and how fast: their screen moves them as the host does), the dev menu's switches.)
+        dev: w.dev ? { fly: w.dev.fly !== false, speed: w.dev.speed || 1, god: !!w.dev.god, invisible: !!w.dev.invisible, lights: !!w.dev.lights } : 0,
       }, true);
       ws.foundV = w.foundV || 0;
     }
@@ -232,6 +234,8 @@ export class WorldHost {
       }
       // (Dev mode: something from the codex, free.)
       case 'devtake': { const t = devTake(g, s, d.id); if (t) g.notify(s, t); break; }
+      // (Dev mode, theirs in a creative world: the dev menu, devtools.js. Not other players: that's the host's.)
+      case 'dev': { const t = devAct(g, s, String(d.act || ''), d.arg ?? null, false); if (t) g.notify(s, t); break; }
       case 'close': ws.chest = null; break;
       // (In a talk: talk.js checks it all.)
       case 'talk': if (d.d && typeof d.d === 'object') talkDo(g, s, d.d); break;
@@ -363,7 +367,7 @@ export class WorldClient {
         w.home = d.home || null;
         if (Array.isArray(d.found)) w.found = cleanFound(d.found);
         // (Dev mode, ours in a creative world: flying, crafting, the codex, on our own screen: devmode.js's devView.)
-        w.hostDev = d.dev === 1;
+        w.hostDev = d.dev && typeof d.dev === 'object' ? { fly: d.dev.fly !== false, speed: [0.5, 1, 2, 4].includes(+d.dev.speed) ? +d.dev.speed : 1, god: !!d.dev.god, invisible: !!d.dev.invisible, lights: !!d.dev.lights } : null;
         // (Asleep: the host keeps them in bed; here, the screen goes dark.)
         w.sleep = d.sleep && typeof d.sleep === 'object' ? { since: w.sleep?.since ?? Date.now(), n: d.sleep.n | 0, of: d.sleep.of | 0 } : null;
         w.graves = Array.isArray(d.graves) ? d.graves.filter(g => Array.isArray(g) && Number.isInteger(g[0]) && Number.isInteger(g[1])).slice(-8) : [];

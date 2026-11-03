@@ -50,6 +50,8 @@ import { InventoryScreen } from './world/inventoryui.js';
 import { TalkScreen } from './world/talkui.js';
 import { talkView, talkDo, endTalk } from './world/talk.js';
 import { JournalScreen } from './world/questui.js';
+import { DevPanel } from './world/devpanel.js';
+import { devAct } from './world/devtools.js';
 import { questsOf, dropQuest } from './world/quests.js';
 import { spendPoint } from './world/progress.js';
 import { PlayerMenu, TradeScreen } from './world/socialui.js';
@@ -626,6 +628,7 @@ function endMatch(to = state.returnTo) {
   closeInventory();
   closeTalk();
   closeJournal();
+  closeDevPanel();
   closePlayerMenu();
   closeTrade(false);
   state.replay = null;
@@ -688,7 +691,7 @@ function setPaused(p) {
   // (A world: no restarting it, and no sitting out to watch. Pausing keeps it as it is.)
   if (state.world) { show('restart', false); show('spectate', false); if (p) saveWorldNow(); }
   else show('spectate', true);
-  if (p) { closeInventory(); closeTalk(); closeJournal(); closePlayerMenu(); }
+  if (p) { closeInventory(); closeTalk(); closeJournal(); closeDevPanel(); closePlayerMenu(); }
   state.menuOpen = p;
   show('pause', p);
   fullscreenButton();
@@ -800,7 +803,7 @@ function localNote(text) {
 /** True while the match is being played (no menu, chat or picker open over it). */
 function playingNow() {
   const g = state.game;
-  return !!g && !g.over && !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open && !invScreen?.open && !talkScreen?.open && !journal?.open && !playerMenu?.open && !tradeScreen?.open &&
+  return !!g && !g.over && !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open && !invScreen?.open && !talkScreen?.open && !journal?.open && !devPanel?.open && !playerMenu?.open && !tradeScreen?.open &&
     document.body.classList.contains('playing') && $('settings').classList.contains('hidden');
 }
 
@@ -1156,7 +1159,45 @@ function closeJournal() {
   if (!journal?.open) return;
   journal.hide();
   const g = state.game;
-  if (g && !state.menuOpen && !state.chatOpen && !g.over && !invScreen?.open && !talkScreen?.open) { input.enabled = true; grabControls(); }
+  if (g && !state.menuOpen && !state.chatOpen && !g.over && !invScreen?.open && !talkScreen?.open && !devPanel?.open) { input.enabled = true; grabControls(); }
+}
+
+// ---- Worlds: the dev menu (P in dev mode: devpanel.js, devtools.js) ------------------------------------
+
+let devPanel = null;
+const getDevPanel = () => (devPanel ||= new DevPanel($('devPanel'), { act: (a, arg) => devPanelAct(a, arg), kick: id => devKick(id), close: () => closeDevPanel() }));
+
+/** P in dev mode: the dev menu (the game carries on; your soldier stands still while it's open). */
+function openDevPanel() {
+  const g = state.game, me = state.me;
+  if (!g?.world || !me?.world || !devView(me) || state.menuOpen || state.chatOpen || g.over) return;
+  closeInventory();
+  closeJournal();
+  getDevPanel().show(me, g, state.mode !== 'client');
+  holdStill();
+}
+
+function closeDevPanel() {
+  if (!devPanel?.open) return;
+  devPanel.hide();
+  letGo();
+}
+
+/** Something done in the dev menu (online, in someone else's creative world, the host does it). */
+function devPanelAct(act, arg) {
+  const g = state.game, me = state.me;
+  if (!g?.world || !me?.world) return;
+  audio.play('click');
+  if (state.mode === 'client') { state.net?.client?.link.send({ t: 'wop', op: 'dev', act, arg }, true); return; }
+  const text = devAct(g, me, act, arg, true);
+  if (text) { localNote(text); devPanel?.say(text); }
+}
+
+/** The host sends a player away (the dev menu's Players). */
+function devKick(id) {
+  const g = state.game, o = g?.soldiers.find(s => s.id === id);
+  if (state.mode !== 'host' || !o) return;
+  if (state.net?.host?.kick(id)) { localNote(`${o.name} was sent away`); devPanel?.say(`${o.name} was sent away`); }
 }
 
 /** Something done in the journal: following a quest, giving one up, spending a perk point (online, the host does it). */
@@ -1185,7 +1226,7 @@ const getTrade = () => (tradeScreen ||= new TradeScreen($('trade'), {
 function holdStill() { input.enabled = false; input.clear(); input.unlock(); }
 function letGo() {
   const g = state.game;
-  if (g && !state.menuOpen && !state.chatOpen && !g.over && !invScreen?.open && !talkScreen?.open && !journal?.open && !playerMenu?.open && !tradeScreen?.open) { input.enabled = true; grabControls(); }
+  if (g && !state.menuOpen && !state.chatOpen && !g.over && !invScreen?.open && !talkScreen?.open && !journal?.open && !devPanel?.open && !playerMenu?.open && !tradeScreen?.open) { input.enabled = true; grabControls(); }
 }
 
 /** Another player right clicked on: what you can do with them ({ id, name, level, options }). */
@@ -2197,6 +2238,8 @@ function frame(now) {
     else if (talkScreen?.open) closeTalk();
   } else if (talkScreen?.open) talkScreen.refresh();
   if (journal?.open) journal.refresh();
+  // (The dev menu: as things change; gone with dev mode.)
+  if (devPanel?.open) { if (devView(me)) devPanel.refresh(); else closeDevPanel(); }
   // Another player (social.js): here (hosting), right clicked on one; a trade going on.
   if (g.world && state.mode !== 'client' && me.world) {
     if (me.world.social) {
@@ -2361,6 +2404,7 @@ function pressMenuKey(key) {
   if (isKey('buy', key) && g.rules.buyItem) { openBuy(); return true; }
   if (isKey('inventory', key) && g.world) { openInventory(); return true; }
   if (isKey('devMode', key) && g.world) { toggleDev(); return true; }
+  if (isKey('devMenu', key) && g.world && devView(state.me)) { openDevPanel(); return true; }
   if (g.world && state.me?.world?.dev) {
     if (key === 'Equal' || key === 'NumpadAdd') { input.devZoom += 1; return true; }
     if (key === 'Minus' || key === 'NumpadSubtract') { input.devZoom -= 1; return true; }
@@ -2610,6 +2654,11 @@ function wire() {
       if (!e.repeat && journal.key(e.code, isKey('journal', keyOf(e.code)))) e.preventDefault();
       return;
     }
+    // The dev menu: P or Esc closes it.
+    if (devPanel?.open) {
+      if (!e.repeat && devPanel.key(e.code, isKey('devMenu', keyOf(e.code)))) e.preventDefault();
+      return;
+    }
     // Another player's menu, a trade: Esc closes them (a trade's called off).
     if (playerMenu?.open) { if (!e.repeat && playerMenu.key(e.code)) e.preventDefault(); return; }
     if (tradeScreen?.open) { if (!e.repeat && tradeScreen.key(e.code)) e.preventDefault(); return; }
@@ -2780,7 +2829,7 @@ async function boot() {
   window.stickSoldiers = {
     state, get renderer() { return renderer; }, get edition() { return edition; }, get input() { return input; }, setEdition, openGamePicker, pacer, prefs, perf, setGraphics, startMatch, endMatch, readMenu, audio, editor, openEditor, joinGame, quickMatch, getLobby, showTab,
     get profile() { return profile; }, openPicker, openLoadout,
-    startWorld, saveWorldNow, renderWorlds, openInventory, closeInventory, craftItem, get inventory() { return invScreen; }, get talk() { return talkScreen; }, get journal() { return journal; }, openJournal,
+    startWorld, saveWorldNow, renderWorlds, openInventory, closeInventory, craftItem, get inventory() { return invScreen; }, get talk() { return talkScreen; }, get journal() { return journal; }, openJournal, get devPanel() { return devPanel; }, openDevPanel,
     devExport: all => JSON.parse(devMenu.exportText(all)), // (what the developer menu copies out)
     // The camera and aiming zoom in use (the host's, in someone else's game).
     feelNow: () => ({ camera: cameraInUse(), aimZoom: hostFeel ? hostFeel.aimZoom : prefs.aimZoom, host: !!hostFeel }),

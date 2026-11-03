@@ -13,7 +13,7 @@ import { WEAPONS } from '../weapons.js';
 import { monstersTick, armNpc, foes, isMonster, monsterLoot, hireMerc, mercsOf, MERC, DAY_TICKS, hourOf } from './monsters.js';
 import { setDoor, pushDoor, doorsTick, soldierIn } from './doors.js';
 import { damage } from '../combat.js';
-import { devFly, devInput, devOn } from './devmode.js';
+import { devFly, devInput, devOn, godOn } from './devmode.js';
 import { craft, stationsNear, plainGear, devGive } from './crafting.js';
 import { townsfolkTick, isFolk } from './townsfolk.js';
 import { startTalk, talkTick, folkAt } from './talk.js';
@@ -1443,9 +1443,9 @@ export const worldMode = {
     hold(s);
   },
 
-  /** (Nothing hurts a player in dev mode, nor any of the townsfolk but guards: townsfolk.js.) */
+  /** (Nothing hurts a player in god mode, dev mode's, nor any of the townsfolk but guards: townsfolk.js.) */
   damage(game, amount, attacker, target, weapon) {
-    if (target?.world?.dev || (isFolk(target) && !target.npc.guard)) return 0;
+    if (godOn(target) || (isFolk(target) && !target.npc.guard)) return 0;
     // (Hurt in bed: awake, at once. Reading a recall scroll: it's spoilt.)
     if (target?.world?.sleep && amount > 0) wake(game, target, 'Something woke you!');
     if (target?.world?.recall && amount > 0) { target.world.recall = null; game.notify(target, 'The scroll\'s magic fades: you were hurt'); }
@@ -1474,6 +1474,9 @@ export const worldMode = {
   },
   /** Dev mode flies (devmode.js); else the game moves them. */
   moveSoldier(game, s, inp) { return devFly(game, s, inp); },
+
+  /** God mode (devmode.js): nothing kills them, falls and self-destructs included. */
+  spare(game, s) { return godOn(s); },
   /** Monsters don't hurt monsters; nor mercenaries the one who hired them; players each other only with PvP on. */
   canHurt(game, attacker, target) { return foes(game.world, attacker, target); },
 

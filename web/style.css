@@ -486,6 +486,23 @@ html[data-game="remastered"] .codex-cats button.on, html[data-game="remastered"]
 .codex-row { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--line, rgba(0, 0, 0, 0.2)); border-left: 4px solid var(--c, #888); background: var(--soft); opacity: 0.72; }
 .codex-row.found { opacity: 1; }
 .codex-take { flex: none; align-self: center; margin-left: auto; padding: 2px 10px; font-size: 12px; }
+/* The dev menu (worlds, in dev mode: devpanel.js). */
+.buy.devpanel { width: min(980px, calc(100vw - 24px)); }
+.dp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; }
+@media (max-width: 760px) { .dp-grid { grid-template-columns: minmax(0, 1fr); } }
+.dp-box { min-width: 0; }
+.dp-wide { grid-column: 1 / -1; }
+.dp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 0 0 6px; }
+.dp-row .small { padding: 3px 9px; font-size: 12px; }
+.dp-row .small.on, .dp-player .small.on { background: var(--ink); color: var(--paper, #fff); }
+html[data-game="remastered"] .dp-row .small.on { background: #f2c230; color: #1a1a1a; }
+.dp-sub { font-size: 12px; color: var(--muted); margin-right: 2px; }
+.dp-where { font-weight: normal; text-transform: none; letter-spacing: 0; }
+.dp-check { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; }
+.dp-rar { border-left: 4px solid var(--c) !important; }
+.dp-players { display: flex; flex-direction: column; gap: 5px; }
+.dp-player { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.dp-name { font-weight: bold; min-width: 120px; }
 .codex-rar { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; padding: 0 4px; border-radius: 2px; background: var(--c); color: #111; vertical-align: 1px; }
 .codex-row canvas { flex: none; background: rgba(0, 0, 0, 0.55); border-radius: 3px; }
 .codex-text { min-width: 0; }

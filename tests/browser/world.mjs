@@ -203,6 +203,18 @@ await page.waitForTimeout(100);
 const unique = await page.evaluate(() => window.stickSoldiers.state.me.world.inv.slots.find(s => s?.g?.unique)?.g.name || null);
 check(!!unique, 'dev mode: a unique from the codex');
 await page.keyboard.press('KeyJ');
+// The dev menu (P): a zombie summoned where the crosshair is, and invisible (then visible again).
+await page.keyboard.press('KeyP');
+await page.waitForSelector('#devPanel:not(.hidden)');
+const zombies = () => page.evaluate(() => window.stickSoldiers.state.game.soldiers.filter(s => s.npc?.type === 'zombie').length);
+const z0 = await zombies();
+await page.click('#devPanel [data-act="summon"][data-type="zombie"]');
+await page.click('#devPanel [data-act="invisible"]');
+const devMenu = await page.evaluate(() => ({ invisible: !!window.stickSoldiers.state.me.world.dev?.invisible, on: document.querySelector('#devPanel [data-on="invisible"]').classList.contains('on') }));
+await page.click('#devPanel [data-act="invisible"]');
+await page.keyboard.press('KeyP');
+await page.waitForSelector('#devPanel.hidden', { state: 'attached' });
+check((await zombies()) === z0 + 1 && devMenu.invisible && devMenu.on, `dev menu: summoned, invisible (${JSON.stringify({ ...devMenu, zombies: (await zombies()) - z0 })})`);
 await page.keyboard.press('Backquote');
 await page.waitForFunction(() => !window.stickSoldiers.state.me.world.dev);
 await page.keyboard.press('KeyI');

@@ -204,6 +204,8 @@ export class NetClient {
       s.team = r.team;
       s.remote = !!r.remote;
       s.skin = isSkin(r.skin) ? r.skin : 'auto';
+      // (Invisible, in a world's dev mode: not drawn, unless it's us.)
+      s.hidden = !!r.hidden;
       // (A world's monsters, mercenaries and townsfolk: drawn and mapped as such.)
       s.npc = r.npc === 'monster' || r.npc === 'merc' || r.npc === 'townsfolk' ? { kind: r.npc } : r.npc === 'guard' ? { kind: 'townsfolk', guard: true } : null;
       // (Our own: unless we've just asked to change it, and the host hasn't caught up yet.)
@@ -231,7 +233,7 @@ export class NetClient {
       // (A Juggernaut keeps its minigun in hand, as on the host.)
       if (inp.switchTo && me.has(inp.switchTo) && !(me.jugger > 0)) { me.current = inp.switchTo; this.switchSeq = inp.seq; }
       // (Flying, in dev mode in a creative world: as the host moves us.)
-      if (me.world?.hostDev) { me.beginMove(inp); flyBody(me.body, inp); me.animate(); }
+      if (me.world?.hostDev?.fly) { me.beginMove(inp); flyBody(me.body, inp, me.world.hostDev.speed); me.animate(); }
       else me.move(this.heavy(this.allowed(inp)), g.map);
       if (me.body.jetting && g.tick % 2 === 0) g.fx?.fire(me.x + me.facing * 3, me.y - 4);
     }
@@ -344,7 +346,7 @@ export class NetClient {
       hasJetpack: a.hasJetpack, fuel: a.fuel, momentum: a.momentum, rope: a.rope ? { ...a.rope } : null,
       stamina: a.stamina, winded: a.winded, sprinting: a.sprinting,
     });
-    if (me.world?.hostDev) for (const inp of this.pending) flyBody(b, inp);
+    if (me.world?.hostDev?.fly) for (const inp of this.pending) flyBody(b, inp, me.world.hostDev.speed);
     else for (const inp of this.pending) stepBody(b, this.heavy(this.allowed(inp)), this.game.map);
     if (!wasAlive) { me.prevX = b.x; me.prevY = b.y; me.drawDX = me.drawDY = 0; return; }
     // Small differences are smoothed out over a few frames; big ones (a teleport, a respawn) jump.

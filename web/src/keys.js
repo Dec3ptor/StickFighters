@@ -45,6 +45,7 @@ export const ACTIONS = [
   { id: 'mute', name: 'Mute sound', group: 'Interface', keys: ['KeyM'] },
   { id: 'showItems', name: 'Show the names of everything lying on the ground (hold, worlds)', group: 'Interface', keys: ['Alt'] },
   { id: 'devMode', name: 'Dev mode (your own worlds): fly, zoom, dig out anything', group: 'Interface', keys: ['Backquote'], press: true },
+  { id: 'devMenu', name: 'Dev menu (in dev mode): god mode, invisible, summoning, strikes, gear, players', group: 'Interface', keys: ['KeyP'], press: true },
   { id: 'freeCam', name: 'Spectating: free camera, or back to following', group: 'Interface', keys: ['Space'] },
 ];
 const BY_ID = new Map(ACTIONS.map(a => [a.id, a]));

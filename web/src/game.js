@@ -661,6 +661,8 @@ export class Game {
 
   kill(victim, killer, weapon, opts = {}) {
     if (!victim.alive) return;
+    // (A mode can spare them: a world's god mode, devmode.js.)
+    if (this.rules.spare?.(this, victim)) return;
     // A fall or burn soon after being hurt counts for whoever hurt you (not Defuse's bomb going off).
     if ((!killer || killer === victim) && weapon !== 'Kamikaze' && !opts.world && victim.lastHurtBy && this.tick - victim.lastHurtTick < RULES.creditFallTicks) {
       killer = victim.lastHurtBy;

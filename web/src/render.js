@@ -303,7 +303,8 @@ export class Renderer {
     list.length = 0;
     for (let i = 0; i < all.length; i++) {
       const o = all[i];
-      if (o.alive && (!crowded || this.inView(o.x, o.y)) && (!fog || fog.shows(o))) list.push(o);
+      // (Invisible, a world's dev mode: only for themselves, faint: drawFigure.)
+      if (o.alive && (!crowded || this.inView(o.x, o.y)) && (!fog || fog.shows(o)) && (o === viewer || !(o.hidden || o.world?.dev?.invisible))) list.push(o);
     }
     out.names = list;
     if (crowded && list.length > 60) {
@@ -655,8 +656,9 @@ export class Renderer {
       st.rope = true;
     }
     ctx.translate(x, y);
-    const faded = s.spawnProtect > 0;
-    if (faded) ctx.globalAlpha = 0.35 + 0.35 * Math.abs(Math.sin(game.tick * 0.25));
+    // (Spawn protection blinks; invisible, a world's dev mode, is faint: drawn only for themselves.)
+    const faded = s.spawnProtect > 0 || !!(s.hidden || s.world?.dev?.invisible || s.world?.hostDev?.invisible);
+    if (faded) ctx.globalAlpha = s.spawnProtect > 0 ? 0.35 + 0.35 * Math.abs(Math.sin(game.tick * 0.25)) : 0.35;
     // A Juggernaut glows, so everyone knows to run.
     if (s.jugger > 0) drawJuggerGlow(ctx, pose, game.tick);
 

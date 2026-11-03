@@ -83,6 +83,20 @@ export function aimTarget(s) {
   return { x: s.shoulderX + Math.cos(s.aim) * d, y: s.shoulderY + Math.sin(s.aim) * d };
 }
 
+/**
+ * A strike weapon's (id: AirStrike, NapalmStrike, ConcreteDonkey) bombs called down on (x, y)
+ * for soldier s, without the weapon, from a little way above it (dev mode's: devtools.js).
+ */
+export function strikeAt(game, s, id, x, y) {
+  const def = WEAPONS[id];
+  if (def?.kind !== 'strike') return false;
+  const aim = s.aim, dist = s.aimDist;
+  s.aim = Math.atan2(y - s.shoulderY, x - s.shoulderX);
+  s.aimDist = Math.hypot(x - s.shoulderX, y - s.shoulderY);
+  // (From 30 blocks up, not the top of the sky: in a world, the surface is a long way down.)
+  try { return LAUNCH.strike(game, s, def, id, null, Math.max(game.map.bounds.top, y - 340)); } finally { s.aim = aim; s.aimDist = dist; }
+}
+
 /** Add a projectile. Every projectile gets a number, so the network can follow it. */
 export function spawn(game, p) {
   p.id = ++game.nextId;
@@ -322,9 +336,10 @@ const LAUNCH = {
     return true;
   },
 
-  strike(game, s, def, id) {
+  // (sky: where the sky's top is taken to be: the map's, unless called down from lower: strikeAt.)
+  strike(game, s, def, id, m = null, sky = game.map.bounds.top) {
     const t = aimTarget(s);
-    const top = game.map.bounds.top - 140;
+    const top = sky - 140;
     const n = def.bombs;
     for (let i = 0; i < n; i++) {
       const x = t.x + (i - (n - 1) / 2) * (def.spacing || 0);
@@ -337,8 +352,8 @@ const LAUNCH = {
         spawn(game, { kind: 'rocket', sprite: 'bomb', cfg: { blast: def.blast, gravity: 0.1 * MOTION.timeScale ** 2 }, x, y: top, vx: 0, vy: def.speed, owner: s, weapon: id, life: 3000, delay });
       }
     }
-    game.fx?.plane(t.x, game.map.bounds.top - 60, s.facing);
-    game.sound(def.sound, t.x, Math.max(t.y, game.map.bounds.top));
+    game.fx?.plane(t.x, sky - 60, s.facing);
+    game.sound(def.sound, t.x, Math.max(t.y, sky));
     return true;
   },
 

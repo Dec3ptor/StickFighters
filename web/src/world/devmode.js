@@ -1,14 +1,16 @@
 // Dev mode (worlds: your own, played alone or hosted): for exploring and trying things out. You
 // fly anywhere, through anything, fast; the wheel zooms a long way out (and back in); everything's
 // lit; left click wipes out blocks (any: bedrock, towns, bases), a brush's worth at a time, and
-// right click builds with the block in hand (nothing's used up); nothing hurts you. Keys (main.js)
-// change the brush, the time of day, the lights and monsters, and take you places: back to the
-// start, up to the surface, down to the deep, and to the next town either way.
+// right click builds with the block in hand (nothing's used up); god mode: nothing hurts you and
+// you can't die. Keys (main.js) change the brush, the time of day, the lights and monsters, and
+// take you places: back to the start, up to the surface, down to the deep, and to the next town
+// either way. The dev menu (P: devtools.js, devpanel.js) has the rest: invisible, flying or
+// walking, summoning beasts (on your side, or not), strikes, gear, and other players (the host's).
 
 import * as K from './blocks.js';
 import { TILE, AIR, NO_WALL, SOLID } from './blocks.js';
 import { WORLD_H } from './worldgen.js';
-import { DAY_TICKS, hourOf, isMonster } from './monsters.js';
+import { DAY_TICKS, hourOf, isHostile } from './monsters.js';
 import { MOTION, BODY } from '../config.js';
 
 /** How far the crosshair reaches (tiles), and the biggest brush (tiles each way from the middle). */
@@ -17,6 +19,10 @@ export const DEV_REACH = 70, DEV_BRUSH_MAX = 6;
 export const FLY_SPEED = 10, FLY_SPRINT = 30, FLY_EASE = 0.35;
 
 export const devOn = s => !!s?.world?.dev;
+/** God mode (dev mode's, to start with): nothing hurts them, and they can't die. */
+export const godOn = s => !!s?.world?.dev?.god;
+/** Invisible (dev mode's): monsters don't see them, and neither do other players (online: hidden, roster's). */
+export const unseen = s => !!(s?.world?.dev?.invisible || s?.hidden);
 /**
  * Dev mode as our own screen has it: ours, or (in someone else's world) the host's say-so, ours
  * in a creative world (worldnet.js's hostDev): flying, the camera, crafting and the codex.
@@ -27,7 +33,8 @@ export const devView = s => !!(s?.world?.dev || s?.world?.hostDev);
 export function setDev(game, s, on) {
   const w = s.world;
   if (!w) return;
-  w.dev = on ? { brush: 1, lights: true } : null;
+  // (god: can't be hurt or die; invisible: not seen; fly: through anything, else walking; speed: flying's.)
+  w.dev = on ? { brush: 1, lights: true, god: true, invisible: false, fly: true, speed: 1 } : null;
   let out = false;
   if (!on) { s.body.vx = s.body.vy = 0; out = outOfBlocks(game.world, s); }
   game.notify(s, on ? 'Dev mode: fly with the movement keys (sprint: faster), wheel: zoom, left click: wipe out, right click: build' : `Dev mode off${out ? ' (out of the ground, to the nearest place with room for you)' : ''}`);
@@ -58,16 +65,34 @@ export function outOfBlocks(world, s) {
 }
 
 /**
+ * The nearest spot to tile (tx, ty) with room for someone to stand (on a floor if there's one
+ * near): { x, y } (their middle), or the surface above it.
+ */
+export function openSpotNear(world, tx, ty) {
+  const fits = (x, y) => y + BODY.top >= 0 && y + BODY.bottom < WORLD_H * TILE && !world.overlap(x - BODY.halfW, y + BODY.top, x + BODY.halfW, y + BODY.bottom);
+  let open = null;
+  for (const [dx, dy] of OUT_STEPS) {
+    const x = (tx + dx) * TILE + TILE / 2, y = (ty + dy + 1) * TILE - BODY.bottom - 1;
+    if (!fits(x, y)) continue;
+    // (Standing on something, best; the first with room, else.)
+    if (SOLID[world.tile(tx + dx, ty + dy + 1)]) return { x, y };
+    open ||= { x, y };
+    if (dx * dx + dy * dy > 36) break;
+  }
+  return open || { x: tx * TILE + TILE / 2, y: world.surface(tx) * TILE - BODY.bottom - 1 };
+}
+
+/**
  * Flying (the world mode's moveSoldier hook): through anything, in any direction (jump: up,
  * crouch: down; across and up at once, no faster), faster sprinting, speeding up and slowing
  * down smoothly. Returns true if it moved the soldier (else the game does).
  */
 export function devFly(game, s, inp) {
-  if (!devOn(s)) return false;
+  if (!devOn(s) || s.world.dev.fly === false) return false;
   // (Where it was, its aim and animation, as walking keeps them: without them it's drawn, and the
   // camera follows it, somewhere between where it is and where dev mode began.)
   s.beginMove(inp);
-  flyBody(s.body, inp);
+  flyBody(s.body, inp, s.world.dev.speed || 1);
   s.animate();
   return true;
 }
@@ -76,9 +101,9 @@ export function devFly(game, s, inp) {
  * A flying body's update (dev mode's: here, and online, where a guest's own screen moves them
  * straight away, net/client.js, as the host does).
  */
-export function flyBody(b, inp) {
+export function flyBody(b, inp, mult = 1) {
   const dx = Math.sign(inp.move || 0), dy = (inp.jump ? -1 : 0) + (inp.crouch ? 1 : 0);
-  const speed = (inp.sprint ? FLY_SPRINT : FLY_SPEED) * MOTION.timeScale * (dx && dy ? Math.SQRT1_2 : 1);
+  const speed = (inp.sprint ? FLY_SPRINT : FLY_SPEED) * MOTION.timeScale * mult * (dx && dy ? Math.SQRT1_2 : 1);
   b.vx = toward(b.vx, dx * speed);
   b.vy = toward(b.vy, dy * speed);
   b.x += b.vx;
@@ -150,7 +175,7 @@ function nextQuarter(world) {
 }
 
 /** Soldier s to world point (x, y) (their middle), stopped. */
-function moveTo(s, x, y) {
+export function moveTo(s, x, y) {
   s.body.x = x;
   s.body.y = y;
   s.body.vx = s.body.vy = 0;
@@ -173,7 +198,8 @@ export function devKey(game, s, code) {
     case 'KeyN': { const h = nextQuarter(world); return say(`It's ${h === 0 ? 'midnight' : h === 12 ? 'noon' : h === 7 ? 'morning' : 'evening'}`); }
     case 'KeyV':
       world.devQuiet = !world.devQuiet;
-      if (world.devQuiet) for (const m of game.soldiers.filter(isMonster)) game.removeSoldier(m);
+      // (Not the ones on someone's side: summoned allies stay.)
+      if (world.devQuiet) for (const m of game.soldiers.filter(isHostile)) game.removeSoldier(m);
       return say(world.devQuiet ? 'No monsters' : 'Monsters come out again');
     case 'KeyH': { const p = world.spawns[0]; moveTo(s, p.x, p.y); return say('Back at the start'); }
     case 'KeyU': moveTo(s, s.x, (world.gen.surfaceAt(tx) - 3) * TILE); return say('Up on the surface');
@@ -197,7 +223,7 @@ export function devKey(game, s, code) {
 export function devLines(s, zoom) {
   const dev = s.world.dev;
   return [
-    `DEV MODE  ·  brush ${dev.brush * 2 - 1}×${dev.brush * 2 - 1}  ·  zoom ${zoom.toFixed(2)}×  ·  ${dev.lights ? 'all lit' : 'lit as it is'}`,
+    `DEV MODE  ·  P: dev menu  ·  ${dev.god ? 'god mode' : 'mortal'}${dev.invisible ? '  ·  invisible' : ''}${dev.fly === false ? '  ·  walking' : ''}  ·  brush ${dev.brush * 2 - 1}×${dev.brush * 2 - 1}  ·  zoom ${zoom.toFixed(2)}×  ·  ${dev.lights ? 'all lit' : 'lit as it is'}`,
     'Fly: move keys, jump/crouch up/down, sprint fast  ·  wheel or + -: zoom  ·  [ ]: brush',
     'L: lights  ·  N: time  ·  V: monsters  ·  H: start  ·  U: surface  ·  O: deep  ·  , .: next town  ·  bag, codex: anything, free',
   ];

@@ -106,6 +106,8 @@ export function drawSoldier(r, game, s, alpha, theme) {
   ctx.save();
   ctx.translate(x, y);
   if (s.spawnProtect > 0) ctx.globalAlpha = 0.4 + 0.35 * Math.abs(Math.sin(game.tick * 0.25));
+  // (Invisible, a world's dev mode: faint, drawn only for themselves.)
+  else if (s.hidden || s.world?.dev?.invisible || s.world?.hostDev?.invisible) ctx.globalAlpha = 0.35;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
@@ -240,6 +242,8 @@ export function drawLineSoldier(r, game, s, alpha, theme, skin) {
   ctx.save();
   ctx.translate(x, y);
   if (s.spawnProtect > 0) ctx.globalAlpha = 0.4 + 0.35 * Math.abs(Math.sin(game.tick * 0.25));
+  // (Invisible, a world's dev mode: faint, drawn only for themselves.)
+  else if (s.hidden || s.world?.dev?.invisible || s.world?.hostDev?.invisible) ctx.globalAlpha = 0.35;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const jugger = s.jugger > 0;

@@ -162,7 +162,17 @@ export class NetHost {
   }
 
   roster() {
-    return this.game.soldiers.map(s => ({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, remote: !!s.remote, spec: !!s.spectating, skin: s.skin, npc: s.npc?.guard ? 'guard' : s.npc?.kind || null }));
+    return this.game.soldiers.map(s => ({ id: s.id, name: s.name, team: s.team, isBot: s.isBot, remote: !!s.remote, spec: !!s.spectating, skin: s.skin, npc: s.npc?.guard ? 'guard' : s.npc?.kind || null, hidden: !!s.world?.dev?.invisible }));
+  }
+
+  /** The host sends the player whose soldier is `id` away (a world's dev menu). Returns whether there was one. */
+  kick(id) {
+    const p = [...this.players].find(q => q.soldier?.id === id);
+    if (!p) return false;
+    p.link.send({ t: 'chat', system: true, text: 'The host sent you away' }, true);
+    this.removePlayer(p, 'was sent away by the host');
+    try { p.link.close?.(); } catch { /* already gone */ }
+    return true;
   }
 
   /** Someone started or stopped spectating (called by the game): everyone's list of players changes. */
@@ -308,7 +318,7 @@ export class NetHost {
     // Everyone's told. An id can be given to someone new: their name and look count too.)
     if (g.tick % 15 === 0 && this.players.size) {
       let sig = '';
-      for (const s of g.soldiers) sig += `${s.id}${s.name}${s.skin},`;
+      for (const s of g.soldiers) sig += `${s.id}${s.name}${s.skin}${s.world?.dev?.invisible ? 'h' : ''},`;
       if (sig !== this.rosterSig) {
         const first = this.rosterSig == null;
         this.rosterSig = sig;

@@ -661,7 +661,8 @@ function drawMiniMap(ctx, game, me, W, H) {
   }
   // Who else is about: monsters red, mercenaries blue, townsfolk gold, other players white.
   for (const o of game.soldiers) {
-    if (!o.alive || o === me) continue;
+    // (Not someone invisible: a world's dev mode.)
+    if (!o.alive || o === me || o.hidden || o.world?.dev?.invisible) continue;
     const ox = Math.floor(o.x / TILE) - mm.tx + MAP_W / 2, oy = Math.floor(o.y / TILE) - mm.ty + MAP_H / 2;
     if (ox < 0 || ox >= MAP_W || oy < 0 || oy >= MAP_H) continue;
     const k = o.npc?.kind, mate = me.world?.partyList?.some(p => p.id === o.id);

@@ -59,7 +59,8 @@ const MERC_NAMES = ['Vasquez', 'Drake', 'Hicks', 'Frost', 'Apone', 'Dietrich', '
 /** Which side a soldier's on: monsters together, townsfolk together, each player with their mercenaries. */
 export function sideOf(s) {
   const k = s.npc?.kind;
-  return k === 'monster' ? 'monsters' : k === 'merc' ? `p${s.npc.owner}` : k === 'townsfolk' ? 'town' : `p${s.id}`;
+  // (A monster on someone's side, summoned in dev mode: theirs.)
+  return k === 'monster' ? (s.npc.ally != null ? `p${s.npc.ally}` : 'monsters') : k === 'merc' ? `p${s.npc.owner}` : k === 'townsfolk' ? 'town' : `p${s.id}`;
 }
 /**
  * Whether `a` can hurt `b` in `world`: not on the same side, and players (and their mercenaries)
@@ -75,6 +76,8 @@ export function foes(world, a, b) {
   return world?.pvp !== false;
 }
 export const isMonster = s => s.npc?.kind === 'monster';
+/** A monster that's against everyone (not one summoned to someone's side: devtools.js). */
+export const isHostile = s => s.npc?.kind === 'monster' && s.npc.ally == null;
 export const isMerc = s => s.npc?.kind === 'merc';
 
 /** The weapon an NPC carries, ready to use (endless rounds: they don't run out). Townsfolk: theirs, if any. */
@@ -207,7 +210,8 @@ export function monsterLoot(game, s, drop, more = 1) {
 function nearestFoe(game, s, rx, ry, ok = null) {
   let best = null, bd = Infinity;
   for (const o of game.soldiers) {
-    if (!o.alive || o === s || !foes(game.world, s, o) || (ok && !ok(o))) continue;
+    // (Someone invisible, dev mode's: not seen.)
+    if (!o.alive || o === s || o.world?.dev?.invisible || !foes(game.world, s, o) || (ok && !ok(o))) continue;
     const dx = o.x - s.x, dy = o.y - s.y;
     if (Math.abs(dx) > rx || Math.abs(dy) > ry) continue;
     const d = dx * dx + dy * dy;
@@ -242,7 +246,20 @@ export class MonsterController {
 
   input(game, s) {
     const def = this.def, inp = { move: 0, jump: false, jumpPressed: false, crouch: false, fire: false, firePressed: false, aim: s.aim, aimDist: 120 };
+    // (Summoned to someone's side: it keeps up with them, and goes for what they're up against.)
+    const lead = s.npc.ally != null ? game.soldiers.find(o => o.id === s.npc.ally && !o.npc) : null;
+    if (lead?.alive && (Math.abs(lead.x - s.x) > 50 * TILE || Math.abs(lead.y - s.y) > 24 * TILE)) {
+      s.body.x = lead.x - lead.facing * 24;
+      s.body.y = lead.y;
+      s.body.vx = s.body.vy = 0;
+    }
     const foe = nearestFoe(game, s, 44 * TILE, 22 * TILE);
+    if (!foe && lead?.alive) {
+      const dx = lead.x - s.x;
+      walk(game, s, this, inp, Math.abs(dx) > 4 * TILE ? Math.sign(dx) : 0, def.speed * 1.4, lead.y < s.y - 40);
+      if (Math.abs(dx) > 4) inp.aim = dx < 0 ? Math.PI : 0;
+      return inp;
+    }
     if (!foe) {
       // Nobody near: wandering about.
       if (--this.wander <= 0) { this.wanderDir = [-1, 0, 0, 1][Math.floor(game.rng() * 4)]; this.wander = 60 + game.rng() * 160; }
