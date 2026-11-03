@@ -64,7 +64,7 @@ const keyOf = (tx, ty) => `${tx},${ty}`;
 export const isFlag = id => id === K.CLAIM_FLAG || id === K.FLAG_DOWN;
 // What a raid can't dig through (only a ram or a charge breaks them), and what stays shut till a flag falls.
 const TOUGH = new Set([K.REINFORCED, K.IRON_DOOR, K.IRON_DOOR_OPEN]);
-const LOCKED = new Set([K.CHEST, ...K.SHULKER_BOXES]);
+const LOCKED = new Set([K.CHEST, K.CABINET, ...K.SHULKER_BOXES]);
 
 /** The base covering tile (tx, ty) ({ tx, ty, owner, level, hp, down, open }), or null. */
 export function claimAt(world, tx, ty) {
@@ -520,11 +520,12 @@ function load(game, s, item, tx, ty, id) {
   game.notify(s, `${BLOCKS[id].name}: ${t.ammo} ${k.ammo}`);
 }
 
-/** A turret with nothing in it takes what it shoots from a chest beside it (or above or below). */
+/** A turret with nothing in it takes what it shoots from a chest (or a cabinet) beside it (or above or below). */
 function restock(world, t, k) {
   for (let y = t.ty - 1; y <= t.ty + 1; y++) {
     for (let x = t.tx - 2; x <= t.tx + 2; x++) {
-      if (world.tile(x, y) !== K.CHEST) continue;
+      const id = world.tile(x, y);
+      if (id !== K.CHEST && id !== K.CABINET) continue;
       const inv = world.chests?.get(keyOf(x, y));
       const n = Math.min(k.most - t.ammo, inv?.count(k.ammo) || 0);
       if (n <= 0) continue;

@@ -10,7 +10,11 @@ import { BLOCKS, WALLS, SOLID, PLATFORMS, CLEAR, LIGHT, LIQUID, FLUID, FALLING, 
 import { WORLD_H } from './worldgen.js';
 import { hash3 } from './noise.js';
 import { itemOf } from './items.js';
-import { REACH, shapeTiles, canPlace, inHand, rightHand } from './worldplay.js';
+import { REACH, shapeTiles, canPlace, inHand, rightHand, brushFor, brushTiles, mayChange } from './worldplay.js';
+// (Building and decorating: variants' colours, the new things' pictures, blueprints' ghosts, signs.)
+import { painted, signText, SINKS } from './decor.js';
+import { decorMarks, decorThing, drawCraftIcon, drawCraftFood, SEE_THROUGH, HALF_SEEN } from './decorart.js';
+import { BUILDINGS, kitCells, kitCheck, kitShort } from './kits.js';
 import { skyLevel } from './monsters.js';
 import { itemColor, isPrecious } from './iteminfo.js';
 import { setItemPainter } from '../held.js';
@@ -68,7 +72,10 @@ function readPatch(world, px, py, grid) {
       const tx = x0 + i, ty = y0 + j, k = j * W + i;
       grid.fg[k] = world.tile(tx, ty);
       grid.bg[k] = world.wall(tx, ty);
-      grid.sh[k] = SOLID[grid.fg[k]] ? world.shape(tx, ty) : 0;
+      // (The shape byte: its shape, and in its top half its variant: tileworld.js's paint.)
+      const sb = world.shapeByte(tx, ty);
+      grid.sh[k] = SOLID[grid.fg[k]] ? sb & 15 : 0;
+      grid.pt[k] = sb >> 4;
     }
   }
 }
@@ -81,7 +88,7 @@ function covers(grid, k, side) {
 }
 
 // (w: how many tiles across the grid is.)
-const GRIDS = { w: PATCH + 2, fg: new Uint8Array((PATCH + 2) ** 2), bg: new Uint8Array((PATCH + 2) ** 2), sh: new Uint8Array((PATCH + 2) ** 2) };
+const GRIDS = { w: PATCH + 2, fg: new Uint8Array((PATCH + 2) ** 2), bg: new Uint8Array((PATCH + 2) ** 2), sh: new Uint8Array((PATCH + 2) ** 2), pt: new Uint8Array((PATCH + 2) ** 2) };
 
 /**
  * Draw patch (px, py) of `world` into g (set to world coordinates). What gives off light in it
@@ -268,7 +275,8 @@ function paintRim(g, grid, x0, y0, classic, edges) {
       if (!SOLID[id]) {
         // (What spills over its own tile: a crown's bumps, palm fronds, reeds standing up.)
         const pat = BLOCKS[id].pattern;
-        if (pat === 'leaves' || pat === 'frond' || (pat === 'reeds' && side === 2)) drawThing(g, grid, k, x, y, id, classic, x0 + i, y0 + j);
+        // (And what stands on a table's top, from the row above: decor.js's SINKS.)
+        if (pat === 'leaves' || pat === 'frond' || (pat === 'reeds' && side === 2) || (side === 0 && SINKS.has(pat) && BLOCKS[grid.fg[k + W]]?.surface)) drawThing(g, grid, k, x, y, id, classic, x0 + i, y0 + j);
         continue;
       }
       const shapeKey = SHAPE_KEYS[grid.sh[k]];
@@ -330,15 +338,20 @@ const BOOKS = ['#8a2c2c', '#2c4a8a', '#2c7a4a', '#8a6a2c', '#5a2c7a'];
 
 /** A solid block: its shape, filled; its marks; the edges where it meets the open (to edges). */
 function drawBlock(g, grid, k, x, y, id, classic, tx, ty, edges) {
-  const b = BLOCKS[id], W = grid.w, shapeKey = SHAPE_KEYS[grid.sh[k]], h = hash3(3, tx, ty);
+  // (Its variant's colours: decor.js. In the original, a pale tint of them.)
+  const b = grid.pt?.[k] ? painted(id, grid.pt[k]) : BLOCKS[id], W = grid.w, shapeKey = SHAPE_KEYS[grid.sh[k]], h = hash3(3, tx, ty);
   const pts = OUTLINE[shapeKey];
+  // (Gates and iron bars: what's behind them shows through. Glass panes and windows: half.)
+  if (SEE_THROUGH.has(b.pattern)) { marks(g, b, x, y, h, classic, grid, k); return; }
   // Fill.
-  if (classic) g.fillStyle = id === K.GLASS || id === K.ICE ? '#f4fbff' : '#fff';
+  if (classic) g.fillStyle = b.paper || (id === K.GLASS || id === K.ICE || HALF_SEEN.has(b.pattern) ? '#f4fbff' : '#fff');
   else g.fillStyle = tint(b.color, 0.93 + (h & 15) / 140);
+  if (HALF_SEEN.has(b.pattern) && !classic) g.globalAlpha = 0.6;
   if (shapeKey === 'full') g.fillRect(x, y, TILE, TILE);
   else poly(g, x, y, pts, true);
+  g.globalAlpha = 1;
   // Marks.
-  if (shapeKey === 'full') marks(g, b, x, y, h, classic, grid, k);
+  if (shapeKey === 'full' || b.pattern === 'trapdoor') marks(g, b, x, y, h, classic, grid, k);
   // Remastered: lit from above, shaded below and to the right.
   if (!classic && shapeKey === 'full') {
     if (!covers(grid, k - W, 2)) { g.fillStyle = 'rgba(255,255,255,0.22)'; g.fillRect(x, y, TILE, 2); }
@@ -611,14 +624,16 @@ function marks(g, b, x, y, h, classic, grid, k) {
       g.lineWidth = 0.8;
       for (let i = 0; i < 4; i++) { g.beginPath(); g.arc(x + 3 + ((h >>> (i * 4)) % 10), y + 3 + ((h >>> (i * 4 + 2)) % 10), 1.7, 0, Math.PI * 1.5); g.stroke(); }
       break;
-    default: break;
+    // (Building and decorating's blocks: decorart.js.)
+    default: decorMarks(g, b, x, y, h, classic); break;
   }
 }
 
 /** Something you walk through: trees, plants, torches, platforms, ladders, an open door. */
 function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
-  const b = BLOCKS[id], h = hash3(5, tx, ty), W = grid.w;
-  const col = classic ? '#fff' : b.color, line = classic ? INK : tint(b.color, 0.55);
+  // (Its variant's colours: decor.js. In the original, a pale tint of them.)
+  const b = grid.pt?.[k] ? painted(id, grid.pt[k]) : BLOCKS[id], h = hash3(5, tx, ty), W = grid.w;
+  const col = classic ? b.paper || '#fff' : b.color, line = classic ? INK : tint(b.color, 0.55);
   switch (b.pattern) {
     case 'bark': case 'birch': case 'palm': case 'stem': {
       // (Inside a crown: leaves behind it.)
@@ -690,7 +705,8 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
     case 'flower':
       g.strokeStyle = classic ? INK : '#4f8a34'; g.lineWidth = 1;
       g.beginPath(); g.moveTo(x + 8, y + TILE); g.lineTo(x + 8, y + 8); g.stroke();
-      g.fillStyle = classic ? '#fff' : ['#e05a6a', '#f2c230', '#8a6ae0', '#f2f2f2'][h & 3];
+      // (A flower picked and planted: which it is. Out in the world: one of four, by where it grows.)
+      g.fillStyle = classic ? b.paper || '#fff' : b.paint ? b.color : ['#e05a6a', '#f2c230', '#8a6ae0', '#f2f2f2'][h & 3];
       g.beginPath(); g.arc(x + 8, y + 7, 2.6, 0, Math.PI * 2); g.fill();
       if (classic) { g.strokeStyle = INK; g.stroke(); }
       break;
@@ -1058,11 +1074,11 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
       break;
     }
     case 'lantern': {
-      // A lamp in an iron frame: on a chain under a ceiling, else standing.
-      const hangs = SOLID[grid.fg[k - W]] || PLATFORMS[grid.fg[k - W]];
+      // A lamp in an iron frame: on a chain under a ceiling (or a chain), else standing (on a table: on its top).
+      const hangs = SOLID[grid.fg[k - W]] || PLATFORMS[grid.fg[k - W]] || grid.fg[k - W] === K.CHAIN;
       g.strokeStyle = classic ? INK : '#3a3430'; g.lineWidth = 1;
       if (hangs) { g.beginPath(); g.moveTo(x + 8, y); g.lineTo(x + 8, y + 5); g.stroke(); }
-      const top = hangs ? y + 5 : y + 7;
+      const top = hangs ? y + 5 : y + 7 + (BLOCKS[grid.fg[k + W]]?.surface || 0);
       g.fillStyle = '#ffd070'; g.fillRect(x + 5, top, 6, 7);
       g.fillStyle = '#fff4c0'; g.fillRect(x + 6.5, top + 1.5, 3, 4);
       g.fillStyle = classic ? INK : '#3a3430';
@@ -1198,6 +1214,8 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
       g.fillRect(x + 4, y + 5.5, 8, 1); g.fillRect(x + 4, y + 7.5, 6, 1);
       break;
     default:
+      // (Building and decorating's things: decorart.js.)
+      if (decorThing(g, grid, k, x, y, b, classic, h, col, line)) break;
       g.fillStyle = col; g.fillRect(x + 4, y + 4, 8, 8);
   }
 }
@@ -1828,7 +1846,7 @@ export function drawDrops(ctx, game, look, alpha = 1, view = null) {
 }
 
 // A block on its own, for its picture as an item: three tiles across, open round the middle.
-const ICON = { w: 3, fg: new Uint8Array(9), bg: new Uint8Array(9), sh: new Uint8Array(9) };
+const ICON = { w: 3, fg: new Uint8Array(9), bg: new Uint8Array(9), sh: new Uint8Array(9), pt: new Uint8Array(9) };
 const ICON_EDGES = [];
 
 /** A block's or a wall's picture as an item (as it looks in the world), w square at (x, y). */
@@ -1843,8 +1861,11 @@ export function drawTileIcon(ctx, it, x, y, w, classic) {
     ctx.strokeRect(0.5, 0.5, TILE - 1, TILE - 1);
   } else {
     const id = it.block, edges = ICON_EDGES;
-    ICON.fg.fill(AIR); ICON.bg.fill(NO_WALL); ICON.sh.fill(0);
+    ICON.fg.fill(AIR); ICON.bg.fill(NO_WALL); ICON.sh.fill(0); ICON.pt.fill(0);
     ICON.fg[4] = id;
+    // (A variant: its colours; a slab or stairs: shaped as they're put down.)
+    ICON.pt[4] = it.paint || 0;
+    if (SOLID[id]) ICON.sh[4] = it.shapeIcon || 0;
     edges.length = 0;
     if (SOLID[id]) drawBlock(ctx, ICON, 4, 0, 0, id, classic, 2, 3, edges);
     else drawThing(ctx, ICON, 4, 0, 0, id, classic, 2, 3);
@@ -1996,6 +2017,8 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
   }
   if (it.kind === 'food') { drawFoodIcon(ctx, it, x, y, w); return; }
   if (SURVIVAL_ICONS[it.key]) { ctx.strokeStyle = INK; ctx.fillStyle = c; SURVIVAL_ICONS[it.key](ctx, x, y, w, c); return; }
+  // (Building and decorating's materials, dyes and blueprints: decorart.js.)
+  if (drawCraftIcon(ctx, it, x, y, w)) return;
   if (it.kind === 'gear') { drawGearIcon(ctx, it, x, y, w); return; }
   if (it.kind === 'bucket') { drawBucketIcon(ctx, it, x, y, w); return; }
   if (it.kind === 'boat') { drawBoatIcon(ctx, it, x, y, w, classic); return; }
@@ -2043,7 +2066,7 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
 // ---- Things in hand (held.js draws them; hands.js says how each looks) ----------------------------
 
 // How big things are in a hand (world units: a block's 16 across).
-const HAND_SIZE = { block: 6.5, wall: 6.5, food: 6, gear: 6, quest: 5.5, material: 5, ammo: 5, attachment: 6, scroll: 5.5, contract: 5.5, bucket: 6.5 };
+const HAND_SIZE = { block: 6.5, wall: 6.5, food: 6, gear: 6, quest: 5.5, material: 5, ammo: 5, attachment: 6, scroll: 5.5, contract: 5.5, bucket: 6.5, blueprint: 6.5 };
 // (A boat, carried: boatart.js.)
 HAND_SIZE.boat = 11;
 
@@ -2203,6 +2226,8 @@ const SURVIVAL_ICONS = {
 /** Food and potions' icons (items.js: their look). */
 function drawFoodIcon(ctx, it, x, y, w) {
   const c = it.color;
+  // (Cooked on a stove: decorart.js.)
+  if (drawCraftFood(ctx, it, x, y, w)) return;
   ctx.strokeStyle = INK;
   switch (it.look) {
     case 'meat': case 'chop':
@@ -2326,7 +2351,18 @@ export function drawTarget(ctx, game, me, look) {
     ctx.stroke();
   }
   const building = item && (item.kind === 'block' || item.kind === 'wall');
-  if (building) {
+  // (Fill and replace: everything a click would change: buildtools.js.)
+  const brush = building ? brushFor(item, w.brush) : null;
+  if (brush === 'fill' || brush === 'replace') {
+    const cells = brushCells(game, item, brush, t);
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = cells ? (classic ? '#9ad' : item.color || '#8ac') : 'rgba(220,60,60,0.6)';
+    for (const c of cells || [t]) ctx.fillRect(c.tx * TILE, c.ty * TILE, TILE, TILE);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = classic ? INK : '#fff';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText(cells ? `${cells.length}` : brush === 'fill' ? 'not closed in' : '-', x + TILE + 2, y - 2);
+  } else if (building) {
     const cells = w.drag ? shapeTiles(w.brush, w.drag, t) : [t];
     ctx.globalAlpha = 0.45;
     for (const c of cells) {
@@ -2342,12 +2378,101 @@ export function drawTarget(ctx, game, me, look) {
       ctx.fillText(`${cells.filter(c => canPlace(game, item, c.tx, c.ty)).length}`, x + TILE + 2, y - 2);
     }
   }
+  // A blueprint in hand: its building's ghost, where it would go (kits.js).
+  const r = rightHand(me).item, bp = left?.kind === 'blueprint' ? left : r?.kind === 'blueprint' ? r : null;
+  if (bp) drawKitGhost(ctx, game, me, bp, t, classic);
   // The block's outline: solid in reach, dashed out of it.
   ctx.strokeStyle = classic ? INK : 'rgba(255,255,255,0.85)';
   ctx.lineWidth = 1;
   if (!t.near) ctx.setLineDash?.([2, 2]);
   ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
   if (!t.near) ctx.setLineDash?.([]);
+  // A sign under the crosshair: what it says (decor.js).
+  const said = signText(game.world, t.tx, t.ty);
+  if (said) label(ctx, said, x + TILE / 2, y - 3, classic);
+}
+
+/** Text in a box, its middle at x, its bottom at y (world units). */
+function label(ctx, text, x, y, classic) {
+  ctx.font = '8px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  const w = Math.min(220, (ctx.measureText?.(text)?.width ?? text.length * 4.4) + 8), h = 12;
+  ctx.globalAlpha = 0.88;
+  ctx.fillStyle = classic ? '#fffdf4' : 'rgba(16,18,24,0.9)';
+  ctx.fillRect(x - w / 2, y - h, w, h);
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = classic ? INK : 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 0.8;
+  ctx.strokeRect(x - w / 2, y - h, w, h);
+  ctx.fillStyle = classic ? INK : '#f4f0e2';
+  ctx.fillText(text, x - w / 2 + 4, y - 3.5);
+}
+
+// (What a fill or replace would change, worked out again only when something's changed.)
+let BRUSH_SEEN = { key: '', cells: null };
+function brushCells(game, item, brush, t) {
+  const key = `${item.key}|${brush}|${t.tx},${t.ty}|${game.world.version}`;
+  if (BRUSH_SEEN.key !== key) BRUSH_SEEN = { key, cells: brushTiles(game.world, item, brush, t) };
+  return BRUSH_SEEN.cells;
+}
+
+// A blueprint's building, as a little world of its own to draw (once for each building, each way round).
+const GHOSTS = new Map();
+function ghostOf(kit, flip) {
+  const k = `${kit}|${flip ? 1 : 0}`;
+  let gh = GHOSTS.get(k);
+  if (gh) return gh;
+  const cells = kitCells(kit, flip);
+  let x0 = 0, x1 = 0, y0 = 0;
+  for (const c of cells) { x0 = Math.min(x0, c.dx); x1 = Math.max(x1, c.dx); y0 = Math.min(y0, c.dy); }
+  const w = x1 - x0 + 3, h = -y0 + 3, n = w * h;
+  gh = { w, x0, y0, cells, grid: { w, fg: new Uint8Array(n), bg: new Uint8Array(n).fill(NO_WALL), sh: new Uint8Array(n), pt: new Uint8Array(n) } };
+  for (const c of cells) {
+    const i = (c.dy - y0 + 1) * w + (c.dx - x0 + 1);
+    if (c.layer === 'bg') gh.grid.bg[i] = c.id;
+    else if (c.layer === 'fg') { gh.grid.fg[i] = c.id; gh.grid.sh[i] = SOLID[c.id] ? c.shape : 0; }
+  }
+  GHOSTS.set(k, gh);
+  return gh;
+}
+// (Where the building would go, checked again only when something's changed.)
+let KIT_SEEN = { key: '', check: null, short: null };
+
+/** A blueprint's building drawn faintly where it would go (red where something's in the way), and what it needs. */
+function drawKitGhost(ctx, game, me, bp, t, classic) {
+  const flip = !!me.world.kitFlip, gh = ghostOf(bp.kit, flip), world = game.world;
+  const key = `${bp.kit}|${flip}|${t.tx},${t.ty}|${world.version}|${me.world.inv.version}|${Math.floor(game.tick / 15)}`;
+  if (KIT_SEEN.key !== key) {
+    KIT_SEEN = { key, check: kitCheck(game, bp.kit, flip, t.tx, t.ty, (x, y) => mayChange(world, me, x, y)), short: kitShort(bp.kit, me.world.inv, !!(me.world.dev || me.world.hostDev)) };
+  }
+  const { check, short } = KIT_SEEN, g = gh.grid, edges = [];
+  ctx.globalAlpha = check.ok && !short.length ? 0.6 : 0.4;
+  for (const c of gh.cells) if (c.layer === 'bg') drawWall(ctx, (t.tx + c.dx) * TILE, (t.ty + c.dy) * TILE, c.id, classic, t.tx + c.dx, t.ty + c.dy);
+  for (const c of gh.cells) {
+    if (c.layer !== 'fg') continue;
+    const i = (c.dy - gh.y0 + 1) * gh.w + (c.dx - gh.x0 + 1), x = (t.tx + c.dx) * TILE, y = (t.ty + c.dy) * TILE;
+    if (SOLID[c.id]) drawBlock(ctx, g, i, x, y, c.id, classic, t.tx + c.dx, t.ty + c.dy, edges);
+    else drawThing(ctx, g, i, x, y, c.id, classic, t.tx + c.dx, t.ty + c.dy);
+  }
+  if (edges.length) {
+    ctx.strokeStyle = classic ? INK : 'rgba(10,8,12,0.75)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let e = 0; e < edges.length; e += 4) { ctx.moveTo(edges[e], edges[e + 1]); ctx.lineTo(edges[e + 2], edges[e + 3]); }
+    ctx.stroke();
+  }
+  // What's in the way.
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = 'rgba(220,50,50,0.9)';
+  for (const [bx, by] of check.bad) ctx.fillRect(bx * TILE, by * TILE, TILE, TILE);
+  ctx.globalAlpha = 1;
+  // What it is, and what's wrong (or that a click builds it).
+  const name = BUILDINGS[bp.kit]?.name || bp.name;
+  const top = (t.ty + gh.y0) * TILE - 4, lines = [];
+  if (!check.ok) lines.push(check.why);
+  else if (short.length) lines.push(`Needs ${short.slice(0, 3).map(([k, n]) => `${n} ${itemOf(k)?.name.toLowerCase() ?? k}`).join(', ')}${short.length > 3 ? '...' : ''}`);
+  else lines.push('Click to build it');
+  label(ctx, `${name}: ${lines[0]}  ·  R flips it`, t.tx * TILE + TILE / 2, top, classic);
 }
 
 export { REACH };

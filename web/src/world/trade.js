@@ -32,9 +32,12 @@ const RAW = {
   BananaBomb: 12, HolyHandGrenade: 60, Skunk: 10, Sheep: 12, SuperSheep: 25, OldWoman: 15, MadCow: 25, AirStrike: 60,
   NapalmStrike: 70, ConcreteDonkey: 150, Earthquake: 100, Kamikaze: 15, FirePunch: 40,
   coins: 1,
+  // (Gathered for building and decorating: craftitems.js. Flowers make dyes; the two sold only by farms, more.)
+  reed: 0.2, kelp: 0.1, coral_fan: 0.4, petals: 0.1, fern: 0.15, bush: 0.15, stick: 0.1, ash: 0.05, calcite: 0.15, pumpkin: 0.6, glowcap: 0.6,
+  rose: 0.3, dandelion: 0.3, violet: 0.3, daisy: 0.3, cornflower: 0.8, marigold: 0.8, dark_bricks: 0.6,
 };
 // (The work in making something, by where it's made.)
-const WORK = { hand: 1.1, workbench: 1.15, furnace: 1.2, anvil: 1.3, gunsmith: 1.3, campfire: 1.2 };
+const WORK = { hand: 1.1, workbench: 1.15, furnace: 1.2, anvil: 1.3, gunsmith: 1.3, campfire: 1.2, stove: 1.25, loom: 1.15, mason: 1.15, drafting: 1.5 };
 
 let VALUES = null;
 
@@ -98,8 +101,11 @@ export const SHOPS = {
       ['coal', 0.8, 5], ['copper_bar', 0.5, 4], ['iron_bar', 0.4, 3], ['arrows', 0.6, 3], ['bullets', 0.6, 3], ['claim_flag', 0.4, 1],
       ['wheat', 0.5, 4], ['cobblestone', 0.5, 4], ['stone_bricks', 0.5, 4], ['plank_wall', 0.6, 4], ['healing_potion', 0.3, 2],
       ['wheat_seeds', 0.5, 4], ['campfire', 0.5, 2],
+      // (Building and decorating: craftitems.js.)
+      ['nails', 0.5, 3], ['string', 0.5, 3], ['paper', 0.5, 3], ['candle', 0.5, 3], ['glass_pane', 0.5, 4], ['window', 0.4, 2], ['trapdoor', 0.4, 2],
+      ['flower_pot', 0.4, 2], ['shelf', 0.3, 2], ['scaffolding', 0.4, 3], ['wooden_slab', 0.4, 3], ['wooden_stairs', 0.4, 3], ['blueprint_cottage', 0.15, 1],
     ],
-    rare: [['merc_contract', 1], ['iron_pickaxe', 1], ['stained_glass', 3]],
+    rare: [['merc_contract', 1], ['iron_pickaxe', 1], ['stained_glass', 3], ['painting', 1], ['blueprint_wall', 1], ['blueprint_bridge', 1]],
   },
   smith: {
     name: 'Smithy', markup: 1.2, rate: 0.5, buys: it => it.kind === 'tool' || BAR.has(it.key) || ORE.has(it.key) || isMelee(it) || it.key === 'metal' || (it.kind === 'gear' && it.wear !== 'ring' && it.wear !== 'amulet'),
@@ -109,8 +115,9 @@ export const SHOPS = {
       ['BattleAxe', 0.4, 1], ['Sledgehammer', 0.4, 1], ['BaseballBat', 0.4, 1], ['metal', 0.6, 4], ['blast_bricks', 0.4, 3],
       ['lantern', 0.5, 3], ['NinjaRope', 0.4, 1], ['coal', 0.7, 6],
       ['bucket', 0.6, 2],
+      ['nails', 0.8, 4], ['chain', 0.6, 4], ['iron_bars', 0.5, 4], ['stove', 0.3, 1], ['lamp_post', 0.3, 1], ['iron_block', 0.3, 2], ['mason_bench', 0.3, 1],
     ],
-    rare: [['crystal_pickaxe', 1], ['diamond_pickaxe', 1], ['FirePunch', 1]],
+    rare: [['crystal_pickaxe', 1], ['diamond_pickaxe', 1], ['FirePunch', 1], ['chandelier', 1], ['crystal_lamp', 1], ['gold_block', 1]],
   },
   gunsmith: {
     name: "Gunsmith's", markup: 1.2, rate: 0.5, buys: isGun,
@@ -134,25 +141,32 @@ export const SHOPS = {
       ['silver_bar', 0.6, 4], ['gold_bar', 0.6, 4], ['crystal_ore', 0.4, 4], ['ember_ore', 0.3, 3], ['stained_glass', 0.5, 4],
       ['roof_tiles', 0.4, 4], ['snow_bricks', 0.3, 4], ['sandstone_bricks', 0.3, 4], ['obsidian', 0.3, 3], ['Teleport', 0.2, 1],
       ['Sheep', 0.2, 2], ['greater_potion', 0.25, 1], ['recall_scroll', 0.4, 2],
+      // (Dyes, cloth and fine stone: craftitems.js.)
+      ['red_dye', 0.5, 3], ['blue_dye', 0.5, 3], ['yellow_dye', 0.5, 3], ['green_dye', 0.4, 3], ['white_dye', 0.5, 3], ['black_dye', 0.4, 3],
+      ['purple_dye', 0.3, 2], ['cloth', 0.5, 4], ['paper_lantern', 0.4, 3], ['concrete', 0.3, 4], ['terracotta', 0.4, 4], ['polished_marble', 0.3, 4],
+      ['book', 0.3, 2], ['blueprint_stone_house', 0.12, 1], ['blueprint_workshop', 0.12, 1],
     ],
-    rare: [['crystal_pickaxe', 1], ['MagicBullet', 1], ['Minigun', 1], ['HolyHandGrenade', 1], ['SuperSheep', 1], ['MadCow', 1], ['diamond', 1], ['ConcreteDonkey', 1]],
+    rare: [['blueprint_watchtower', 1], ['painting', 2], ['crystal_pickaxe', 1], ['MagicBullet', 1], ['Minigun', 1], ['HolyHandGrenade', 1], ['SuperSheep', 1], ['MadCow', 1], ['diamond', 1], ['ConcreteDonkey', 1]],
   },
   innkeeper: {
     name: 'Inn', markup: 1.2, rate: 0.4, buys: isFood,
     sells: [['bread', 1, 8], ['apple', 1, 6], ['stew', 1, 5], ['torch', 0.6, 4], ['bed', 0.3, 1], ['healing_potion', 0.2, 1],
-      ['steak', 0.6, 4], ['cooked_chicken', 0.6, 4], ['cooked_fish', 0.5, 4], ['baked_potato', 0.5, 4], ['berry_pie', 0.3, 2], ['rabbit_stew', 0.2, 2]],
+      ['steak', 0.6, 4], ['cooked_chicken', 0.6, 4], ['cooked_fish', 0.5, 4], ['baked_potato', 0.5, 4], ['berry_pie', 0.3, 2], ['rabbit_stew', 0.2, 2],
+      ['cookie', 0.5, 3], ['apple_pie', 0.3, 2], ['veg_soup', 0.4, 2], ['fish_stew', 0.3, 2], ['candle', 0.4, 3]],
   },
   healer: {
     name: 'Temple', markup: 1.15, rate: 0.5, buys: it => it.key === 'mushroom' || it.key === 'cactus' || it.look === 'potion',
-    sells: [['healing_potion', 1, 5], ['greater_potion', 0.6, 2], ['apple', 0.6, 4], ['stew', 0.5, 3], ['recall_scroll', 0.8, 3]],
+    sells: [['healing_potion', 1, 5], ['greater_potion', 0.6, 2], ['apple', 0.6, 4], ['stew', 0.5, 3], ['recall_scroll', 0.8, 3], ['candle', 0.6, 4], ['book', 0.3, 1]],
   },
   // A farm (a village's farmers): its crops and seeds, eggs, wool and leather, and what a farm needs.
   farmer: {
     name: 'Farm', markup: 1.15, rate: 0.5,
-    buys: it => isFood(it) || ['wheat', 'wheat_seeds', 'mushroom', 'cactus', 'wood', 'egg', 'wool', 'leather', 'feather', 'bone', 'bone_meal'].includes(it.key),
+    buys: it => isFood(it) || ['wheat', 'wheat_seeds', 'mushroom', 'cactus', 'wood', 'egg', 'wool', 'leather', 'feather', 'bone', 'bone_meal', 'hay_bale', 'reed', 'kelp', 'petals', 'rose', 'dandelion', 'violet', 'daisy'].includes(it.key),
     sells: [
       ['wheat', 1, 8], ['bread', 1, 6], ['apple', 1, 6], ['thatch', 0.6, 4], ['stew', 0.4, 3], ['wheat_seeds', 1, 4], ['carrot', 0.8, 4], ['potato', 0.8, 4],
       ['egg', 0.7, 3], ['hoe', 0.5, 1], ['bone_meal', 0.5, 3], ['wool', 0.5, 4], ['leather', 0.4, 3], ['raw_beef', 0.4, 3], ['raw_chicken', 0.4, 3], ['campfire', 0.3, 1],
+      // (Flowers, two of them only to be had here; hay, string, tallow and pots.)
+      ['cornflower', 0.6, 3], ['marigold', 0.6, 3], ['rose', 0.4, 2], ['daisy', 0.3, 2], ['hay_bale', 0.6, 3], ['string', 0.4, 3], ['tallow', 0.4, 2], ['flower_pot', 0.4, 2],
     ],
     rare: [['shears', 1], ['golden_apple', 1]],
   },

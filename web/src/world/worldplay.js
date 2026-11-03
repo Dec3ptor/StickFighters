@@ -43,12 +43,19 @@ import {
   baseBlockGone, claimsToSave, claimsFromSave, useBase, interactBase, basesTick, baseRaidKill, baseRaidInfo, alarm,
 } from './bases.js';
 import { rideBoat, boatsTick, boatInput, launch as launchBoat } from './boats.js';
+// (Building and decorating: decor.js, kits.js, buildtools.js.)
+import { decorDrops, decorSupported, DECOR_SUPPORT, afterPlace, opens, openShut, usePot, sitDown, sitInput, standUp, signText, signGone, writeSign } from './decor.js';
+import { BUILDINGS, kitCheck, kitShort, startKit, kitsTick, finishKits } from './kits.js';
+import { pickBlock, fillTiles, replaceTiles, replaceable, noteBuilt, undoLast } from './buildtools.js';
+import { keyLabel } from '../keys.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
 /** The building brushes (R cycles them while holding blocks): one block, or a shape dragged out. */
-export const BRUSHES = ['single', 'line', 'rect', 'box'];
-export const BRUSH_NAMES = { single: 'One block', line: 'Line', rect: 'Rectangle', box: 'Box (outline)' };
+export const BRUSHES = ['single', 'line', 'rect', 'box', 'fill', 'replace'];
+export const BRUSH_NAMES = { single: 'One block', line: 'Line', rect: 'Rectangle', box: 'Box (outline)', fill: 'Fill (what\'s closed in)', replace: 'Replace (the same blocks joined)' };
+/** The brushes that are a click, not a drag: fill and replace (buildtools.js). */
+const CLICK_BRUSHES = new Set(['fill', 'replace']);
 const MAX_DRAG = 32;           // tiles a dragged shape can reach either way
 const PLACE_EVERY = 5;         // updates between blocks placed while holding the button (at full speed)
 const DROP_LIFE = 5 * 60 * 60; // things on the ground go after five minutes (at full speed)
@@ -89,7 +96,7 @@ export const CHEST_SIZE = 30;
 const chestKey = (tx, ty) => `${tx},${ty}`;
 
 /** Whether block `id` keeps things in the world: a chest, or a shulker box (an ender chest's are each player's own). */
-export const isContainer = id => id === K.CHEST || K.SHULKER_BOXES.has(id);
+export const isContainer = id => id === K.CHEST || id === K.CABINET || K.SHULKER_BOXES.has(id);
 
 /**
  * The things in the chest (or shulker box) at (tx, ty) (made empty the first time it's looked
@@ -118,7 +125,7 @@ export function boxFor(game, s, tx, ty) {
 /** What kind of thing's open at (tx, ty), and what it's called: { kind ('chest', 'shulker', 'ender'), name }. */
 export function boxKind(world, tx, ty) {
   const id = world.tile(tx, ty);
-  return id === K.ENDER_CHEST ? { kind: 'ender', name: 'Your ender chest' } : K.SHULKER_BOXES.has(id) ? { kind: 'shulker', name: BLOCKS[id].name } : { kind: 'chest', name: 'The chest' };
+  return id === K.ENDER_CHEST ? { kind: 'ender', name: 'Your ender chest' } : K.SHULKER_BOXES.has(id) ? { kind: 'shulker', name: BLOCKS[id].name } : { kind: 'chest', name: id === K.CABINET ? 'The cabinet' : 'The chest' };
 }
 
 /** A shulker box at (tx, ty) broken: it drops whole, with what's in it (an empty one: just the box). */
@@ -687,7 +694,7 @@ function dig(game, s, it, inp) {
  * doors come down whole, crates spill what's in them, and whatever stood on it goes too.
  */
 export function breakBlock(game, tx, ty, by = null) {
-  const world = game.world, id = world.tile(tx, ty), b = BLOCKS[id];
+  const world = game.world, id = world.tile(tx, ty), b = BLOCKS[id], sb = world.shapeByte(tx, ty);
   let got;
   // (Water itself isn't broken: it's scooped up, with a bucket.)
   if (id === AIR || b.resist >= 1e9 || K.PURE[id]) return false;
@@ -707,6 +714,8 @@ export function breakBlock(game, tx, ty, by = null) {
     else if (id === K.TREASURE) openTreasure(game, x, y);
     // (A shulker box: picked up whole, what's in it kept in it.)
     else if (K.SHULKER_BOXES.has(id)) dropShulker(game, tx, ty, id, x, y);
+    // (Its variant's item, a flower pot's flower, plants gathered: decor.js.)
+    else if ((got = decorDrops(world, tx, ty, id, sb))) for (const [key, n] of got) dropItem(game, key, n, x, y, (game.rng() - 0.5) * 2, -1.5);
     // (Crops by how far they've grown, seeds from grass, flint from gravel: survival.js.)
     else if ((got = blockDrops(game, id))) for (const [key, n] of got) dropItem(game, key, n, x, y, (game.rng() - 0.5) * 2, -1.5);
     else if (b.drop) {
@@ -720,10 +729,11 @@ export function breakBlock(game, tx, ty, by = null) {
         questEvent(game, by, { type: 'mine', key: b.drop });
       }
     }
-    if (id === K.CHEST) spillChest(game, tx, ty);
+    if (id === K.CHEST || id === K.CABINET) spillChest(game, tx, ty);
     // (A base's flag: the base goes with it. A turret: what's in it, dropped. bases.js.)
     baseBlockGone(game, tx, ty, id, BASES);
     if (id === K.WAYSTONE) removeWaystone(world, tx, ty);
+    if (id === K.SIGN) signGone(world, tx, ty);
   }
   game.sound(b.wood ? 'thunk' : 'smash', x, y);
   game.fx?.rubble?.(x, y, 6);
@@ -737,12 +747,15 @@ function settle(game, tx, ty) {
   for (const [x, y] of [[tx, ty - 1], [tx, ty + 1], [tx - 1, ty], [tx + 1, ty]]) {
     const id = world.tile(x, y);
     if (id === AIR || supported(world, x, y, id)) continue;
-    const b = BLOCKS[id];
+    const b = BLOCKS[id], sb = world.shapeByte(x, y);
     if (DOORS.has(id)) { breakBlock(game, x, y); continue; }
     world.setTile(x, y, LIQUID[id] ? K.WATER : AIR);
+    const got = K.SHULKER_BOXES.has(id) ? null : decorDrops(world, x, y, id, sb);
     if (K.SHULKER_BOXES.has(id)) dropShulker(game, x, y, id, x * TILE + TILE / 2, y * TILE + TILE / 2);
+    else if (got) for (const [key, n] of got) dropItem(game, key, n, x * TILE + TILE / 2, y * TILE + TILE / 2);
     else if (b.drop) dropItem(game, b.drop, 1, x * TILE + TILE / 2, y * TILE + TILE / 2);
-    if (id === K.CHEST) spillChest(game, x, y);
+    if (id === K.CHEST || id === K.CABINET) spillChest(game, x, y);
+    if (id === K.SIGN) signGone(world, x, y);
     baseBlockGone(game, x, y, id, BASES);
     if (id === K.WAYSTONE) removeWaystone(world, x, y);
     settle(game, x, y);
@@ -753,6 +766,8 @@ function settle(game, tx, ty) {
 function supported(world, x, y, id) {
   // (A base's flag is planted: it stays, whatever's dug from under it.)
   if (isFlag(id)) return true;
+  // (Candles, lamps, pots, paintings, columns, scaffolding...: decor.js.)
+  if (DECOR_SUPPORT.has(id)) return decorSupported(world, x, y, id);
   if (BLOCKS[id].furniture) return SOLID[world.tile(x, y + 1)] || PLATFORMS[world.tile(x, y + 1)];
   if (NEEDS_GROUND.has(id)) return SOLID[world.tile(x, y + 1)] || (id === K.CACTUS && world.tile(x, y + 1) === K.CACTUS) || (id === K.CACTUS && (world.tile(x - 1, y) === K.CACTUS || world.tile(x + 1, y) === K.CACTUS));
   if (id === K.VINE) return world.tile(x, y - 1) === K.VINE || SOLID[world.tile(x, y - 1)] || LEAF.has(world.tile(x, y - 1));
@@ -893,6 +908,7 @@ export function canPlace(game, it, tx, ty) {
   if (isShutDoor(id)) return doorSpot(game, tx, ty) != null;
   if (SOLID[id] && soldierIn(game, tx, ty, ty)) return false;
   if (id === K.TORCH) return SOLID[world.tile(tx, ty + 1)] || SOLID[world.tile(tx - 1, ty)] || SOLID[world.tile(tx + 1, ty)] || world.wall(tx, ty) !== NO_WALL;
+  if (DECOR_SUPPORT.has(id)) return decorSupported(world, tx, ty, id);
   if (id === K.LANTERN || id === K.BANNER || id === K.FENCE) return hangsOrStands(world, tx, ty, id);
   if (NEEDS_GROUND.has(id)) return SOLID[world.tile(tx, ty + 1)];
   // (Furniture stands on the floor, or a platform.)
@@ -919,8 +935,11 @@ function doorSpot(game, tx, ty) {
 }
 
 
-/** Put one of the soldier's `it` at (tx, ty). Returns true if it went in. */
-function placeOne(game, s, it, tx, ty) {
+/**
+ * Put one of the soldier's `it` at (tx, ty). Returns true if it went in. cells: what went in is
+ * added to it (for undo: buildtools.js).
+ */
+function placeOne(game, s, it, tx, ty, cells = null) {
   const w = s.world, world = game.world;
   if (w.inv.count(it.key) <= 0 || !canPlace(game, it, tx, ty)) return false;
   // (Someone else's base: nothing, unless it's open to a raid: then blocks, a ladder over its wall...)
@@ -935,11 +954,17 @@ function placeOne(game, s, it, tx, ty) {
     if (game.tick - (w.toldClaim || -1e9) > 90) { w.toldClaim = game.tick; game.notify(s, `${it.name}: only in your own base (put up a base flag first)`); }
     return false;
   }
-  if (it.kind === 'wall') world.setWall(tx, ty, it.wall);
+  if (it.kind === 'wall') { world.setWall(tx, ty, it.wall); cells?.push({ tx, ty, layer: 'bg', id: it.wall, key: it.key }); }
   else if (isShutDoor(it.block)) {
     const bottom = doorSpot(game, tx, ty);
-    for (let y = bottom - 2; y <= bottom; y++) world.setTile(tx, y, it.block);
-  } else world.setTile(tx, ty, it.block);
+    for (let y = bottom - 2; y <= bottom; y++) { world.setTile(tx, y, it.block); cells?.push({ tx, ty: y, layer: 'fg', id: it.block, key: y === bottom ? it.key : null }); }
+  } else {
+    world.setTile(tx, ty, it.block);
+    // (Its variant, its shape: decor.js. A sign: what's written on it, asked for.)
+    afterPlace(world, it, tx, ty, s, w.target?.ty === ty ? w.target.y : null);
+    cells?.push({ tx, ty, layer: 'fg', id: it.block, key: it.key });
+    if (it.block === K.SIGN) { signGone(world, tx, ty); if (!s.npc) w.signEdit = { tx, ty, text: '', tick: game.tick }; }
+  }
   if (it.box) {
     // (A shulker box: the one in hand, what's in it put in the box put down.)
     const i = [w.slot, w.slot2].find(j => j >= 0 && w.inv.slots[j]?.key === it.key) ?? w.inv.slots.findIndex(sl => sl?.key === it.key);
@@ -992,15 +1017,23 @@ export function shapeTiles(brush, a, b) {
 /** Holding blocks or walls: build where the crosshair is (or drag out a line, rectangle or box). */
 function build(game, s, it, inp, pressed = inp.firePressed) {
   const w = s.world, t = w.target;
-  const brush = isShutDoor(it.block) || it.block === K.TORCH ? 'single' : w.brush;
+  const brush = brushFor(it, w.brush);
   if (brush === 'single') {
     w.drag = null;
     if (!inp.fire || w.cool > 0 || !t.near) return;
-    if (placeOne(game, s, it, t.tx, t.ty)) {
+    const cells = [];
+    if (placeOne(game, s, it, t.tx, t.ty, cells)) {
       w.cool = PLACE_EVERY / MOTION.timeScale;
       startAct(s, 'place', PLACE_EVERY + 4);
       game.sound('build', t.tx * TILE + 8, t.ty * TILE + 8);
+      noteBuilt(game, s, cells);
     }
+    return;
+  }
+  // Fill (what's closed in) and replace (the same blocks joined): a click (buildtools.js).
+  if (CLICK_BRUSHES.has(brush)) {
+    w.drag = null;
+    if (inp.fire && pressed && t.near) fillOrReplace(game, s, it, brush, t);
     return;
   }
   if (inp.fire && pressed && t.near) w.drag = { tx: t.tx, ty: t.ty };
@@ -1008,10 +1041,11 @@ function build(game, s, it, inp, pressed = inp.firePressed) {
   // Let go: the whole shape goes in, as far as the blocks carried go (a few passes, so blocks
   // with nothing to build onto yet get it from those put in first).
   let left = shapeTiles(brush, w.drag, t), placed = 0;
+  const cells = [];
   w.drag = null;
   for (let pass = 0; pass < 4 && left.length; pass++) {
     const next = [];
-    for (const p of left) { if (placeOne(game, s, it, p.tx, p.ty)) placed++; else next.push(p); }
+    for (const p of left) { if (placeOne(game, s, it, p.tx, p.ty, cells)) placed++; else next.push(p); }
     if (next.length === left.length) break;
     left = next;
   }
@@ -1019,7 +1053,76 @@ function build(game, s, it, inp, pressed = inp.firePressed) {
     startAct(s, 'place', 14);
     game.sound('build', t.tx * TILE + 8, t.ty * TILE + 8);
     game.notify(s, `${placed} × ${it.name}`);
+    noteBuilt(game, s, cells);
   }
+}
+
+/** The brush building with `it` uses: one at a time for doors, torches and what isn't a plain block or wall (fill and replace: blocks and walls). */
+export function brushFor(it, brush) {
+  if (isShutDoor(it.block) || it.block === K.TORCH) return 'single';
+  if (CLICK_BRUSHES.has(brush) && it.kind === 'block' && (!SOLID[it.block] || it.shape)) return 'single';
+  return brush;
+}
+
+/** The tiles the fill or replace brush (holding `it`) would change from tile t: [{ tx, ty }], or null. */
+export function brushTiles(world, it, brush, t) {
+  const wall = it.kind === 'wall';
+  return brush === 'fill' ? fillTiles(world, t.tx, t.ty, wall) : brush === 'replace' ? replaceTiles(world, t.tx, t.ty, wall) : null;
+}
+
+/**
+ * Fill (the open space closed in round where it's clicked: blocks, or walls behind) or replace (the
+ * same blocks joined to it, each given back as it's swapped for one of `it`), as far as what's carried goes.
+ */
+function fillOrReplace(game, s, it, brush, t) {
+  const w = s.world, world = game.world, tiles = brushTiles(world, it, brush, t);
+  if (!tiles) {
+    game.notify(s, brush === 'fill' ? 'Nothing closed in to fill there (it would spill out)' : `Nothing there to replace with ${it.name.toLowerCase()} (or too much of it)`);
+    return;
+  }
+  const cells = [];
+  let n = 0;
+  if (brush === 'fill') {
+    for (let pass = 0; pass < 3; pass++) for (const p of tiles) if (placeOne(game, s, it, p.tx, p.ty, cells)) n++;
+  } else {
+    for (const p of tiles) {
+      if (w.inv.count(it.key) <= 0) break;
+      if (!mayChange(world, s, p.tx, p.ty)) { notYours(game, s, p.tx, p.ty); continue; }
+      if (it.kind === 'wall') {
+        const was = world.wall(p.tx, p.ty);
+        if (was === it.wall) continue;
+        world.setWall(p.tx, p.ty, it.wall);
+        w.inv.remove(it.key, 1);
+        if (WALLS_DROP(was)) giveTo(game, s, WALLS_DROP(was), 1);
+        cells.push({ tx: p.tx, ty: p.ty, layer: 'bg', id: it.wall, key: it.key, was: { id: was } });
+        n++;
+        continue;
+      }
+      const id = world.tile(p.tx, p.ty), sb = world.shapeByte(p.tx, p.ty);
+      if (!replaceable(id) || (id === it.block && (sb >> 4) === (it.paint || 0))) continue;
+      const got = decorDrops(world, p.tx, p.ty, id, sb)?.[0]?.[0] || BLOCKS[id].drop;
+      world.setTile(p.tx, p.ty, it.block);
+      afterPlace(world, it, p.tx, p.ty, s);
+      // (A shaped block keeps its shape.)
+      if (sb & 15) world.setShape(p.tx, p.ty, sb & 15);
+      w.inv.remove(it.key, 1);
+      if (got) giveTo(game, s, got, 1);
+      cells.push({ tx: p.tx, ty: p.ty, layer: 'fg', id: it.block, key: it.key, was: { id, sb, key: got || null } });
+      n++;
+    }
+  }
+  if (!n) { game.notify(s, w.inv.count(it.key) ? 'Nothing changed' : `You have no ${it.name.toLowerCase()}`); return; }
+  startAct(s, 'place', 14);
+  game.sound('build', t.tx * TILE + 8, t.ty * TILE + 8);
+  game.notify(s, `${brush === 'fill' ? 'Filled' : 'Replaced'}: ${n} × ${it.name}${n < tiles.length ? ` (${tiles.length - n} more wanted)` : ''}`);
+  noteBuilt(game, s, cells);
+}
+const WALLS_DROP = id => (id !== NO_WALL && K.WALLS[id]?.drop) || null;
+
+/** n of `key` into player s's things (on the ground at their feet what doesn't fit). */
+function giveTo(game, s, key, n) {
+  const left = s.world.inv.add(key, n);
+  if (left > 0) dropItem(game, key, left, s.x, s.y - 14, s.facing * 2, -2, 30);
 }
 
 /**
@@ -1093,6 +1196,27 @@ function interactWith(game, s) {
   // (A turret, a base's flag, a locked iron door: bases.js.)
   const base = interactBase(game, s, t.tx, t.ty, id);
   if (base !== undefined) return base;
+  // (Decorations: decor.js. Windows, trapdoors and gates open and shut; a flower pot takes a flower,
+  // or gives it back; a chair's sat in; a sign's written on.)
+  if (opens(id)) {
+    if (!mayChange(world, s, t.tx, t.ty)) return notYours(game, s, t.tx, t.ty) || true;
+    openShut(game, t.tx, t.ty);
+    return true;
+  }
+  if (id === K.FLOWER_POT) {
+    if (!mayChange(world, s, t.tx, t.ty)) return notYours(game, s, t.tx, t.ty) || true;
+    const said = usePot(game, s, t.tx, t.ty, [rightHand(s).item, inHand(s).item]);
+    if (said) game.notify(s, said);
+    return true;
+  }
+  if (id === K.CHAIR) return sitDown(game, s, t.tx, t.ty);
+  if (id === K.SIGN) {
+    // (Yours to write on: else, read.)
+    const text = signText(world, t.tx, t.ty);
+    if (mayChange(world, s, t.tx, t.ty) && !s.npc) w.signEdit = { tx: t.tx, ty: t.ty, text, tick: game.tick };
+    else game.notify(s, text ? `The sign says: "${text}"` : 'The sign says nothing');
+    return true;
+  }
   if (!DOORS.has(id)) return false;
   setDoor(game, t.tx, t.ty, isShutDoor(id));
   return true;
@@ -1113,6 +1237,9 @@ export function worldInput(game, s, inp) {
   // (Asleep in a bed: kept there, till they move: sleep.js.)
   if (w.sleep) inp = sleepInput(game, s, inp);
   if (w.sleep) return inp;
+  // (Sat in a chair: kept there, till they move or jump: decor.js.)
+  if (w.sit) inp = sitInput(game, s, inp);
+  else if (s.sitting) standUp(s);
   // The hotbar: slots by number ('#n': see setup), or along with the wheel and Q / E.
   if (typeof inp.switchTo === 'string' && inp.switchTo[0] === '#') w.slot = Math.max(0, Math.min(HOTBAR - 1, Number(inp.switchTo.slice(1)) || 0));
   else if (typeof inp.switchTo === 'string' && inp.switchTo[0] === '%') setRightHand(game, s, inp.switchTo.slice(1));
@@ -1125,6 +1252,13 @@ export function worldInput(game, s, inp) {
   // (Dev mode, devmode.js: wipes out and builds its own way.)
   if (w.dev) {
     const isBlocks = it => it && (it.kind === 'block' || it.kind === 'wall' || it.kind === 'bucket'), l = inHand(s).item, r = rightHand(s).item;
+    // (A blueprint in hand: its building put up, free; R flips it. Not wiped out with a click: kits.js.)
+    if (l?.kind === 'blueprint') {
+      if (inp.reload) { w.kitFlip = !w.kitFlip; inp = { ...inp, reload: false }; }
+      const out = devInput(game, s, { ...inp, fire: false, firePressed: false }, null);
+      if (inp.fire && inp.firePressed) useBlueprint(game, s, l);
+      return out;
+    }
     return devInput(game, s, inp, isBlocks(l) ? l : isBlocks(r) ? r : null);
   }
   w.target = targetOf(s, inp);
@@ -1133,11 +1267,15 @@ export function worldInput(game, s, inp) {
   // Walking into a closed door opens it (doors.js: it shuts again behind you).
   if (inp.move && !inp.crouch) pushDoor(game, s, Math.sign(inp.move));
   const { item } = inHand(s);
-  // R: the next brush (holding blocks).
+  // R: the next brush (holding blocks); holding a blueprint, it's flipped (kits.js).
   if (inp.reload && item && (item.kind === 'block' || item.kind === 'wall')) {
     w.brush = BRUSHES[(BRUSHES.indexOf(w.brush) + 1) % BRUSHES.length];
     w.drag = null;
     game.notify(s, `Brush: ${BRUSH_NAMES[w.brush]}`);
+    inp.reload = false;
+  } else if (inp.reload && (item?.kind === 'blueprint' || rightHand(s).item?.kind === 'blueprint')) {
+    w.kitFlip = !w.kitFlip;
+    game.notify(s, w.kitFlip ? 'Flipped (the other way round)' : 'Flipped back');
     inp.reload = false;
   }
   // G: throw what's in hand.
@@ -1287,6 +1425,9 @@ function useItem(game, s, item, inp, pressed) {
   } else if (item && (item.kind === 'block' || item.kind === 'wall')) {
     build(game, s, item, inp, pressed);
     fire = false;
+  } else if (item?.kind === 'blueprint') {
+    if (pressed) useBlueprint(game, s, item);
+    fire = false;
   } else if (item && item.kind !== 'weapon') fire = false;
   // (Nothing in hand: a punch. And plants and torches break with anything.)
   if (!item && inp.fire && w.target.near && BLOCKS[game.world.tile(w.target.tx, w.target.ty)].tool === 'hand' && w.cool <= 0 && mayChange(game.world, s, w.target.tx, w.target.ty)) {
@@ -1419,6 +1560,63 @@ function eat(game, s, item) {
 }
 
 /**
+ * A click with a blueprint (kits.js): its building, from the tile aimed at (the middle of its
+ * bottom row), if there's room, ground, the right to build there and what it's made of (dev mode:
+ * free). Tells the player what's wrong, if anything.
+ */
+function useBlueprint(game, s, item) {
+  const w = s.world, t = w.target, world = game.world;
+  if (!t || world.builds?.some(j => j.owner === s.id)) return;
+  const cx = Math.floor(s.x / TILE), cy = Math.floor((s.y - 8) / TILE), free = devOn(s);
+  if (!free && (Math.abs(t.tx - cx) > 12 || Math.abs(t.ty - cy) > 10)) { game.notify(s, 'Too far away: aim nearer'); return; }
+  const check = kitCheck(game, item.kit, !!w.kitFlip, t.tx, t.ty, (x, y) => mayChange(world, s, x, y));
+  if (!check.ok) { game.notify(s, check.why); game.sound('tink', t.tx * TILE + 8, t.ty * TILE + 8); return; }
+  const short = kitShort(item.kit, w.inv, free);
+  if (short.length) {
+    game.notify(s, `Not enough to build it: ${short.slice(0, 4).map(([k, n]) => `${n} more ${itemOf(k)?.name.toLowerCase() ?? k}`).join(', ')}${short.length > 4 ? '...' : ''}`);
+    return;
+  }
+  startKit(game, s, item.kit, !!w.kitFlip, t.tx, t.ty, { free, drop: (key, n, x, y) => dropItem(game, key, n, x, y) });
+  startAct(s, 'place', 20);
+  game.notify(s, `Building: ${BUILDINGS[item.kit]?.name ?? item.name} (${keyLabel('undo')}: undo it, once it's up)`);
+}
+
+/** Every building still going up finished now (before a save: kits.js). */
+export function finishBuildings(game) {
+  for (const job of finishKits(game)) {
+    const s = game.soldiers.find(o => o.id === job.owner);
+    if (s?.world) noteBuilt(game, s, job.placed.map(c => ({ tx: c.tx, ty: c.ty, layer: c.layer, id: c.id, key: c.key, was: c.was || null })));
+  }
+}
+
+// (What buildtools.js does through this file.)
+const TOOLS = {
+  give: (game, s, key, n) => giveTo(game, s, key, n),
+  allowed: (game, s, tx, ty) => mayChange(game.world, s, tx, ty),
+  settle: (game, tx, ty) => settle(game, tx, ty),
+};
+
+/**
+ * What player s asks for with a key of its own (main.js; online, the host: worldnet.js): 'pick' (the
+ * block under the crosshair into their hand), 'undo' (the last thing they built taken back). Returns
+ * what to tell them, or null.
+ */
+export function buildAction(game, s, op) {
+  if (!s?.world || !s.alive) return null;
+  if (op === 'pick') return pickBlock(game, s);
+  if (op === 'undo') return undoLast(game, s, TOOLS);
+  return null;
+}
+
+/** Player s writes `text` on the sign at (tx, ty) (theirs to write on, near enough). Returns whether it took. */
+export function signWrite(game, s, tx, ty, text) {
+  const world = game.world;
+  if (!s?.world || !Number.isInteger(tx) || !Number.isInteger(ty) || world.tile(tx, ty) !== K.SIGN || !mayChange(world, s, tx, ty)) return false;
+  if (Math.hypot(tx * TILE + 8 - s.x, ty * TILE + 8 - s.y) > REACH * 2) return false;
+  return writeSign(world, tx, ty, text);
+}
+
+/**
  * Playing in someone else's world: the host does it all. Here, only the block aimed at, and the
  * shape being dragged out (for drawing them). (Called for each input again as the host's
  * corrections come in: the drag goes by new inputs only.)
@@ -1435,7 +1633,7 @@ function mirrorInput(game, s, inp) {
     const right = rightHand(s).item, useRight = !!right && !!inp.alt && !inp.fire;
     const item = useRight ? right : inHand(s).item, held = useRight || inp.fire, pressed = useRight ? inp.alt && !w.mirrorAlt : inp.firePressed;
     w.mirrorAlt = !!inp.alt;
-    const dragging = item && (item.kind === 'block' || item.kind === 'wall') && w.brush !== 'single' && !isShutDoor(item.block) && item.block !== K.TORCH;
+    const dragging = item && (item.kind === 'block' || item.kind === 'wall') && !['single', ...CLICK_BRUSHES].includes(brushFor(item, w.brush));
     if (!dragging || !held) w.drag = null;
     else if (!w.drag && pressed && w.target.near) w.drag = { tx: w.target.tx, ty: w.target.ty };
   }
@@ -1445,6 +1643,13 @@ function mirrorInput(game, s, inp) {
 /** The world's part in each update: things on the ground, and the chunks around everyone made ready. */
 export function worldTick(game) {
   updateDrops(game);
+  // (Buildings going up from blueprints: kits.js. Each, once it's up, can be undone by whoever put it up.)
+  if (game.world.builds?.length && !game.mirror) {
+    for (const job of kitsTick(game)) {
+      const s = game.soldiers.find(o => o.id === job.owner);
+      if (s?.world) noteBuilt(game, s, job.placed.map(c => ({ tx: c.tx, ty: c.ty, layer: c.layer, id: c.id, key: c.key, was: c.was || null })));
+    }
+  }
   doorsTick(game);
   magmaBurns(game);
   waterTick(game);
@@ -1688,9 +1893,11 @@ export const worldMode = {
     world.mayUnlock = (s, tx, ty) => mayUnlock(game, s, tx, ty);
     // (Flowing water washes away small plants and torches: what they give, dropped where they were.)
     world.onWash = (tx, ty, id) => { const b = BLOCKS[id]; if (b.drop) dropItem(game, b.drop, 1, tx * TILE + TILE / 2, ty * TILE + TILE / 2, 0, -1); };
-    world.onBreak = (tx, ty, id) => {
+    world.onBreak = (tx, ty, id, sb = 0) => {
       const b = BLOCKS[id], x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
       baseBlockGone(game, tx, ty, id, BASES);
+      let got;
+      if (id === K.SIGN) signGone(world, tx, ty);
       if (id === K.LOOT_CRATE) openCrate(game, x, y);
       else if (id === K.TREASURE) openTreasure(game, x, y);
       else if (id === K.CHEST) { dropItem(game, 'chest', 1, x, y); spillChest(game, tx, ty); }
@@ -1699,6 +1906,9 @@ export const worldMode = {
       else if (id === K.WAYSTONE) { dropItem(game, 'waystone', 1, x, y); removeWaystone(world, tx, ty); }
       else if (K.TRUNKS.has(id)) { if (b.drop) dropItem(game, b.drop, 1, x, y); }
       else if ((id === K.LEAVES || id === K.JUNGLE_LEAVES) && game.rng() < 0.04) dropItem(game, 'apple', 1, x, y, (game.rng() - 0.5) * 2, -1.5);
+      // (A cabinet: itself, and what was in it. Its variant's item, a pot's flower...: decor.js.)
+      else if (id === K.CABINET) { dropItem(game, 'cabinet', 1, x, y); spillChest(game, tx, ty); }
+      else if ((got = decorDrops(world, tx, ty, id, sb))) { if (game.rng() < 0.6) for (const [key, n] of got) dropItem(game, key, n, x, y, (game.rng() - 0.5) * 3, -2); }
       else if (b.drop && game.rng() < (b.natural ? 0.3 : 0.6)) dropItem(game, b.drop, 1, x, y, (game.rng() - 0.5) * 3, -2);
     };
   },

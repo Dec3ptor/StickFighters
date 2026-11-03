@@ -39,6 +39,20 @@ const EXTRA = {
   wheat_seeds: 'Now and then, from tall grass that\'s cut',
   carrot: 'Grown on farmland (planted, it gives more)',
   potato: 'Grown on farmland (planted, it gives more)',
+  // (Building and decorating: craftitems.js, decor.js.)
+  rose: 'Picked from wild flowers (the red ones); plant it, or put it in a flower pot',
+  dandelion: 'Picked from wild flowers (the yellow ones)',
+  violet: 'Picked from wild flowers (the purple ones)',
+  daisy: 'Picked from wild flowers (the white ones)',
+  cornflower: 'Never grows wild: farms sell them',
+  marigold: 'Never grows wild: farms sell them',
+  reed: 'Cut from reeds, at the edges of lakes and swamps',
+  kelp: 'Cut from kelp, under the sea',
+  coral_fan: 'Picked from coral fans, in warm seas',
+  petals: 'Gathered from fallen petals, under cherry trees',
+  fern: 'Dug up from ferns, in forests',
+  bush: 'Dug up from bushes',
+  stick: 'From dead bushes, in deserts and badlands; or split from planks',
 };
 /** Animals' names, more than one ('cows'). */
 const herdOf = a => (['Sheep', 'Deer', 'Fish'].includes(a.name) ? a.name.toLowerCase() : `${a.name.toLowerCase()}s`);

@@ -131,7 +131,7 @@ export class NetClient {
       case 'carves': if (this.game) this.applyCarves(data.from, data.list); break;
       // A world (worldnet.js): its chunks; our things, our chest, the bases.
       case 'chunks': this.opts.world?.chunks(data.list); break;
-      case 'inv': case 'chest': case 'claims': case 'talk': case 'social': case 'trade': case 'party': this.opts.world?.message(data); break;
+      case 'inv': case 'chest': case 'claims': case 'talk': case 'social': case 'trade': case 'party': case 'signs': case 'signedit': this.opts.world?.message(data); break;
       case 'ev':
         if (!this.game) break;
         // Holes in the map change how everything moves: blown straight away, not when the effects show.
@@ -552,6 +552,7 @@ export class NetClient {
         s.anim.act = sb.anim.act; s.anim.use = sb.anim.use; s.anim.recoil = Math.max(s.anim.recoil, sb.anim.recoil);
         showHands(s, sb);
         s.wings = sb.wings;
+        s.sitting = sb.sitting;
         s.body.jetting = s.body.jetting || false;
         // How far ahead of where the host had us at this moment we're drawn: our own shots and
         // their flashes are moved by this, to come from our gun.
@@ -589,9 +590,10 @@ export class NetClient {
       s.anim.act = sb.anim.act;
       s.anim.use = smooth && sa.anim.act === sb.anim.act && sb.anim.use >= sa.anim.use ? lerp(sa.anim.use, sb.anim.use, t) : sb.anim.use;
       showHands(s, sb);
-      // (Wings, and gliding on them.)
+      // (Wings, and gliding on them; sitting in a chair.)
       s.wings = sb.wings;
       body.glide = sb.gliding ? 1 : 0;
+      s.sitting = sb.sitting;
       s.anim.idle = g.tick;
     }
   }

@@ -278,6 +278,120 @@ export const FLAG_DOWN = def('flag_down', 'Fallen base flag', furniture({ hard: 
 export const TURRETS = new Set([ARROW_TURRET, GUN_TURRET]);
 export const DEFENCES = new Set([ARROW_TURRET, GUN_TURRET, SPIKES, PRESSURE_MINE, ALARM_BELL]);
 
+// ---- Building and decorating (crafting 2: crafting.js's second half, decor.js, kits.js) ------------
+// Many things come in colours, or kinds: a block's `variants` ([{ key, name, color }], its own
+// first), which one a tile is kept in the top half of its shape byte (tileworld.js's paint). Wool,
+// carpets, beds and banners in every dye's colour; concrete, terracotta, glass panes, candles and
+// paper lanterns too; roof tiles in a few; planks, tables and chairs by their wood; polished,
+// chiseled and metal blocks and columns by what they're made of; and, kept the same way (no items
+// of their own), what's planted in a flower pot and which picture a painting is.
+
+/** The dyes (crafting.js: from flowers and minerals), in Minecraft's order. */
+export const DYES = [
+  { key: 'white', name: 'White', color: '#f0eee6' }, { key: 'light_gray', name: 'Light grey', color: '#a9aaa6' },
+  { key: 'gray', name: 'Grey', color: '#5e6266' }, { key: 'black', name: 'Black', color: '#25252b' },
+  { key: 'brown', name: 'Brown', color: '#7a4e2c' }, { key: 'red', name: 'Red', color: '#b8302c' },
+  { key: 'orange', name: 'Orange', color: '#e8782a' }, { key: 'yellow', name: 'Yellow', color: '#f2cc30' },
+  { key: 'lime', name: 'Lime', color: '#80c834' }, { key: 'green', name: 'Green', color: '#4a7a2a' },
+  { key: 'cyan', name: 'Cyan', color: '#20928e' }, { key: 'light_blue', name: 'Light blue', color: '#4aa8e0' },
+  { key: 'blue', name: 'Blue', color: '#33479e' }, { key: 'purple', name: 'Purple', color: '#7a34a8' },
+  { key: 'magenta', name: 'Magenta', color: '#b848b0' }, { key: 'pink', name: 'Pink', color: '#ee90b0' },
+];
+const DYE_BY_KEY = new Map(DYES.map(d => [d.key, d]));
+/**
+ * A block's variants by dye: its own first (`own`: the dye it is, left out of the rest; null: none of
+ * them), then each other dye's (`only`: just these). Each { key: its item, name, color, dye }.
+ */
+const dyed = (key, name, color, own = null, only = null) => [
+  { key, name, color, dye: own },
+  ...DYES.filter(d => d.key !== own && (!only || only.includes(d.key)))
+    .map(d => ({ key: `${d.key}_${key}`, name: `${d.name} ${name.toLowerCase()}`, color: d.color, dye: d.key })),
+];
+/** The woods planks, tables and chairs come in (their finish: crafting.js, a dye on plain planks). */
+export const WOODS = [
+  { key: 'birch', name: 'Birch', color: '#d9c58e', dye: 'white' }, { key: 'spruce', name: 'Spruce', color: '#7e5a36', dye: 'brown' },
+  { key: 'dark_oak', name: 'Dark oak', color: '#4f3521', dye: 'black' }, { key: 'acacia', name: 'Acacia', color: '#c8723c', dye: 'orange' },
+  { key: 'cherry', name: 'Cherry', color: '#e2a6a2', dye: 'pink' }, { key: 'mahogany', name: 'Mahogany', color: '#8a3a2c', dye: 'red' },
+];
+const woody = (key, name, color, k = 1) => [{ key, name, color }, ...WOODS.map(w => ({ key: `${w.key}_${key}`, name: `${w.name} ${name.toLowerCase()}`, color: k === 1 ? w.color : shade(w.color, k), wood: w.key }))];
+const kinds = list => list.map(([key, name, color]) => ({ key, name, color }));
+const variantsOf = (id, list) => { B[id].variants = list; B[id].color = list[0].color; B[id].dark = shade(list[0].color, 0.72); };
+
+// Building blocks.
+export const CONCRETE = def('concrete', 'Concrete', { hard: 5, resist: 12, color: '#8a8e92', pattern: 'concrete' });
+export const TERRACOTTA = def('terracotta', 'Terracotta', { hard: 4, resist: 8, color: '#b06a4a', pattern: 'terracotta' });
+export const POLISHED = def('polished_stone', 'Polished stone', { hard: 5, resist: 12, color: '#9a9da4', pattern: 'polished' });
+export const CHISELED = def('chiseled_stone', 'Chiseled stone bricks', { hard: 6, resist: 12, color: '#8c8f96', pattern: 'chiseled' });
+export const METAL_BLOCK = def('iron_block', 'Block of iron', { hard: 12, resist: 26, tier: 1, color: '#c9ccd2', pattern: 'metalblock' });
+// A pane of glass in a frame (in colours: stained glass), seen through; a window that opens (right
+// click), its shutters back; a trapdoor (a hatch: shut, stood on, a half block; open, gone through);
+// a fence gate (shut, a fence you can't walk through; open, you can); scaffolding (climbed, stood on).
+export const GLASS_PANE = def('glass_pane', 'Glass pane', { hard: 2, resist: 2, clear: true, color: '#cfeaf4', pattern: 'pane' });
+export const WINDOW = def('window', 'Window', { hard: 2, resist: 3, wood: true, clear: true, color: '#9a6a3a', pattern: 'window' });
+export const WINDOW_OPEN = def('window_open', 'Window (open)', { solid: false, hard: 2, resist: 3, wood: true, clear: true, drop: 'window', color: '#9a6a3a', pattern: 'window_open' });
+export const TRAPDOOR = def('trapdoor', 'Trapdoor', { hard: 2, resist: 4, wood: true, clear: true, color: '#9a6a3a', pattern: 'trapdoor' });
+export const TRAPDOOR_OPEN = def('trapdoor_open', 'Trapdoor (open)', { solid: false, hard: 2, resist: 4, wood: true, clear: true, drop: 'trapdoor', color: '#9a6a3a', pattern: 'trapdoor_open' });
+export const GATE = def('gate', 'Fence gate', { hard: 1, resist: 2, wood: true, clear: true, color: '#9a7046', pattern: 'gate' });
+export const GATE_OPEN = def('gate_open', 'Fence gate (open)', { solid: false, hard: 1, resist: 2, wood: true, clear: true, drop: 'gate', color: '#9a7046', pattern: 'gate_open' });
+export const SCAFFOLD = def('scaffolding', 'Scaffolding', { solid: false, platform: true, hard: 1, tool: 'any', resist: 1, wood: true, clear: true, color: '#c8a45a', pattern: 'scaffold' });
+export const IRON_BARS = def('iron_bars', 'Iron bars', { hard: 8, resist: 16, tier: 1, clear: true, color: '#8a9098', pattern: 'bars' });
+export const HAY_BALE = def('hay_bale', 'Hay bale', { hard: 1, tool: 'any', resist: 1, color: '#d8b04a', pattern: 'hay' });
+// Decorations (walked past): columns, chains, candles and lamps, a flower pot, a painting, a shelf.
+export const COLUMN = def('stone_column', 'Stone column', { solid: false, hard: 4, resist: 8, clear: true, color: '#b4b6ba', pattern: 'column' });
+export const CHAIN = def('chain', 'Chain', { solid: false, hard: 1, resist: 4, clear: true, color: '#5a5e66', pattern: 'chain' });
+export const CANDLE = def('candle', 'Candle', { solid: false, hard: 0, tool: 'hand', resist: 0, clear: true, light: 8, color: '#efe4c8', pattern: 'candle' });
+export const PAPER_LANTERN = def('paper_lantern', 'Paper lantern', { solid: false, hard: 0, tool: 'hand', resist: 0, clear: true, light: 12, color: '#c8382e', pattern: 'paper_lantern' });
+export const CRYSTAL_LAMP = def('crystal_lamp', 'Crystal lamp', { solid: false, hard: 1, tool: 'hand', resist: 1, clear: true, light: 15, color: '#8ae6ff', pattern: 'crystal_lamp' });
+export const CHANDELIER = def('chandelier', 'Chandelier', { solid: false, hard: 1, resist: 2, clear: true, light: 15, color: '#e0b84a', pattern: 'chandelier' });
+export const LAMP_POST = def('lamp_post', 'Street lamp', { solid: false, hard: 3, resist: 8, clear: true, light: 14, color: '#3e4248', pattern: 'lamp_post' });
+export const FLOWER_POT = def('flower_pot', 'Flower pot', { solid: false, hard: 0, tool: 'hand', resist: 0, clear: true, color: '#b8643e', pattern: 'pot' });
+export const PAINTING = def('painting', 'Painting', { solid: false, hard: 0, tool: 'hand', resist: 0, clear: true, color: '#8a6238', pattern: 'painting' });
+export const SHELF = def('shelf', 'Shelf', { solid: false, hard: 1, resist: 2, wood: true, clear: true, color: '#9a6a3a', pattern: 'shelf' });
+// Furniture: a cabinet (things kept in it, as in a chest), and stations: a stove (cooking: what a
+// campfire cooks, and more), a loom (string, cloth and rope), a mason's bench (cut and polished
+// stone, slabs and stairs) and a drafting table (blueprints: kits.js).
+export const CABINET = def('cabinet', 'Cabinet', furniture({ hard: 2, resist: 6, wood: true, color: '#8a5e36', pattern: 'cabinet', surface: 2 }));
+export const STOVE = def('stove', 'Stove', furniture({ hard: 4, resist: 10, light: 6, color: '#3e4248', pattern: 'stove', station: 'stove', surface: 4 }));
+export const LOOM = def('loom', 'Loom', furniture({ hard: 2, resist: 4, wood: true, color: '#a87a48', pattern: 'loom', station: 'loom' }));
+export const MASON = def('mason_bench', "Mason's bench", furniture({ hard: 4, resist: 10, color: '#8c8f96', pattern: 'mason', station: 'mason' }));
+export const DRAFTING = def('drafting_table', 'Drafting table', furniture({ hard: 2, resist: 4, wood: true, color: '#b08250', pattern: 'drafting', station: 'drafting' }));
+
+// The variants.
+variantsOf(WOOL, dyed('wool', 'Wool', '#eeebe2', 'white'));
+variantsOf(CARPET, dyed('carpet', 'Carpet', '#b03a3a', 'red'));
+variantsOf(BED, dyed('bed', 'Bed', '#b03a3a', 'red'));
+variantsOf(BANNER, dyed('banner', 'Banner', '#b02a30', 'red'));
+variantsOf(CONCRETE, dyed('concrete', 'Concrete', '#8a8e92', 'gray'));
+variantsOf(TERRACOTTA, dyed('terracotta', 'Terracotta', '#b06a4a', 'orange'));
+variantsOf(GLASS_PANE, dyed('glass_pane', 'Glass pane', '#cfeaf4', 'white'));
+variantsOf(CANDLE, dyed('candle', 'Candle', '#efe4c8', 'white'));
+variantsOf(PAPER_LANTERN, dyed('paper_lantern', 'Paper lantern', '#c8382e', 'red'));
+variantsOf(ROOF_TILES, dyed('roof_tiles', 'Roof tiles', '#a4472f', null, ['gray', 'black', 'brown', 'green', 'cyan', 'blue', 'purple', 'white', 'yellow']));
+variantsOf(PLANKS, woody('planks', 'Planks', '#b08250'));
+variantsOf(TABLE, woody('table', 'Table', '#9a6a3a', 0.9));
+variantsOf(CHAIR, woody('chair', 'Chair', '#9a6a3a', 0.9));
+variantsOf(POLISHED, kinds([['polished_stone', 'Polished stone', '#9a9da4'], ['polished_slate', 'Polished slate', '#5d626b'], ['polished_basalt', 'Polished basalt', '#4a434d'],
+  ['polished_sandstone', 'Smooth sandstone', '#d9bd86'], ['polished_marble', 'Marble', '#ecebe4'], ['polished_obsidian', 'Polished obsidian', '#352a4c']]));
+variantsOf(CHISELED, kinds([['chiseled_stone', 'Chiseled stone bricks', '#8c8f96'], ['chiseled_sandstone', 'Chiseled sandstone', '#d6b67a'],
+  ['chiseled_slate', 'Chiseled slate', '#535861'], ['chiseled_marble', 'Chiseled marble', '#e4e2da'], ['chiseled_dark_bricks', 'Chiseled dark bricks', '#4c4854']]));
+variantsOf(METAL_BLOCK, kinds([['iron_block', 'Block of iron', '#c9ccd2'], ['copper_block', 'Block of copper', '#d07a3a'], ['gold_block', 'Block of gold', '#f2c230'],
+  ['silver_block', 'Block of silver', '#dfe4ec'], ['verdigris_block', 'Weathered copper', '#4fa890']]));
+variantsOf(COLUMN, kinds([['stone_column', 'Stone column', '#b4b6ba'], ['sandstone_column', 'Sandstone column', '#dcc28c'], ['marble_column', 'Marble column', '#efeee8'],
+  ['basalt_column', 'Basalt column', '#55505a'], ['dark_column', 'Dark brick column', '#4f4b57']]));
+// (Flowers picked, or planted by players: which they are. Out in the world, paint 0: one of the first four, by where it grows.)
+variantsOf(FLOWER, kinds([['flower', 'Flower', '#e05a6a'], ['rose', 'Rose', '#d83a4a'], ['dandelion', 'Dandelion', '#f2c230'], ['violet', 'Violet', '#8a6ae0'],
+  ['daisy', 'Daisy', '#f2f2f2'], ['cornflower', 'Cornflower', '#4a72e0'], ['marigold', 'Marigold', '#f08a2a']]));
+// (No items of their own: what grows in a pot, the picture a painting is.)
+B[FLOWER_POT].variants = kinds([['flower_pot', 'Flower pot', '#b8643e'], ['rose', 'Rose', '#d83a4a'], ['dandelion', 'Dandelion', '#f2c230'], ['violet', 'Violet', '#8a6ae0'],
+  ['daisy', 'Daisy', '#f2f2f2'], ['cornflower', 'Cornflower', '#4a72e0'], ['marigold', 'Marigold', '#f08a2a'], ['fern', 'Fern', '#3f7a3a'], ['cactus', 'Cactus', '#4f9a4a'],
+  ['mushroom', 'Glowing mushroom', '#5ad0e0'], ['glowcap', 'Glowcap', '#b07aff'], ['bush', 'Bush', '#3a7232']]);
+B[FLOWER_POT].variantItems = false;
+B[PAINTING].variants = kinds([['painting', 'Painting', '#8a6238'], ['p_hills', 'Green hills', '#5f9a3a'], ['p_sea', 'The sea', '#3a7ad0'], ['p_sunset', 'Sunset', '#e8783a'],
+  ['p_night', 'Starry night', '#1e2a5a'], ['p_portrait', 'Portrait', '#7a5a3a'], ['p_peaks', 'Mountains', '#8a9ab0'], ['p_bloom', 'Flowers', '#c84a8a'], ['p_ship', 'A ship', '#4a6a8a']]);
+B[PAINTING].variantItems = false;
+// (What candles, flower pots and lamps can stand on besides the floor: how far down its tile its top is, px.)
+for (const [id, top] of [[TABLE, 7], [WORKBENCH, 7], [BARREL, 3]]) B[id].surface = top;
+
 /** The gem blocks (they glint). */
 export const GEMS = new Set([RUBY, SAPPHIRE, EMERALD, TOPAZ, AMETHYST, DIAMOND]);
 

@@ -12,6 +12,7 @@ import { TILE, AIR, NO_WALL, SOLID } from './blocks.js';
 import { WORLD_H } from './worldgen.js';
 import { DAY_TICKS, hourOf, isHostile } from './monsters.js';
 import { MOTION, BODY } from '../config.js';
+import { afterPlace } from './decor.js';
 
 /** How far the crosshair reaches (tiles), and the biggest brush (tiles each way from the middle). */
 export const DEV_REACH = 70, DEV_BRUSH_MAX = 6;
@@ -153,7 +154,8 @@ export function devInput(game, s, inp, held) {
       for (let x = tx - r; x <= tx + r; x++) {
         if (y < 0 || y >= WORLD_H) continue;
         if (held.kind === 'wall') { if (world.wall(x, y) === NO_WALL) world.setWall(x, y, held.wall); }
-        else if (world.tile(x, y) === AIR && !(SOLID[held.block] && soldierAt(game, x, y))) world.setTile(x, y, held.block);
+        // (Its variant and shape too: decor.js.)
+        else if (world.tile(x, y) === AIR && !(SOLID[held.block] && soldierAt(game, x, y))) { world.setTile(x, y, held.block); afterPlace(world, held, x, y, s); }
       }
     }
   } else if (inp.alt && held?.kind === 'bucket') {

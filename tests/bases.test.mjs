@@ -140,6 +140,7 @@ test('a base open to a raid: its walls dig slowly, reinforced bricks and chests 
   assert.equal(digShare(m.world, m.raider, 5, Y, K.STONE), 1, 'the land: as anywhere');
   assert.equal(digShare(m.world, m.raider, 5, FY, K.REINFORCED), 0, 'reinforced: no');
   assert.equal(digShare(m.world, m.raider, 5, FY, K.CHEST), 0, 'a chest: locked');
+  assert.equal(digShare(m.world, m.raider, 5, FY, K.CABINET), 0, 'a cabinet: locked like a chest');
   assert.equal(digShare(m.world, m.owner, 5, FY, K.REINFORCED), 1, 'its owner: as they please');
   // Digging a wall: slower than outside a base, but it goes.
   m.world.setTile(5, FY, K.STONE_BRICKS);

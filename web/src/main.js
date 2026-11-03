@@ -45,6 +45,9 @@ import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorl
 import { playerToSave, worldFromSave, dropItem, chestAt, boxFor, boxKind, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, rehire, REACH, makeRecipe, devTake, stackToChests, fitAttachment, stripGun } from './world/worldplay.js';
 import { warp, waystonesToSave, waystonesFromSave } from './world/waystones.js';
 import { boatsToSave, boatsFromSave } from './world/boats.js';
+// (Building and decorating: signs, blueprints going up, the pick block and undo keys.)
+import { signsToSave, signsFromSave, SIGN_MAX } from './world/decor.js';
+import { finishBuildings, buildAction, signWrite } from './world/worldplay.js';
 import { skyHears } from './world/sky.js';
 import { WORLD_SETTINGS, cleanSettings, settingsSummary, kitOf } from './world/worldrules.js';
 import { itemOf } from './world/items.js';
@@ -973,6 +976,7 @@ async function startWorld(rec, { online = false } = {}) {
   gravesFromSave(world, rec.graves);
   waystonesFromSave(world, rec.waystones);
   boatsFromSave(world, rec.boats);
+  signsFromSave(world, rec.signs);
   // (What's lost on dying: in a grave.)
   world.death = settings.death;
   claimsFromSave(world, rec.claims);
@@ -1045,6 +1049,9 @@ function saveWorldNow(last = false) {
   if (me?.world?.over) w.rec.over = true;
   // (Hosted: the players in it keep their things too.)
   w.sync?.saveAll();
+  // (Buildings going up from blueprints: finished, so what's saved has them whole.)
+  finishBuildings(w.game);
+  w.rec.signs = signsToSave(w.game.world);
   w.rec.chests = chestsToSave(w.game.world);
   w.rec.graves = gravesToSave(w.game.world);
   w.rec.waystones = waystonesToSave(w.game.world);
@@ -2022,6 +2029,7 @@ function startClient(link) {
     onTalk: view => { if (view) showTalk(view); else closeTalk(); },
     onSocial: view => showPlayerMenu(view),
     onTrade: view => showTrade(view),
+    onSign: sign => openSignEditor(sign),
   });
   net.client = new NetClient({
     link, world,
@@ -2087,6 +2095,10 @@ function openChat() {
 function closeChat() {
   if (!state.chatOpen) return;
   state.chatOpen = false;
+  // (A sign being written on: left as it was. The box back to chat's.)
+  state.signEdit = null;
+  $('chatInput').maxLength = 140;
+  $('chatInput').placeholder = 'Say something (Enter to send, Esc to cancel)';
   show('chatForm', false);
   $('chatInput').blur();
   if (state.game && !state.menuOpen) { input.enabled = true; grabControls(); }
@@ -2260,6 +2272,8 @@ function frame(now) {
   if (state.world && !state.paused && now - state.world.savedAt > 60000) saveWorldNow();
   // (A waystone right clicked, playing here: where it can take you.)
   if (g.world && me.world?.wayMenu) { const v = me.world.wayMenu; me.world.wayMenu = null; showPlayerMenu(v); }
+  // (A sign put up, or right clicked, playing here: written on: decor.js.)
+  if (g.world && me.world?.signEdit && state.mode !== 'client') { const sg = me.world.signEdit; me.world.signEdit = null; openSignEditor(sg); }
   if (g.world && me.world?.openChest) {
     // (A chest, a shulker box, or your own ender chest: worldplay.js.)
     const c = me.world.openChest, inv = boxFor(g, me, c.tx, c.ty);
@@ -2450,6 +2464,8 @@ function pressMenuKey(key) {
     if (!boundKeys().has(key) && devKey(g, state.me, key)) return true;
   }
   if (isKey('journal', key) && g.world) { openJournal(); return true; }
+  // (Building: the block under the crosshair into your hand; what you last built undone.)
+  if (g.world && (isKey('pickBlock', key) || isKey('undo', key))) { worldBuildKey(isKey('undo', key) ? 'undo' : 'pick'); return true; }
   if (isKey('changeClass', key) && g.classesOn && !g.over) {
     if (!state.me.alive) openPicker();
     else localNote(`Change class while waiting to respawn (${keyLabel('changeClass')}), or from the menu (Esc)`);
@@ -2463,6 +2479,40 @@ function pressMenuKey(key) {
     return true;
   }
   return false;
+}
+
+/** A world's building key (worldplay.js's buildAction): here, or online, the host's to do. */
+function worldBuildKey(op) {
+  const g = state.game, me = state.me;
+  if (!me?.world || !me.alive || state.menuOpen) return;
+  if (state.mode === 'client') { state.net?.client?.link.send({ t: 'wop', op }, true); return; }
+  const text = buildAction(g, me, op);
+  if (text) g.notify(me, text);
+}
+
+/** Write on a sign ({ tx, ty, text }: decor.js): the chat box, as a sign's. Enter puts it up. */
+function openSignEditor(sign) {
+  if (state.chatOpen || !state.game?.world || state.menuOpen) return;
+  state.chatOpen = true;
+  state.signEdit = sign;
+  input.enabled = false;
+  input.clear();
+  input.unlock();
+  show('chatForm', true);
+  const el = $('chatInput');
+  el.value = sign.text || '';
+  el.maxLength = SIGN_MAX;
+  el.placeholder = 'Write on the sign (Enter to put it up, Esc to leave it)';
+  el.focus();
+}
+
+/** What's written on the sign being edited, put up (online: the host's to do). */
+function writeSignNow(text) {
+  const sign = state.signEdit, g = state.game, me = state.me;
+  state.signEdit = null;
+  if (!sign || !g?.world || !me) return;
+  if (state.mode === 'client') state.net?.client?.link.send({ t: 'wop', op: 'sign', tx: sign.tx, ty: sign.ty, text }, true);
+  else signWrite(g, me, sign.tx, sign.ty, text);
 }
 
 /** The controller reading our keyboard and mouse (online, the client's). */
@@ -2639,7 +2689,7 @@ function wire() {
     audio.setMuted($('mute').checked);
     if (state.settings) { state.settings.muted = $('mute').checked; saveSettings({ ...loadSettings(), muted: $('mute').checked }); }
   });
-  $('chatForm').addEventListener('submit', e => { e.preventDefault(); sendChat($('chatInput').value); closeChat(); });
+  $('chatForm').addEventListener('submit', e => { e.preventDefault(); if (state.signEdit) writeSignNow($('chatInput').value); else sendChat($('chatInput').value); closeChat(); });
   $('chatInput').addEventListener('keydown', e => { if (e.code === 'Escape') { e.preventDefault(); e.stopPropagation(); closeChat(); } });
 
   window.addEventListener('keydown', e => {

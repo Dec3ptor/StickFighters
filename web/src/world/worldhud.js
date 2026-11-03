@@ -456,6 +456,8 @@ function leftBar(me) {
     return [1, 'ammo', `${item.name}  ·  ${what}`];
   }
   if (item.kind === 'contract') return [1, 'ammo', `${item.name}  ${n}  ·  click: hire a mercenary`];
+  // (A blueprint: kits.js. Its building's ghost shows where it goes.)
+  if (item.kind === 'blueprint') return [1, 'ammo', `${item.name}  ·  ${keyLabel('reload')}: flip`];
   return [1, 'ammo', `${item.name}  ${slot.n > 1 ? slot.n : ''}`.trim()];
 }
 
