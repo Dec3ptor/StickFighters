@@ -31,8 +31,8 @@ export function spriteOpts(t, lit, armed, collar) {
   return OPTS;
 }
 
-/** A weapon drawn along +x from the grip. `lying` = drawn as a pickup (centred). */
-export function drawWeapon(ctx, def, lying) {
+/** A weapon drawn along +x from the grip. `lying` = drawn as a pickup (centred). pull: a bow's string drawn back (0 to 1). */
+export function drawWeapon(ctx, def, lying, pull = 0) {
   const look = def.look;
   const L = look.length || 12;
   if (look.type === 'held' || look.type === 'radio' || look.type === 'glove') {
@@ -135,7 +135,18 @@ export function drawWeapon(ctx, def, lying) {
       ctx.beginPath(); ctx.arc(1, 0, 9, -1.25, 1.25); ctx.stroke();
       ctx.strokeStyle = '#bbb';
       ctx.lineWidth = 0.5;
-      ctx.beginPath(); ctx.moveTo(1 + Math.cos(-1.25) * 9, Math.sin(-1.25) * 9); ctx.lineTo(1 + Math.cos(1.25) * 9, Math.sin(1.25) * 9); ctx.stroke();
+      // (Drawn back: to the hand, an arrow on it.)
+      ctx.beginPath(); ctx.moveTo(1 + Math.cos(-1.25) * 9, Math.sin(-1.25) * 9); ctx.lineTo(1 + Math.cos(1.25) * 9 - pull * 6.35, 0); ctx.lineTo(1 + Math.cos(1.25) * 9, Math.sin(1.25) * 9); ctx.stroke();
+      if (pull > 0.5) {
+        const nock = 1 + Math.cos(1.25) * 9 - pull * 6.35;
+        ctx.strokeStyle = '#8a6a3a';
+        ctx.lineWidth = 0.7;
+        ctx.beginPath(); ctx.moveTo(nock, 0); ctx.lineTo(11, 0); ctx.stroke();
+        ctx.fillStyle = '#9aa0a6';
+        ctx.beginPath(); ctx.moveTo(12.6, 0); ctx.lineTo(10.6, -1.1); ctx.lineTo(10.6, 1.1); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#e8e2d0';
+        ctx.fillRect(nock + 0.3, -1, 2, 0.7); ctx.fillRect(nock + 0.3, 0.3, 2, 0.7);
+      }
       break;
     case 'wand':
       ctx.fillRect(2, -0.8, L - 2, 1.6);

@@ -22,17 +22,21 @@ import { CHUNK } from './worldgen.js';
 import { hourOf, isMonster, DAY_TICKS } from './monsters.js';
 import { pushDoor } from './doors.js';
 import { BODY } from '../config.js';
+import { startAct } from '../useanim.js';
 
-/** The work people do in towns: what they're called, how they look, how far they go from home. */
+/**
+ * The work people do in towns: what they're called, how they look, how far they go from home, and
+ * what they have in hand (an item's key: hands.js).
+ */
 export const ROLES = {
   villager: { title: 'Villager', tag: '', skin: 'villager', roam: 34 },
   farmer: { title: 'Farmer', tag: 'Farmer', skin: 'farmer', roam: 14 },
-  elder: { title: 'Elder', tag: 'Elder', skin: 'elder', roam: 10 },
-  merchant: { title: 'Merchant', tag: 'Merchant', skin: 'merchant', roam: 0 },
-  smith: { title: 'Blacksmith', tag: 'Smith', skin: 'smith', roam: 0, held: { kind: 'melee', look: { type: 'mallet', length: 13, color: '#7a5634', head: '#8a8f96' } } },
+  elder: { title: 'Elder', tag: 'Elder', skin: 'elder', roam: 10, held: 'journal' },
+  merchant: { title: 'Merchant', tag: 'Merchant', skin: 'merchant', roam: 0, held: 'coins' },
+  smith: { title: 'Blacksmith', tag: 'Smith', skin: 'smith', roam: 0, held: 'hammer' },
   gunsmith: { title: 'Gunsmith', tag: 'Gunsmith', skin: 'gunsmith', roam: 0, weapon: 'Beretta' },
-  innkeeper: { title: 'Innkeeper', tag: 'Innkeeper', skin: 'innkeeper', roam: 0 },
-  healer: { title: 'Healer', tag: 'Healer', skin: 'healer', roam: 6 },
+  innkeeper: { title: 'Innkeeper', tag: 'Innkeeper', skin: 'innkeeper', roam: 0, held: 'bread' },
+  healer: { title: 'Healer', tag: 'Healer', skin: 'healer', roam: 6, held: 'healing_potion' },
   guard: { title: 'Guard', tag: 'Guard', skin: 'guard', guard: true, health: 220 },
   lord: { title: 'Lord', tag: 'Lord', skin: 'lord', roam: 8 },
   trader: { title: 'Trader', tag: 'Trader', skin: 'trader', roam: 2 },
@@ -260,6 +264,14 @@ export class FolkController {
     if (this.wait > 0) {
       this.wait--;
       inp.aim = this.face < 0 ? Math.PI : 0;
+      // (A smith at work: the hammer down on the anvil now and then.)
+      if (f.role === 'smith') {
+        inp.aim = this.face < 0 ? Math.PI - 0.5 : 0.5;
+        if (!s.anim.act && (game.tick + s.id * 13) % 75 === 0) {
+          startAct(s, 'hammer', 18);
+          if (rng() < 0.6) game.sound('tink', s.x + this.face * 14, s.y - 4);
+        }
+      }
       this.walk(game, s, inp, 0, 0);
       return inp;
     }

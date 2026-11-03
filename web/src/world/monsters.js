@@ -18,6 +18,7 @@ import { WEAPONS } from '../weapons.js';
 import { BODY } from '../config.js';
 import { pushDoor } from './doors.js';
 import { difficultyOf } from './worldrules.js';
+import { lookOfKey } from './hands.js';
 
 // ---- Day and night ---------------------------------------------------------------------------
 
@@ -89,12 +90,15 @@ export function armNpc(s) {
     // (Nothing: their hands, or what they work with.)
     s.weapons = {};
     s.current = 'Hands';
-    s.held = n.held || null;
+    // (What they work with, by its key: hands.js.)
+    s.held = n.held ? lookOfKey(n.held) : null;
+    s.hands = s.held ? [n.held, null] : null;
     return;
   }
   s.weapons = { [id]: def.mag ? { ammo: Infinity, mag: def.mag } : { ammo: Infinity } };
   s.current = id;
   s.held = null;
+  s.hands = null;
 }
 
 /** A monster of `type`, to appear at (x, y) (a body's middle) at the next update. */

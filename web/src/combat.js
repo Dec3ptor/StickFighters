@@ -10,6 +10,7 @@ import { segmentT, SEG, hypot } from './map.js';
 import { weaponFor } from './classes.js';
 import { projectileBeacon, shotBeacon, blastGadgets, meleeBeacon } from './gadgets.js';
 import { build } from './building.js';
+import { startAct, meleeAct, launchAct } from './useanim.js';
 
 const HEAD_ZONE = 9; // top pixels of the body box that count as a headshot
 const MAX_MINES = 5; // per soldier
@@ -161,6 +162,9 @@ export function fire(game, s, input = {}) {
 
   const muzzle = muzzlePoint(game, s, def);
   if (!LAUNCH[def.kind](game, s, def, id, muzzle)) { s.cooldown = Math.max(s.cooldown, 10); return false; }
+  // (Thrown, put down or called in: the arm does it: useanim.js.)
+  const act = launchAct(def);
+  if (act) startAct(s, act, act === 'show' ? 30 : 20);
 
   if (def.mag) {
     inv.mag--;
@@ -187,7 +191,10 @@ const GUN_KINDS = new Set(['bullet', 'rail', 'rocket', 'seeker']);
 /** Start reloading weapon `id` (def: as the soldier has it). */
 function startReload(s, id, def) {
   s.reloadTimer = def.reload;
+  s.reloadTotal = def.reload;
   s.reloading = id;
+  // (Its animation goes along with it: soldier.js's animate.)
+  if (s.anim) { s.anim.act = 'reload'; s.anim.use = 0; }
 }
 
 /**
@@ -396,14 +403,16 @@ const LAUNCH = {
   },
 
   melee(game, s, def, id) {
-    s.anim.swing = 1;
+    // (The swing's shape by the weapon: a knife stabs, fists punch, the rest swing: useanim.js.)
+    // (A world's tool in hand swings as it does at blocks.)
+    startAct(s, meleeAct(s.held?.look ? s.held : def), Math.min(24, Math.max(10, def.rof || 18)));
     meleeHit(game, s, def, id);
     return true;
   },
 
   build(game, s) {
     if (!build(game, s)) return false;
-    s.anim.swing = 1;
+    startAct(s, 'hammer', 14);
     return true;
   },
 

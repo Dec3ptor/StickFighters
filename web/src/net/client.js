@@ -16,6 +16,15 @@ import { beaconKey } from '../gadgets.js';
 import { Tape } from '../replay.js';
 import { useHostTuning } from '../tuning.js';
 import { isSkin } from '../skins.js';
+import { lookOfKey } from '../world/hands.js';
+
+/** What's in soldier s's hands as the host has it (sb: from a snapshot): how each looks (hands.js). */
+function showHands(s, sb) {
+  const h = sb.hands;
+  s.hands = h;
+  s.held = h ? lookOfKey(h[0]) : null;
+  s.held2 = h ? lookOfKey(h[1]) : null;
+}
 
 const NONE = [];
 const INPUT_REPEAT = 4;     // each input packet carries the last few inputs, in case some are lost
@@ -537,8 +546,10 @@ export class NetClient {
       const sb = list[i], s = ours.get(sb.id);
       if (!s) continue;
       if (s === this.me) {
-        // Firing animations come from the host.
-        s.anim.swing = sb.anim.swing; s.anim.recoil = Math.max(s.anim.recoil, sb.anim.recoil);
+        // Firing animations come from the host (and what they're doing with what's in hand, and
+        // what that is: useanim.js, hands.js).
+        s.anim.act = sb.anim.act; s.anim.use = sb.anim.use; s.anim.recoil = Math.max(s.anim.recoil, sb.anim.recoil);
+        showHands(s, sb);
         s.body.jetting = s.body.jetting || false;
         // How far ahead of where the host had us at this moment we're drawn: our own shots and
         // their flashes are moved by this, to come from our gun.
@@ -571,7 +582,11 @@ export class NetClient {
       s.burnTicks = sb.burning ? 1 : 0;
       s.kamikaze = sb.kamikaze ? s.kamikaze || { remote: true } : null;
       s.anim.run = smooth && Math.abs(sb.anim.run - sa.anim.run) < 0.5 ? lerp(sa.anim.run, sb.anim.run, t) : sb.anim.run;
-      s.anim.flip = sb.anim.flip; s.anim.land = sb.anim.land; s.anim.recoil = sb.anim.recoil; s.anim.swing = sb.anim.swing;
+      s.anim.flip = sb.anim.flip; s.anim.land = sb.anim.land; s.anim.recoil = sb.anim.recoil;
+      // (Part way through the same act: in between; begun or ended: as it is.)
+      s.anim.act = sb.anim.act;
+      s.anim.use = smooth && sa.anim.act === sb.anim.act && sb.anim.use >= sa.anim.use ? lerp(sa.anim.use, sb.anim.use, t) : sb.anim.use;
+      showHands(s, sb);
       s.anim.idle = g.tick;
     }
   }

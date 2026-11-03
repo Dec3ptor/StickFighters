@@ -30,6 +30,8 @@ import { useBed, sleepInput, sleepTick, wake, homeOf } from './sleep.js';
 import { addWaystone, removeWaystone, waystoneMenu } from './waystones.js';
 import { settingOf, difficultyOf, keepTime, KITS } from './worldrules.js';
 import { setDev } from './devmode.js';
+import { heldLook } from './hands.js';
+import { startAct, endAct } from '../useanim.js';
 
 /** How far from your shoulder you can reach to dig or build (to a block's middle). */
 export const REACH = 6 * TILE;
@@ -483,22 +485,6 @@ export function setRightHand(game, s, v, quiet = false) {
   return n;
 }
 
-// How items look in the hand (drawn as a weapon would be: sprites.js).
-const LOOKS = new Map();
-function heldLook(it) {
-  let l = LOOKS.get(it.key);
-  if (l) return l;
-  if (it.kind === 'tool') {
-    const type = it.tool === 'pick' ? 'pickaxe' : it.tool === 'axe' ? 'axe' : 'mallet';
-    l = { kind: 'melee', look: { type, length: 13, color: it.handle, head: it.color } };
-  } else if (it.key === 'torch') l = { kind: 'build', look: { type: 'torch' } };
-  else if (it.kind === 'block' || it.kind === 'wall' || it.kind === 'ammo' || it.kind === 'material' || it.kind === 'contract') {
-    l = { kind: 'build', look: { type: 'block', color: it.color || '#888', dark: it.dark || '#555' } };
-  } else l = WEAPONS.Hands;
-  LOOKS.set(it.key, l);
-  return l;
-}
-
 /**
  * Put what's in the hotbar slot in the soldier's hand: a gun (its spare rounds are the
  * inventory's ammunition for it; its magazine stays with it in its slot), or anything else
@@ -540,6 +526,22 @@ export function hold(s) {
     s.current = 'Hands';
     s.held = item ? heldLook(item) : null;
   }
+  // The other hand: what right click uses, shown in it (hands.js). And what's eaten or drunk stays
+  // in hand till it's gone, the last one too.
+  const r = w.slot2 !== w.slot ? rightHand(s).item : null, a2 = s.anim;
+  const eating = (a2.act === 'eat' || a2.act === 'drink') && w.eating ? itemOf(w.eating) : null;
+  const front = eating || (item?.kind === 'weapon' ? null : item);
+  if (eating) s.held = heldLook(eating);
+  s.held2 = r && r !== front ? heldLook(r) : null;
+  s.hands = [front?.key || null, s.held2 ? r.key : null];
+}
+
+/** Using the right hand's thing: it's shown in the hand that's using it, what's in the left in the other (a gun stays put). */
+function rightInUse(s, right, left) {
+  if (left?.kind === 'weapon') return;
+  s.held = heldLook(right);
+  s.held2 = left && left !== right ? heldLook(left) : null;
+  s.hands = [right.key, s.held2 ? left.key : null];
 }
 
 // ---- Things on the ground --------------------------------------------------------------------------
@@ -669,7 +671,8 @@ function dig(game, s, it, inp) {
   if (!mayChange(world, s, t.tx, t.ty)) return notYours(game, s, t.tx, t.ty) || true;
   if (w.cool > 0) return true;
   w.cool = it.every / MOTION.timeScale;
-  s.anim.swing = 1;
+  // (A pickaxe's swing, or an axe's chop: struck now, lifted, brought down for the next.)
+  startAct(s, it.tool === 'axe' ? 'chop' : 'mine', it.every);
   const x = t.tx * TILE + TILE / 2, y = t.ty * TILE + TILE / 2;
   if (how === 'tier') {
     game.sound('tink', x, y);
@@ -980,7 +983,7 @@ function build(game, s, it, inp, pressed = inp.firePressed) {
     if (!inp.fire || w.cool > 0 || !t.near) return;
     if (placeOne(game, s, it, t.tx, t.ty)) {
       w.cool = PLACE_EVERY / MOTION.timeScale;
-      s.anim.swing = Math.max(s.anim.swing, 0.4);
+      startAct(s, 'place', PLACE_EVERY + 4);
       game.sound('build', t.tx * TILE + 8, t.ty * TILE + 8);
     }
     return;
@@ -998,7 +1001,7 @@ function build(game, s, it, inp, pressed = inp.firePressed) {
     left = next;
   }
   if (placed) {
-    s.anim.swing = 1;
+    startAct(s, 'place', 14);
     game.sound('build', t.tx * TILE + 8, t.ty * TILE + 8);
     game.notify(s, `${placed} × ${it.name}`);
   }
@@ -1014,7 +1017,7 @@ function hammer(game, s, it, inp) {
   const id = world.tile(t.tx, t.ty), x = t.tx * TILE + 8, y = t.ty * TILE + 8;
   if (!mayChange(world, s, t.tx, t.ty)) return notYours(game, s, t.tx, t.ty) || true;
   w.cool = it.every / MOTION.timeScale;
-  s.anim.swing = 1;
+  startAct(s, 'hammer', it.every);
   if (SOLID[id]) {
     if (DOORS.has(id) || id === K.LOOT_CRATE || BLOCKS[id].resist >= 1e9) return true;
     world.setShape(t.tx, t.ty, (world.shape(t.tx, t.ty) + 1) % K.SHAPES.length);
@@ -1042,6 +1045,13 @@ function hammer(game, s, it, inp) {
  * opens (w.openChest: the page shows what's in it), a bed is where you'll come back.
  */
 function interact(game, s) {
+  const done = interactWith(game, s);
+  // (A hand reached out to it.)
+  if (done) startAct(s, 'reach', 14);
+  return done;
+}
+
+function interactWith(game, s) {
   const w = s.world, t = w.target, world = game.world;
   if (!t?.near) return false;
   const id = world.tile(t.tx, t.ty);
@@ -1143,7 +1153,7 @@ export function worldInput(game, s, inp) {
   if (useRight || (right && !alt && w.drag && w.dragHand === 'right')) {
     // (Shown in hand while it's used, unless there's a gun in the left: that stays. Let go of
     // right click with a shape dragged out: the right hand's blocks go in.)
-    if (item?.kind !== 'weapon') s.held = heldLook(right);
+    rightInUse(s, right, item);
     w.dragHand = 'right';
     useItem(game, s, right, { ...inp, fire: useRight, firePressed: altPressed }, altPressed);
     inp.fire = false;
@@ -1170,6 +1180,8 @@ function useItem(game, s, item, inp, pressed) {
   } else if (item?.kind === 'scroll') {
     if (pressed && !w.recall) {
       w.recall = { at: game.tick, x: s.x, y: s.y };
+      // (Opened out and read, till its magic takes them home.)
+      startAct(s, 'read', RECALL_TICKS, true);
       game.notify(s, 'You read the scroll... (keep still)');
       game.sound('click', s.x, s.y, s.id);
     }
@@ -1179,6 +1191,7 @@ function useItem(game, s, item, inp, pressed) {
       if (mercsOf(game, s).length >= MERC.most) game.notify(s, `You can have ${MERC.most} mercenaries at a time`);
       else {
         w.inv.remove(item.key, 1);
+        startAct(s, 'show', 30);
         const m = hireMerc(game, s);
         game.notify(s, `${m.name} has joined you`);
         game.sound('spawn', s.x, s.y, s.id);
@@ -1196,6 +1209,7 @@ function useItem(game, s, item, inp, pressed) {
   if (!item && inp.fire && w.target.near && BLOCKS[game.world.tile(w.target.tx, w.target.ty)].tool === 'hand' && w.cool <= 0 && mayChange(game.world, s, w.target.tx, w.target.ty)) {
     breakBlock(game, w.target.tx, w.target.ty, s);
     w.cool = 12 / MOTION.timeScale;
+    startAct(s, 'punch', 12);
     fire = false;
   }
   return !!fire;
@@ -1311,6 +1325,9 @@ function eat(game, s, item) {
   w.inv.remove(item.key, 1);
   s.health = Math.min(max, s.health + item.heal);
   w.cool = 30 / MOTION.timeScale;
+  // (Eaten, or drunk: brought up to the mouth, the last one too: hold keeps it in hand till then.)
+  w.eating = item.key;
+  startAct(s, item.look === 'potion' ? 'drink' : 'eat', 30);
   game.sound('health', s.x, s.y, s.id);
 }
 
@@ -1373,7 +1390,7 @@ export function worldTick(game) {
     // (A recall scroll being read: three seconds keeping still, then home.)
     const rc = s.world.recall;
     if (rc && !game.mirror) {
-      if (!s.alive || Math.hypot(s.x - rc.x, s.y - rc.y) > 12) { s.world.recall = null; game.notify(s, 'The scroll\'s magic fades: you moved'); }
+      if (!s.alive || Math.hypot(s.x - rc.x, s.y - rc.y) > 12) { s.world.recall = null; endAct(s, 'read'); game.notify(s, 'The scroll\'s magic fades: you moved'); }
       else if (game.tick - rc.at >= RECALL_TICKS) { s.world.recall = null; recallHome(game, s); }
     }
     // (What's come into their hands, found: the codex.)

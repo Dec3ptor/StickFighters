@@ -779,7 +779,7 @@ export function drawRemasteredPreview(cv) {
   const soldier = (id, x, y, team, facing, aim) => ({
     id, team, x, y, prevX: x, prevY: y, facing, aim, current: 'M4', armour: 50, health: 100, spawnProtect: 0, name: '',
     body: { onGround: true, vx: 0, vy: 0, crouching: false, jetting: false, hasJetpack: id === 2 },
-    anim: { run: 0, idle: 0, flip: 0, land: 0, recoil: 0, swing: 0 },
+    anim: { run: 0, idle: 0, flip: 0, land: 0, recoil: 0, act: '', use: 0 },
   });
   drawShadows(r, game, [soldier(1, 115, 106, 1, 1, -0.1), soldier(2, 312, 92, 2, -1, Math.PI + 0.12)], 1);
   drawSoldier(r, game, soldier(1, 115, 106, 1, 1, -0.1), 1, theme);

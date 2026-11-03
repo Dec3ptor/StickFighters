@@ -160,7 +160,7 @@ test('aiming down the sights: the camera comes in a little, further toward the m
 
 test('the running animation is drawn in between updates, even where its loop wraps round', () => {
   const r = new Renderer(fakeCanvas(), {});
-  const s = { anim: { run: 0.04, idle: 11, land: 0, flip: 0.5, recoil: 0, swing: 0 }, animPrev: { run: 0.96, idle: 10, land: 0, flip: 0.6, recoil: 0, swing: 0 } };
+  const s = { anim: { run: 0.04, idle: 11, land: 0, flip: 0.5, recoil: 0, act: '', use: 0 }, animPrev: { run: 0.96, idle: 10, land: 0, flip: 0.6, recoil: 0, act: '', use: 0 } };
   r.alpha = 0.5;
   const v = r.animated(s);
   assert.ok(Math.abs(v.anim.run - 0) < 1e-9 || Math.abs(v.anim.run - 1) < 1e-9, `run ${v.anim.run}`);
@@ -239,7 +239,8 @@ test('hypot gives Math.hypot\'s number exactly (it only skips the garbage)', () 
 
 test('a soldier\'s figure is the same as ever, in one object kept for that soldier', () => {
   setLegAnimations(LEGS_DATA);
-  const ids = Object.keys(WEAPONS);
+  // (Bows are held differently since: at arm's length, the string drawn back: see below.)
+  const ids = Object.keys(WEAPONS).filter(id => WEAPONS[id].look.type !== 'bow');
   let seed = 5;
   const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const a = { facing: 1, aim: 0, current: 'Platinum', body: {}, anim: {} }, b = { ...a, body: {}, anim: {} };
@@ -251,10 +252,11 @@ test('a soldier\'s figure is the same as ever, in one object kept for that soldi
     s.aim = (R() - 0.5) * 7;
     s.current = ids[i % ids.length];
     s.body = { onGround: R() < 0.7, jetting: R() < 0.2, vy: (R() - 0.5) * 12, crouching: R() < 0.2, vx: R() < 0.5 ? 0 : (R() - 0.5) * 4 };
-    s.anim = { run: R(), idle: R() * 500, land: R() < 0.3 ? R() * 10 : 0, flip: R() < 0.2 ? R() : 0, recoil: R() < 0.3 ? R() * 3 : 0, swing: 0 };
+    s.anim = { run: R(), idle: R() * 500, land: R() < 0.3 ? R() * 10 : 0, flip: R() < 0.2 ? R() : 0, recoil: R() < 0.3 ? R() * 3 : 0, act: '', use: 0 };
     const got = buildPose(s), want = oldPose(s);
-    assert.deepEqual(JSON.parse(JSON.stringify({ ...got, gun: { ...got.gun, def: got.gun.def.name } })),
-      JSON.parse(JSON.stringify({ ...want, gun: { ...want.gun, def: want.gun.def.name } })), `pose ${i}`);
+    // (What the pose has besides, for acts and a world's other hand, isn't in the old one.)
+    const plain = p => ({ lines: p.lines, head: p.head, gun: { x: p.gun.x, y: p.gun.y, angle: p.gun.angle, def: p.gun.def.name }, shoulder: p.shoulder });
+    assert.deepEqual(JSON.parse(JSON.stringify(plain(got))), JSON.parse(JSON.stringify(plain(want))), `pose ${i}`);
     if (s === a) assert.equal(got, keep, 'the same object, filled in again');
   }
 });
@@ -262,7 +264,7 @@ test('a soldier\'s figure is the same as ever, in one object kept for that soldi
 test('the animation between updates is kept per soldier (not made new every frame), and the soldier is never a prototype', () => {
   const r = new Renderer(fakeCanvas(), {});
   r.alpha = 0.25;
-  const s = { body: { x: 1 }, facing: -1, aim: 2, current: 'M4', anim: { run: 0.5, idle: 3, land: 2, flip: 0, recoil: 0, swing: 0.4 }, animPrev: { run: 0.4, idle: 2, land: 4, flip: 0, recoil: 1, swing: 0.2 } };
+  const s = { body: { x: 1 }, facing: -1, aim: 2, current: 'M4', anim: { run: 0.5, idle: 3, land: 2, flip: 0, recoil: 0, act: 'mine', use: 0.4 }, animPrev: { run: 0.4, idle: 2, land: 4, flip: 0, recoil: 1, act: 'mine', use: 0.2 } };
   const v = r.animated(s);
   assert.equal(r.animated(s), v, 'the same view each frame');
   assert.equal(Object.getPrototypeOf(v), Object.prototype, 'a plain object (a soldier made a prototype slows every soldier down)');
@@ -272,7 +274,10 @@ test('the animation between updates is kept per soldier (not made new every fram
   assert.equal(v.current, 'M4');
   assert.equal(v.anim.land, 4 + (2 - 4) * 0.25, 'winding down: eased');
   assert.equal(v.anim.recoil, 1 + (0 - 1) * 0.25);
-  assert.equal(v.anim.swing, 0.4, 'starting up: at once');
+  assert.ok(Math.abs(v.anim.use - (0.2 + (0.4 - 0.2) * 0.25)) < 1e-12, 'part way through an act: in between');
+  assert.equal(v.anim.act, 'mine');
+  s.anim.act = 'eat'; s.anim.use = 0.05;
+  assert.equal(r.animated(s).anim.use, 0.05, 'a new act: as it is now');
 });
 
 test('things drawn part way between updates can be worked out into a scratch object', () => {

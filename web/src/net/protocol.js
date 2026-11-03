@@ -12,8 +12,9 @@ import { CLASS_IDS, UPGRADE_IDS } from '../classes.js';
 import { REWARD_IDS } from '../streaks.js';
 import { ITEMS } from '../world/items.js';
 import { RARITIES } from '../world/gear.js';
+import { ACTS, ACT_ID } from '../useanim.js';
 
-export const PROTOCOL = 25;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 26;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -47,6 +48,9 @@ const switchFrom = v => {
 // Worlds' items (things on the ground), by number.
 const ITEM_KEYS = [...ITEMS.keys()];
 const ITEM_INDEX = new Map(ITEM_KEYS.map((k, i) => [k, i]));
+// (What's in a world player's hands: an item's number + 1, 0 for nothing.)
+const handIndex = key => (key ? (ITEM_INDEX.get(key) ?? -1) + 1 : 0);
+const handAt = i => (i > 0 ? ITEM_KEYS[i - 1] || null : null);
 const MAX_DROPS = 200;
 // Classes (0: none) and weapon upgrades, as numbers.
 const classIndex = cls => CLASS_IDS.indexOf(cls) + 1;
@@ -189,14 +193,18 @@ export function encodeWorld(game) {
     w.u8(s.id);
     w.u8((s.alive ? 1 : 0) | (b.crouching ? 2 : 0) | (b.onGround ? 4 : 0) | (b.jetting ? 8 : 0) | (b.hasJetpack ? 16 : 0) |
       (s.burnTicks > 0 ? 32 : 0) | (s.spawnProtect > 0 ? 64 : 0) | (s.kamikaze ? 128 : 0));
-    w.u8((s.facing > 0 ? 1 : 0) | (b.rope ? 2 : 0) | (b.padLaunch ? 4 : 0) | (s.jugger > 0 ? 8 : 0));
+    // (16: what's in their hands follows, in a world: worldplay.js's hold.)
+    const hands = s.hands && (s.hands[0] || s.hands[1]) ? s.hands : null;
+    w.u8((s.facing > 0 ? 1 : 0) | (b.rope ? 2 : 0) | (b.padLaunch ? 4 : 0) | (s.jugger > 0 ? 8 : 0) | (hands ? 16 : 0));
     w.f32(b.x); w.f32(b.y);
     w.i16(b.vx * 100); w.i16(b.vy * 100);
     w.u16(angleToU16(s.aim));
     w.u8(clampU8(Math.ceil(Math.max(0, s.health)))); w.u8(clampU8(Math.ceil(s.armour)));
     w.u8(weaponIndex(s.current));
     const a = s.anim;
-    w.u8(clampU8(a.run * 255)); w.u8(clampU8(a.flip * 255)); w.u8(clampU8(a.land * 20)); w.u8(clampU8(a.recoil * 40)); w.u8(clampU8(a.swing * 255));
+    w.u8(clampU8(a.run * 255)); w.u8(clampU8(a.flip * 255)); w.u8(clampU8(a.land * 20)); w.u8(clampU8(a.recoil * 40));
+    // (What they're doing with what's in hand, and how far through: useanim.js.)
+    w.u8(ACT_ID.get(a.act) || 0); w.u8(clampU8((a.use || 0) * 255));
     w.i16(s.frags); w.u16(clampU16(s.deaths)); w.i16(s.points || 0);
     w.u8(clampU8(s.level ?? 0)); w.u8(clampU8(s.lives ?? 0));
     w.u8(classIndex(s.cls));
@@ -204,6 +212,7 @@ export function encodeWorld(game) {
     w.u8(clampU8(b.fuel));
     w.u8(clampU8(s.streak || 0)); // (kills in a row: everyone sees who's on a streak)
     if (b.rope) { w.f32(b.rope.x); w.f32(b.rope.y); w.u16(clampU16(b.rope.len)); }
+    if (hands) { w.u16(handIndex(hands[0])); w.u16(handIndex(hands[1])); }
   }
 
   const live = game.projectiles.filter(p => !p.dead);
@@ -366,12 +375,12 @@ export function decodeSnapshot(data) {
     const f = r.u8(), g = r.u8();
     s.alive = !!(f & 1); s.crouching = !!(f & 2); s.onGround = !!(f & 4); s.jetting = !!(f & 8); s.hasJetpack = !!(f & 16);
     s.burning = !!(f & 32); s.protected = !!(f & 64); s.kamikaze = !!(f & 128);
-    s.facing = g & 1 ? 1 : -1; const roped = !!(g & 2); s.padLaunch = !!(g & 4); s.jugger = g & 8 ? 1 : 0;
+    s.facing = g & 1 ? 1 : -1; const roped = !!(g & 2); s.padLaunch = !!(g & 4); s.jugger = g & 8 ? 1 : 0; const handed = !!(g & 16);
     s.x = r.f32(); s.y = r.f32(); s.vx = r.i16() / 100; s.vy = r.i16() / 100;
     s.aim = u16ToAngle(r.u16());
     s.health = r.u8(); s.armour = r.u8();
     s.current = weaponAt(r.u8()) || 'Platinum';
-    s.anim = { run: r.u8() / 255, flip: r.u8() / 255, land: r.u8() / 20, recoil: r.u8() / 40, swing: r.u8() / 255 };
+    s.anim = { run: r.u8() / 255, flip: r.u8() / 255, land: r.u8() / 20, recoil: r.u8() / 40, act: ACTS[r.u8()] || '', use: r.u8() / 255 };
     s.frags = r.i16(); s.deaths = r.u16(); s.points = r.i16();
     s.level = r.u8(); s.lives = r.u8();
     s.cls = classAt(r.u8());
@@ -379,6 +388,7 @@ export function decodeSnapshot(data) {
     s.fuel = r.u8();
     s.streak = r.u8();
     s.rope = roped ? { x: r.f32(), y: r.f32(), len: r.u16() } : null;
+    s.hands = handed ? [handAt(r.u16()), handAt(r.u16())] : null;
     snap.soldiers.push(s);
   }
   const np = r.u16();

@@ -6,7 +6,8 @@
 
 import { buildPose } from '../stickman.js';
 import { lerp } from '../util.js';
-import { drawWeapon, drawStreakFlame } from '../sprites.js';
+import { drawStreakFlame } from '../sprites.js';
+import { drawHeld } from '../held.js';
 import { css, mix, shade, rgb } from './color.js';
 import { drawSkinHead, drawHeadHalo, drawVest, drawTunic, TUNICS } from '../skins.js';
 
@@ -148,15 +149,8 @@ export function drawSoldier(r, game, s, alpha, theme) {
     ctx.fill();
   }
 
-  // The weapon, then the body over it.
-  ctx.save();
-  ctx.translate(pose.gun.x, pose.gun.y);
-  let angle = pose.gun.angle;
-  if ((pose.gun.def.kind === 'melee' || pose.gun.def.kind === 'build') && v.anim.swing > 0) angle -= Math.sin(v.anim.swing * Math.PI) * 1.7 * (Math.cos(angle) < 0 ? -1 : 1);
-  ctx.rotate(angle);
-  if (Math.cos(pose.gun.angle) < 0) ctx.scale(1, -1);
-  drawWeapon(ctx, pose.gun.def, false);
-  ctx.restore();
+  // What's in their hands (held.js), then the body over it.
+  drawHeld(ctx, pose, game.tick, false);
 
   ctx.strokeStyle = c.ink;
   ctx.lineWidth = W.torso;
@@ -264,15 +258,8 @@ export function drawLineSoldier(r, game, s, alpha, theme, skin) {
     ctx.fill();
     if (s.body.jetting) jetFlame(ctx, bx, ny);
   }
-  // The weapon, then the body over it.
-  ctx.save();
-  ctx.translate(pose.gun.x, pose.gun.y);
-  let angle = pose.gun.angle;
-  if ((pose.gun.def.kind === 'melee' || pose.gun.def.kind === 'build') && v.anim.swing > 0) angle -= Math.sin(v.anim.swing * Math.PI) * 1.7 * (Math.cos(angle) < 0 ? -1 : 1);
-  ctx.rotate(angle);
-  if (Math.cos(pose.gun.angle) < 0) ctx.scale(1, -1);
-  drawWeapon(ctx, pose.gun.def, false);
-  ctx.restore();
+  // What's in their hands (held.js), then the body over it.
+  drawHeld(ctx, pose, game.tick, false);
   ctx.strokeStyle = c.ink;
   ctx.lineWidth = LINE_W;
   ctx.beginPath();

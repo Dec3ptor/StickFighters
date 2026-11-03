@@ -2,6 +2,7 @@
 
 import { VIEW_W, VIEW_H, MOTION } from './config.js';
 import { buildPose, hypot } from './stickman.js';
+import { drawHeld } from './held.js';
 import { laserEnd, lasered } from './combat.js';
 import { WEAPONS } from './weapons.js';
 import { clamp, lerp } from './util.js';
@@ -671,17 +672,13 @@ export class Renderer {
       ctx.fillRect(bx, -14, 2.5, 8);
     }
 
-    // Weapon first, so the front hand overlaps it. (Then back to the soldier's own place.)
-    const gun = pose.gun, def = gun.def;
-    ctx.translate(gun.x, gun.y);
-    let angle = gun.angle;
-    if ((def.kind === 'melee' || def.kind === 'build') && v.anim.swing > 0) angle -= Math.sin(v.anim.swing * Math.PI) * 1.7 * (Math.cos(angle) < 0 ? -1 : 1);
-    ctx.rotate(angle);
-    if (Math.cos(gun.angle) < 0) ctx.scale(1, -1);
+    // What's in their hands first (held.js), so the front hand overlaps it. (Back to the soldier's
+    // own place after each thing: the same sums as saving and restoring would give.)
+    const def = pose.gun.def;
     if (!FILLED_WEAPONS.has(def.look.type)) this.lineEnds(st, st.cap0, st.join0);
-    drawWeapon(ctx, def, false);
-    ctx.setTransform(k, 0, 0, k, this.tx, this.ty);
-    ctx.translate(x, y);
+    const base = this.heldBase ||= { k: 1, e: 0, f: 0 };
+    base.k = k; base.e = this.tx + k * x; base.f = this.ty + k * y;
+    drawHeld(ctx, pose, game.tick, true, base);
 
     ctx.strokeStyle = INK;
     ctx.lineWidth = 1.5;
@@ -732,18 +729,23 @@ export class Renderer {
     let d = cur.run - prev.run;
     if (d > 0.5) d -= 1; else if (d < -0.5) d += 1;
     let v = views.get(s);
-    if (!v) views.set(s, v = { body: null, facing: 0, aim: 0, current: null, anim: { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, swing: 0 } });
+    if (!v) views.set(s, v = { body: null, facing: 0, aim: 0, current: null, held: null, held2: null, anim: { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, act: '', use: 0 } });
     v.body = s.body;
     v.facing = s.facing;
     v.aim = s.aim;
     v.current = s.current;
+    // (What's in a world's hands: worldplay.js.)
+    v.held = s.held || null;
+    v.held2 = s.held2 || null;
     const an = v.anim;
     an.run = (((prev.run + d * a) % 1) + 1) % 1;
     an.idle = prev.idle + (cur.idle - prev.idle) * a;
     an.land = easeOut(cur.land, prev.land, a);
     an.flip = easeOut(cur.flip, prev.flip, a);
     an.recoil = easeOut(cur.recoil, prev.recoil, a);
-    an.swing = easeOut(cur.swing, prev.swing, a);
+    // (What they're doing with it: part way along, the same act; just begun or ended, as it is now.)
+    an.act = cur.act;
+    an.use = prev.act === cur.act && cur.use >= prev.use ? prev.use + (cur.use - prev.use) * a : cur.use;
     return v;
   }
 

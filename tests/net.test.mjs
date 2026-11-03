@@ -431,7 +431,8 @@ function oldView(snaps, rt, me) {
       health: sb.health, armour: sb.armour, current: sb.current, frags: sb.frags, deaths: sb.deaths, points: sb.points, level: sb.level, lives: sb.lives,
       cls: sb.cls, streak: sb.streak, jugger: sb.jugger, respawnTimer: sb.respawnTimer, spawnProtect: sb.protected ? 1 : 0, burnTicks: sb.burning ? 1 : 0,
       kamikaze: sb.kamikaze, run: smooth && Math.abs(sb.anim.run - sa.anim.run) < 0.5 ? lerp(sa.anim.run, sb.anim.run, t) : sb.anim.run,
-      flip: sb.anim.flip, land: sb.anim.land, recoil: sb.anim.recoil, swing: sb.anim.swing, idle: tick,
+      flip: sb.anim.flip, land: sb.anim.land, recoil: sb.anim.recoil, act: sb.anim.act,
+      use: smooth && sa.anim.act === sb.anim.act && sb.anim.use >= sa.anim.use ? lerp(sa.anim.use, sb.anim.use, t) : sb.anim.use, idle: tick,
     });
   }
   // Projectiles: new ones worked back along their path to where they were, but not before they
@@ -458,7 +459,7 @@ function shown(s) {
     fuel: b.fuel, padLaunch: b.padLaunch, rope: b.rope, alive: s.alive, aim: s.aim, facing: s.facing,
     health: s.health, armour: s.armour, current: s.current, frags: s.frags, deaths: s.deaths, points: s.points, level: s.level, lives: s.lives,
     cls: s.cls, streak: s.streak, jugger: s.jugger, respawnTimer: s.respawnTimer, spawnProtect: s.spawnProtect, burnTicks: s.burnTicks,
-    kamikaze: !!s.kamikaze?.remote, run: a.run, flip: a.flip, land: a.land, recoil: a.recoil, swing: a.swing, idle: a.idle,
+    kamikaze: !!s.kamikaze?.remote, run: a.run, flip: a.flip, land: a.land, recoil: a.recoil, act: a.act, use: a.use, idle: a.idle,
   };
 }
 

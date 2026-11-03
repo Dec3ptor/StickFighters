@@ -38,7 +38,8 @@ export class Soldier {
     this.prevY = 0;
     this.aim = Math.PI;
     this.facing = -1;
-    this.anim = { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, swing: 0 };
+    // (act: what they're doing with what's in hand, use: how far through it, rate: how fast: useanim.js.)
+    this.anim = { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, act: '', use: 0, rate: 0 };
     // Placeholder state until the first spawn.
     this.health = 0;
     this.maxHealth = maxHealth; // (the mode's: see Game.maxHealth)
@@ -47,6 +48,7 @@ export class Soldier {
     this.current = 'Platinum';
     this.cooldown = 0;
     this.reloadTimer = 0;
+    this.reloadTotal = 0;   // (how long the reload under way takes in all: its animation)
     this.spawnProtect = 0;
     this.burnTicks = 0;
     this.aimDist = 200;     // how far away the mouse is (throw strength, air strike target, teleport)
@@ -144,7 +146,7 @@ export class Soldier {
     this.lastHurtBy = null;
     this.lastHurtWeapon = null;
     this.lastHurtTick = -9999;
-    this.anim = { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, swing: 0 };
+    this.anim = { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, act: '', use: 0, rate: 0 };
     this.animPrev = null;
     this.jugger = 0; // (a new life isn't a Juggernaut: Defuse puts round survivors back with this too)
   }
@@ -212,8 +214,8 @@ export class Soldier {
     this.prevX = this.body.x;
     this.prevY = this.body.y;
     // (Copied into the same object every update.)
-    const a0 = this.anim, p = this.animPrev || (this.animPrev = { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, swing: 0 });
-    p.run = a0.run; p.idle = a0.idle; p.land = a0.land; p.flip = a0.flip; p.recoil = a0.recoil; p.swing = a0.swing;
+    const a0 = this.anim, p = this.animPrev || (this.animPrev = { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, act: '', use: 0 });
+    p.run = a0.run; p.idle = a0.idle; p.land = a0.land; p.flip = a0.flip; p.recoil = a0.recoil; p.act = a0.act; p.use = a0.use;
     if (input.aim != null) this.aim = input.aim;
     const c = Math.cos(this.aim);
     if (Math.abs(c) > 0.05) this.facing = c < 0 ? -1 : 1;
@@ -233,6 +235,10 @@ export class Soldier {
     if (b.bounced) a.flip = 1;
     else if (a.flip > 0) a.flip = b.onGround ? 0 : Math.max(0, a.flip - MOTION.flipRate);
     if (a.recoil > 0) a.recoil = Math.max(0, a.recoil - 0.6);
-    if (a.swing > 0) a.swing = Math.max(0, a.swing - 0.09 * MOTION.timeScale);
+    // What they're doing with what's in hand (useanim.js): a reload goes as the reload does.
+    // (Online, a player's own reload: as the host has it, sent with the snapshots.)
+    if (this.reloadTimer > 0 && this.reloadTotal > 0) { a.act = 'reload'; a.use = Math.max(0, Math.min(1, 1 - this.reloadTimer / this.reloadTotal)); }
+    else if (a.act === 'reload') { if (!(this.reloadTimer > 0)) { a.act = ''; a.use = 0; } }
+    else if (a.act) { a.use += a.rate || 0.1; if (a.use >= 1) { a.act = ''; a.use = 0; } }
   }
 }

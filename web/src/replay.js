@@ -39,14 +39,14 @@ function soldierState(s, o) {
       id: 0, alive: false, crouching: false, onGround: false, jetting: false, hasJetpack: false,
       burning: false, protected: false, kamikaze: false, facing: 1, padLaunch: false,
       x: 0, y: 0, vx: 0, vy: 0, aim: 0, health: 0, armour: 0, current: null,
-      anim: { run: 0, flip: 0, land: 0, recoil: 0, swing: 0 }, rope: null, jugger: 0, streak: 0, cls: undefined,
+      anim: { run: 0, flip: 0, land: 0, recoil: 0, act: '', use: 0 }, rope: null, jugger: 0, streak: 0, cls: undefined,
     };
   }
   o.id = s.id; o.alive = s.alive; o.crouching = b.crouching; o.onGround = b.onGround; o.jetting = b.jetting; o.hasJetpack = b.hasJetpack;
   o.burning = s.burnTicks > 0; o.protected = s.spawnProtect > 0; o.kamikaze = !!s.kamikaze; o.facing = s.facing; o.padLaunch = !!b.padLaunch;
   o.x = b.x; o.y = b.y; o.vx = b.vx; o.vy = b.vy; o.aim = s.aim; o.health = s.health; o.armour = s.armour; o.current = s.current;
   const an = o.anim;
-  an.run = a.run; an.flip = a.flip; an.land = a.land; an.recoil = a.recoil; an.swing = a.swing;
+  an.run = a.run; an.flip = a.flip; an.land = a.land; an.recoil = a.recoil; an.act = a.act || ''; an.use = a.use || 0;
   if (b.rope) {
     const r = o.rope || (o.rope = { x: 0, y: 0, len: 0 });
     r.x = b.rope.x; r.y = b.rope.y; r.len = b.rope.len;
@@ -348,7 +348,7 @@ export class ReplayPlayer {
       s.jugger = src.jugger ? 1 : 0;
       s.streak = src.streak || 0;
       s.anim.run = near && Math.abs(sb.anim.run - sa.anim.run) < 0.5 ? lerp(sa.anim.run, sb.anim.run, t) : src.anim.run;
-      s.anim.flip = src.anim.flip; s.anim.land = src.anim.land; s.anim.recoil = src.anim.recoil; s.anim.swing = src.anim.swing;
+      s.anim.flip = src.anim.flip; s.anim.land = src.anim.land; s.anim.recoil = src.anim.recoil; s.anim.act = src.anim.act || ''; s.anim.use = src.anim.use || 0;
       s.anim.idle = rt;
       s.animPrev = null;
     }

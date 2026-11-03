@@ -13,6 +13,9 @@ import { itemOf } from './items.js';
 import { REACH, shapeTiles, canPlace, inHand, rightHand } from './worldplay.js';
 import { skyLevel } from './monsters.js';
 import { itemColor, isPrecious } from './iteminfo.js';
+import { setItemPainter } from '../held.js';
+import { drawWeapon } from '../sprites.js';
+import { WEAPONS } from '../weapons.js';
 
 export const PATCH = 16;                 // tiles across a picture
 const PP = PATCH * TILE;                 // its size in the world (px)
@@ -1740,11 +1743,62 @@ export function drawIcon(ctx, it, x, y, w, classic, detail = false) {
     for (let i = 0; i < 3; i++) ctx.strokeRect(x + w * (0.12 + i * 0.3), y + w * 0.25, w * 0.2, w * 0.6);
     return;
   }
-  // A weapon: a dark shape, the length of the slot.
+  // A weapon: as it's drawn in hand, fitted to the square.
+  const def = it.kind === 'weapon' && WEAPONS[it.weapon];
+  if (def) {
+    const L = def.look.length || 12, held = def.look.type === 'held' || def.look.type === 'radio' || def.look.type === 'glove';
+    const k = held ? w / 16 : w / (L + 8);
+    ctx.save();
+    ctx.translate(x + w / 2, y + w / 2);
+    ctx.scale(k, k);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    drawWeapon(ctx, def, true);
+    ctx.restore();
+    return;
+  }
   ctx.fillStyle = '#444';
   ctx.fillRect(x + w * 0.05, y + w * 0.4, w * 0.9, w * 0.22);
   ctx.fillRect(x + w * 0.2, y + w * 0.55, w * 0.15, w * 0.3);
 }
+
+// ---- Things in hand (held.js draws them; hands.js says how each looks) ----------------------------
+
+// How big things are in a hand (world units: a block's 16 across).
+const HAND_SIZE = { block: 6.5, wall: 6.5, food: 6, gear: 6, quest: 5.5, material: 5, ammo: 5, attachment: 6, scroll: 5.5, contract: 5.5 };
+
+// Blocks and walls in hand: as they look in the world, drawn once each into a little picture.
+const HAND_TILES = new Map();
+function handTile(it, classic) {
+  const key = `${it.key}|${classic ? 1 : 0}`;
+  let cv = HAND_TILES.get(key);
+  if (cv !== undefined) return cv;
+  cv = null;
+  if (typeof document !== 'undefined') {
+    cv = document.createElement('canvas');
+    cv.width = cv.height = 32;
+    const g = cv.getContext('2d');
+    if (g) drawTileIcon(g, it, 0, 0, 32, classic); else cv = null;
+  }
+  HAND_TILES.set(key, cv);
+  return cv;
+}
+
+/** Item `it` in a hand, drawn round (0, 0) (held.js: the context turned and scaled as it's held). */
+export function drawHeldItem(ctx, it, classic) {
+  const w = (it.gem ? 4.6 : HAND_SIZE[it.kind]) || 5.5;
+  if (it.kind === 'block' || it.kind === 'wall') {
+    const cv = handTile(it, classic);
+    if (cv) {
+      // (WebGL's stand-in canvas draws pictures with image(): upright, as blocks are held.)
+      if (ctx.drawImage) ctx.drawImage(cv, -w / 2, -w / 2, w, w);
+      else ctx.image?.(cv, -w / 2, -w / 2, w, w);
+      return;
+    }
+  }
+  drawIcon(ctx, it, -w / 2, -w / 2, w, classic);
+}
+setItemPainter(drawHeldItem);
 
 /** Gear's icons (gear.js): a helmet, a coat, boots, a ring, an amulet, in its base's colour. */
 function drawGearIcon(ctx, it, x, y, w) {

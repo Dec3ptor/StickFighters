@@ -13,7 +13,7 @@ function stand(id, team, x, facing, skin, extra = {}) {
     id, team, x, y: 0, prevX: x, prevY: 0, facing, aim: facing > 0 ? -0.12 : Math.PI + 0.12, current: 'M4', armour: 0, health: 150,
     spawnProtect: 0, jugger: 0, name: '', skin,
     body: { onGround: true, vx: 0, vy: 0, crouching: false, jetting: false, hasJetpack: false, rope: null },
-    anim: { run: 0, idle: 0, flip: 0, land: 0, recoil: 0, swing: 0 },
+    anim: { run: 0, idle: 0, flip: 0, land: 0, recoil: 0, act: '', use: 0 },
     ...extra,
   };
 }
