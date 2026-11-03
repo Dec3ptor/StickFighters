@@ -306,18 +306,21 @@ if (town) {
 // 4a2. Talking to the townsfolk (talk.js): right click on someone in the village, and the talk
 // screen opens; their shop; buying something; goodbye.
 const folk = await page.evaluate(async () => {
-  const T = await import('./src/world/townsfolk.js');
+  const T = await import('./src/world/townsfolk.js'), { SOLID } = await import('./src/world/blocks.js');
   const { state } = window.stickSoldiers, g = state.game, me = state.me;
   const all = g.soldiers.filter(s => s.npc?.kind === 'townsfolk' && s.alive);
   const npc = all.find(s => ['merchant', 'smith', 'farmer'].includes(s.npc.role)) || all[0];
   if (!npc) return null;
   g.controllers.get(npc).wait = 5000;
-  // (Beside them, where they could walk: not inside a wall.)
+  // (Beside them, where they could walk: not inside a wall, nor a shut door, which they walk
+  // through but which would push someone put in it up out of it, onto the roof.)
   const nx = Math.floor(npc.x / 16), ny = Math.floor((npc.y + 12) / 16), [lo, hi] = T.walkSpan(g.world, nx, ny, 6);
-  const x = nx - 2 >= lo ? nx - 2 : Math.min(hi, nx + 2);
+  // (ny: the floor's row, the feet just on it; the body, the three rows over it.)
+  const clear = x => x >= lo && x <= hi && [1, 2, 3].every(d => !SOLID[g.world.tile(x, ny - d)]);
+  const x = [nx - 2, nx + 2, nx - 1, nx + 1].find(clear) ?? nx;
   me.body.x = x * 16 + 8; me.body.y = npc.y; me.body.vx = me.body.vy = 0;
   me.world.inv.add('coins', 500);
-  return { id: npc.id, name: npc.name, role: npc.npc.role, count: all.length };
+  return { id: npc.id, name: npc.name, role: npc.npc.role, count: all.length, beside: x - nx };
 });
 check(!!folk, 'townsfolk in the village');
 if (folk) {
