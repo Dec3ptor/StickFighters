@@ -44,6 +44,7 @@ import { TileWorld } from './world/tileworld.js';
 import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT, genOf } from './world/worldsave.js';
 import { playerToSave, worldFromSave, dropItem, chestAt, boxFor, boxKind, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, rehire, REACH, makeRecipe, devTake, stackToChests, fitAttachment, stripGun } from './world/worldplay.js';
 import { warp, waystonesToSave, waystonesFromSave } from './world/waystones.js';
+import { skyHears } from './world/sky.js';
 import { WORLD_SETTINGS, cleanSettings, settingsSummary, kitOf } from './world/worldrules.js';
 import { itemOf } from './world/items.js';
 import { InventoryScreen } from './world/inventoryui.js';
@@ -2177,6 +2178,8 @@ function frame(now) {
   // game holds still; online, the picture does). (Sounds to another player aren't ours: offline
   // they carry who they're for; online the host only sends us ours.)
   if (g.sounds.some(x => x.name === 'killConfirm' && (x.to == null || x.to === me.id))) confirmKill(now);
+  // (A world: bangs scare the birds off: sky.js.)
+  if (g.world) skyHears(g, g.sounds);
   audio.playQueue(g.sounds, ear.x, ear.y, me.id, me.team);
   g.sounds.length = 0;
   // (Online, the hit-stop holds the picture: the game itself can't stop.)

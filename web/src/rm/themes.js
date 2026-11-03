@@ -248,7 +248,8 @@ export const WORLD_THEMES = {
     ink: '#15201a', halo: '#ffffff', haloAlpha: 0.3, rim: '#fff8d8',
     vignette: 0.3, dark: 0,
   },
-  // The open sea: sky and water to the horizon, an island or a sail far off, gulls' weather.
+  // The open sea: sky and water to the horizon, sea stacks and islets far off, a sail now and
+  // then (no harbours or container ships out here).
   ocean: {
     name: 'Open sea',
     sky: [[0, '#2a6aaa'], [0.6, '#8cc0e0'], [1, '#eaf4f6']],
@@ -257,7 +258,7 @@ export const WORLD_THEMES = {
     haze: '#d8eaf2',
     layers: [
       { p: 0.05, gen: 'sea', height: 150, color: '#86a6bb', haze: 0.4, water: '#3f7fb0' },
-      { p: 0.12, gen: 'ships', height: 170, color: '#5f7a8e', haze: 0.32 },
+      { p: 0.12, gen: 'isles', height: 170, color: '#5f7a8e', haze: 0.3, water: '#3a78a8' },
     ],
     ground: '#0e2a3e',
     fore: null,
