@@ -198,17 +198,29 @@ export class Soldier {
 
   /** Movement and animation for one tick. Weapons and damage are handled by the game. */
   move(input, map) {
+    this.beginMove(input);
+    stepBody(this.body, input, map);
+    this.animate();
+  }
+
+  /**
+   * The start of a tick's movement, however it moves (walking, or a world's dev mode flying):
+   * where it was and its animation as it was (the renderer draws in between them and now, and
+   * the camera follows that), its aim, and which way it faces.
+   */
+  beginMove(input) {
     this.prevX = this.body.x;
     this.prevY = this.body.y;
-    // The animation as it was (the renderer draws in between): copied into the same object every update.
+    // (Copied into the same object every update.)
     const a0 = this.anim, p = this.animPrev || (this.animPrev = { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, swing: 0 });
     p.run = a0.run; p.idle = a0.idle; p.land = a0.land; p.flip = a0.flip; p.recoil = a0.recoil; p.swing = a0.swing;
     if (input.aim != null) this.aim = input.aim;
     const c = Math.cos(this.aim);
     if (Math.abs(c) > 0.05) this.facing = c < 0 ? -1 : 1;
+  }
 
-    stepBody(this.body, input, map);
-
+  /** The animation, once the body's moved this tick. */
+  animate() {
     const b = this.body, a = this.anim;
     if (b.onGround && Math.abs(b.vx) > 0.3) {
       // Running backwards plays the cycle backwards. Sprites face left, so "forward" is -x.

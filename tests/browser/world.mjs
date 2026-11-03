@@ -160,6 +160,45 @@ check(inChest === 30, `the glass put in the chest (${inChest})`);
 await page.keyboard.press('KeyI');
 report.chest = { at: [chestAtTile.tx, chestAtTile.ty], glass: inChest };
 
+// 3c. Dev mode (the key under Escape): anything made for free from the bag (found by typing:
+// here a diamond, which has no recipe), and anything taken from the codex (a unique). Then off.
+await page.keyboard.press('Backquote');
+await page.waitForFunction(() => !!window.stickSoldiers.state.me.world.dev);
+await page.keyboard.press('KeyI');
+await page.waitForSelector('#inventory:not(.hidden)');
+await page.fill('#inventory [data-find]', 'diamond');
+const devRow = page.locator('#inventory .craft-row.dev:not(.hidden)', { hasText: 'Diamond' }).first();
+check(await devRow.count() === 1 && !(await devRow.isDisabled()), 'dev mode: a diamond to be had from the bag');
+const enderRow = page.locator('#inventory .craft-row:not(.dev)', { hasText: 'Ender chest' }).first();
+await page.fill('#inventory [data-find]', 'ender');
+check(!(await enderRow.isDisabled()), 'an ender chest, with nothing it takes and no anvil');
+await enderRow.click();
+await page.fill('#inventory [data-find]', 'diamond');
+await devRow.click();
+const freebies = await page.evaluate(() => ({ diamond: window.stickSoldiers.state.me.world.inv.count('diamond'), ender: window.stickSoldiers.state.me.world.inv.count('ender_chest') }));
+check(freebies.diamond === 99 && freebies.ender === 1, `made for free (${JSON.stringify(freebies)})`);
+await page.screenshot({ path: `${outDir}/world-dev-crafting.png` });
+// (Escape in the box: emptied, and the keys are the game's again.)
+await page.locator('#inventory [data-find]').press('Escape');
+await page.keyboard.press('KeyI');
+await page.waitForSelector('#inventory.hidden', { state: 'attached' });
+await page.keyboard.press('KeyJ');
+await page.waitForSelector('#journal:not(.hidden)');
+await page.click('#journal [data-tab="codex"]');
+await page.click('#journal [data-cat="unique"]');
+await page.locator('#journal .codex-take').first().click();
+await page.waitForTimeout(100);
+const unique = await page.evaluate(() => window.stickSoldiers.state.me.world.inv.slots.find(s => s?.g?.unique)?.g.name || null);
+check(!!unique, 'dev mode: a unique from the codex');
+await page.keyboard.press('KeyJ');
+await page.keyboard.press('Backquote');
+await page.waitForFunction(() => !window.stickSoldiers.state.me.world.dev);
+await page.keyboard.press('KeyI');
+await page.waitForSelector('#inventory:not(.hidden)');
+check(await page.locator('#inventory .craft-row.dev:not(.hidden)').count() === 0, 'dev mode off: none of its own in the list');
+await page.keyboard.press('KeyI');
+report.dev = { ...freebies, unique };
+
 // 4. Save and quit (the menu), then play it again: just as it was left.
 await page.keyboard.press('Escape');
 await page.waitForSelector('#pause:not(.hidden)');

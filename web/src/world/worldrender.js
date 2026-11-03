@@ -912,9 +912,13 @@ export class WorldView {
 
   stale(px, py) { const p = this.pics.get(pkey(px, py)); if (p) p.stale = true; }
 
-  /** Picture pixels for each world pixel, at the renderer's scale s (changed only for a real change of zoom). */
+  /**
+   * Picture pixels for each world pixel, at the renderer's scale s (changed only for a real change
+   * of zoom). Zoomed far out (dev mode), less than one: thousands of pictures on the screen, each
+   * full size, came to hundreds of megabytes.
+   */
   resFor(s) {
-    if (!this.res || s > this.res * 1.25 || s < this.res / 1.6) this.res = Math.min(3, Math.max(1, Math.ceil(s * 2) / 2));
+    if (!this.res || s > this.res * 1.25 || s < this.res / 1.6) this.res = s >= 1 ? Math.min(3, Math.ceil(s * 2) / 2) : s >= 0.5 ? 1 : s >= 0.25 ? 0.5 : 0.25;
     return this.res;
   }
 
@@ -928,55 +932,61 @@ export class WorldView {
     const py0 = Math.max(0, Math.floor(v.t / PP)), py1 = Math.min(PATCHES_Y - 1, Math.floor(v.b / PP));
     // The pictures on the screen, nearest the middle first (when there are more to make than a
     // frame's worth); then those just off it (within EDGE: the next to come on), made with time
-    // to spare, one a frame, so a whole new row or column isn't all made in the frame it shows.
+    // to spare, so a whole new row or column isn't all made in the frame it comes on.
     const qx0 = Math.floor((v.l - EDGE) / PP), qx1 = Math.floor((v.r + EDGE) / PP);
     const qy0 = Math.max(0, Math.floor((v.t - EDGE) / PP)), qy1 = Math.min(PATCHES_Y - 1, Math.floor((v.b + EDGE) / PP));
-    const order = this.order ||= [], near = this.near ||= [];
+    const order = this.order ||= [], near = this.near ||= [], need = this.need ||= [];
     order.length = 0;
     near.length = 0;
+    need.length = 0;
     for (let py = qy0; py <= qy1; py++) {
       for (let px = qx0; px <= qx1; px++) (px >= px0 && px <= px1 && py >= py0 && py <= py1 ? order : near).push(pkey(px, py));
     }
+    // What has to be made (or made again): only those sorted, nearest the middle first. (Zoomed
+    // far out there are thousands on the screen: sorting them all each frame was most of a frame.)
+    for (let i = 0; i < order.length; i++) {
+      const p = this.pics.get(order[i]);
+      if (!p || p.stale || p.res !== res) need.push(order[i]);
+    }
     const mx = (v.l + v.r) / 2 / PP - 0.5, my = (v.t + v.b) / 2 / PP - 0.5;
     const far = k => { const dx = Math.floor(k / 64) - 1048576 - mx, dy = (k % 64) - my; return dx * dx + dy * dy; };
-    order.sort((a, b) => far(a) - far(b));
+    if (need.length > 1) need.sort((a, b) => far(a) - far(b));
     const ctx = r.ctx, direct = !this.picture;
     if (direct) ctx.setTransform(1, 0, 0, 1, 0, 0);
     const glows = this.glows;
     glows.length = 0;
     let painted = 0;
     const start = performance.now();
-    // (Zoomed far out, as dev mode can be, there's much more to draw: a bigger share of each frame for it.)
+    // (Zoomed far out, as dev mode can be, there's much more to make: a bigger share of each frame
+    // for it. Nothing there at all yet: twice as much, rather than a gap.)
     const budget = (r.zoomScale ?? 1) < 0.5 ? PAINT_MS * 3 : PAINT_MS;
+    for (let i = 0; i < need.length; i++) {
+      const key = need[i];
+      let p = this.pics.get(key);
+      // (Over this frame's budget: what was there before, if anything, until it's made again.)
+      if (painted > 0 && performance.now() - start > (p ? budget : budget * 2)) continue;
+      p = this.paint(world, Math.floor(key / 64) - 1048576, key % 64, res, p);
+      p.unshown = true;
+      this.pics.set(key, p);
+      painted++;
+    }
     for (let i = 0; i < order.length; i++) {
-      const key = order[i];
-      let p = this.pics.get(key), fresh = false;
-      if (!p || p.stale || p.res !== res) {
-        // (Over this frame's budget: what was there before, if anything, until it's made again;
-        // nothing there yet, a gap for a frame or so, at the edge: the next frame makes it.)
-        const over = painted > 0 && performance.now() - start > budget;
-        if (over && !p) continue;
-        if (!over) {
-          p = this.paint(world, Math.floor(key / 64) - 1048576, key % 64, res, p);
-          this.pics.set(key, p);
-          painted++;
-          fresh = true;
-        }
-      }
+      const key = order[i], p = this.pics.get(key);
+      if (!p) continue;
       p.used = this.frame;
-      // (Made off the screen since it was last shown: new to the renderer all the same.)
-      if (p.unshown) { fresh = true; p.unshown = false; }
+      // (Made since it was last shown: new to the renderer.)
+      const fresh = !!p.unshown;
+      p.unshown = false;
       this.show(r, p, key, fresh);
       for (let j = 0; j < p.lights.length; j++) glows.push(p.lights[j]);
     }
-    // Just off the screen: kept, and one made if there's time (and none had to be made on it).
-    let ahead = painted === 0 && performance.now() - start < budget / 2;
+    // Just off the screen: kept, and made if there's time to spare (and none had to be made on it).
+    let ahead = painted === 0;
     for (let i = 0; i < near.length; i++) {
       const key = near[i];
       let p = this.pics.get(key);
       if (!p || p.stale || p.res !== res) {
-        if (!ahead) continue;
-        ahead = false;
+        if (!ahead || performance.now() - start > budget / 2) { ahead = false; continue; }
         p = this.paint(world, Math.floor(key / 64) - 1048576, key % 64, res, p);
         p.unshown = true;
         this.pics.set(key, p);

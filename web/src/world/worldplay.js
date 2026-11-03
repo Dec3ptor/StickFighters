@@ -13,7 +13,8 @@ import { WEAPONS } from '../weapons.js';
 import { monstersTick, armNpc, foes, isMonster, monsterLoot, hireMerc, mercsOf, MERC, DAY_TICKS, hourOf } from './monsters.js';
 import { setDoor, pushDoor, doorsTick, soldierIn } from './doors.js';
 import { damage } from '../combat.js';
-import { devFly, devInput } from './devmode.js';
+import { devFly, devInput, devOn } from './devmode.js';
+import { craft, stationsNear, plainGear, devGive } from './crafting.js';
 import { townsfolkTick, isFolk } from './townsfolk.js';
 import { startTalk, talkTick, folkAt } from './talk.js';
 import { giveXp, countStat, applyProgress, maxHealthOf, damageScale, digScale, lootScale, doubleOreChance, regenTick, progToSave, progFromSave, KILL_XP, MINE_XP } from './progress.js';
@@ -1160,10 +1161,44 @@ function useItem(game, s, item, inp, pressed) {
  */
 export function crafted(game, s, r, made) {
   if (!s?.world || made <= 0) return;
-  const n = made * r.n, xp = Math.min(30, Math.round(valueOf(r.key) * n * 0.3));
-  if (xp > 0) giveXp(game, s, xp, `made ${itemOf(r.key)?.name ?? r.key}`);
-  countStat(s, 'crafted', n);
+  const n = made * r.n;
+  // (Dev mode's free things: no XP for them, nor counted as made. A quest still sees them.)
+  if (!devOn(s)) {
+    const xp = Math.min(30, Math.round(valueOf(r.key) * n * 0.3));
+    if (xp > 0) giveXp(game, s, xp, `made ${itemOf(r.key)?.name ?? r.key}`);
+    countStat(s, 'crafted', n);
+  }
   questEvent(game, s, { type: 'craft', key: r.key, n });
+}
+
+/**
+ * Player s makes recipe r (crafting.js) up to `times` times, with the stations near them; in dev
+ * mode (devmode.js) for free, anywhere, and dev mode's own recipes too. What doesn't fit goes on
+ * the ground. Returns how many times it was made.
+ */
+export function makeRecipe(game, s, r, times) {
+  const w = s?.world, free = devOn(s);
+  if (!w || !r || (r.dev && !free)) return 0;
+  const { made, left } = craft(w.inv, r, stationsNear(game.world, s.x, s.y - 8), times, free);
+  // (Gear: a piece each, as it was made.)
+  const g = plainGear(r.key);
+  if (g) for (let k = 0; k < left; k++) dropItem(game, r.key, 1, s.x, s.y - 14, s.facing * 2, -2, 30, { ...g });
+  else if (left) dropItem(game, r.key, left, s.x, s.y - 14, s.facing * 2, -2, 30);
+  if (made) crafted(game, s, r, made);
+  return made;
+}
+
+/**
+ * Dev mode (devmode.js): the codex's entry `id` (an item's key; a unique or set piece's id) into
+ * player s's things, free: a stack, or one piece (on the ground if there's no room). Returns what
+ * to tell them, or null.
+ */
+export function devTake(game, s, id) {
+  if (!devOn(s)) return null;
+  const got = devGive(s.world.inv, id);
+  if (!got) return null;
+  if (got.left) dropItem(game, got.key, got.left, s.x, s.y - 14, s.facing * 2, -2, 30, got.g);
+  return `Took ${got.n > 1 ? `${got.n} × ` : ''}${got.g?.name || itemOf(got.key).name}${got.left ? ' (on the ground: there\'s no room)' : ''}`;
 }
 
 /**

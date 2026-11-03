@@ -31,6 +31,9 @@ export function setDev(game, s, on) {
  */
 export function devFly(game, s, inp) {
   if (!devOn(s)) return false;
+  // (Where it was, its aim and animation, as walking keeps them: without them it's drawn, and the
+  // camera follows it, somewhere between where it is and where dev mode began.)
+  s.beginMove(inp);
   const b = s.body, speed = (inp.sprint ? 30 : 10) * MOTION.timeScale;
   const dx = Math.sign(inp.move || 0), dy = (inp.jump ? -1 : 0) + (inp.crouch ? 1 : 0);
   b.vx = dx * speed;
@@ -41,6 +44,7 @@ export function devFly(game, s, inp) {
   b.jetting = false;
   b.crouching = false;
   b.rope = null;
+  s.animate();
   return true;
 }
 
@@ -105,7 +109,8 @@ function moveTo(s, x, y) {
 /**
  * A dev mode key (a key code): changes something and says what, or false if it isn't one of
  * them. The keys: [ ] the brush, L the lights, N the time, V monsters, H the start, U the
- * surface, J the deep, comma and full stop the next town west and east.
+ * surface, O the deep, comma and full stop the next town west and east. (None of them a key the
+ * game's actions have: J, the journal, the codex with it, is still the journal: main.js.)
  */
 export function devKey(game, s, code) {
   const dev = s.world?.dev, world = game.world;
@@ -122,7 +127,7 @@ export function devKey(game, s, code) {
       return say(world.devQuiet ? 'No monsters' : 'Monsters come out again');
     case 'KeyH': { const p = world.spawns[0]; moveTo(s, p.x, p.y); return say('Back at the start'); }
     case 'KeyU': moveTo(s, s.x, (world.gen.surfaceAt(tx) - 3) * TILE); return say('Up on the surface');
-    case 'KeyJ': moveTo(s, s.x, (WORLD_H - 40) * TILE); return say('Down in the deep');
+    case 'KeyO': moveTo(s, s.x, (WORLD_H - 40) * TILE); return say('Down in the deep');
     case 'Comma': case 'Period': {
       const dir = code === 'Comma' ? -1 : 1, g = world.gen;
       for (let k = g.regionAt(tx) + dir, n = 0; n < 60; k += dir, n++) {
@@ -144,7 +149,7 @@ export function devLines(s, zoom) {
   return [
     `DEV MODE  ·  brush ${dev.brush * 2 - 1}×${dev.brush * 2 - 1}  ·  zoom ${zoom.toFixed(2)}×  ·  ${dev.lights ? 'all lit' : 'lit as it is'}`,
     'Fly: move keys, jump/crouch up/down, sprint fast  ·  wheel or + -: zoom  ·  [ ]: brush',
-    'L: lights  ·  N: time  ·  V: monsters  ·  H: start  ·  U: surface  ·  J: deep  ·  , .: next town',
+    'L: lights  ·  N: time  ·  V: monsters  ·  H: start  ·  U: surface  ·  O: deep  ·  , .: next town  ·  bag, codex: anything, free',
   ];
 }
 

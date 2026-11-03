@@ -33,7 +33,7 @@ import { BuyMenu } from './buymenu.js';
 import { canShop } from './defuse.js';
 import { renderLoadout, renderPicker } from './loadout.js';
 import { CROSSHAIR_STYLES, CROSSHAIR_COLORS, CROSSHAIR_DEFAULTS, CROSSHAIR_LIMITS, setCrosshair, drawCrosshair, crosshairCursor } from './crosshair.js';
-import { setKeys, savedKeys, resetKeys, isKey, keysFor, keyOf, mouseKey, keyName, keyLabel, keyText, useLayout } from './keys.js';
+import { setKeys, savedKeys, resetKeys, isKey, keysFor, keyOf, mouseKey, keyName, keyLabel, keyText, useLayout, boundKeys } from './keys.js';
 import { KeybindList } from './keysui.js';
 import { loadTuning, tuningToShare, useOwnTuning, tuningVersion } from './tuning.js';
 import { DevMenu } from './devmenu.js';
@@ -42,10 +42,9 @@ import { SKINS, isSkin } from './skins.js';
 import { drawSkinPreview } from './skinpreview.js';
 import { TileWorld } from './world/tileworld.js';
 import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorld, importWorld, FILE_EXT, genOf } from './world/worldsave.js';
-import { playerToSave, worldFromSave, dropItem, chestAt, boxFor, boxKind, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, rehire, REACH, crafted, stackToChests } from './world/worldplay.js';
+import { playerToSave, worldFromSave, dropItem, chestAt, boxFor, boxKind, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, rehire, REACH, makeRecipe, devTake, stackToChests } from './world/worldplay.js';
 import { warp, waystonesToSave, waystonesFromSave } from './world/waystones.js';
 import { WORLD_SETTINGS, cleanSettings, settingsSummary, kitOf } from './world/worldrules.js';
-import { craft, stationsNear } from './world/crafting.js';
 import { itemOf } from './world/items.js';
 import { InventoryScreen } from './world/inventoryui.js';
 import { TalkScreen } from './world/talkui.js';
@@ -1170,6 +1169,8 @@ function journalAct(d) {
   else if (d.op === 'qdrop') dropQuest(me, d.id);
   else if (d.op === 'qshare') { const text = shareQuest(g, me, d.id); if (text) localNote(text); }
   else if (d.op === 'perk') { const text = spendPoint(me, d.id); if (text) localNote(text); }
+  // (Dev mode: something from the codex, free.)
+  else if (d.op === 'devtake') { const text = devTake(g, me, d.id); if (text) localNote(text); }
   audio.play('click');
 }
 
@@ -1237,10 +1238,9 @@ function craftItem(r, times) {
   const g = state.game, me = state.me;
   if (!g?.world || !me?.world || !me.alive) return;
   if (state.mode === 'client') { state.net?.client?.link.send({ t: 'wop', op: 'craft', r: r.id, times }, true); audio.play('click'); return; }
-  const { made, left } = craft(me.world.inv, r, stationsNear(g.world, me.x, me.y - 8), times);
+  // (Free in dev mode, worldplay.js.)
+  const made = makeRecipe(g, me, r, times);
   if (!made) return;
-  if (left) dropItem(g, r.key, left, me.x, me.y - 14, me.facing * 2, -2, 30);
-  crafted(g, me, r, made);
   audio.play('click');
   localNote(`Made ${made * r.n} × ${itemOf(r.key).name}`);
 }
@@ -2362,7 +2362,8 @@ function pressMenuKey(key) {
   if (g.world && state.me?.world?.dev) {
     if (key === 'Equal' || key === 'NumpadAdd') { input.devZoom += 1; return true; }
     if (key === 'Minus' || key === 'NumpadSubtract') { input.devZoom -= 1; return true; }
-    if (devKey(g, state.me, key)) return true;
+    // (A key one of the game's actions has is that action's: the journal's, say.)
+    if (!boundKeys().has(key) && devKey(g, state.me, key)) return true;
   }
   if (isKey('journal', key) && g.world) { openJournal(); return true; }
   if (isKey('changeClass', key) && g.classesOn && !g.over) {

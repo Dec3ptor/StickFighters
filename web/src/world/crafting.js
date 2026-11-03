@@ -4,7 +4,8 @@
 // (guns, ammunition, explosives). Each recipe makes n of something from what's listed.
 
 import { BLOCKS, TILE } from './blocks.js';
-import { itemOf } from './items.js';
+import { ITEMS, itemOf } from './items.js';
+import { BASES, namedGear } from './gear.js';
 
 /** The crafting stations, in the order they're usually built. */
 export const STATIONS = ['workbench', 'furnace', 'anvil', 'gunsmith'];
@@ -131,6 +132,41 @@ recipe('merc_contract', 1, [['coins', 60], ['gold_bar', 1]], 'gunsmith');
 
 export const RECIPES = R;
 
+/**
+ * Dev mode's own (devmode.js): everything else there is, each made from nothing (a stack of it;
+ * tools, weapons and gear, one). With every recipe free in dev mode, that's anything at all.
+ */
+export const DEV_ID0 = 10000;
+export const DEV_RECIPES = [];
+for (const [key, it] of ITEMS) {
+  if (R.some(r => r.key === key)) continue;
+  DEV_RECIPES.push({ key, n: Math.min(it.stack, 99), of: [], at: null, id: DEV_ID0 + DEV_RECIPES.length, dev: true });
+}
+/** A recipe by its number (dev mode's too), or null. */
+export const recipeById = id => (Number.isInteger(id) ? (id >= DEV_ID0 ? DEV_RECIPES[id - DEV_ID0] : R[id]) : null) || null;
+
+/** A plain piece of gear `key` (made, not found: basic, nothing more than its base), or null if it isn't gear. */
+export function plainGear(key) {
+  const it = itemOf(key);
+  return it?.kind === 'gear' ? { r: 'basic', name: it.name, stats: {}, ilvl: BASES[key]?.level || 1 } : null;
+}
+
+/**
+ * Dev mode: the codex's entry `id` (codex.js: an item's key, or a unique's or set piece's id,
+ * gear.js's foundId) into inv: a stack of it, or one (gear, weapons, tools; a unique or set
+ * piece as it drops). Returns { key, n, g, left } (left: what didn't fit), or null.
+ */
+export function devGive(inv, id) {
+  if (typeof id !== 'string') return null;
+  const named = /^[us]:/.test(id) ? namedGear().find(x => x.id === id) : null;
+  const key = named ? named.key : id, it = itemOf(key);
+  if (!it || (/^[us]:/.test(id) && !named)) return null;
+  const g = named ? { ...named.g, stats: { ...named.g.stats } } : plainGear(key);
+  if (g) return { key, n: 1, g, left: inv.addGear(key, g) ? 0 : 1 };
+  const n = Math.min(it.stack, 99);
+  return { key, n, g: null, left: inv.add(key, n) };
+}
+
 /** The crafting stations near (x, y) (a soldier's middle, in pixels): a Set of their names. */
 export function stationsNear(world, x, y, out = new Set()) {
   out.clear();
@@ -144,8 +180,9 @@ export function stationsNear(world, x, y, out = new Set()) {
   return out;
 }
 
-/** How many times recipe r can be made from inventory inv, with the stations `near` (0: it can't). */
-export function timesCanMake(inv, r, near) {
+/** How many times recipe r can be made from inventory inv, with the stations `near` (0: it can't). free: dev mode's, from nothing, anywhere. */
+export function timesCanMake(inv, r, near, free = false) {
+  if (free) return 99;
   if (r.at && !near.has(r.at)) return 0;
   let times = Infinity;
   for (const [key, n] of r.of) times = Math.min(times, Math.floor(inv.count(key) / n));
@@ -156,12 +193,14 @@ export function timesCanMake(inv, r, near) {
  * Make recipe r up to `times` times from inv (with the stations `near`). Returns how many were
  * made, and how many of what was made didn't fit in the inventory (left: for the ground).
  */
-export function craft(inv, r, near, times = 1) {
+export function craft(inv, r, near, times = 1, free = false) {
   let made = 0, left = 0;
-  const most = Math.min(times, timesCanMake(inv, r, near));
+  const most = Math.min(times, timesCanMake(inv, r, near, free));
   for (let t = 0; t < most; t++) {
-    for (const [key, n] of r.of) inv.remove(key, n);
-    left += inv.add(r.key, r.n);
+    if (!free) for (const [key, n] of r.of) inv.remove(key, n);
+    // (Gear, made: a plain piece. Dev mode's, as it has no recipe.)
+    const g = plainGear(r.key);
+    left += g ? (inv.addGear(r.key, g) ? 0 : 1) : inv.add(r.key, r.n);
     made++;
   }
   return { made, left };

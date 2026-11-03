@@ -7,13 +7,16 @@
 // across (between the hotbar and the bag, or between you and the chest); a number key puts what
 // the mouse is over in that hotbar slot. Drop throws the stack picked up; Sort puts the bag in
 // order. Click a recipe to make it (shift-click: five times); type to find one. Hover over
-// anything for a card of what it is: what it does, what it's worth, what it's made from.
+// anything for a card of what it is: what it does, what it's worth, what it's made from. In dev
+// mode (devmode.js) it's all free: every recipe, anywhere, from nothing, and everything else
+// there is besides (crafting.js's DEV_RECIPES), to find by typing.
 
 import { HOTBAR, BAG, itemOf, Inventory } from './items.js';
 import { WEAPONS } from '../weapons.js';
 import { drawWeapon } from '../sprites.js';
 import { drawIcon } from './worldrender.js';
-import { RECIPES, STATIONS, STATION_NAMES, stationsNear, timesCanMake, madeFrom } from './crafting.js';
+import { RECIPES, DEV_RECIPES, STATIONS, STATION_NAMES, stationsNear, timesCanMake, madeFrom } from './crafting.js';
+import { devOn } from './devmode.js';
 import { keyLabel, isKey, keyOf } from '../keys.js';
 import { setRightHand } from './worldplay.js';
 import { itemDetails, categoryOf, itemColor } from './iteminfo.js';
@@ -114,17 +117,9 @@ export class InventoryScreen {
     }
     this.gearSumEl = this.root.querySelector('[data-gear-sum]');
     this.rows = new Map();
-    for (const row of this.root.querySelectorAll('.craft-row')) {
-      const r = RECIPES[+row.dataset.recipe];
-      this.rows.set(r, row);
-      const cv = row.querySelector('canvas');
-      cv.classList.toggle('ink', itemOf(r.key).kind === 'weapon');
-      paint(cv, itemOf(r.key));
-      row.addEventListener('click', e => { this.onCraft(r, e.shiftKey ? 5 : 1); this.refresh(true); });
-      row.addEventListener('mouseenter', e => { this.whatEl.textContent = `${itemOf(r.key).name}${r.n > 1 ? ` × ${r.n}` : ''}: ${madeFrom(r)}${r.at ? `, at a ${STATION_NAMES[r.at].toLowerCase()}` : ', by hand'}`; this.tipFor({ key: r.key, n: r.n }, e); });
-      row.addEventListener('mousemove', e => this.moveTip(e));
-      row.addEventListener('mouseleave', () => this.hideTip());
-    }
+    for (const row of this.root.querySelectorAll('.craft-row')) this.wireRow(row, RECIPES[+row.dataset.recipe]);
+    // (Dev mode's rows: made the first time it's on.)
+    this.devRows = null;
     this.root.querySelector('[data-close]').addEventListener('click', () => this.onClose());
     this.root.querySelector('[data-act="drop"]').addEventListener('click', () => {
       const p = this.picked;
@@ -162,12 +157,32 @@ export class InventoryScreen {
 
   recipeRow(r) {
     const it = itemOf(r.key);
-    return `<button type="button" class="craft-row" data-recipe="${r.id}">
+    return `<button type="button" class="craft-row${r.dev ? ' dev' : ''}" data-recipe="${r.id}">
       <canvas width="48" height="32" aria-hidden="true"></canvas>
       <span class="craft-name">${esc(it.name)}${r.n > 1 ? ` <small>× ${r.n}</small>` : ''}</span>
-      <span class="craft-of">${esc(madeFrom(r))}</span>
-      <span class="craft-at">${r.at ? esc(STATION_NAMES[r.at]) : 'By hand'}</span>
+      <span class="craft-of">${r.dev ? 'From nothing' : esc(madeFrom(r))}</span>
+      <span class="craft-at">${r.dev ? 'Dev mode' : r.at ? esc(STATION_NAMES[r.at]) : 'By hand'}</span>
     </button>`;
+  }
+
+  /** A recipe's row: its picture, and what clicking it (and the mouse over it) does. */
+  wireRow(row, r) {
+    this.rows.set(r, row);
+    const cv = row.querySelector('canvas');
+    cv.classList.toggle('ink', itemOf(r.key).kind === 'weapon');
+    paint(cv, itemOf(r.key));
+    row.addEventListener('click', e => { this.onCraft(r, e.shiftKey ? 5 : 1); this.refresh(true); });
+    row.addEventListener('mouseenter', e => { this.whatEl.textContent = `${itemOf(r.key).name}${r.n > 1 ? ` × ${r.n}` : ''}: ${this.free ? 'free (dev mode)' : `${madeFrom(r)}${r.at ? `, at a ${STATION_NAMES[r.at].toLowerCase()}` : ', by hand'}`}`; this.tipFor({ key: r.key, n: r.n }, e); });
+    row.addEventListener('mousemove', e => this.moveTip(e));
+    row.addEventListener('mouseleave', () => this.hideTip());
+  }
+
+  /** Dev mode's rows (everything with no recipe), made the first time they're wanted. */
+  makeDevRows() {
+    if (this.devRows) return;
+    this.listEl.insertAdjacentHTML('beforeend', DEV_RECIPES.map(r => this.recipeRow(r)).join(''));
+    this.devRows = [...this.listEl.querySelectorAll('.craft-row.dev')];
+    for (const row of this.devRows) this.wireRow(row, DEV_RECIPES[+row.dataset.recipe - DEV_RECIPES[0].id]);
   }
 
   /** Open, for soldier `me` in `game` (chest: { inv, tx, ty }, one opened with a right click). */
@@ -291,7 +306,9 @@ export class InventoryScreen {
     const inv = this.inv, me = this.me;
     if (!inv || !this.game?.world) return;
     const near = stationsNear(this.game.world, me.x, me.y - 8, this.near);
-    const seen = `${inv.version}|${this.chest?.inv.version ?? ''}|${[...near].join()}|${me.world.slot}|${me.world.slot2}|${this.picked ? `${this.picked.box}${this.picked.i}` : ''}|${this.onlyEl.checked}|${this.findEl.value}|${me.world.gearV || 0}`;
+    // (Dev mode: everything's free. Someone else's world: when the host says so, in a creative world.)
+    const free = this.free = devOn(me) || !!me.world.devCraft;
+    const seen = `${inv.version}|${this.chest?.inv.version ?? ''}|${[...near].join()}|${me.world.slot}|${me.world.slot2}|${this.picked ? `${this.picked.box}${this.picked.i}` : ''}|${this.onlyEl.checked}|${this.findEl.value}|${me.world.gearV || 0}|${free}`;
     if (!force && seen === this.seen) return;
     this.seen = seen;
     for (const b of this.slots) {
@@ -332,19 +349,25 @@ export class InventoryScreen {
       h.disabled = itemOf(inv.slots[i]?.key)?.kind === 'weapon';
     }
     // The recipes: what can be made now first, then what's short of something, then what needs a station not here.
-    this.nearEl.textContent = near.size ? `at ${[...near].map(n => STATION_NAMES[n]).join(', ')}` : 'by hand (stand near a crafting station for more)';
+    this.nearEl.textContent = free ? 'dev mode: anything, free, anywhere (type to find it)' : near.size ? `at ${[...near].map(n => STATION_NAMES[n]).join(', ')}` : 'by hand (stand near a crafting station for more)';
+    this.findEl.placeholder = free ? 'Find anything…' : 'Find a recipe…';
+    if (free) this.makeDevRows();
     const coins = inv.count('coins');
     this.coinsEl.textContent = `${coins} coin${coins === 1 ? '' : 's'}`;
     const only = this.onlyEl.checked, find = this.findEl.value.trim().toLowerCase(), order = [];
-    for (const r of RECIPES) {
-      const row = this.rows.get(r), times = timesCanMake(inv, r, near), here = !r.at || near.has(r.at);
+    for (const r of this.devRows ? [...RECIPES, ...DEV_RECIPES] : RECIPES) {
+      const row = this.rows.get(r);
+      // (Dev mode's own rows: only in dev mode; else hidden, at the end.)
+      if (r.dev && !free) { row.classList.add('hidden'); order.push([3, 0, r.id, row]); continue; }
+      const times = timesCanMake(inv, r, near, free), here = free || !r.at || near.has(r.at), it = itemOf(r.key);
       row.classList.toggle('can', times > 0);
       row.classList.toggle('away', !here);
-      const found = !find || itemOf(r.key).name.toLowerCase().includes(find) || r.of.some(([k]) => itemOf(k)?.name.toLowerCase().includes(find));
+      // (Found by its name, what it's made from, or its kind: 'gear', 'weapon', 'block'...)
+      const found = !find || it.name.toLowerCase().includes(find) || r.of.some(([k]) => itemOf(k)?.name.toLowerCase().includes(find)) || categoryOf(it) === find || it.kind === find;
       row.classList.toggle('hidden', (only && times === 0) || !found);
       row.disabled = times === 0;
-      row.title = times > 0 ? `Make ${times > 1 ? `(up to ${times} times; shift-click: five)` : ''}` : !here ? `Needs a ${STATION_NAMES[r.at].toLowerCase()} near you` : `Needs ${madeFrom(r)}`;
-      order.push([times > 0 ? 0 : here ? 1 : 2, AT_ORDER.indexOf(r.at), r.id, row]);
+      row.title = free ? 'Free in dev mode (shift-click: five)' : times > 0 ? `Make ${times > 1 ? `(up to ${times} times; shift-click: five)` : ''}` : !here ? `Needs a ${STATION_NAMES[r.at].toLowerCase()} near you` : `Needs ${madeFrom(r)}`;
+      order.push([times > 0 ? 0 : here ? 1 : 2, r.dev ? AT_ORDER.length : AT_ORDER.indexOf(r.at), r.id, row]);
     }
     order.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
     const want = order.map(o => o[3]);

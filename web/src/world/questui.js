@@ -10,6 +10,7 @@ import { PERKS, xpToNext, MAX_LEVEL, maxHealthOf } from './progress.js';
 import { keyLabel } from '../keys.js';
 import { gearRewardText, RARITY, rarityOf } from './gear.js';
 import { codexEntries, CODEX_CATS } from './codex.js';
+import { devOn } from './devmode.js';
 import { itemColor, itemDetails } from './iteminfo.js';
 import { drawIcon } from './worldrender.js';
 import { WEAPONS } from '../weapons.js';
@@ -76,7 +77,7 @@ export class JournalScreen {
     const p = w.prog, qs = w.quests;
     // (The codex: only when what's found changes, so its search box keeps what's typed.)
     if (this.tab === 'codex') {
-      const ck = `codex|${w.found?.length || 0}`;
+      const ck = `codex|${w.found?.length || 0}|${devOn(this.me) || !!w.devCraft}`;
       if (!force && ck === this.seen) return;
       this.seen = ck;
       for (const b of this.root.querySelectorAll('[data-tab]')) b.classList.toggle('on', b.dataset.tab === this.tab);
@@ -109,9 +110,11 @@ export class JournalScreen {
     const el = this.body.querySelector('[data-list]');
     if (!el) return;
     const all = codexEntries(), found = new Set(this.me?.world?.found || []), q = this.q.trim().toLowerCase();
+    // (Dev mode, devmode.js: anything in it, free.)
+    const dev = devOn(this.me) || !!this.me?.world?.devCraft;
     for (const b of this.body.querySelectorAll('[data-cat]')) b.classList.toggle('on', b.dataset.cat === this.cat);
     const n = all.filter(e => found.has(e.id)).length;
-    this.body.querySelector('[data-found]').textContent = `Found ${n} of ${all.length}`;
+    this.body.querySelector('[data-found]').textContent = `Found ${n} of ${all.length}${dev ? ' · dev mode: Take gives you any of it' : ''}`;
     const list = all.filter(e => (this.cat === 'all' || e.cat === this.cat) && (!q || e.name.toLowerCase().includes(q) || e.where.toLowerCase().includes(q) || (e.g && RARITY[rarityOf(e.g.r)].name.toLowerCase() === q)));
     el.innerHTML = list.length ? list.map((e, i) => {
       const it = itemOf(e.key), d = itemDetails(it, 1, e.g), col = e.g ? RARITY[rarityOf(e.g.r)].color : itemColor(it);
@@ -120,6 +123,7 @@ export class JournalScreen {
         <canvas width="36" height="26" data-i="${i}"></canvas>
         <div class="codex-text"><div class="codex-name">${e.g ? `<span class="codex-rar">${esc(RARITY[rarityOf(e.g.r)].name)}</span> ` : ''}${esc(e.name)}${found.has(e.id) ? ' <span class="codex-tick">✓</span>' : ''}</div>
         <div class="codex-where">${esc(e.where)}</div></div>
+        ${dev ? `<button type="button" class="small codex-take" data-act="devtake" data-id="${esc(e.id)}" title="Dev mode: into your bag, free">Take</button>` : ''}
       </div>`;
     }).join('') : '<p class="muted-note">Nothing like that.</p>';
     for (const cv of el.querySelectorAll('canvas[data-i]')) paintIcon(cv, itemOf(list[+cv.dataset.i].key));
