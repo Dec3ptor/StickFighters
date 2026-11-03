@@ -48,6 +48,8 @@ item('diamond', 'Diamond', 'material', { color: '#c4f6ff', gem: true });
 // Food and potions: eaten (used with either hand: a click), they heal (heal: how much). Bought in
 // towns (trade.js), baked, picked from trees, and dropped by monsters now and then.
 item('apple', 'Apple', 'food', { stack: 99, heal: 12, color: '#d8342c', look: 'apple' });
+// (From berry bushes: worlds made since forests.)
+item('berries', 'Berries', 'food', { stack: 99, heal: 8, color: '#b0223c', look: 'berries' });
 item('bread', 'Bread', 'food', { stack: 99, heal: 25, color: '#c88a3a', look: 'bread' });
 item('stew', 'Mushroom stew', 'food', { stack: 20, heal: 50, color: '#9a6a3a', look: 'stew' });
 item('healing_potion', 'Healing potion', 'food', { stack: 20, heal: 80, color: '#e0303c', look: 'potion' });

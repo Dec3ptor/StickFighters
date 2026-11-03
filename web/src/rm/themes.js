@@ -289,12 +289,118 @@ export const WORLD_THEMES = {
     ink: '#132018', halo: '#eef6e4', haloAlpha: 0.26, rim: '#f2eec8',
     vignette: 0.4, dark: 0,
   },
+  // Spruce forests: cool and green, ridges of dark spruces going back.
+  taiga: {
+    name: 'Taiga',
+    sky: [[0, '#4f86b8'], [0.55, '#9cc2dc'], [1, '#e0edf2']],
+    sun: { x: 0.7, y: 0.2, r: 30, color: '#fffdf2', glow: '#e8f0e0', glowR: 300 },
+    clouds: { color: '#ffffff', alpha: 0.5, count: 8, top: 0.06, bottom: 0.4 },
+    haze: '#d2e2e6',
+    layers: [
+      { p: 0.07, gen: 'peaks', height: 300, color: '#8aa6bc', haze: 0.45, snow: '#eef5fa' },
+      { p: 0.2, gen: 'pines', height: 220, color: '#3f5f50', haze: 0.28 },
+      { p: 0.42, gen: 'pines', height: 200, color: '#1e3528', haze: 0.1 },
+    ],
+    ground: '#16261c',
+    fore: { gen: 'grass', height: 70, color: '#0a140e' },
+    mist: { color: '#eef6f4', alpha: 0.34 },
+    weather: null,
+    material: 'mossrock', top: 'grass', tint: '#6e7a68',
+    light: { x: 0.45, y: -0.9, color: '#fffbe8', strength: 0.45 },
+    ink: '#14201a', halo: '#ffffff', haloAlpha: 0.3, rim: '#f6f2d8',
+    vignette: 0.34, dark: 0,
+  },
+  // The savanna: a warm, golden sky over flat land, low hills far off.
+  savanna: {
+    name: 'Savanna',
+    sky: [[0, '#4a86c0'], [0.5, '#a6c8d8'], [0.85, '#f2d8a0'], [1, '#f4c27a']],
+    sun: { x: 0.34, y: 0.2, r: 36, color: '#fffbe0', glow: '#ffe2a0', glowR: 360 },
+    clouds: { color: '#fff6e4', alpha: 0.32, count: 5, top: 0.08, bottom: 0.32 },
+    haze: '#ecdcb4',
+    layers: [
+      { p: 0.06, gen: 'mesas', height: 170, color: '#c8a682', haze: 0.45 },
+      { p: 0.18, gen: 'hills', height: 140, color: '#a8904e', haze: 0.3 },
+      { p: 0.4, gen: 'canopy', height: 120, color: '#5a5a2a', haze: 0.12 },
+    ],
+    ground: '#3a2e18',
+    fore: { gen: 'grass', height: 60, color: '#1c160a' },
+    mist: { color: '#fff4dc', alpha: 0.28 },
+    weather: 'dust',
+    material: 'sandstone', top: 'grass', tint: '#a89060',
+    light: { x: 0.35, y: -0.85, color: '#fff2cc', strength: 0.5 },
+    ink: '#241a10', halo: '#fff8e8', haloAlpha: 0.3, rim: '#ffe6b0',
+    vignette: 0.32, dark: 0,
+  },
+  // A cherry grove: soft blue sky, pink trees on the hills.
+  cherry: {
+    name: 'Cherry grove',
+    sky: [[0, '#5a90c8'], [0.55, '#b4d0ea'], [1, '#f6e8f0']],
+    sun: { x: 0.68, y: 0.18, r: 30, color: '#fffaf4', glow: '#ffe4ee', glowR: 320 },
+    clouds: { color: '#ffffff', alpha: 0.55, count: 9, top: 0.06, bottom: 0.4 },
+    haze: '#eedcea',
+    layers: [
+      { p: 0.07, gen: 'peaks', height: 320, color: '#a8b4d0', haze: 0.45, snow: '#f8f6fc' },
+      { p: 0.18, gen: 'hills', height: 200, color: '#8aa478', haze: 0.3 },
+      { p: 0.4, gen: 'canopy', height: 170, color: '#d88ab0', haze: 0.12 },
+    ],
+    ground: '#2a2024',
+    fore: { gen: 'grass', height: 70, color: '#140c10' },
+    mist: { color: '#fff4f8', alpha: 0.32 },
+    weather: 'motes',
+    material: 'mossrock', top: 'grass', tint: '#8a7a80',
+    light: { x: 0.45, y: -0.9, color: '#fff6f6', strength: 0.5 },
+    ink: '#201418', halo: '#ffffff', haloAlpha: 0.3, rim: '#fff0f4',
+    vignette: 0.3, dark: 0,
+  },
+  // A dark forest: the canopy thick overhead, dim and misty under it.
+  darkforest: {
+    name: 'Dark forest',
+    sky: [[0, '#3a5a6a'], [0.55, '#7a9488'], [1, '#b8c4a8']],
+    sun: { x: 0.6, y: 0.18, r: 28, color: '#f2f0d8', glow: '#d8dcb8', glowR: 240 },
+    clouds: { color: '#e4ece0', alpha: 0.3, count: 6, top: 0.06, bottom: 0.3 },
+    haze: '#a4b4a0',
+    layers: [
+      { p: 0.08, gen: 'canopy', height: 260, color: '#4a6448', haze: 0.4 },
+      { p: 0.22, gen: 'canopy', height: 280, color: '#2a4028', haze: 0.22, tall: true },
+      { p: 0.44, gen: 'canopy', height: 260, color: '#142414', haze: 0.08, tall: true },
+    ],
+    ground: '#0c140c',
+    fore: { gen: 'grass', height: 90, color: '#060c06' },
+    mist: { color: '#d8e4cc', alpha: 0.5 },
+    weather: 'motes',
+    material: 'mossrock', top: 'grass', tint: '#5a6450',
+    light: { x: 0.4, y: -0.9, color: '#eef0d0', strength: 0.35 },
+    ink: '#0e160e', halo: '#e8f0dc', haloAlpha: 0.24, rim: '#e8e8c0',
+    vignette: 0.45, dark: 0,
+  },
+  // Mushroom fields: a strange violet sky.
+  mushroom: {
+    name: 'Mushroom fields',
+    sky: [[0, '#5a4a8a'], [0.55, '#a48ac0'], [1, '#e8d8ee']],
+    sun: { x: 0.7, y: 0.2, r: 30, color: '#fff4fc', glow: '#f0d8f4', glowR: 300 },
+    clouds: { color: '#f8eefc', alpha: 0.42, count: 7, top: 0.06, bottom: 0.36 },
+    haze: '#d8c8e4',
+    layers: [
+      { p: 0.07, gen: 'hills', height: 160, color: '#9a86b0', haze: 0.45 },
+      { p: 0.2, gen: 'hills', height: 120, color: '#7a6a8e', haze: 0.28 },
+    ],
+    ground: '#1e1624',
+    fore: { gen: 'grass', height: 60, color: '#100a14' },
+    mist: { color: '#f4ecf8', alpha: 0.32 },
+    weather: 'motes',
+    material: 'mossrock', top: 'grass', tint: '#7a6a80',
+    light: { x: 0.45, y: -0.9, color: '#fff4fc', strength: 0.45 },
+    ink: '#1a1420', halo: '#ffffff', haloAlpha: 0.3, rim: '#f8ecff',
+    vignette: 0.34, dark: 0,
+  },
 };
 
 // Each biome's look (worldgen.js's biomes).
 const BIOME_THEMES = {
   plains: 'meadow', forest: 'meadow', mountains: 'meadow', desert: 'desert', badlands: 'desert', jungle: 'jungle', snow: 'arctic',
   ocean: 'ocean', warm_ocean: 'ocean', frozen_ocean: 'arctic', swamp: 'swamp',
+  birch_forest: 'meadow', dark_forest: 'darkforest', taiga: 'taiga', snowy_taiga: 'arctic', giant_taiga: 'taiga', savanna: 'savanna',
+  cherry_grove: 'cherry', meadow: 'meadow', bamboo_jungle: 'jungle', mushroom_fields: 'mushroom',
 };
 
 const worldThemes = new Map();

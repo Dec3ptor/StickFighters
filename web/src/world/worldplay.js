@@ -43,14 +43,17 @@ const MAX_DROPS = 400;
 
 // Plants and the like: broken by anything, put in the way of nothing (building replaces them;
 // and water, and what grows in it: blocks only, there).
-const SOFT = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.VINE, K.WHEAT, K.WATER, K.SEAGRASS, K.KELP, K.CORAL_FAN, K.REEDS, K.LILY_PAD]);
+const SOFT = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.VINE, K.WHEAT, K.WATER, K.SEAGRASS, K.KELP, K.CORAL_FAN, K.REEDS, K.LILY_PAD,
+  K.FERN, K.BUSH, K.DRY_TALL_GRASS, K.PETALS]);
 // What grows in water, on the bottom (or on more of itself: kelp): gone with what held it up
 // (water again, where it was).
 const SEABED = new Set([K.SEAGRASS, K.KELP, K.CORAL_FAN, K.REEDS]);
 // What needs something to stand on (or hang from) and goes when it's taken away.
-const NEEDS_GROUND = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.MUSHROOM, K.CACTUS, K.WHEAT]);
+const NEEDS_GROUND = new Set([K.TALL_GRASS, K.FLOWER, K.DEAD_BUSH, K.MUSHROOM, K.CACTUS, K.WHEAT, K.FERN, K.BUSH, K.BERRY_BUSH, K.DRY_TALL_GRASS, K.PETALS]);
 const DOORS = new Set([K.DOOR, K.DOOR_OPEN]);
-const LEAF = new Set([K.LEAVES, K.PINE_LEAVES, K.JUNGLE_LEAVES, K.VINE]);
+// (Leaves, of every kind of tree, and vines; a crown, felled with its tree, takes giant mushrooms' caps too.)
+const LEAF = new Set([...K.LEAVES_ALL, K.VINE]);
+const CROWN = new Set([...LEAF, ...K.CAPS]);
 
 // ---- Bases (claims) -----------------------------------------------------------------------------
 
@@ -693,7 +696,7 @@ export function breakBlock(game, tx, ty, by = null) {
   const world = game.world, id = world.tile(tx, ty), b = BLOCKS[id];
   if (id === AIR || b.resist >= 1e9) return false;
   const x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
-  if (id === K.TRUNK) return fell(game, tx, ty);
+  if (K.TRUNKS.has(id)) return fell(game, tx, ty);
   if (DOORS.has(id)) {
     // The whole door (three tall).
     let top = ty, bottom = ty;
@@ -752,6 +755,7 @@ function supported(world, x, y, id) {
   if (NEEDS_GROUND.has(id)) return SOLID[world.tile(x, y + 1)] || (id === K.CACTUS && world.tile(x, y + 1) === K.CACTUS) || (id === K.CACTUS && (world.tile(x - 1, y) === K.CACTUS || world.tile(x + 1, y) === K.CACTUS));
   if (id === K.VINE) return world.tile(x, y - 1) === K.VINE || SOLID[world.tile(x, y - 1)] || LEAF.has(world.tile(x, y - 1));
   if (SEABED.has(id)) { const below = world.tile(x, y + 1); return !!SOLID[below] || (id === K.KELP && below === K.KELP); }
+  if (id === K.BAMBOO) { const below = world.tile(x, y + 1); return !!SOLID[below] || below === K.BAMBOO; }
   if (id === K.LILY_PAD) return !!LIQUID[world.tile(x, y + 1)] || !!SOLID[world.tile(x, y + 1)];
   if (id === K.TORCH) return SOLID[world.tile(x, y + 1)] || SOLID[world.tile(x - 1, y)] || SOLID[world.tile(x + 1, y)] || world.wall(x, y) !== NO_WALL;
   if (id === K.LANTERN || id === K.BANNER || id === K.FENCE) return hangsOrStands(world, x, y, id);
@@ -775,27 +779,58 @@ function hangsOrStands(world, x, y, id) {
   return !!(SOLID[above] || PLATFORMS[above] || SOLID[below]) || below === K.FENCE || below === K.POST || world.wall(x, y) !== NO_WALL;
 }
 
-/** A tree cut at (tx, ty): everything above comes down (the trunk and its crown) as wood. */
+/**
+ * A tree cut at (tx, ty): everything of it from there up comes down, as wood: its trunk (two
+ * wide, or curving over, or branching: whatever of it joins on, above the cut) and its crown
+ * (leaves joined to the trunk, within a few tiles of it; a giant mushroom's cap).
+ */
 function fell(game, tx, ty) {
-  const world = game.world;
-  let top = ty, wood = 0;
-  while (world.tile(tx, top - 1) === K.TRUNK) top--;
-  for (let y = top; y <= ty; y++) { world.setTile(tx, y, AIR); wood++; }
-  // The crown: leaves joined to the top of the trunk, within a few tiles of it.
-  const seen = new Set(), stack = [[tx, top - 1], [tx - 1, top], [tx + 1, top], [tx, top]];
-  while (stack.length) {
-    const [x, y] = stack.pop(), k = `${x},${y}`;
-    if (seen.has(k) || Math.abs(x - tx) > 5 || y < top - 6 || y > top + 6) continue;
-    seen.add(k);
-    if (!LEAF.has(world.tile(x, y)) && !(x === tx && y === top)) continue;
-    if (LEAF.has(world.tile(x, y))) world.setTile(x, y, AIR);
-    stack.push([x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]);
+  const world = game.world, kind = world.tile(tx, ty);
+  // The trunk: the tiles of it joined to the cut (even corner to corner: a palm, an acacia's branch), none below it.
+  const trunk = [], seen = new Set([`${tx},${ty}`]), stack = [[tx, ty]];
+  let top = ty;
+  while (stack.length && trunk.length < 200) {
+    const [x, y] = stack.pop();
+    trunk.push([x, y]);
+    top = Math.min(top, y);
+    for (let dy = -1; dy <= 0; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy, k = `${nx},${ny}`;
+        if ((!dx && !dy) || seen.has(k) || Math.abs(nx - tx) > 6 || !K.TRUNKS.has(world.tile(nx, ny))) continue;
+        seen.add(k);
+        stack.push([nx, ny]);
+      }
+    }
+  }
+  let wood = 0;
+  for (const [x, y] of trunk) { if (BLOCKS[world.tile(x, y)].drop === 'wood') wood++; world.setTile(x, y, AIR); }
+  // The crown: leaves (and caps) joined to the trunk, within a few tiles of it; not those nearer
+  // another tree's trunk than this one's (in a forest, the crowns meet: its neighbours keep theirs).
+  let x0 = tx, x1 = tx;
+  for (const [x] of trunk) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
+  const near = new Set(), crown = [];
+  const theirs = (x, y) => {
+    let own = Infinity;
+    for (const [px, py] of trunk) own = Math.min(own, (px - x) ** 2 + (py - y) ** 2);
+    for (let yy = y - 5; yy <= y + 5; yy++) {
+      for (let xx = x - 5; xx <= x + 5; xx++) if ((xx - x) ** 2 + (yy - y) ** 2 < own && K.TRUNKS.has(world.tile(xx, yy))) return true;
+    }
+    return false;
+  };
+  for (const [x, y] of trunk) for (const [dx, dy] of AROUND) crown.push([x + dx, y + dy]);
+  while (crown.length) {
+    const [x, y] = crown.pop(), k = `${x},${y}`;
+    if (near.has(k) || x < x0 - 6 || x > x1 + 6 || y < top - 9 || y > ty + 5) continue;
+    near.add(k);
+    if (!CROWN.has(world.tile(x, y)) || theirs(x, y)) continue;
+    world.setTile(x, y, AIR);
+    crown.push([x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]);
   }
   const x = tx * TILE + TILE / 2, y = (top + ty) * TILE / 2;
-  dropItem(game, 'wood', wood, x, y);
-  game.sound('thunk', x, y);
+  if (wood) dropItem(game, 'wood', wood, x, y);
+  game.sound(kind === K.MUSHROOM_STEM ? 'smash' : 'thunk', x, y);
   game.fx?.rubble?.(x, y, 10);
-  settle(game, tx, ty);
+  for (const [cx, cy] of trunk) if (cy === ty) settle(game, cx, cy);
   return true;
 }
 
@@ -1493,7 +1528,7 @@ export const worldMode = {
       else if (K.SHULKER_BOXES.has(id)) dropShulker(game, tx, ty, id, x, y);
       else if (id === K.ENDER_CHEST) dropItem(game, 'ender_chest', 1, x, y);
       else if (id === K.WAYSTONE) { dropItem(game, 'waystone', 1, x, y); removeWaystone(world, tx, ty); }
-      else if (id === K.TRUNK) dropItem(game, 'wood', 1, x, y);
+      else if (K.TRUNKS.has(id)) { if (b.drop) dropItem(game, b.drop, 1, x, y); }
       else if ((id === K.LEAVES || id === K.JUNGLE_LEAVES) && game.rng() < 0.04) dropItem(game, 'apple', 1, x, y, (game.rng() - 0.5) * 2, -1.5);
       else if (b.drop && game.rng() < (b.natural ? 0.3 : 0.6)) dropItem(game, b.drop, 1, x, y, (game.rng() - 0.5) * 3, -2);
     };

@@ -209,7 +209,9 @@ function paintRim(g, grid, x0, y0, classic, edges) {
       if (id === AIR) continue;
       const x = (x0 + i) * TILE, y = (y0 + j) * TILE;
       if (!SOLID[id]) {
-        if (BLOCKS[id].pattern === 'leaves') drawThing(g, grid, k, x, y, id, classic, x0 + i, y0 + j);
+        // (What spills over its own tile: a crown's bumps, palm fronds, reeds standing up.)
+        const pat = BLOCKS[id].pattern;
+        if (pat === 'leaves' || pat === 'frond' || (pat === 'reeds' && side === 2)) drawThing(g, grid, k, x, y, id, classic, x0 + i, y0 + j);
         continue;
       }
       const shapeKey = SHAPE_KEYS[grid.sh[k]];
@@ -476,6 +478,24 @@ function marks(g, b, x, y, h, classic, grid, k) {
       g.lineWidth = 1;
       g.beginPath(); g.moveTo(x + 8, y); g.lineTo(x + 8, y + TILE); g.moveTo(x, y + 8); g.lineTo(x + TILE, y + 8); g.stroke();
       break;
+    case 'moss':
+      // A soft green carpet: darker and lighter tufts.
+      g.fillStyle = classic ? '#bcbcbc' : tint(b.color, 0.78);
+      for (let i = 0; i < 6; i++) g.fillRect(x + ((h >>> (i * 4)) % 14), y + ((h >>> (i * 4 + 2)) % 14), 2, 2);
+      g.fillStyle = classic ? '#e0e0e0' : tint(b.color, 1.2);
+      g.fillRect(x + 3 + (h & 7), y + 1, 3, 2);
+      break;
+    case 'fallen':
+      // A log lying on its side: its bark lengthways.
+      g.strokeStyle = ink; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x, y + 4 + (h & 1)); g.lineTo(x + TILE, y + 4 + (h & 1)); g.moveTo(x + 2 + (h & 3), y + 9); g.lineTo(x + 9 + (h & 3), y + 9); g.moveTo(x, y + 13); g.lineTo(x + TILE, y + 13); g.stroke();
+      break;
+    case 'pumpkin':
+      // Ribs down it, a stalk on top.
+      g.strokeStyle = ink; g.lineWidth = 1;
+      g.beginPath(); for (const rx of [4, 8, 12]) { g.moveTo(x + rx, y + 3); g.quadraticCurveTo(x + rx + (rx - 8) * 0.3, y + 9, x + rx, y + 15); } g.stroke();
+      g.fillStyle = classic ? INK : '#4f6a2a'; g.fillRect(x + 7, y, 2, 3);
+      break;
     case 'coral': {
       // Knobbly coral: holes and bumps.
       g.fillStyle = classic ? '#9a9a9a' : tint(b.color, 0.7);
@@ -499,21 +519,41 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
   const b = BLOCKS[id], h = hash3(5, tx, ty), W = grid.w;
   const col = classic ? '#fff' : b.color, line = classic ? INK : tint(b.color, 0.55);
   switch (b.pattern) {
-    case 'bark': {
+    case 'bark': case 'birch': case 'palm': case 'stem': {
       // (Inside a crown: leaves behind it.)
       const l = grid.fg[k - 1], r = grid.fg[k + 1];
-      if (LEAFY.has(l) && LEAFY.has(r) && l !== K.TRUNK && r !== K.TRUNK) leafFill(g, BLOCKS[l], x, y, h, classic);
-      g.fillStyle = col; g.fillRect(x + 4, y, 8, TILE);
+      if (LEAFY.has(l) && LEAFY.has(r) && !K.TRUNKS.has(l) && !K.TRUNKS.has(r)) leafFill(g, BLOCKS[l], x, y, h, classic);
+      // (A trunk beside it, of the same tree: two wide, or a branch: one trunk, filled across
+      // between them. Bent or curving, joined to the next tile of it corner to corner: slanting
+      // across to it, half in each tile.)
+      const wl = l === id, wr = r === id, a = b.pattern === 'stem' ? 3 : b.pattern === 'palm' ? 5 : 4;
+      const x0 = wl ? x : x + a, x1 = wr ? x + TILE : x + TILE - a, T = K.TRUNKS, at = (dx, dy) => grid.fg[k + dy * W + dx];
+      const lean = dy => (T.has(at(0, dy)) || (wl || wr) ? 0 : T.has(at(-1, dy)) ? -TILE / 2 : T.has(at(1, dy)) ? TILE / 2 : 0);
+      const sb = lean(1), st = lean(-1);
+      g.fillStyle = col;
+      if (!sb && !st) g.fillRect(x0, y, x1 - x0, TILE);
+      else { g.beginPath(); g.moveTo(x0 + sb, y + TILE); g.lineTo(x1 + sb, y + TILE); g.lineTo(x1 + st, y); g.lineTo(x0 + st, y); g.closePath(); g.fill(); }
       g.strokeStyle = line; g.lineWidth = classic ? 1.2 : 1;
-      g.beginPath(); g.moveTo(x + 4, y); g.lineTo(x + 4, y + TILE); g.moveTo(x + 12, y); g.lineTo(x + 12, y + TILE);
-      g.moveTo(x + 7, y + 3 + (h & 3)); g.lineTo(x + 7, y + 9 + (h & 3)); g.stroke();
+      g.beginPath();
+      if (!wl) { g.moveTo(x0 + st, y); g.lineTo(x0 + sb, y + TILE); }
+      if (!wr) { g.moveTo(x1 + st, y); g.lineTo(x1 + sb, y + TILE); }
+      if (b.pattern === 'bark') { g.moveTo(x0 + 3, y + 3 + (h & 3)); g.lineTo(x0 + 3, y + 9 + (h & 3)); }
+      // (A palm's rings.)
+      if (b.pattern === 'palm') for (let ry = y + 3; ry < y + TILE; ry += 5) { g.moveTo(x0, ry); g.lineTo(x1, ry + 1); }
+      g.stroke();
+      // (A birch's dark marks.)
+      if (b.pattern === 'birch') {
+        g.fillStyle = classic ? INK : '#2a2622';
+        g.fillRect(x0 + 1 + (h & 1), y + 3 + (h & 3), 3, 1.3);
+        g.fillRect(x0 + 2, y + 10 + ((h >> 2) & 3), 3, 1.3);
+      }
       break;
     }
     case 'leaves': {
       // A crown: each tile of it filled, with bumps (points, for pines) where it meets the
       // open, outlined (in ink in the original).
       leafFill(g, b, x, y, h, classic);
-      const spiky = id === K.PINE_LEAVES, R = 4;
+      const spiky = id === K.PINE_LEAVES || b.spiky, R = 4;
       const bumps = BUMPS;
       bumps.length = 0;
       if (!LEAFY.has(grid.fg[k - W])) bumps.push(x + 4, y, Math.PI, 0, x + 12, y, Math.PI, 0);
@@ -562,6 +602,63 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
     case 'vine':
       g.strokeStyle = classic ? INK : b.color; g.lineWidth = 1.2;
       g.beginPath(); g.moveTo(x + 8, y); g.quadraticCurveTo(x + 4 + (h & 7), y + 8, x + 8, y + TILE); g.stroke();
+      break;
+    case 'frond': {
+      // A palm's frond: a long leaf with its rib, drooping out from the top of the trunk.
+      const tilt = ((h & 1) ? 1 : -1) * 0.35;
+      g.fillStyle = classic ? '#fff' : b.color;
+      g.beginPath(); g.ellipse(x + 8, y + 8, 9.5, 3.6, tilt, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = classic ? INK : tint(b.color, 0.55); g.lineWidth = 0.9; g.stroke();
+      g.beginPath(); g.moveTo(x - 1, y + 8 - tilt * 9); g.lineTo(x + 17, y + 8 + tilt * 9); g.stroke();
+      break;
+    }
+    case 'cap': {
+      // A giant mushroom's cap (stood on): its colour, white spots on the red ones, its edge shaded.
+      g.fillStyle = classic ? '#fff' : b.color;
+      g.fillRect(x, y, TILE, TILE);
+      if (!classic) { g.fillStyle = tint(b.color, 0.75); g.fillRect(x, y + TILE - 3, TILE, 3); }
+      if (id === K.RED_CAP) { g.fillStyle = classic ? INK : '#f4ece4'; g.beginPath(); g.arc(x + 4 + (h & 7), y + 5 + ((h >> 3) & 3), 2, 0, Math.PI * 2); g.fill(); if ((h >> 5) & 1) { g.beginPath(); g.arc(x + 11, y + 10, 1.5, 0, Math.PI * 2); g.fill(); } }
+      g.strokeStyle = classic ? INK : tint(b.color, 0.5); g.lineWidth = 1;
+      if (!CAPPED.has(grid.fg[k - W])) { g.beginPath(); g.moveTo(x, y + 0.5); g.lineTo(x + TILE, y + 0.5); g.stroke(); }
+      if (!CAPPED.has(grid.fg[k + W])) { g.beginPath(); g.moveTo(x, y + TILE - 0.5); g.lineTo(x + TILE, y + TILE - 0.5); g.stroke(); }
+      if (!CAPPED.has(grid.fg[k - 1])) { g.beginPath(); g.moveTo(x + 0.5, y); g.lineTo(x + 0.5, y + TILE); g.stroke(); }
+      if (!CAPPED.has(grid.fg[k + 1])) { g.beginPath(); g.moveTo(x + TILE - 0.5, y); g.lineTo(x + TILE - 0.5, y + TILE); g.stroke(); }
+      break;
+    }
+    case 'fern':
+      // Fronds arching out of the ground, leaflets along them.
+      g.strokeStyle = classic ? INK : b.color; g.lineWidth = 1;
+      g.beginPath();
+      for (const s of [-1, 0, 1]) {
+        const ex = x + 8 + s * 6, ey = y + 4 + Math.abs(s) * 3;
+        g.moveTo(x + 8, y + TILE); g.quadraticCurveTo(x + 8 + s * 2, y + 6, ex, ey);
+        for (let t = 0.35; t < 1; t += 0.22) { const px = x + 8 + (ex - x - 8) * t, py = y + TILE + (ey - y - TILE) * t; g.moveTo(px, py); g.lineTo(px - 2, py - 1.5); g.moveTo(px, py); g.lineTo(px + 2, py - 1.5); }
+      }
+      g.stroke();
+      break;
+    case 'bush': case 'berries': {
+      // A round leafy bush (berries on some).
+      g.fillStyle = classic ? '#fff' : leafColor(b, h);
+      g.beginPath(); g.arc(x + 5, y + 11, 4.5, 0, Math.PI * 2); g.arc(x + 11, y + 11, 4.5, 0, Math.PI * 2); g.arc(x + 8, y + 7, 5, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = classic ? INK : tint(b.color, 0.55); g.lineWidth = 0.9;
+      g.beginPath(); g.arc(x + 5, y + 11, 4.5, Math.PI * 0.55, Math.PI * 1.45); g.arc(x + 8, y + 7, 5, Math.PI * 1.1, Math.PI * 1.9); g.arc(x + 11, y + 11, 4.5, Math.PI * 1.55, Math.PI * 2.45); g.stroke();
+      if (b.pattern === 'berries') { g.fillStyle = classic ? INK : '#c0283c'; for (const [bx, by] of [[5, 9], [10, 6], [12, 12], [7, 13]]) { g.beginPath(); g.arc(x + bx, y + by, 1.4, 0, Math.PI * 2); g.fill(); } }
+      break;
+    }
+    case 'bamboo': {
+      // A stalk with joints, leaves off some of them.
+      g.fillStyle = classic ? '#fff' : b.color;
+      g.fillRect(x + 6, y, 4, TILE);
+      g.strokeStyle = classic ? INK : tint(b.color, 0.6); g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x + 6, y); g.lineTo(x + 6, y + TILE); g.moveTo(x + 10, y); g.lineTo(x + 10, y + TILE);
+      g.moveTo(x + 6, y + 5 + (h & 3)); g.lineTo(x + 10, y + 5 + (h & 3)); g.stroke();
+      if (h & 4) { g.fillStyle = classic ? '#fff' : tint(b.color, 0.85); g.beginPath(); g.ellipse(x + ((h & 8) ? 13 : 3), y + 4 + (h & 3), 4, 1.4, (h & 8) ? -0.5 : 0.5, 0, Math.PI * 2); g.fill(); if (classic) g.stroke(); }
+      break;
+    }
+    case 'petals':
+      // Pink petals fallen on the ground.
+      g.fillStyle = classic ? '#9a9a9a' : b.color;
+      for (let i = 0; i < 5; i++) g.fillRect(x + 1 + ((h >>> (i * 3)) % 13), y + TILE - 2 - ((h >>> (i * 2 + 1)) & 1) * 1.5, 2.2, 1.4);
       break;
     case 'seagrass':
       // Ribbons swaying up from the bottom.
@@ -869,8 +966,9 @@ function drawThing(g, grid, k, x, y, id, classic, tx, ty) {
   }
 }
 
-// Leaves (and what a crown is made of: a trunk inside it isn't its edge).
-const LEAFY = new Set([K.LEAVES, K.PINE_LEAVES, K.JUNGLE_LEAVES, K.TRUNK]);
+// Leaves (and what a crown is made of: a trunk inside it isn't its edge); giant mushrooms' caps.
+const LEAFY = new Set([...K.LEAVES_ALL, ...K.TRUNKS]);
+const CAPPED = K.CAPS;
 const BUMPS = [];
 const leafColor = (b, h) => tint(b.color, 0.92 + (h & 15) / 140);
 
@@ -1677,6 +1775,13 @@ function drawFoodIcon(ctx, it, x, y, w) {
       ctx.beginPath(); ctx.moveTo(x + w * 0.5, y + w * 0.3); ctx.lineTo(x + w * 0.56, y + w * 0.12); ctx.stroke();
       ctx.fillStyle = '#4f8a34';
       ctx.beginPath(); ctx.ellipse(x + w * 0.66, y + w * 0.2, w * 0.12, w * 0.06, -0.5, 0, Math.PI * 2); ctx.fill();
+      break;
+    case 'berries':
+      // A little bunch on a sprig.
+      ctx.fillStyle = '#4f8a34';
+      ctx.beginPath(); ctx.ellipse(x + w * 0.62, y + w * 0.22, w * 0.14, w * 0.07, -0.6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = c;
+      for (const [bx, by] of [[0.36, 0.5], [0.58, 0.48], [0.47, 0.68], [0.68, 0.68], [0.3, 0.72]]) { ctx.beginPath(); ctx.arc(x + w * bx, y + w * by, w * 0.13, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
       break;
     case 'bread':
       ctx.fillStyle = c;

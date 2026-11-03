@@ -172,6 +172,46 @@ export const CORAL_GOLD = coral('coral_gold', 'Gold coral', '#e0b030');
 // Shipwrecks (worldgen.js): their hulls, of old timber gone dark in the sea.
 export const OLD_PLANKS = def('old_planks', 'Old planks', { hard: 3, resist: 4, wood: true, drop: 'planks', color: '#6a5238', pattern: 'planks' });
 
+// ---- More trees, ground and plants (worlds made since forests: worldgen.js's gen 5) ---------------
+// Trunks are walked through and felled whole with an axe (wood); leaves, broken by hand. A giant
+// mushroom's cap is stood on, like a platform.
+const trunk = (key, name, color, pattern = 'bark', o = {}) => def(key, name, { solid: false, hard: 3, tool: 'axe', resist: 2, drop: 'wood', color, pattern, natural: true, trunk: true, ...o });
+const leaves = (key, name, color, o = {}) => def(key, name, { solid: false, hard: 0, tool: 'hand', resist: 0, drop: null, clear: true, color, pattern: 'leaves', natural: true, leaf: true, ...o });
+export const BIRCH_TRUNK = trunk('birch_trunk', 'Birch tree', '#e4e0d4', 'birch');
+export const BIRCH_LEAVES = leaves('birch_leaves', 'Birch leaves', '#7cae4a');
+export const DARK_TRUNK = trunk('dark_trunk', 'Dark oak', '#4a3422');
+export const DARK_LEAVES = leaves('dark_leaves', 'Dark oak leaves', '#2c5622');
+export const SPRUCE_TRUNK = trunk('spruce_trunk', 'Spruce', '#5a3e28');
+export const SPRUCE_LEAVES = leaves('spruce_leaves', 'Spruce needles', '#2a4c38', { spiky: true });
+export const SNOWY_LEAVES = leaves('snowy_needles', 'Snowy needles', '#d8e6e8', { spiky: true });
+export const ACACIA_TRUNK = trunk('acacia_trunk', 'Acacia', '#7a6250');
+export const ACACIA_LEAVES = leaves('acacia_leaves', 'Acacia leaves', '#8a9e3a');
+export const CHERRY_TRUNK = trunk('cherry_trunk', 'Cherry tree', '#5a3236');
+export const CHERRY_LEAVES = leaves('cherry_leaves', 'Cherry blossom', '#f4a6c8');
+export const PALM_TRUNK = trunk('palm_trunk', 'Palm', '#a8885a', 'palm');
+export const PALM_LEAVES = leaves('palm_leaves', 'Palm fronds', '#4a9a38', { pattern: 'frond' });
+export const MUSHROOM_STEM = trunk('mushroom_stem', 'Giant mushroom', '#e4dccc', 'stem', { drop: null });
+const cap = (key, name, color) => def(key, name, { solid: false, platform: true, hard: 1, tool: 'axe', resist: 1, drop: null, clear: true, color, pattern: 'cap', natural: true, cap: true });
+export const RED_CAP = cap('red_cap', 'Red mushroom cap', '#c8323a');
+export const BROWN_CAP = cap('brown_cap', 'Brown mushroom cap', '#9a7656');
+// The ground: under spruces, on the savanna, in mushroom fields; moss on forest floors; and
+// what lies on it: mossy boulders, fallen logs, pumpkins.
+export const PODZOL = def('podzol', 'Podzol', { hard: 2, resist: 0, drop: 'dirt', color: '#7a5a2c', dark: '#5b4129', pattern: 'grass', natural: true });
+export const DRY_GRASS = def('dry_grass', 'Dry grass', { hard: 2, resist: 0, drop: 'dirt', color: '#b4a452', dark: '#7a5636', pattern: 'grass', natural: true });
+export const MYCELIUM = def('mycelium', 'Mycelium', { hard: 2, resist: 0, drop: 'dirt', color: '#8a7a92', dark: '#5b4129', pattern: 'grass', natural: true });
+export const MOSS = def('moss', 'Moss', { hard: 1, resist: 0, color: '#4f8a34', pattern: 'moss', natural: true });
+export const MOSSY_COBBLE = def('mossy_cobblestone', 'Mossy cobblestone', { hard: 5, resist: 10, color: '#7a8a6a', pattern: 'cobble', natural: true });
+export const FALLEN_LOG = def('fallen_log', 'Fallen log', { hard: 3, tool: 'axe', resist: 2, drop: 'wood', wood: true, color: '#6a4a30', pattern: 'fallen', natural: true });
+export const PUMPKIN = def('pumpkin', 'Pumpkin', { hard: 1, tool: 'axe', resist: 1, color: '#e0861e', pattern: 'pumpkin', natural: true });
+// Plants (walked through, broken by anything).
+const plant = (key, name, color, pattern, o = {}) => def(key, name, { solid: false, hard: 0, tool: 'hand', resist: 0, drop: null, clear: true, color, pattern, natural: true, ...o });
+export const FERN = plant('fern', 'Fern', '#3f7a3a', 'fern');
+export const BUSH = plant('bush', 'Bush', '#3a7232', 'bush');
+export const BERRY_BUSH = plant('berry_bush', 'Berry bush', '#36602c', 'berries', { drop: 'berries' });
+export const DRY_TALL_GRASS = plant('dry_tall_grass', 'Dry grass', '#c8b462', 'blades');
+export const BAMBOO = plant('bamboo', 'Bamboo', '#7ab040', 'bamboo', { tool: 'axe', hard: 1 });
+export const PETALS = plant('petals', 'Fallen petals', '#f4b0cc', 'petals');
+
 /** The gem blocks (they glint). */
 export const GEMS = new Set([RUBY, SAPPHIRE, EMERALD, TOPAZ, AMETHYST, DIAMOND]);
 
@@ -187,6 +227,10 @@ export const LIGHT = Uint8Array.from(B, b => b.light);
 export const CLEAR = Uint8Array.from(B, b => (b.clear || !b.solid ? 1 : 0));
 // Water, and what's in it: swum in, drawn under water, flowed out of.
 export const LIQUID = Uint8Array.from(B, b => (b.liquid ? 1 : 0));
+/** Trees' trunks (felled whole), their leaves (and the like: a crown), and giant mushrooms' caps. */
+export const TRUNKS = new Set([TRUNK, ...B.filter(b => b.trunk).map(b => b.id)]);
+export const LEAVES_ALL = new Set([LEAVES, PINE_LEAVES, JUNGLE_LEAVES, ...B.filter(b => b.leaf).map(b => b.id)]);
+export const CAPS = new Set(B.filter(b => b.cap).map(b => b.id));
 
 // ---- Walls: the layer behind (dug-out caves keep theirs; rooms are walled in) ----------------
 const W = [];

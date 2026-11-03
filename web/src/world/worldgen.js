@@ -54,6 +54,17 @@ export const BIOMES = [
   { key: 'warm_ocean', since: 4, name: 'Warm sea', climate: 2, base: -30, amp: 8, scale: 80, shape: 'rolling', top: K.SAND, soil: K.SAND, soilDepth: 5, wall: K.SANDSTONE_WALL, trees: 0, tree: 'oak', plants: 0, flowers: 0, sea: true, coral: true },
   { key: 'frozen_ocean', since: 4, name: 'Frozen sea', climate: 0, base: -32, amp: 9, scale: 90, shape: 'rolling', top: K.GRAVEL, soil: K.GRAVEL, soilDepth: 3, wall: K.STONE_WALL, trees: 0, tree: 'pine', plants: 0, flowers: 0, sea: true, frozen: true },
   { key: 'swamp', since: 4, name: 'Swamp', climate: 1, base: -2, amp: 4, scale: 60, shape: 'rolling', top: K.GRASS, soil: K.MUD, soilDepth: 6, wall: K.MUD_WALL, trees: 0.38, tree: 'swamp', plants: 0.55, flowers: 0.03 },
+  // Worlds made since forests (gen 5): more lands (their trees and what grows under them: TREES, UNDERGROWTH).
+  { key: 'birch_forest', since: 5, name: 'Birch forest', climate: 1, base: 4, amp: 15, scale: 110, shape: 'rolling', top: K.GRASS, soil: K.DIRT, soilDepth: 6, wall: K.DIRT_WALL, trees: 0.7, tree: 'birch', plants: 0.35, flowers: 0.1 },
+  { key: 'dark_forest', since: 5, name: 'Dark forest', climate: 1, base: 6, amp: 14, scale: 100, shape: 'rolling', top: K.GRASS, soil: K.DIRT, soilDepth: 6, wall: K.DIRT_WALL, trees: 0.9, tree: 'dark_oak', plants: 0.3, flowers: 0.02, mossy: true },
+  { key: 'taiga', since: 5, name: 'Taiga', climate: 0, base: 8, amp: 20, scale: 100, shape: 'rolling', top: K.PODZOL, soil: K.DIRT, soilDepth: 5, wall: K.DIRT_WALL, trees: 0.7, tree: 'spruce', plants: 0.3, flowers: 0.02 },
+  { key: 'snowy_taiga', since: 5, name: 'Snowy taiga', climate: 0, base: 10, amp: 18, scale: 100, shape: 'rolling', top: K.SNOW, soil: K.DIRT, soilDepth: 5, wall: K.DIRT_WALL, trees: 0.6, tree: 'snowy_spruce', plants: 0.05, flowers: 0 },
+  { key: 'giant_taiga', since: 5, name: 'Old spruce forest', climate: 0, base: 12, amp: 18, scale: 90, shape: 'rolling', top: K.PODZOL, soil: K.DIRT, soilDepth: 6, wall: K.DIRT_WALL, trees: 0.75, tree: 'mega_spruce', plants: 0.4, flowers: 0, mossy: true },
+  { key: 'savanna', since: 5, name: 'Savanna', climate: 2, base: 3, amp: 7, scale: 160, shape: 'rolling', top: K.DRY_GRASS, soil: K.DIRT, soilDepth: 5, wall: K.DIRT_WALL, trees: 0.3, tree: 'acacia', plants: 0.6, plant: K.DRY_TALL_GRASS, flowers: 0.01 },
+  { key: 'cherry_grove', since: 5, name: 'Cherry grove', climate: 1, base: 18, amp: 22, scale: 90, shape: 'rolling', top: K.GRASS, soil: K.DIRT, soilDepth: 5, wall: K.DIRT_WALL, trees: 0.55, tree: 'cherry', plants: 0.3, flowers: 0.12 },
+  { key: 'meadow', since: 5, name: 'Flower meadow', climate: 1, base: 10, amp: 9, scale: 170, shape: 'rolling', top: K.GRASS, soil: K.DIRT, soilDepth: 6, wall: K.DIRT_WALL, trees: 0.08, tree: 'big_oak', plants: 0.45, flowers: 0.4 },
+  { key: 'bamboo_jungle', since: 5, name: 'Bamboo jungle', climate: 2, base: 6, amp: 18, scale: 80, shape: 'rolling', top: K.JUNGLE_GRASS, soil: K.MUD, soilDepth: 9, wall: K.MUD_WALL, trees: 0.3, tree: 'jungle', plants: 0.4, flowers: 0.04 },
+  { key: 'mushroom_fields', since: 5, name: 'Mushroom fields', climate: 1, base: 0, amp: 6, scale: 120, shape: 'rolling', top: K.MYCELIUM, soil: K.DIRT, soilDepth: 5, wall: K.DIRT_WALL, trees: 0.4, tree: 'giant_mushroom', plants: 0.15, plant: K.MUSHROOM, flowers: 0 },
 ];
 export const BIOME_BY_KEY = new Map(BIOMES.map((b, i) => [b.key, { ...b, index: i }]));
 const BY_CLIMATE = [[6, 2, 6], [0, 1, 1, 2, 0], [3, 4, 5, 3]];
@@ -61,6 +72,81 @@ const biomeIndex = key => BIOMES.findIndex(b => b.key === key);
 // Worlds made since seas: the lands for each climate, and the sea.
 const BY_CLIMATE_4 = [['snow', 'mountains', 'snow'], ['plains', 'forest', 'forest', 'mountains', 'plains', 'swamp'], ['desert', 'badlands', 'jungle', 'desert', 'swamp']].map(l => l.map(biomeIndex));
 const SEAS = ['frozen_ocean', 'ocean', 'warm_ocean'].map(biomeIndex);
+// Worlds made since forests: more lands for each climate (and, rarely, mushroom fields).
+const BY_CLIMATE_5 = [
+  ['snow', 'mountains', 'taiga', 'taiga', 'snowy_taiga', 'snowy_taiga', 'giant_taiga'],
+  ['plains', 'forest', 'forest', 'birch_forest', 'dark_forest', 'meadow', 'cherry_grove', 'mountains', 'plains', 'swamp'],
+  ['desert', 'badlands', 'jungle', 'savanna', 'savanna', 'bamboo_jungle', 'desert', 'swamp'],
+].map(l => l.map(biomeIndex));
+const MUSHROOMS = biomeIndex('mushroom_fields');
+
+/**
+ * Worlds made since forests: each biome's trees. cell: tiles to a tree at most (forests are
+ * dense: a trunk every few tiles, their crowns meeting); p: how likely each cell has one;
+ * clearings: thinned out in places (a slow noise); kinds: which trees, [kind, how often]. (Each
+ * kind's shape: treeTile5.)
+ */
+const TREES = {
+  plains: { cell: 7, p: 0.09, kinds: [['oak', 5], ['big_oak', 1], ['birch', 1]] },
+  forest: { cell: 4, p: 0.9, clearings: true, kinds: [['oak', 6], ['big_oak', 2], ['birch', 2]] },
+  birch_forest: { cell: 4, p: 0.88, clearings: true, kinds: [['birch', 6], ['tall_birch', 3], ['oak', 1]] },
+  dark_forest: { cell: 4, p: 0.95, kinds: [['dark_oak', 6], ['big_oak', 2], ['giant_mushroom', 0.4]] },
+  mountains: { cell: 5, p: 0.14, kinds: [['spruce', 3], ['pine', 1]] },
+  taiga: { cell: 4, p: 0.85, clearings: true, kinds: [['spruce', 6], ['pine', 2]] },
+  snowy_taiga: { cell: 4, p: 0.62, kinds: [['snowy_spruce', 6], ['spruce', 1]] },
+  giant_taiga: { cell: 5, p: 0.8, kinds: [['mega_spruce', 4], ['spruce', 3]] },
+  snow: { cell: 5, p: 0.28, kinds: [['snowy_spruce', 2], ['pine', 1]] },
+  desert: { cell: 5, p: 0.12, kinds: [['cactus', 1]] },
+  badlands: { cell: 5, p: 0.04, kinds: [['cactus', 1]] },
+  jungle: { cell: 4, p: 0.9, kinds: [['jungle', 5], ['big_jungle', 1]] },
+  bamboo_jungle: { cell: 6, p: 0.25, kinds: [['jungle', 1]] },
+  savanna: { cell: 8, p: 0.34, kinds: [['acacia', 1]] },
+  cherry_grove: { cell: 5, p: 0.58, kinds: [['cherry', 1]] },
+  meadow: { cell: 9, p: 0.1, kinds: [['big_oak', 1], ['birch', 1]] },
+  swamp: { cell: 5, p: 0.4, kinds: [['swamp', 1]] },
+  mushroom_fields: { cell: 7, p: 0.42, kinds: [['giant_mushroom', 1]] },
+};
+// How far each kind of tree reaches either side of its trunk (tiles); the most any does.
+const TREE_REACH = { oak: 4, big_oak: 7, birch: 3, tall_birch: 3, dark_oak: 7, spruce: 4, snowy_spruce: 4, mega_spruce: 6, pine: 4, jungle: 5, big_jungle: 7, swamp: 4, cactus: 2, acacia: 8, cherry: 5, palm: 8, giant_mushroom: 5 };
+const TREE_MAX_REACH = 8;
+
+/**
+ * Worlds made since forests: what grows under the trees, in each biome: p, how likely a tile of
+ * ground has something; list, what, [block, how often]; patches: flowers come in patches (a slow noise).
+ */
+const UNDERGROWTH = {
+  plains: { p: 0.5, patches: true, list: [[K.TALL_GRASS, 8], [K.FLOWER, 2], [K.BUSH, 0.4], [K.PUMPKIN, 0.08]] },
+  forest: { p: 0.62, list: [[K.TALL_GRASS, 4], [K.FERN, 3], [K.BUSH, 2], [K.FLOWER, 0.6], [K.BERRY_BUSH, 0.4], [K.MUSHROOM, 0.15]] },
+  birch_forest: { p: 0.5, patches: true, list: [[K.TALL_GRASS, 5], [K.FLOWER, 2.5], [K.BUSH, 0.8], [K.FERN, 0.8]] },
+  dark_forest: { p: 0.58, list: [[K.FERN, 5], [K.BUSH, 3], [K.MUSHROOM, 1], [K.TALL_GRASS, 2]] },
+  taiga: { p: 0.55, list: [[K.FERN, 6], [K.TALL_GRASS, 2], [K.BERRY_BUSH, 1], [K.BUSH, 0.6]] },
+  snowy_taiga: { p: 0.08, list: [[K.FERN, 2], [K.BERRY_BUSH, 1]] },
+  giant_taiga: { p: 0.62, list: [[K.FERN, 7], [K.BERRY_BUSH, 1], [K.BUSH, 1], [K.MUSHROOM, 0.3]] },
+  savanna: { p: 0.66, list: [[K.DRY_TALL_GRASS, 8], [K.TALL_GRASS, 1], [K.FLOWER, 0.2], [K.BUSH, 0.3]] },
+  cherry_grove: { p: 0.58, list: [[K.PETALS, 5], [K.TALL_GRASS, 3], [K.FLOWER, 1]] },
+  meadow: { p: 0.86, patches: true, list: [[K.FLOWER, 5], [K.TALL_GRASS, 5], [K.BUSH, 0.3]] },
+  jungle: { p: 0.76, list: [[K.TALL_GRASS, 4], [K.FERN, 3], [K.BUSH, 3], [K.FLOWER, 0.6]] },
+  bamboo_jungle: { p: 0.5, list: [[K.FERN, 4], [K.TALL_GRASS, 3], [K.BUSH, 2]] },
+  swamp: { p: 0.56, list: [[K.TALL_GRASS, 6], [K.FERN, 2], [K.MUSHROOM, 0.3]] },
+  mushroom_fields: { p: 0.16, list: [[K.MUSHROOM, 1]] },
+  desert: { p: 0.08, list: [[K.DEAD_BUSH, 1]] },
+  badlands: { p: 0.05, list: [[K.DEAD_BUSH, 1]] },
+  mountains: { p: 0.05, list: [[K.TALL_GRASS, 1]] },
+};
+// Where fallen logs lie, and boulders sit (worlds made since forests): the biomes.
+const LOGS = new Set(['forest', 'birch_forest', 'dark_forest', 'taiga', 'giant_taiga', 'jungle']);
+const BOULDERS = new Set(['taiga', 'giant_taiga', 'dark_forest', 'forest', 'mountains', 'snowy_taiga', 'meadow']);
+// The ground's top blocks things grow on.
+const GROUNDS = new Set([K.GRASS, K.JUNGLE_GRASS, K.PODZOL, K.DRY_GRASS, K.MYCELIUM, K.MOSS, K.SAND, K.RED_SAND, K.SNOW, K.STONE]);
+
+/** Pick from [[thing, how often], ...] by r (0 to 1). */
+function pick(list, r) {
+  let sum = 0;
+  for (const e of list) sum += e[1];
+  let t = r * sum;
+  for (const e of list) { t -= e[1]; if (t < 0) return e[0]; }
+  return list[list.length - 1][0];
+}
 
 /** The world's ruins and cabins: { kind, x0, y0, x1, y1 (tiles, inclusive), ... }. */
 const RUIN_CELL = 240, CABIN_W = 160, CABIN_H = 96;
@@ -69,8 +155,8 @@ export class WorldGen {
   /**
    * gen: the version of the generator the world was made with (worldsave.js's WORLD_GEN): 1 the
    * first; 2 has towns (towns.js); 3 ores in veins and nodes, gems, diamond pipes and geodes;
-   * 4 seas, beaches, lakes and swamps. Worlds keep the land they were made with. (towns: true,
-   * an older way to say 2.)
+   * 4 seas, beaches, lakes and swamps; 5 more biomes, dense forests and many more kinds of tree.
+   * Worlds keep the land they were made with. (towns: true, an older way to say 2.)
    */
   constructor(seed, { towns = false, gen = 0, noTowns = false } = {}) {
     this.seed = seed | 0;
@@ -79,6 +165,7 @@ export class WorldGen {
     this.towns = this.version >= 2 && !noTowns;
     this.veins = this.version >= 3;
     this.seas = this.version >= 4;
+    this.forests = this.version >= 5;
     this.biomes = new Map();    // region -> its biome
     this.spans = new Map();     // sea region -> the sea it's part of (seaSpan)
     this.lakes = new Map();     // lake cell -> its lake (or null)
@@ -127,8 +214,10 @@ export class WorldGen {
       const t = fbm1(this.seed + 11, k * 0.31, 2);
       const climate = t < -0.22 ? 0 : t > 0.22 ? 2 : 1;
       if (this.seas && Math.abs(k - this.spawnRegion) > 1 && fbm1(this.seed + 13, k * 0.2, 2) > SEA_NOISE) b = BIOMES[SEAS[climate]];
+      // (Worlds made since forests: now and then, mushroom fields, in the mild lands away from the start.)
+      else if (this.forests && climate === 1 && Math.abs(k - this.spawnRegion) > 3 && hash3(this.seed, k, 7) % 100 < 3) b = BIOMES[MUSHROOMS];
       else {
-        const list = (this.seas ? BY_CLIMATE_4 : BY_CLIMATE)[climate];
+        const list = (this.forests ? BY_CLIMATE_5 : this.seas ? BY_CLIMATE_4 : BY_CLIMATE)[climate];
         b = BIOMES[list[hash3(this.seed, k, 5) % list.length]];
       }
     }
@@ -300,7 +389,7 @@ export class WorldGen {
         if (!o || Math.min(Math.abs(x - o.x0), Math.abs(x - o.x1)) > 8) continue;
         c.bed = o.biome.frozen ? { top: K.GRAVEL, soil: K.GRAVEL, depth: 3 }
           : c.biome.key === 'badlands' ? { top: K.RED_SAND, soil: K.RED_SAND, depth: 4 } : { top: K.SAND, soil: K.SAND, depth: 4, under: K.SANDSTONE };
-        c.beach = true;
+        c.beach = o;
         break;
       }
     }
@@ -434,6 +523,11 @@ export class WorldGen {
     if (depth === 0) {
       // Snow on high peaks.
       if (b.key === 'mountains' && y < SURFACE - 34) return K.SNOW;
+      // (Worlds made since forests: moss on old forests' floors, grass here and there among the podzol.)
+      if (this.forests) {
+        if (b.mossy && noise2(s + 131, x / 14, 0.5) > 0.1) return K.MOSS;
+        if (b.top === K.PODZOL && noise2(s + 132, x / 20, 1.5) < -0.25) return K.GRASS;
+      }
       return b.top;
     }
     if (depth < col.soilDepth) return b.soil;
@@ -543,6 +637,7 @@ export class WorldGen {
 
   /** The tree growing at column x, if any: { x, base (the ground's row), kind, h (trunk), r (crown) }. */
   treeAt(x) {
+    if (this.forests) return this.treeAt5(x);
     const cell = Math.floor(x / 5);
     if (x !== cell * 5 + 1 + (hash3(this.seed, cell, 51) % 3)) return null;
     const col = this.column(x), b = col.biome;
@@ -586,6 +681,217 @@ export class WorldGen {
     // Jungle and swamp trees trail vines from their crowns.
     if (flat && Math.abs(dx) >= 2 && Math.abs(dx) <= t.r && y > cy && y <= cy + 2 + (hash3(this.seed, x, 55) % 4) && hash3(this.seed, x, 56) % 3 === 0) return K.VINE;
     return K.AIR;
+  }
+
+  /**
+   * The tree at column x in worlds made since forests: each biome's own (TREES), as many as its
+   * forests have (a trunk every few tiles in the thickest: their crowns meet), thinned out in
+   * clearings; palms on warm shores. { x, base, kind, w (the trunk's width: 1, or 2 for the
+   * biggest), h, r, reach (tiles either side), top (its highest row), lean (palms and acacias: -1
+   * or 1), and what else its kind needs }.
+   */
+  treeAt5(x) {
+    if (x > -6 && x < 6) return null; // (room to land where everyone starts)
+    const col = this.column(x), b = col.biome, s = this.seed;
+    if (this.waterTop(x, col) < WORLD_H) return null;
+    // (On a warm shore: palms. On any other beach, nothing.)
+    const palms = col.beach && (col.beach.biome.coral || b.climate === 2);
+    if (col.beach && !palms) return null;
+    const T = palms ? PALMS : TREES[b.key];
+    if (!T) return null;
+    // (One in each cell at most, somewhere in it: never right next to the one in the next cell.)
+    const cw = T.cell, cell = Math.floor(x / cw);
+    if (x !== cell * cw + (hash3(s, cell, 51) % (cw - 1))) return null;
+    let p = T.p;
+    if (T.clearings && noise2(s + 130, x / 70, 0.5) < -0.45) p *= 0.12;
+    if (rand3(s, cell, 52 + cw) >= p) return null;
+    const kind = pick(T.kinds, rand3(s, x, 57)), w = WIDE.has(kind) ? 2 : 1, reach = TREE_REACH[kind];
+    if (col.town && x >= col.town.x0 - reach - 2 && x <= col.town.x1 + reach + 2) return null;
+    // (On ground level enough for it: a wide trunk's two columns on the same level.)
+    const surf = col.surf;
+    for (let d = -1; d <= w; d++) if (d && Math.abs(this.surfaceAt(x + d) - surf) > (d >= 1 && d < w ? 0 : 1)) return null;
+    if (this.waterTop(x - 1) < WORLD_H || this.waterTop(x + w) < WORLD_H) return null;
+    if (this.inStructure(x, surf - 1)) return null;
+    const r = hash3(s, x, 53), t = { x, base: surf, kind, w, h: 5, r: 2, reach, top: 0, lean: (r >>> 9) & 1 ? 1 : -1 };
+    switch (kind) {
+      case 'oak': t.h = 5 + (r % 4); t.r = 2 + ((r >>> 4) & 1); break;
+      case 'big_oak': t.h = 8 + (r % 4); t.r = 4; break;
+      case 'birch': t.h = 6 + (r % 3); break;
+      case 'tall_birch': t.h = 9 + (r % 4); break;
+      case 'dark_oak': t.h = 6 + (r % 3); t.r = 5; break;
+      case 'spruce': case 'snowy_spruce': t.h = 9 + (r % 6); break;
+      case 'mega_spruce': t.h = 18 + (r % 8); break;
+      case 'pine': t.h = 7 + (r % 6); break;
+      case 'jungle': t.h = 10 + (r % 7); t.r = 4; break;
+      case 'big_jungle': t.h = 16 + (r % 7); t.r = 5; break;
+      case 'swamp': t.h = 5 + (r % 3); t.r = 3; break;
+      case 'cactus': t.h = 2 + (r % 3); break;
+      case 'acacia': t.a = 3 + (r % 2); t.b = 2 + ((r >>> 3) % 2); t.h = t.a + t.b + 1; t.two = ((r >>> 5) & 3) === 0; break;
+      case 'cherry': t.h = 4 + (r % 3); t.r = 4; break;
+      case 'palm': t.h = 6 + (r % 4); break;
+      case 'giant_mushroom': t.h = 4 + (r % 4); t.red = ((r >>> 6) & 1) === 1; break;
+    }
+    t.top = t.base - t.h - 6;
+    return t;
+  }
+
+  /** What tree t (treeAt5) puts at (x, y), or AIR. */
+  treeTile5(t, x, y) {
+    const dx = x - t.x, top = t.base - t.h, s = this.seed;
+    if (y >= t.base) return K.AIR;
+    switch (t.kind) {
+      case 'oak': case 'pine': case 'jungle': case 'swamp': case 'cactus': return this.treeTile(t, x, y);
+      case 'big_oak':
+        // A tall trunk, a big crown, and a lobe low down either side, branches out to them.
+        if (dx === 0 && y >= top) return K.TRUNK;
+        if ((y === top + 2 && (dx === -1 || dx === -2)) || (y === top + 1 && (dx === 1 || dx === 2))) return K.TRUNK;
+        return ell(dx, y - (top - 1), 4.5, 3) || ell(dx + 3, y - (top + 2), 2.5, 1.8) || ell(dx - 3, y - (top + 1), 2.5, 1.8) ? K.LEAVES : K.AIR;
+      case 'birch': case 'tall_birch':
+        // White and slim, a narrow crown.
+        if (dx === 0 && y >= top) return K.BIRCH_TRUNK;
+        return ell(dx, y - (top + 1), 2.2, t.kind === 'tall_birch' ? 4.2 : 3.2) ? K.BIRCH_LEAVES : K.AIR;
+      case 'dark_oak':
+        // Two trunks wide, roots at its foot, a wide flat crown (a dark forest's canopy).
+        if ((dx === 0 || dx === 1) && y >= top) return K.DARK_TRUNK;
+        if (y === t.base - 1 && (dx === -1 || dx === 2) && (hash3(s, x, 58) & 1)) return K.DARK_TRUNK;
+        return ell(dx - 0.5, y - top, t.r + 0.5, 2.6) ? K.DARK_LEAVES : K.AIR;
+      case 'spruce': case 'snowy_spruce': case 'mega_spruce': {
+        // Tiers of needles, wider further down (snow on each tier's top, in the snowy taiga);
+        // the biggest, two trunks wide and very tall, needles only on the top part.
+        const wide = t.w === 2;
+        if ((dx === 0 || (wide && dx === 1)) && y >= top) return K.SPRUCE_TRUNK;
+        const i = y - (top - 1), bottom = wide ? top + Math.floor(t.h * 0.6) : t.base - 3;
+        if (i < 0 || y > bottom) return K.AIR;
+        let half = Math.min(wide ? 5.5 : 3.6, 0.6 + i * (wide ? 0.38 : 0.45));
+        if (i > 1 && i % 3 === 0) half -= wide ? 1.6 : 1.1;
+        if (Math.abs(wide ? dx - 0.5 : dx) > half) return K.AIR;
+        return t.kind === 'snowy_spruce' && (i % 3 === 1 || i === 0) ? K.SNOWY_LEAVES : K.SPRUCE_LEAVES;
+      }
+      case 'big_jungle':
+        // Two trunks wide and very tall, a broad crown trailing vines.
+        if ((dx === 0 || dx === 1) && y >= top) return K.TRUNK;
+        if (ell(dx - 0.5, y - (top - 1), t.r + 0.5, 3)) return K.JUNGLE_LEAVES;
+        if (Math.abs(dx - 0.5) >= 2 && Math.abs(dx - 0.5) <= t.r && y > top && y <= top + 3 + (hash3(s, x, 55) % 4) && hash3(s, x, 56) % 3 === 0) return K.VINE;
+        return K.AIR;
+      case 'acacia': {
+        // Straight up a few, then off to one side, a flat crown on top; some fork the other way too.
+        const L = t.lean, bend = t.base - t.a;
+        if (dx === 0 && y >= bend) return K.ACACIA_TRUNK;
+        for (let j = 1; j <= t.b; j++) if (dx === L * j && y === bend - j) return K.ACACIA_TRUNK;
+        const cx = L * t.b, cy = bend - t.b - 1;
+        if ((y === cy && Math.abs(dx - cx) <= 3) || (y === cy - 1 && Math.abs(dx - cx) <= 2)) return K.ACACIA_LEAVES;
+        if (t.two) {
+          if (dx === -L && y === bend - 1) return K.ACACIA_TRUNK;
+          const c2 = -L * 2, y2 = bend - 2;
+          if ((y === y2 && Math.abs(dx - c2) <= 2) || (y === y2 - 1 && Math.abs(dx - c2) <= 1)) return K.ACACIA_LEAVES;
+        }
+        return K.AIR;
+      }
+      case 'cherry':
+        // Forking near the top, a wide pink crown.
+        if (dx === 0 && y >= top) return K.CHERRY_TRUNK;
+        if (y === top + 1 && (dx === -1 || dx === 1) && ((hash3(s, t.x, 59) >>> (dx > 0 ? 0 : 1)) & 1)) return K.CHERRY_TRUNK;
+        return ell(dx, y - (top - 1), t.r + 0.5, 2.6) ? K.CHERRY_LEAVES : K.AIR;
+      case 'palm': {
+        // A trunk curving over as it goes up, fronds drooping from its top.
+        const j = t.base - 1 - y, bend = n => Math.round(t.lean * 2 * (n / t.h) ** 2);
+        if (j >= 0 && j < t.h && dx === bend(j)) return K.PALM_TRUNK;
+        const ax = Math.abs(dx - bend(t.h - 1)), ay = y - (t.base - t.h - 1);
+        return (ay === -1 && ax <= 1) || (ay === 0 && ax <= 3) || (ay === 1 && ax >= 3 && ax <= 4) || (ay === 2 && ax >= 4 && ax <= 5) ? K.PALM_LEAVES : K.AIR;
+      }
+      case 'giant_mushroom': {
+        // A thick pale stem, and a cap to stand on: a red dome with its rim hanging down, or a wide flat brown one.
+        if (dx === 0 && y >= top) return K.MUSHROOM_STEM;
+        const cy = top - 1, ax = Math.abs(dx);
+        if (t.red) return (y === cy - 1 && ax <= 1) || (y === cy && ax <= 2) || (y === cy + 1 && ax === 3) ? K.RED_CAP : K.AIR;
+        return (y === cy && ax <= 4) || (y === cy - 1 && ax <= 2) ? K.BROWN_CAP : K.AIR;
+      }
+      default: return K.AIR;
+    }
+  }
+
+  /**
+   * Chunk (x0, y0)'s trees, in worlds made since forests (fg: its blocks): trunks first, then
+   * giant mushrooms' caps, then crowns (a trunk shows through a neighbour's crown, and is felled
+   * whole; a mushroom keeps its cap, among the leaves).
+   */
+  fillTrees5(x0, y0, fg) {
+    const trees = [];
+    for (let x = x0 - TREE_MAX_REACH; x < x0 + CHUNK + TREE_MAX_REACH; x++) {
+      const t = this.treeAt5(x);
+      if (t && t.x + t.reach >= x0 && t.x - t.reach < x0 + CHUNK && t.base > y0 && t.top < y0 + CHUNK) trees.push(t);
+    }
+    // (Three passes: trunks, then giant mushrooms' caps, then leaves.)
+    const passOf = b => (K.TRUNKS.has(b) ? 0 : K.CAPS.has(b) ? 1 : 2);
+    for (let pass = 0; pass < 3; pass++) {
+      for (const t of trees) {
+        if (pass === 1 && t.kind !== 'giant_mushroom') continue;
+        for (let y = Math.max(y0, t.top); y < Math.min(y0 + CHUNK, t.base); y++) {
+          for (let tx = Math.max(x0, t.x - t.reach); tx <= Math.min(x0 + CHUNK - 1, t.x + t.reach); tx++) {
+            const i = (y - y0) * CHUNK + (tx - x0);
+            if (fg[i] !== K.AIR) continue;
+            const b = this.treeTile5(t, tx, y);
+            if (b !== K.AIR && passOf(b) === pass) fg[i] = b;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * What grows at the foot of column x's ground, in worlds made since forests (UNDERGROWTH): a
+   * block, or 0. (Flowers in patches in some lands; nothing on beaches.)
+   */
+  undergrowth(x, col) {
+    const U = UNDERGROWTH[col.biome.key];
+    if (!U || col.beach) return 0;
+    const s = this.seed, r = rand3(s, x, 81);
+    if (U.patches && noise2(s + 134, x / 16, 0.5) > 0.35) return r < 0.7 ? K.FLOWER : K.TALL_GRASS;
+    return r < U.p ? pick(U.list, rand3(s, x, 82)) : 0;
+  }
+
+  /**
+   * What lies on column x's ground, in worlds made since forests, taking more than a tile:
+   * bamboo, tall, in clumps; fallen logs (a few tiles long, on flat ground); boulders, mossy in
+   * old forests. [block, top row, bottom row], or null.
+   */
+  groundThing(x, col) {
+    const s = this.seed, key = col.biome.key, surf = col.surf;
+    if (col.town || col.beach || this.waterTop(x, col) < WORLD_H) return null;
+    if (key === 'bamboo_jungle' && noise2(s + 135, x / 22, 0.5) > -0.15 && rand3(s, x, 136) < 0.55 && !this.treeAt5(x)) return [K.BAMBOO, surf - 4 - (hash3(s, x, 137) % 9), surf - 1];
+    if (LOGS.has(key)) {
+      for (let xs = x - 4; xs <= x; xs++) {
+        if (hash3(s, xs, 140) % 1000 >= 14) continue;
+        const len = 3 + (hash3(s, xs, 141) % 3);
+        if (x >= xs + len) continue;
+        let flat = true;
+        for (let k = xs; k < xs + len && flat; k++) { const c = this.column(k); flat = c.surf === this.column(xs).surf && c.biome === col.biome && !c.town && !c.beach && this.waterTop(k, c) === WORLD_H && !this.treeAt5(k); }
+        if (flat) return [K.FALLEN_LOG, surf - 1, surf - 1];
+      }
+    }
+    if (BOULDERS.has(key)) {
+      for (let xc = x - 2; xc <= x + 2; xc++) {
+        if (hash3(s, xc, 142) % 1000 >= 10) continue;
+        const r = 1 + (hash3(s, xc, 143) % 2), hgt = r + 1 - Math.abs(x - xc);
+        if (hgt <= 0) continue;
+        return [col.biome.mossy || key === 'forest' || key === 'taiga' ? K.MOSSY_COBBLE : K.STONE, surf - hgt, surf - 1];
+      }
+    }
+    return null;
+  }
+
+  /** Chunk (x0, y0)'s bamboo, fallen logs and boulders (groundThing), in worlds made since forests. */
+  fillGround5(x0, y0, fg) {
+    for (let lx = 0; lx < CHUNK; lx++) {
+      const x = x0 + lx, col = this.column(x);
+      if (col.surf - 12 > y0 + CHUNK || col.surf <= y0) continue;
+      const g = this.groundThing(x, col);
+      if (!g) continue;
+      for (let y = Math.max(y0, g[1]); y <= Math.min(y0 + CHUNK - 1, g[2]); y++) {
+        const i = (y - y0) * CHUNK + lx;
+        if (fg[i] === K.AIR) fg[i] = g[0];
+      }
+    }
   }
 
   // ---- Ruins and cabins ---------------------------------------------------------------------------
@@ -824,8 +1130,10 @@ export class WorldGen {
         }
       }
     }
-    // Trees (crowns reach a few tiles either side of the trunk).
-    for (let x = x0 - 5; x < x0 + CHUNK + 5; x++) {
+    // Trees (crowns reach a few tiles either side of the trunk). Worlds made since forests: their
+    // own trees, and fallen logs, boulders and bamboo.
+    if (this.forests) { this.fillTrees5(x0, y0, fg); this.fillGround5(x0, y0, fg); }
+    else for (let x = x0 - 5; x < x0 + CHUNK + 5; x++) {
       const t = this.treeAt(x);
       if (!t) continue;
       const top = t.base - t.h - 4;
@@ -851,6 +1159,12 @@ export class WorldGen {
         if (fg[i] !== K.AIR) continue;
         if (inTown && y < col.surf + 4) continue;
         const below = ly < CHUNK - 1 ? fg[i + CHUNK] : this.groundTile(x, y + 1);
+        // (Worlds made since forests: their own undergrowth, on whatever the ground's top is.)
+        if (this.forests && y === col.surf - 1 && GROUNDS.has(below)) {
+          const p = this.undergrowth(x, col);
+          if (p) fg[i] = p;
+          continue;
+        }
         if (y === col.surf - 1 && below === b.top) {
           const r = rand3(s, x, 81);
           if (r < b.flowers) fg[i] = K.FLOWER;
@@ -939,6 +1253,11 @@ export class WorldGen {
 }
 
 const smooth = t => t * t * (3 - 2 * t);
+/** Whether (dx, dy) is inside an ellipse of radii rx, ry round the middle. */
+const ell = (dx, dy, rx, ry) => (dx / rx) ** 2 + (dy / ry) ** 2 <= 1;
+// Trees two trunks wide; palms' spacing on warm shores.
+const WIDE = new Set(['dark_oak', 'mega_spruce', 'big_jungle']);
+const PALMS = { cell: 6, p: 0.45, kinds: [['palm', 1]] };
 const mix = (a, b, t) => a + (b - a) * smooth(t);
 
 /**

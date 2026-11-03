@@ -53,7 +53,11 @@ const STYLES = {
     city: { path: K.STONE_BRICKS },
   },
 };
-const STYLE_OF = { plains: 'timber', forest: 'timber', desert: 'adobe', badlands: 'adobe', snow: 'cabin', jungle: 'stilt', swamp: 'stilt' };
+const STYLE_OF = {
+  plains: 'timber', forest: 'timber', desert: 'adobe', badlands: 'adobe', snow: 'cabin', jungle: 'stilt', swamp: 'stilt',
+  birch_forest: 'timber', dark_forest: 'timber', meadow: 'timber', cherry_grove: 'timber', taiga: 'cabin', snowy_taiga: 'cabin', giant_taiga: 'cabin',
+  savanna: 'adobe', bamboo_jungle: 'stilt',
+};
 
 // ---- Names ------------------------------------------------------------------------------------------
 
