@@ -83,7 +83,7 @@ const GRIDS = { w: PATCH + 2, fg: new Uint8Array((PATCH + 2) ** 2), bg: new Uint
  * Draw patch (px, py) of `world` into g (set to world coordinates). What gives off light in it
  * goes in `lights` (x, y, level, block: four numbers each).
  */
-function paintPatch(g, world, px, py, look, lights) {
+export function paintPatch(g, world, px, py, look, lights) {
   const grid = GRIDS, W = PATCH + 2, x0 = px * PATCH, y0 = py * PATCH;
   readPatch(world, px, py, grid);
   const classic = look === 'classic';
@@ -96,8 +96,10 @@ function paintPatch(g, world, px, py, look, lights) {
       drawWall(g, (x0 + i) * TILE, (y0 + j) * TILE, wall, classic, x0 + i, y0 + j);
     }
   }
-  // Blocks, then the plants, trees and things in front.
+  // Blocks, then the plants, trees and things in front. (First, what the tiles just outside the
+  // picture put inside it.)
   const edges = [];
+  paintRim(g, grid, x0, y0, classic, edges);
   for (let j = 0; j < PATCH; j++) {
     for (let i = 0; i < PATCH; i++) {
       const k = (j + 1) * W + i + 1, id = grid.fg[k];
@@ -116,6 +118,43 @@ function paintPatch(g, world, px, py, look, lights) {
     g.beginPath();
     for (let e = 0; e < edges.length; e += 4) { g.moveTo(edges[e], edges[e + 1]); g.lineTo(edges[e + 2], edges[e + 3]); }
     g.stroke();
+  }
+}
+
+/**
+ * What the tiles just outside a picture (the grid's border) put inside it: a crown's bumps, grass
+ * blades from below, and the outlines along its edge. (Without it, where two pictures meet, a
+ * tree's bumps were cut off flat and the outlines there were half as thick: each picture drew
+ * only its own tiles, and what of them spilled over its edge was lost.)
+ */
+function paintRim(g, grid, x0, y0, classic, edges) {
+  const W = PATCH + 2;
+  for (let side = 0; side < 4; side++) {
+    for (let n = 0; n < PATCH; n++) {
+      // (Above the picture, right of it, below it, left of it.)
+      const i = side === 1 ? PATCH : side === 3 ? -1 : n, j = side === 0 ? -1 : side === 2 ? PATCH : n;
+      const k = (j + 1) * W + i + 1, id = grid.fg[k];
+      if (id === AIR) continue;
+      const x = (x0 + i) * TILE, y = (y0 + j) * TILE;
+      if (!SOLID[id]) {
+        if (BLOCKS[id].pattern === 'leaves') drawThing(g, grid, k, x, y, id, classic, x0 + i, y0 + j);
+        continue;
+      }
+      const shapeKey = SHAPE_KEYS[grid.sh[k]];
+      if (shapeKey !== 'full') {
+        const pts = OUTLINE[shapeKey];
+        for (let p = 0; p < pts.length; p++) { const a = pts[p], c = pts[(p + 1) % pts.length]; edges.push(x + a[0], y + a[1], x + c[0], y + c[1]); }
+        continue;
+      }
+      // (Its side facing into the picture, where that's open.)
+      if (side === 0) { if (!covers(grid, k + W, 0)) edges.push(x, y + TILE, x + TILE, y + TILE); }
+      else if (side === 1) { if (!covers(grid, k - 1, 1)) edges.push(x, y, x, y + TILE); }
+      else if (side === 3) { if (!covers(grid, k + 1, 3)) edges.push(x + TILE, y, x + TILE, y + TILE); }
+      else if (!covers(grid, k - W, 2)) {
+        edges.push(x, y, x + TILE, y);
+        if (BLOCKS[id].pattern === 'grass') grassBlades(g, BLOCKS[id], x, y, hash3(3, x0 + i, y0 + j), classic);
+      }
+    }
   }
 }
 
@@ -197,6 +236,12 @@ function poly(g, x, y, pts, fill) {
   if (fill) g.fill(); else g.stroke();
 }
 
+/** Grass along a block's top: blades that stick up a little into the tile above. */
+function grassBlades(g, b, x, y, h, classic) {
+  g.fillStyle = classic ? INK : tint(b.color, 1.2);
+  for (let i = 1; i < TILE; i += 3) g.fillRect(x + i, y - 1 - (((h >>> i) & 1) ? 1 : 0), 1, classic ? 2.5 : 3);
+}
+
 /** What marks a block (its pattern): in ink in the original, in its colours in Remastered. */
 function marks(g, b, x, y, h, classic, grid, k) {
   const ink = classic ? '#9a9a9a' : b.dark;
@@ -213,8 +258,7 @@ function marks(g, b, x, y, h, classic, grid, k) {
       }
       if (open) {
         if (!classic) { g.fillStyle = b.color; g.fillRect(x, y, TILE, 5); }
-        g.fillStyle = classic ? INK : tint(b.color, 1.2);
-        for (let i = 1; i < TILE; i += 3) g.fillRect(x + i, y - 1 - (((h >>> i) & 1) ? 1 : 0), 1, classic ? 2.5 : 3);
+        grassBlades(g, b, x, y, h, classic);
       }
       break;
     }
@@ -889,8 +933,9 @@ export class WorldView {
     };
     world.listeners.push(this.onEdit);
     this.onChunk = (cx, cy) => {
+      // (Its pictures, and those next to it: what of it spills into them at their edges.)
       const per = 32 / PATCH;
-      for (let j = 0; j < per; j++) for (let i = 0; i < per; i++) this.stale(cx * per + i, cy * per + j);
+      for (let j = -1; j <= per; j++) for (let i = -1; i <= per; i++) if ((i >= 0 && i < per) || (j >= 0 && j < per)) this.stale(cx * per + i, cy * per + j);
     };
     world.chunkListeners?.push(this.onChunk);
   }
