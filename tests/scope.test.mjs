@@ -13,7 +13,7 @@ import { TileWorld, TILE } from '../web/src/world/tileworld.js';
 import * as K from '../web/src/world/blocks.js';
 import { newScopeView, shotEnd, lookFar, scopeWheel, SCOPE_OFF, SCOPE_SNIPER, SCOPE_FAR } from '../web/src/scope.js';
 import { scopeOf, OWN_SCOPES, ATTACHMENTS } from '../web/src/world/attachments.js';
-import { shotReach } from '../web/src/combat.js';
+import { shotReach, laserEnd } from '../web/src/combat.js';
 import { WEAPONS } from '../web/src/weapons.js';
 import { sightFrom } from '../web/src/world/worldrender.js';
 import { Fog } from '../web/src/fog.js';
@@ -149,4 +149,18 @@ test('a match\'s shadows from far off: the blocks between the eye and the screen
   fog.range = 1000;
   fog.drawShadows(ctx, { l: 1500, t: -400, r: 2300, b: 200 });
   assert.ok(paths.moves > 40, 'and the range\'s, all round');
+});
+
+test('a laser sight reaches as far as the gun\'s shots go (with a world\'s scope, further), stopping at what\'s in the way', () => {
+  const m = flat(), wall = 150;
+  for (let y = m.fy - 40; y < m.fy; y++) m.world.setTile(wall, y, K.STONE);
+  const game = { world: m.world, map: m.world, nearInto: () => 0 };
+  // (A sniper rifle with a long scope: its shots go 500 blocks.)
+  const s = { aim: 0, shoulderX: 8, shoulderY: m.fy * TILE - 26, current: 'SR', weaponOverride: () => ({ ...WEAPONS.SR, range: 8000 }) };
+  const l = laserEnd(game, s);
+  assert.ok(Math.abs(l.x - wall * TILE) < 1, `out to the wall, 150 blocks off, past the rifle's own range (${l.x})`);
+  // (No scope: as far as the rifle shoots.)
+  for (let y = m.fy - 40; y < m.fy; y++) m.world.setTile(wall, y, K.AIR);
+  const p = laserEnd(game, { ...s, weaponOverride: () => null });
+  assert.ok(Math.abs(p.x - p.x0 - WEAPONS.SR.range) < 1, `${p.x - p.x0}`);
 });

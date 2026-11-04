@@ -532,16 +532,21 @@ function railShot(game, s, x0, y0, dx, dy, def, id) {
   }
 }
 
-/** Where the sniper laser lands (for drawing): first wall or soldier along the aim. */
 /** Whether soldier s's gun in hand has a laser: the sniper rifle's own, or a world's laser sight (attachments.js). */
 export const lasered = s => s.current === 'SR' || !!s.weaponOverride?.(s.current)?.laser;
 
+/**
+ * Where a laser sight's beam lands (for drawing): the first wall or soldier along the aim, as far
+ * as the gun's shots go (the sniper rifle's range; in a world, further with a scope), so it reaches
+ * as far as a sniper's far view looks (scope.js). In a world, short of land not made yet, rather
+ * than making it to draw a line.
+ */
 export function laserEnd(game, s) {
   const dx = Math.cos(s.aim), dy = Math.sin(s.aim);
   const x0 = s.shoulderX + dx * 26, y0 = s.shoulderY + dy * 26;
-  const x1 = x0 + dx * 2200, y1 = y0 + dy * 2200;
-  const wall = game.map.raycast(x0, y0, x1, y1);
-  let t = wall ? wall.t : 1;
+  const reach = shotReach(weaponFor(s, s.current)) || 2200;
+  const x1 = x0 + dx * reach, y1 = y0 + dy * reach;
+  let t = game.world?.sight ? game.world.sight(x0, y0, x1, y1, true) : game.map.raycast(x0, y0, x1, y1)?.t ?? 1;
   const hit = hitSoldier(game, x0, y0, x1 - x0, y1 - y0, s, null);
   if (hit && hit.t < t) t = hit.t;
   return { x0, y0, x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t };
