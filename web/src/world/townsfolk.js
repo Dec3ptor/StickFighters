@@ -123,14 +123,42 @@ const GO = 110;              // and how far everyone has to be from them for the
 const DEEP = 90;             // rows under a town's ground a player can be, and still bring its people
 const BACK_AFTER = DAY_TICKS / 6; // a guard killed by monsters is back after this long (four hours)
 
-/** One of the townsfolk, at their place (they appear at the next update). */
+/**
+ * One of the townsfolk, at their place (they appear at the next update): where they were when
+ * everyone went (world.folkWhere: kept in the world's save too), as hurt as they were then, else
+ * at home.
+ */
 export function spawnFolk(game, f, t) {
   const def = ROLES[f.role];
   const npc = { kind: 'townsfolk', role: f.role, key: f.key, town: f.town, guard: f.guard, weapon: f.weapon, held: def.held || null };
   const s = game.addSoldier({ name: f.label, isBot: true, team: 0, skin: def.skin, maxHealth: def.health || 100, profile: { npc } }, new FolkController(f, t));
   s.respawnTimer = 1;
-  s.npc.spawnAt = { x: f.at.x * TILE + TILE / 2, y: (f.at.y + 1) * TILE - BODY.bottom - 1 };
+  const was = game.world?.folkWhere?.get(f.key);
+  if (was) {
+    game.world.folkWhere.delete(f.key);
+    s.npc.spawnAt = { x: was[0], y: was[1] };
+    if (was[2] > 0) s.npc.wakeHealth = was[2];
+  } else s.npc.spawnAt = { x: f.at.x * TILE + TILE / 2, y: (f.at.y + 1) * TILE - BODY.bottom - 1 };
   return s;
+}
+
+/** The townsfolk as saved: where each was (those about now, and those everyone's gone from), and when those killed come back. */
+export function folkToSave(game) {
+  const world = game.world, where = {};
+  for (const [key, w] of world.folkWhere || []) where[key] = w;
+  for (const s of game.soldiers) if (isFolk(s) && s.alive && s.npc.spawned) where[s.npc.key] = [Math.round(s.x), Math.round(s.y), Math.round(s.health)];
+  return { where, gone: Object.fromEntries(world.folkGone || []) };
+}
+
+/** The townsfolk from a save: where they were, and who's to come back when. */
+export function folkFromSave(world, data) {
+  world.folkWhere = new Map();
+  world.folkGone = new Map();
+  if (!data || typeof data !== 'object') return;
+  for (const [key, w] of Object.entries(data.where || {})) {
+    if (Array.isArray(w) && w.length >= 2 && Number.isFinite(w[0]) && Number.isFinite(w[1])) world.folkWhere.set(key, [w[0], w[1], Number.isFinite(w[2]) ? w[2] : 0]);
+  }
+  for (const [key, t] of Object.entries(data.gone || {})) if (Number.isFinite(t)) world.folkGone.set(key, t);
 }
 
 /**
@@ -141,8 +169,10 @@ export function spawnFolk(game, f, t) {
 export function townsfolkTick(game) {
   const world = game.world, gen = world.gen;
   if (!gen?.towns || game.tick % FOLK_EVERY !== 15) return;
-  const folk = world.folk ||= new Map(), gone = world.folkGone ||= new Map(), time = world.time || 0;
+  const folk = world.folk ||= new Map(), gone = world.folkGone ||= new Map(), where = world.folkWhere ||= new Map(), time = world.time || 0;
   const players = game.soldiers.filter(s => s.alive && s.world);
+  // (Where a sniper's far view looks counts as somewhere someone is: main.js's world.lookAt.)
+  if (world.lookAt) players.push({ x: world.lookAt.x, y: world.lookAt.y });
   // Gone: the dead (a while after: guards come back later), and those everyone's gone far from.
   for (const [key, s] of folk) {
     if (!s.alive && s.npc?.spawned) {
@@ -150,7 +180,13 @@ export function townsfolkTick(game) {
       continue;
     }
     const x = s.alive ? s.x : s.npc.spawnAt.x, y = s.alive ? s.y : s.npc.spawnAt.y;
-    if (!players.some(p => Math.abs(p.x - x) < GO * TILE && Math.abs(p.y - y) < (DEEP + 30) * TILE)) { game.removeSoldier(s); folk.delete(key); }
+    if (!players.some(p => Math.abs(p.x - x) < GO * TILE && Math.abs(p.y - y) < (DEEP + 30) * TILE)) {
+      // (Where they were, and how hurt: back there when someone comes back. Not yet about: where they were to be.)
+      if (s.alive) where.set(key, [Math.round(s.x), Math.round(s.y), Math.round(s.health)]);
+      else if (!s.npc.spawned) where.set(key, [Math.round(s.npc.spawnAt.x), Math.round(s.npc.spawnAt.y), Math.round(s.npc.wakeHealth || 0)]);
+      game.removeSoldier(s);
+      folk.delete(key);
+    }
   }
   // Come: the people near each player.
   for (const p of players) {
@@ -159,6 +195,9 @@ export function townsfolkTick(game) {
       if (py > t.level + DEEP || py < t.top - 60) continue;
       for (const f of folkOf(gen.seed, t)) {
         if (folk.has(f.key) || Math.abs(f.at.x - px) > COME || !world.has(Math.floor(f.at.x / CHUNK), Math.floor(f.at.y / CHUNK))) continue;
+        // (Somewhere else when everyone went: there, once the land there's made too.)
+        const was = where.get(f.key);
+        if (was && !world.has(Math.floor(was[0] / TILE / CHUNK), Math.floor(was[1] / TILE / CHUNK))) continue;
         const back = gone.get(f.key);
         if (back != null) { if (time < back) continue; gone.delete(f.key); }
         folk.set(f.key, spawnFolk(game, f, t));

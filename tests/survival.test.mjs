@@ -14,6 +14,7 @@ import { worldFromSave, playerToSave, breakBlock } from '../web/src/world/worldp
 import { cleanSettings, settingsSummary } from '../web/src/world/worldrules.js';
 import { FOOD_MAX, exert, foodBar } from '../web/src/world/hunger.js';
 import { ANIMALS, isAnimal, spawnAnimal, animalsTick, clearAnimals, parseLook } from '../web/src/world/animals.js';
+import { asleepAny } from '../web/src/world/sleepers.js';
 import { grow, farmingTick, harvest, ripe } from '../web/src/world/farming.js';
 import { RECIPES, craft, stationsNear } from '../web/src/world/crafting.js';
 import { DAY_TICKS, spawnMonster, foes } from '../web/src/world/monsters.js';
@@ -174,7 +175,7 @@ test('hunger is kept with the player, and they come back full after dying', () =
 
 // ---- Animals ---------------------------------------------------------------------------------------------
 
-test('animals come round players by day, by their land (fish in the water), and go when everyone\'s far away', () => {
+test('animals come round players by day, by their land (fish in the water), and sleep where they are when everyone\'s far away', () => {
   const m = play();
   m.world.time = 0;
   run(m.game, 60 * 50);
@@ -193,12 +194,17 @@ test('animals come round players by day, by their land (fish in the water), and 
   m.world.time = DAY_TICKS * 0.75;
   run(m.game, 60 * 40);
   assert.equal(m.game.soldiers.filter(s => isAnimal(s) && s.npc.type !== 'fish').length, 0, 'none by night');
-  // Far from everyone: gone.
+  // Far from everyone: asleep where it is, out of the game till someone comes back (sleepers.js).
+  // (The night's monsters may have killed the player: back first, and left alone; with nobody
+  // about, nothing changes.)
+  for (let i = 0; i < 1200 && !m.me.alive; i++) m.game.update();
+  m.me.spawnProtect = 1e9;
   const cow = spawnAnimal(m.game, 'cow', m.me.x + 60, m.me.y);
   run(m.game, 3);
   cow.body.x = m.me.x + 200 * TILE;
   run(m.game, 60);
   assert.ok(!m.game.soldiers.includes(cow), 'gone');
+  assert.ok(asleepAny(m.world, r => r.kind === 'animal' && r.type === 'cow'), 'asleep where it was');
 });
 
 test('a fish shoal in a lake: they stay in the water, under its top', () => {

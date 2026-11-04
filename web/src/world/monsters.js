@@ -4,7 +4,7 @@
 // pistols underground, brutes with clubs deep down. They're soldiers like any other (the same
 // bodies, guns, damage and deaths), each run by a simple controller: go for the nearest player
 // or mercenary, shoot or hit them, jump what's in the way. Killed, they drop coins and loot;
-// far from everyone (or zombies, in daylight), they go.
+// far from everyone they sleep where they are (sleepers.js), raiders go; zombies in daylight go.
 //
 // Mercenaries are hired with a contract (crafted from coins at the gunsmith's bench, used like
 // a weapon): each follows whoever hired them, shooting the monsters near them.
@@ -20,6 +20,7 @@ import { iceBrake } from '../physics.js';
 import { pushDoor } from './doors.js';
 import { difficultyOf } from './worldrules.js';
 import { lookOfKey } from './hands.js';
+import { sleeps, asleepNear } from './sleepers.js';
 
 // ---- Day and night ---------------------------------------------------------------------------
 
@@ -157,7 +158,8 @@ export function monstersTick(game) {
     let near = Infinity;
     for (const p of players) near = Math.min(near, Math.max(Math.abs(p.x - s.x), Math.abs(p.y - s.y)) / TILE);
     const outside = ty < world.gen.surfaceAt(tx) + 6;
-    if (near > GONE || (!night && outside && s.npc.type === 'zombie' && near > 30)) game.removeSoldier(s);
+    // (Those that sleep where they are when everyone's far, sleepers.js, aren't let go for it.)
+    if ((near > GONE && !sleeps(s)) || (!night && outside && s.npc.type === 'zombie' && near > 30)) game.removeSoldier(s);
   }
   for (const s of game.soldiers) if (isMerc(s) && !s.alive && s.npc.spawned && game.tick - (s.npc.diedAt ?? game.tick) > 180) game.removeSoldier(s);
   // (Dev mode can say none come; so can a peaceful world: worldrules.js.)
@@ -169,7 +171,8 @@ export function monstersTick(game) {
     const depth = pty - world.gen.surfaceAt(ptx);
     const under = depth > 12;
     if (!under && !night) continue;
-    let count = 0;
+    // (Those asleep round here count too, sleepers.js: they'll be about again, not more come besides.)
+    let count = asleepNear(world, p.x, p.y, NEAR * TILE, NEAR * TILE, r => r.kind === 'monster');
     for (const s of game.soldiers) if (isMonster(s) && Math.abs(s.x - p.x) < NEAR * TILE && Math.abs(s.y - p.y) < NEAR * TILE) count++;
     if (count >= Math.round((under ? 3 : 4) * Math.max(1, diff.spawn)) || game.rng() > 0.15 * diff.spawn) continue;
     const spot = spawnSpot(game, ptx, pty, under);

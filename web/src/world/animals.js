@@ -19,6 +19,7 @@ import { WORLD_H } from './worldgen.js';
 import { BODY } from '../config.js';
 import { nightness } from './monsters.js';
 import { giveXp, countStat } from './progress.js';
+import { sleeps, asleepNear } from './sleepers.js';
 
 /**
  * The animals: their name, health, how fast they walk and run (of a soldier's crouched and full
@@ -193,7 +194,8 @@ export function animalsTick(game, drop) {
     }
     let near = Infinity;
     for (const p of players) near = Math.min(near, Math.max(Math.abs(p.x - s.x), Math.abs(p.y - s.y)) / TILE);
-    if (near > (s.npc.kept ? KEPT_GONE : GONE)) { game.removeSoldier(s); continue; }
+    // (Far from everyone, they sleep where they are, sleepers.js: not let go.)
+    if (near > (s.npc.kept ? KEPT_GONE : GONE) && !sleeps(s)) { game.removeSoldier(s); continue; }
     all++;
     lifeTick(game, s, drop, near);
   }
@@ -204,7 +206,9 @@ export function animalsTick(game, drop) {
     const ptx = Math.floor(p.x / TILE), pty = Math.floor(p.y / TILE);
     // (Not underground.)
     if (pty - gen.surfaceAt(ptx) > 16) continue;
-    let land = 0, fish = 0;
+    // (Those asleep round here count too, sleepers.js: they'll be about again, not more come besides.)
+    const asleep = water => asleepNear(world, p.x, p.y, NEAR * TILE, NEAR * TILE, r => r.kind === 'animal' && !!ANIMALS[r.type]?.aquatic === water);
+    let land = asleep(false), fish = asleep(true);
     for (const s of game.soldiers) {
       if (!isAnimal(s)) continue;
       const x = s.alive ? s.x : s.npc.spawnAt?.x ?? 0, y = s.alive ? s.y : s.npc.spawnAt?.y ?? 0;

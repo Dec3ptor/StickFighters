@@ -26,6 +26,7 @@ import { WORLD_H } from './worldgen.js';
 import { storyStep, STORY_STEPS } from './story.js';
 import { missionStep } from './stories.js';
 import { gearReward, rollReward } from './gear.js';
+import { asleepAny } from './sleepers.js';
 
 /** The most quests a player can have at once. */
 export const MAX_QUESTS = 12;
@@ -679,7 +680,8 @@ export function questsTick(game) {
         if (g.t === 'depth' && !g.done && depth >= g.n) { g.done = true; changed = true; }
         if (g.t === 'hunt' && !g.done) {
           // (A named monster: there when a player comes near its lair, gone again if they all leave.)
-          const tag = `${q.id}#${gi}`, alive = game.soldiers.some(o => o.npc?.champion === tag && (o.alive || !o.npc.spawned));
+          // (Asleep out there, sleepers.js, it's still about: not made again.)
+          const tag = `${q.id}#${gi}`, alive = game.soldiers.some(o => o.npc?.champion === tag && (o.alive || !o.npc.spawned)) || asleepAny(game.world, r => r.own?.champion === tag);
           if (!alive && Math.abs(tx - g.at.x) < 60 && Math.abs(ty - g.at.y) < 40 && !game.mirror) spawnChampion(game, g, tag);
         }
       });

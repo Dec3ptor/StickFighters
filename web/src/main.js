@@ -45,6 +45,9 @@ import { listWorlds, createWorld, loadChunks, saveWorld, deleteWorld, exportWorl
 import { playerToSave, worldFromSave, dropItem, chestAt, boxFor, boxKind, chestsToSave, chestsFromSave, claimsToSave, claimsFromSave, gravesToSave, gravesFromSave, rehire, REACH, makeRecipe, devTake, stackToChests, fitAttachment, stripGun } from './world/worldplay.js';
 import { warp, waystonesToSave, waystonesFromSave } from './world/waystones.js';
 import { boatsToSave, boatsFromSave } from './world/boats.js';
+// (The creatures out there, asleep or awake, and where the townsfolk were: kept with the world.)
+import { sleepersToSave, sleepersFromSave } from './world/sleepers.js';
+import { folkToSave, folkFromSave } from './world/townsfolk.js';
 // (Building and decorating: signs, blueprints going up, the pick block and undo keys.)
 import { signsToSave, signsFromSave, SIGN_MAX } from './world/decor.js';
 import { finishBuildings, buildAction, signWrite } from './world/worldplay.js';
@@ -57,7 +60,7 @@ import { talkView, talkDo, endTalk } from './world/talk.js';
 import { JournalScreen } from './world/questui.js';
 import { DevPanel } from './world/devpanel.js';
 import { scopeOf } from './world/attachments.js';
-import { newScopeView, scopeWheel, lookFar, SCOPE_OFF, SCOPE_SNIPER, SCOPE_FAR } from './scope.js';
+import { newScopeView, scopeWheel, shotEnd, SCOPE_OFF, SCOPE_SNIPER, SCOPE_FAR } from './scope.js';
 import { rightHand } from './world/worldplay.js';
 import { devAct } from './world/devtools.js';
 import { questsOf, dropQuest } from './world/quests.js';
@@ -980,6 +983,8 @@ async function startWorld(rec, { online = false } = {}) {
   waystonesFromSave(world, rec.waystones);
   boatsFromSave(world, rec.boats);
   signsFromSave(world, rec.signs);
+  sleepersFromSave(world, rec.creatures);
+  folkFromSave(world, rec.folk);
   // (What's lost on dying: in a grave.)
   world.death = settings.death;
   claimsFromSave(world, rec.claims);
@@ -1060,6 +1065,8 @@ function saveWorldNow(last = false) {
   w.rec.waystones = waystonesToSave(w.game.world);
   w.rec.claims = claimsToSave(w.game.world);
   w.rec.boats = boatsToSave(w.game.world);
+  w.rec.creatures = sleepersToSave(w.game);
+  w.rec.folk = folkToSave(w.game);
   w.rec.time = Math.round(w.game.world.time || 0);
   w.rec.towns = w.game.world.townState || {};
   w.rec.played = Date.now();
@@ -2209,34 +2216,49 @@ function frame(now) {
   // Down a scope, right click held: a sniper rifle in a match; in a world, any gun with a scope
   // (fitted, or a sniper rifle's own: attachments.js), with nothing in the right hand (which right
   // click would use). The sniper view, zoomed out and looking further toward the crosshair; the
-  // wheel up, the far view: the camera where the shot would end, as far as it goes, that end
-  // under the crosshair (scope.js).
+  // wheel up, the far view: the camera where the shot would end (whoever or whatever it meets
+  // first, or as far as it goes), that spot under the crosshair, and then still, to aim (scope.js).
   const aiming = view === me && me.alive && !watchMode && !state.menuOpen && !state.chatOpen && input.held('aim');
   const scoped = aiming && (g.world ? !rightHand(me).item && !!scopeOf(me.world?.inv?.slots[me.world.slot]) : !!weaponFor(me, me.current)?.zoom);
   const sv = state.scopeView ||= newScopeView();
+  // (The shot aimed now: from the shoulder (where it's drawn) through the crosshair.)
+  const aimNow = () => {
+    const p = renderer.screenToWorld(input.mouse.x, input.mouse.y), gx = me.shoulderX + ax - me.x, gy = me.shoulderY + ay - me.y;
+    return [gx, gy, Math.atan2(p.y - gy, p.x - gx)];
+  };
   input.scoping = scoped;
   if (!scoped) sv.mode = SCOPE_OFF;
   else {
     if (sv.mode === SCOPE_OFF) sv.mode = SCOPE_SNIPER;
-    // (The wheel: a notch at a time, however finely a touchpad sends it.)
-    if (input.scopeZoom && now - (sv.wheelAt || 0) > 150) { scopeWheel(sv, Math.sign(input.scopeZoom)); sv.wheelAt = now; }
+    // (The wheel: a notch at a time, however finely a touchpad sends it. Up: where the shot aimed now ends.)
+    if (input.scopeZoom && now - (sv.wheelAt || 0) > 150) {
+      scopeWheel(sv, Math.sign(input.scopeZoom), g, me, weaponFor(me, me.current), aimNow);
+      sv.wheelAt = now;
+    }
   }
   input.scopeZoom = 0;
   const far = sv.mode === SCOPE_FAR, sniping = sv.mode === SCOPE_SNIPER || far;
-  // (The far view: where the shot aimed through the crosshair would end, from the shoulder (where
-  // it's drawn), and the camera so that's under the crosshair: it stays on it as the mouse moves.
+  // (The far view: the camera put where the shot's end is under the crosshair, as it went there
+  // (the sniper view's zoom, kept), and then still in the world, wherever the shooter moves.
   // Kept as the camera's offset from who it follows, to come back to them after, eased.)
   const back = state.scopeBack ||= { x: 0, y: 0 };
   if (far) {
-    const p = renderer.screenToWorld(input.mouse.x, input.mouse.y), sc = renderer.scale;
-    const gx = me.shoulderX + ax - me.x, gy = me.shoulderY + ay - me.y;
-    lookFar(sv, g, gx, gy, Math.atan2(p.y - gy, p.x - gx), weaponFor(me, me.current));
-    back.x = sv.x - (input.mouse.x - renderer.w / 2) / sc - ax;
-    back.y = sv.y - (input.mouse.y - renderer.h / 2) / sc + 20 - ay;
+    if (sv.fresh) {
+      const sc = renderer.baseScale * renderer.zoomScale * 0.72;
+      sv.cx = sv.x - (input.mouse.x - renderer.w / 2) / sc;
+      sv.cy = sv.y - (input.mouse.y - renderer.h / 2) / sc;
+      sv.fresh = false;
+    }
+    back.x = sv.cx - ax;
+    back.y = sv.cy + 20 - ay;
+    // (What the shot aimed now would meet, as the crosshair moves, for the HUD: whether it's on someone.)
+    const [gx, gy, a] = aimNow();
+    sv.aimed = shotEnd(g, gx, gy, a, sv.reach, me);
   }
   else if (back.x || back.y) { back.x *= 0.7; back.y *= 0.7; if (Math.hypot(back.x, back.y) < 2) back.x = back.y = 0; }
-  // (The chunks out there made ready, as round a player, and monsters about: worldplay.js.)
-  if (g.world) g.world.lookAt = far && Math.hypot(sv.x - ax, sv.y - ay) > 600 ? { x: sv.x, y: sv.y } : null;
+  // (The chunks out there made ready, as round a player, and what lives there awake and about:
+  // worldplay.js, sleepers.js.)
+  if (g.world) g.world.lookAt = far && sv.cx != null && Math.hypot(sv.cx - ax, sv.cy - ay) > 600 ? { x: sv.cx, y: sv.cy } : null;
   // Aiming down the sights: right click held with a gun (Settings); in a world, with nothing in the right hand.
   const sights = !scoped && me.alive && input.held('aim') && SIGHTED.has(weaponFor(me, me.current)?.kind) && !watchMode && !g.over &&
     !state.menuOpen && !state.chatOpen && !state.pickerOpen && !buyMenu?.open && !(g.world && rightHand(me).item);
@@ -2248,7 +2270,7 @@ function frame(now) {
   input.devZoom = 0;
   // (Flying in dev mode: the camera stays right with you, rather than trailing behind, which at
   // that speed leaves you at the edge of the screen, and drifting on after you stop.)
-  // (The far view: zoomed out as the sniper view is, not looking toward the mouse; following the shot's end quickly.)
+  // (The far view: zoomed out as the sniper view is, not looking toward the mouse; there quickly.)
   renderer.updateCamera(g, ax + back.x, ay + back.y, state.menuOpen || watchMode || far ? null : input.mouse, sniping, dt, sights ? aimZoomNow() : 1, devView(me) && view === me ? 0 : far ? FAR_FOLLOW : undefined);
   const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
@@ -2269,8 +2291,9 @@ function frame(now) {
     replay: g.over && !!g.finalKill && !state.replayTried,
     killMark: killK >= 0 && killK < 1 && !state.menuOpen && !watchMode ? { x: input.mouse.x, y: input.mouse.y, k: killK } : null,
     showScores: input.held('scores') && !state.chatOpen, showItems: input.held('showItems') && !state.chatOpen, watching, chat: state.chat,
-    // (Down a scope: which view, and in the far one, how far out (in blocks, in a world) and whether the shot stops there.)
-    scope: scoped ? { far, hit: !!sv.end?.hit, blocks: far && g.world ? Math.round(Math.hypot(sv.x - me.shoulderX, sv.y - me.shoulderY) / 16) : null } : null,
+    // (Down a scope: which view, and in the far one, what the shot aimed now meets: someone (who), something (hit), or
+    // nothing; how far out (in blocks, in a world).)
+    scope: scoped ? { far, hit: far && !!sv.aimed?.hit, who: far ? sv.aimed?.who?.name || null : null, blocks: far && g.world && sv.aimed ? Math.round(sv.aimed.d / 16) : null } : null,
     spectating: me.spectating ? { free: !!free, target: watching } : null,
     online: state.mode !== 'offline',
     hostId: state.mode === 'host' ? me.id : state.mode === 'client' ? g.soldiers.find(s => !s.isBot && !s.remote)?.id : null,

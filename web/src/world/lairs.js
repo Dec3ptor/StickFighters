@@ -10,6 +10,7 @@ import * as K from './blocks.js';
 import { TILE, SOLID } from './blocks.js';
 import { FLOOR_H } from './worldgen.js';
 import { spawnMonster, spawnSpot, isMonster, MONSTERS } from './monsters.js';
+import { asleepNear, asleepAny } from './sleepers.js';
 import { difficultyOf } from './worldrules.js';
 import { BODY } from '../config.js';
 
@@ -54,7 +55,9 @@ function towerSpawns(game, T, p, ty, lords, diff) {
   const here = floorOf(T, ty);
   // The lord: on the top floor, once someone's near the top (and again, long after).
   const last = lords.get(T.k);
-  if (here >= T.floors - 3 && (last == null || game.tick - last > LORD_AGAIN) && !game.soldiers.some(o => o.npc?.lord === T.k && o.alive)) {
+  // (Asleep up there, sleepers.js, the lord's still about: not another.)
+  if (here >= T.floors - 3 && (last == null || game.tick - last > LORD_AGAIN) && !game.soldiers.some(o => o.npc?.lord === T.k && o.alive) &&
+    !asleepAny(game.world, r => r.own?.lord === T.k)) {
     const at = floorSpot(game, T, T.floors - 1);
     if (at) {
       lords.set(T.k, game.tick);
@@ -66,7 +69,9 @@ function towerSpawns(game, T, p, ty, lords, diff) {
       for (const o of game.soldiers) if (o.world && !o.npc && o.x >= (T.x0 - 30) * TILE && o.x <= (T.x1 + 30) * TILE) game.notify(o, `${m.name} stirs at the top of ${T.name}...`);
     }
   }
-  let n = 0;
+  // (Those asleep in it count too, sleepers.js: they'll be about again, not more come besides.)
+  const x0 = T.x0 * TILE, x1 = (T.x1 + 1) * TILE, y0 = T.top * TILE, y1 = (T.base + 1) * TILE;
+  let n = asleepNear(game.world, (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2, r => r.kind === 'monster');
   for (const o of game.soldiers) if (inside(o)) n++;
   if (n >= Math.round(TOWER_MOST * Math.max(1, diff.spawn)) || rng() > 0.55) return;
   // On their floor, or one or two over it: worse the higher up.
@@ -89,7 +94,7 @@ function towerSpawns(game, T, p, ty, lords, diff) {
 function dangerSpawns(game, p, tx, ty, diff) {
   const world = game.world, g = world.gen, b = g.column(tx).biome;
   if (!b.danger || ty > world.gen.surfaceAt(tx) + 12) return;
-  let n = 0;
+  let n = asleepNear(world, p.x, p.y, 60 * TILE, 40 * TILE, r => r.kind === 'monster');
   for (const o of game.soldiers) if (isMonster(o) && o.alive && Math.abs(o.x - p.x) < 60 * TILE && Math.abs(o.y - p.y) < 40 * TILE) n++;
   if (n >= Math.round(DANGER_MOST * Math.max(1, diff.spawn)) || game.rng() > 0.35 * Math.max(0.5, diff.spawn)) return;
   const spot = spawnSpot(game, tx, ty, false);

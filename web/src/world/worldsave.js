@@ -194,6 +194,9 @@ export async function exportWorld(id) {
   };
   // (Its boats: boats.js.)
   if (rec.boats?.length) data.boats = rec.boats;
+  // (The creatures out there, asleep or awake, and where the townsfolk were: sleepers.js, townsfolk.js.)
+  if (rec.creatures?.length) data.creatures = rec.creatures;
+  if (rec.folk) data.folk = rec.folk;
   const file = `${rec.name.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'world'}${FILE_EXT}`;
   return { text: JSON.stringify(data), file };
 }
@@ -224,6 +227,9 @@ export async function importWorld(text) {
     signs: Array.isArray(data.signs) ? data.signs : [],
   };
   if (Array.isArray(data.boats)) rec.boats = data.boats;
+  // (Tidied as they're loaded: sleepers.js, townsfolk.js.)
+  if (Array.isArray(data.creatures)) rec.creatures = data.creatures;
+  if (data.folk && typeof data.folk === 'object' && !Array.isArray(data.folk)) rec.folk = data.folk;
   await saveWorld(rec, chunks);
   return rec;
 }

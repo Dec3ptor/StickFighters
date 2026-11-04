@@ -33,6 +33,7 @@ import { setDev } from './devmode.js';
 import { heldLook } from './hands.js';
 import { startAct, endAct } from '../useanim.js';
 import { lairsTick } from './lairs.js';
+import { sleepersTick } from './sleepers.js';
 // (Hunger, farming and animals: survival.js.)
 import { useSurvival, survivalTick, blockDrops } from './survival.js';
 import { exert, hurtNow, cantEat, feed, fill, hungerToSave, hungerFromSave } from './hunger.js';
@@ -1663,6 +1664,9 @@ export function worldTick(game) {
   world.time = (world.time || 0) + 1;
   // (Always day, or always night, as the world was made: worldrules.js.)
   if (game.tick % 30 === 0 && !game.mirror) world.time = keepTime(world, world.time, DAY_TICKS, hourOf);
+  // (Creatures far from everyone asleep where they are, and those near someone awake again, before
+  // anything's counted or comes: sleepers.js.)
+  sleepersTick(game);
   monstersTick(game);
   // (Worlds made since towers: the monster towers' and the dangerous lands' own: lairs.js.)
   lairsTick(game);
@@ -1926,7 +1930,13 @@ export const worldMode = {
   },
 
   spawnLoadout(game, s) {
-    if (s.npc) { armNpc(s); s.npc.spawned = true; return; }
+    if (s.npc) {
+      armNpc(s);
+      s.npc.spawned = true;
+      // (Waking where it slept, or back where it was: as hurt as it was then: sleepers.js, townsfolk.js.)
+      if (s.npc.wakeHealth != null) { s.health = Math.max(1, Math.min(s.maxHealth, s.npc.wakeHealth)); s.npc.wakeHealth = null; }
+      return;
+    }
     // (Their health by their level and perks: progress.js.)
     if (s.world) { s.maxHealth = maxHealthOf(s); s.health = s.maxHealth; }
     s.weapons = {};

@@ -61,29 +61,59 @@ test('where a shot ends: what\'s in the way (glass too), or as far as it goes; i
   assert.ok(!miss.hit && Math.abs(miss.d - 500) < 1e-6);
 });
 
-test('the wheel: up, the far view, where the shot ends (following it as the aim moves); down, back to the sniper view', () => {
+test('the wheel: up, the far view, where the shot ends (then staying put; up again, on to where the aim ends now); down, back to the sniper view', () => {
   const m = flat(), { s: sh } = m, sr = WEAPONS.SR;
   for (let y = m.fy - 40; y < m.fy; y++) m.world.setTile(30, y, K.STONE);
   const sv = newScopeView();
+  let aim = 0;
+  const at = () => [sh.shoulderX, sh.shoulderY, aim];
   assert.equal(sv.mode, SCOPE_OFF);
-  scopeWheel(sv, -1);
+  scopeWheel(sv, -1, m.game, null, sr, at);
   assert.equal(sv.mode, SCOPE_OFF, 'not looking: nothing');
   sv.mode = SCOPE_SNIPER;
-  scopeWheel(sv, -1);
+  scopeWheel(sv, -1, m.game, null, sr, at);
   assert.equal(sv.mode, SCOPE_FAR, 'up: the far view');
-  lookFar(sv, m.game, sh.shoulderX, sh.shoulderY, 0, sr);
+  assert.ok(sv.fresh, 'the camera to go there (once)');
   assert.ok(sv.end.hit && Math.abs(sv.x - 30 * TILE) < 1 && sv.y === sv.end.y, 'where the shot ends: the wall');
   assert.equal(sv.reach, shotReach(sr));
-  // (Aimed over the wall now: on to where that shot ends, no further than it goes.)
-  lookFar(sv, m.game, sh.shoulderX, sh.shoulderY, -0.25, sr);
-  const d = Math.hypot(sv.x - sh.shoulderX, sv.y - sh.shoulderY);
-  assert.ok(d > 30 * TILE || sv.end.hit, 'on, over it');
-  assert.ok(d <= shotReach(sr) + 1e-6, 'never further than the shot goes');
-  scopeWheel(sv, -1);
+  // (Aimed elsewhere: nothing moves; the wheel up again, on to where that shot ends, no further than it goes.)
+  const was = { x: sv.x, y: sv.y };
+  aim = -0.25;
+  assert.deepEqual({ x: sv.x, y: sv.y }, was, 'staying put as the aim moves');
+  scopeWheel(sv, -1, m.game, null, sr, at);
   assert.equal(sv.mode, SCOPE_FAR, 'up again: still the far view');
-  scopeWheel(sv, 1);
+  const d = Math.hypot(sv.x - sh.shoulderX, sv.y - sh.shoulderY);
+  assert.ok(sv.y < was.y, 'on, where the aim ends now');
+  assert.ok(d > 30 * TILE || sv.end.hit, 'over the wall, or on it');
+  assert.ok(d <= shotReach(sr) + 1e-6, 'never further than the shot goes');
+  scopeWheel(sv, 1, m.game, null, sr, at);
   assert.equal(sv.mode, SCOPE_SNIPER, 'down: back');
   assert.equal(sv.end, null);
+});
+
+test('a shot ends at whoever is in the way: the far view stops on them (a monster, an animal, anyone), not past them; never the shooter', () => {
+  const g = arena(), ctl = { input: () => ({ move: 0 }) };
+  const a = g.addSoldier({ name: 'Shooter', isBot: false }, ctl), b = g.addSoldier({ name: 'Target', isBot: false }, ctl);
+  for (let i = 0; i < 300 && !(a.alive && b.alive); i++) g.update();
+  assert.ok(a.alive && b.alive);
+  a.body.x = 0; a.body.y = -12; b.body.x = 300; b.body.y = -12;
+  const end = shotEnd(g, 0, -20, 0, 2200, a);
+  assert.equal(end.who, b, 'the one in the way');
+  assert.ok(end.hit && end.x > 280 && end.x < 300, `at them (${end.x})`);
+  // (Aimed over them: on to the wall.)
+  const over = shotEnd(g, 0, -20, -0.2, 2200, a);
+  assert.equal(over.who, null);
+  assert.ok(over.hit && Math.abs(over.x - 600) < 1, `past them, the wall (${over.x})`);
+  // (From inside the shooter: not them.)
+  b.body.x = 2000;
+  assert.equal(shotEnd(g, a.body.x, a.body.y - 8, 0, 300, a).who, null, 'never the shooter');
+  // (The wheel: the far view, on them.)
+  b.body.x = 300;
+  const sv = newScopeView();
+  sv.mode = SCOPE_SNIPER;
+  scopeWheel(sv, -1, g, a, WEAPONS.SR, () => [0, -20, 0]);
+  assert.equal(sv.end.who, b);
+  assert.ok(Math.abs(sv.x - end.x) < 1e-6, 'the far view on them');
 });
 
 test('how far shots go: bullets and beams their range, an arrow as far as it carries, a seeker as far as it flies', () => {

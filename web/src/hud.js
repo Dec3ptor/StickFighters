@@ -274,7 +274,7 @@ function drawScope(ctx, sc, W, H) {
     ctx.fillRect(0, 0, W, H);
   }
   const text = sc.far
-    ? `Far view: ${sc.hit ? 'where your shot lands' : 'as far as your shot goes'}${sc.blocks != null ? ` · ${sc.blocks} blocks out` : ''} · wheel down: back`
+    ? `Far view: ${sc.who ? `aimed at ${sc.who}` : sc.hit ? 'where your shot lands' : 'as far as your shot goes'}${sc.blocks != null ? ` · ${sc.blocks} blocks out` : ''} · wheel up: look where it lands · wheel down: back`
     : 'Sniper view · wheel up: look where your shot lands';
   ctx.font = `bold 13px ${FONT}`;
   ctx.textAlign = 'center';
