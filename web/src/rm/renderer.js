@@ -411,9 +411,8 @@ export class RemasteredRenderer extends Renderer {
     ctx.setTransform(s, 0, 0, s, tx, ty);
     this.lights.clear();
     // Fog of war: what's out of sight is worked out now, and darkened after the world is drawn.
-    // (Down a scope in a world, too: only what can be seen from where you stand, main.js's scopeSight.)
-    const fogOn = game.options?.fog || (this.scopeSight && game.world);
-    this.fogNow = fogOn && !this.noFog && (this.fogFrom || viewer) ? (this.fog ||= new Fog()).update(game, this.fogFrom || viewer, alpha) : null;
+    // (A sniper's far view too: render.js's fogWanted.)
+    this.fogNow = this.fogWanted(game) && !this.noFog && (this.fogFrom || viewer) ? (this.fog ||= new Fog()).update(game, this.fogFrom || viewer, alpha, this.scopeSight || 0) : null;
 
     // (A world: the cloud layer's further clouds and the birds, behind its blocks: sky.js.)
     if (world) drawSkyBehind(ctx, this, game, false);
@@ -442,7 +441,7 @@ export class RemasteredRenderer extends Renderer {
     if (world) this.worldView.drawWater(ctx, game, false);
     // (Leaves falling, motes in caves, the cloud layer's nearer clouds, under the light.)
     if (world) drawSkyFront(ctx, this, game, false);
-    if (world && (!allLit || this.fogNow)) this.worldView.drawLight(this, game, allLit ? 0 : 0.86, this.fogNow?.eye);
+    if (world && (!allLit || this.fogNow)) this.worldView.drawLight(this, game, allLit ? 0 : 0.86, this.fogNow?.eye, this.fogNow?.range);
     if (this.quality !== 'low') this.lights.draw(ctx, this.view);
     if (theme.dark && this.quality === 'high') this.lights.drawDarkness(this, theme.dark);
     else if (theme.dark) {

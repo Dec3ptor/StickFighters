@@ -1,7 +1,7 @@
 // Weapon attachments (worlds): fitted to a gun in the inventory (an attachment picked up and put
 // on the gun; right click the gun to take them all off again), one in each of its places: a
-// sight (red dot, or a scope: aiming with it, right click held, the view zooms in and can be
-// steered out as far as it reaches, the best many hundreds of blocks: scope.js), the muzzle (a suppressor, a compensator, a long
+// sight (red dot, or a scope: right click held, the sniper's views, scope.js; a scope also makes
+// the gun's shots reach as far as it sees, the best many hundreds of blocks), the muzzle (a suppressor, a compensator, a long
 // barrel), under the barrel (a foregrip, a laser sight) and the magazine (bigger ones, faster
 // ones, for guns with one; hollow points for any). What's fitted is kept with the gun (its slot's
 // g.att: items.js's cleanGear keeps it), and adds to what the gun's own affixes do (gear.js's
@@ -14,17 +14,17 @@ export const ATT_SLOTS = { sight: 'Sight', muzzle: 'Muzzle', under: 'Under the b
 
 /**
  * The attachments: name, place, what they add (gear.js's weapon stats: wdmg, wrof, wreload, wmag,
- * wacc), and anything else: scope { reach (blocks it sees out to), mag (how far it zooms in) },
+ * wacc), and anything else: scope { reach (blocks it sees out to: the gun's shots go that far) },
  * quiet (heard by far fewer), long (reaches further: ×), laser (a beam shows where it's aimed),
  * needs ('mag': only guns with a magazine), color (its picture's), tier (worth).
  */
 export const ATTACHMENTS = {
-  red_dot: { name: 'Red dot sight', slot: 'sight', stats: { wacc: 15 }, scope: { reach: 14, mag: 1.25 }, color: '#e0303c', tier: 1 },
-  scope2: { name: '2× scope', slot: 'sight', stats: { wacc: 10 }, scope: { reach: 30, mag: 1.6 }, color: '#5a6a7a', tier: 2 },
-  scope4: { name: '4× scope', slot: 'sight', stats: { wacc: 15 }, scope: { reach: 60, mag: 2 }, color: '#4a5a6a', tier: 3 },
-  scope8: { name: '8× scope', slot: 'sight', stats: { wacc: 20 }, scope: { reach: 120, mag: 2.4 }, color: '#3a4a5a', tier: 4 },
-  scope16: { name: '16× long-range scope', slot: 'sight', stats: { wacc: 25 }, scope: { reach: 240, mag: 2.8 }, color: '#2f62ee', tier: 5 },
-  hawkeye: { name: 'Hawkeye scope', slot: 'sight', stats: { wacc: 35 }, scope: { reach: 500, mag: 3.2 }, color: '#c4f6ff', tier: 6 },
+  red_dot: { name: 'Red dot sight', slot: 'sight', stats: { wacc: 15 }, scope: { reach: 14 }, color: '#e0303c', tier: 1 },
+  scope2: { name: '2× scope', slot: 'sight', stats: { wacc: 10 }, scope: { reach: 30 }, color: '#5a6a7a', tier: 2 },
+  scope4: { name: '4× scope', slot: 'sight', stats: { wacc: 15 }, scope: { reach: 60 }, color: '#4a5a6a', tier: 3 },
+  scope8: { name: '8× scope', slot: 'sight', stats: { wacc: 20 }, scope: { reach: 120 }, color: '#3a4a5a', tier: 4 },
+  scope16: { name: '16× long-range scope', slot: 'sight', stats: { wacc: 25 }, scope: { reach: 240 }, color: '#2f62ee', tier: 5 },
+  hawkeye: { name: 'Hawkeye scope', slot: 'sight', stats: { wacc: 35 }, scope: { reach: 500 }, color: '#c4f6ff', tier: 6 },
   suppressor: { name: 'Suppressor', slot: 'muzzle', stats: { wdmg: -5 }, quiet: true, color: '#2a2a2a', tier: 2 },
   compensator: { name: 'Compensator', slot: 'muzzle', stats: { wacc: 25 }, color: '#8a8f96', tier: 2 },
   long_barrel: { name: 'Long barrel', slot: 'muzzle', stats: { wdmg: 15 }, long: 1.5, color: '#5a5f66', tier: 3 },
@@ -90,10 +90,10 @@ export function gunStats(sl) {
   return st;
 }
 
-/** A gun's own scope, with none fitted (or a lesser one): a sniper rifle's. */
-export const OWN_SCOPES = { SR: { reach: 45, mag: 1.8 } };
+/** A gun's own scope, with none fitted: a sniper rifle's (it sees as far as it shoots). */
+export const OWN_SCOPES = { SR: { reach: 0 } };
 
-/** The scope on gun slot `sl`: the one fitted, or the gun's own if that sees further; { reach (blocks), mag }, or null. */
+/** The scope on gun slot `sl`: the one fitted, or the gun's own; { reach (blocks) }, or null. */
 export function scopeOf(sl) {
   const fitted = sl?.g?.att ? attachmentsOf(sl.g.att).scope : null, own = sl ? OWN_SCOPES[sl.key] : null;
   return !own ? fitted : !fitted || own.reach > fitted.reach ? own : fitted;
@@ -157,7 +157,7 @@ export function describe(a) {
 /** What an attachment does: a few words for each thing. */
 export function effects(a) {
   const bits = [];
-  if (a.scope) bits.push(`aiming, looks out to ${a.scope.reach} blocks (as far as its shots go) and zooms up to ${a.scope.mag}× with the wheel`);
+  if (a.scope) bits.push(`the sniper's views (right click; the wheel: where the shot lands), shots reaching at least ${a.scope.reach} blocks`);
   if (a.stats?.wacc) bits.push(`${a.stats.wacc}% more accurate`);
   if (a.stats?.wdmg) bits.push(`${a.stats.wdmg > 0 ? '+' : ''}${a.stats.wdmg}% damage`);
   if (a.stats?.wmag) bits.push(`+${a.stats.wmag}% magazine`);

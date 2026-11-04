@@ -21,6 +21,8 @@ export const PLATFORM_H = 4;
 // (A tile's shape byte: its shape in the bottom four bits, its variant, a block's `variants`, in the
 // top four: its paint. Every byte's boxes, so collisions read it as it is.)
 const SHAPE_BOXES = Array.from({ length: 256 }, (_, i) => (SHAPES[i & 15] || SHAPES[0]).boxes);
+// (What blocks sight: solid, and not seen through.)
+const SIGHT_STOPS = Uint8Array.from(CLEAR, c => (c ? 0 : 1));
 
 export class Chunk {
   constructor(cx, cy) {
@@ -660,10 +662,12 @@ export class TileWorld {
   /**
    * How far along the segment (x0,y0)->(x1,y1) can be seen, 0 to 1 (1: all of it): up to the
    * first block in the way (solid, and not seen through as glass, windows and leaves are), or the
-   * first chunk not made yet (what's there isn't known yet; nothing's made by looking). A scope's
-   * view: scope.js.
+   * first chunk not made yet (what's there isn't known yet; nothing's made by looking). shots:
+   * how far a shot would go instead (anything solid stops it, glass too). A scope's far view:
+   * scope.js; what's seen from far off: worldrender.js.
    */
-  sight(x0, y0, x1, y1) {
+  sight(x0, y0, x1, y1, shots = false) {
+    const stops = shots ? SOLID : SIGHT_STOPS;
     const dx = x1 - x0, dy = y1 - y0;
     let tx = Math.floor(x0 / TILE), ty = Math.floor(y0 / TILE);
     const ex = Math.floor(x1 / TILE), ey = Math.floor(y1 / TILE);
@@ -681,7 +685,7 @@ export class TileWorld {
         if (k !== lastKey) { lastKey = k; c = this.chunks.get(k) || null; }
         if (!c) return tIn;
         const i = ((ty & 31) << 5) | (tx & 31), id = c.fg[i];
-        if (!CLEAR[id]) {
+        if (stops[id]) {
           const parts = SHAPE_BOXES[c.shape[i]];
           let best = -1;
           for (let n = 0; n < parts.length; n++) {

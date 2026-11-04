@@ -114,6 +114,8 @@ export function drawHud(r, game, me, opts = {}) {
     // (A world: the hotbar instead, drawWorldHud.)
     if (!game.world) drawWeaponBar(ctx, me, W, H);
   }
+  // (Down a scope: which view, and how to get to the other: scope.js.)
+  if (opts.scope) drawScope(ctx, opts.scope, W, H);
 
   const standings = standingsOf(game);
   // (Defuse: your money where the scores go; Tab shows everyone. A world: what you've picked
@@ -259,6 +261,31 @@ const ammoLabel = textOf((def, ammo) => `${def.name}  ${ammo}`);
  * Health, armour, ammo, jet fuel and stamina: just above the weapon bar, in the
  * middle at the bottom of the screen, where your eyes are anyway.
  */
+/**
+ * Down a scope (scope.js), a line saying which view it is and how to get to the other; the far
+ * view's screen edges darkened a little, and how far out the shot's end is (in blocks, in a world).
+ */
+function drawScope(ctx, sc, W, H) {
+  if (sc.far) {
+    const r = Math.min(W, H) * 0.55, g = ctx.createRadialGradient(W / 2, H / 2, r * 0.75, W / 2, H / 2, Math.hypot(W, H) / 2);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,0.45)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+  const text = sc.far
+    ? `Far view: ${sc.hit ? 'where your shot lands' : 'as far as your shot goes'}${sc.blocks != null ? ` · ${sc.blocks} blocks out` : ''} · wheel down: back`
+    : 'Sniper view · wheel up: look where your shot lands';
+  ctx.font = `bold 13px ${FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const w = ctx.measureText(text).width + 18, y = H - 150;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(W / 2 - w / 2, y - 11, w, 22);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(text, W / 2, y + 1);
+}
+
 function drawStatus(ctx, game, me, W, H, opts) {
   const k = weaponBarScale(W);
   const half = 172, gap = 8, h = 20;

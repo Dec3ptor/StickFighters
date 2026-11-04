@@ -118,7 +118,7 @@ export function shotSpeed(game, def) {
  * How far a shot of weapon `def` can go (px), as it is now (its numbers scaled to the game's
  * speed): a bullet, a beam or a rocket, its range; one that falls (an arrow, a lobbed shell), as
  * far as it carries at its best angle; a seeker, as far as it flies before it's gone. (A scope
- * shows no further: world/scope.js.)
+ * shows no further than that in its far view: scope.js.)
  */
 export function shotReach(def) {
   if (!def) return 0;

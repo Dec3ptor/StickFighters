@@ -31,7 +31,6 @@ const hotScale = W => Math.min(1, (W - 24) / (HOTBAR * HOT_SIZE + (HOTBAR - 1) *
  * opts.showItems: the key's held that names everything on the ground).
  */
 export function drawWorldHud(r, ctx, game, me, W, H, opts = {}) {
-  if (opts.scope) drawScope(ctx, opts.scope, W, H);
   if (game.world.drops?.length) drawDropNames(r, ctx, game, me, W, H, !!opts.showItems);
   if (me.world?.marks?.length) drawMarks(r, ctx, game, me, W, H);
   if (me.alive && me.world?.quests?.list.length) drawQuestPointer(r, ctx, game, me, W, H);
@@ -399,31 +398,6 @@ function drawTalkHint(ctx, game, me, W, H) {
 }
 
 /** Dev mode's card (devmode.js): what it's set to, and its keys. */
-/** Looking through a scope (scope.js): the edges darkened, how far it's zoomed, how far out the view is, and what stops it. */
-function drawScope(ctx, sc, W, H) {
-  const r = Math.min(W, H) * 0.55, g = ctx.createRadialGradient(W / 2, H / 2, r * 0.75, W / 2, H / 2, Math.hypot(W, H) / 2);
-  g.addColorStop(0, 'rgba(0,0,0,0)');
-  g.addColorStop(1, 'rgba(0,0,0,0.55)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  // (How it stands, and under it, how it's used.)
-  const why = sc.limit === 'sight' ? ": can't see past that" : sc.limit === 'range' ? ': as far as your shots go' : '';
-  const lines = [
-    ['600 13px system-ui, sans-serif', `Scope ${(sc.zoom || 1).toFixed(1)}× · ${sc.blocks} block${sc.blocks === 1 ? '' : 's'} out${why} · shots reach ${sc.range}`],
-    ['12px system-ui, sans-serif', `crosshair toward the edge: look further · wheel: zoom (up to ${sc.mag}×) · let go: back`],
-  ];
-  lines.forEach(([font, text], i) => {
-    ctx.font = font;
-    const tw = ctx.measureText(text).width, y = H - 150 + i * 21;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(W / 2 - tw / 2 - 8, y - 15, tw + 16, 20);
-    ctx.fillStyle = i ? '#dcdcdc' : '#fff';
-    ctx.fillText(text, W / 2, y);
-  });
-}
-
 function drawDev(ctx, me, zoom) {
   const lines = devLines(me, zoom);
   ctx.textAlign = 'left';

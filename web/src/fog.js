@@ -27,11 +27,15 @@ export class Fog {
     this.eye = null;
   }
 
-  /** Where `viewer` sees from this frame: their shoulder, where they're drawn. */
-  update(game, viewer, alpha = 1) {
+  /**
+   * Where `viewer` sees from this frame: their shoulder, where they're drawn. range: px, if
+   * anything further is out of sight too (a sniper's far view: no further than the shot goes).
+   */
+  update(game, viewer, alpha = 1, range = 0) {
     this.map = game.map;
     this.game = game;
     this.viewer = viewer;
+    this.range = range;
     this.eye = {
       x: lerp(viewer.prevX, viewer.x, alpha) + (viewer.drawDX || 0),
       y: lerp(viewer.prevY, viewer.y, alpha) + (viewer.drawDY || 0) - 12,
@@ -42,6 +46,7 @@ export class Fog {
 
   /** True if the point is in plain sight from the eye (in a world, seen through glass and leaves too). */
   sees(x, y) {
+    if (this.range && Math.hypot(x - this.eye.x, y - this.eye.y) > this.range) return false;
     return this.map.sight ? this.map.sight(this.eye.x, this.eye.y, x, y) >= 1 : this.map.clearLine(this.eye.x, this.eye.y, x, y);
   }
 
@@ -64,13 +69,15 @@ export class Fog {
    * The shadows: behind every block (as seen from the eye) out of sight, drawn
    * under the map (the blocks themselves are drawn over them; Remastered darkens
    * over everything instead, with `fill`). view: the part of the world on screen;
-   * only blocks there can hide anything on screen.
+   * only blocks there, or between it and the eye (looking from far off), can hide
+   * anything on screen. With a range, all that's further than it too.
    */
   drawShadows(ctx, view, fill = FOG) {
     const { x: ex, y: ey } = this.eye;
     ctx.fillStyle = fill;
     ctx.beginPath();
-    this.map.query(view.l, view.t, view.r, view.b, s => {
+    if (this.range) this.pathBeyond(ctx);
+    this.map.query(Math.min(view.l, ex), Math.min(view.t, ey), Math.max(view.r, ex), Math.max(view.b, ey), s => {
       if (ex >= s.l && ex <= s.r && ey >= s.t && ey <= s.b) return false;
       // The two corners at the edges of the block, as seen from the eye.
       const mid = Math.atan2((s.t + s.b) / 2 - ey, (s.l + s.r) / 2 - ex);
@@ -94,6 +101,25 @@ export class Fog {
       return false;
     });
     ctx.fill();
+  }
+
+  /**
+   * Beyond the range round the eye: four-sided pieces from each stretch of a circle
+   * that far round it, out past anything on screen (no holes: every renderer fills
+   * them, WebGL's too).
+   */
+  pathBeyond(ctx) {
+    const { x: ex, y: ey } = this.eye, r = this.range, n = 48, far = r + REACH;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, b = ((i + 1) / n) * Math.PI * 2;
+      // (A hair wider each, so no seams show between them.)
+      const a0 = a - 0.002, b0 = b + 0.002;
+      ctx.moveTo(ex + Math.cos(a0) * r, ey + Math.sin(a0) * r);
+      ctx.lineTo(ex + Math.cos(b0) * r, ey + Math.sin(b0) * r);
+      ctx.lineTo(ex + Math.cos(b0) * far, ey + Math.sin(b0) * far);
+      ctx.lineTo(ex + Math.cos(a0) * far, ey + Math.sin(a0) * far);
+      ctx.closePath();
+    }
   }
 
   /**

@@ -1368,15 +1368,15 @@ export function spread(out, solid, w, x0, y0, x1, y1) {
 /**
  * What can be seen from the eye at (ex, ey) (in tiles of a box w x h whose blocks light doesn't go
  * through are `solid`): rays to every tile on the box's edge, each seeing what it passes and the
- * first block it meets. out: 1 for each tile seen.
+ * first block it meets (no further than `far` tiles). out: 1 for each tile seen.
  */
-export function sightBox(solid, w, h, ex, ey, out) {
+export function sightBox(solid, w, h, ex, ey, out, far = Infinity) {
   out.fill(0, 0, w * h);
   const ray = (tx, ty) => {
     const dx = tx + 0.5 - ex, dy = ty + 0.5 - ey, n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 2));
-    const sx = dx / n, sy = dy / n;
+    const sx = dx / n, sy = dy / n, most = Math.min(n, far === Infinity ? n : Math.floor(n * far / Math.max(1e-9, Math.hypot(dx, dy))));
     let x = ex, y = ey;
-    for (let i = 0; i <= n; i++) {
+    for (let i = 0; i <= most; i++) {
       const cx = Math.floor(x), cy = Math.floor(y);
       if (cx < 0 || cy < 0 || cx >= w || cy >= h) return;
       const k = cy * w + cx;
@@ -1389,18 +1389,20 @@ export function sightBox(solid, w, h, ex, ey, out) {
   for (let y = 1; y < h - 1; y++) { ray(0, y); ray(w - 1, y); }
 }
 /**
- * The same, for an eye outside the box (far off, looking down a scope: scope.js), in the world's
+ * The same, for an eye outside the box (far off, a sniper's far view: scope.js), in the world's
  * pixels: a line from it to each tile on the box's edge, as far as it sees through the world (its
- * sight), marking the tiles it crosses in the box, and the first block it meets.
+ * sight; no further than `far` tiles), marking the tiles it crosses in the box, and the first
+ * block it meets.
  */
-export function sightFrom(world, x0, y0, w, h, ex, ey, out) {
+export function sightFrom(world, x0, y0, w, h, ex, ey, out, far = Infinity) {
   out.fill(0, 0, w * h);
   const ax = ex / TILE - x0, ay = ey / TILE - y0;
   const ray = (tx, ty) => {
     const bx = tx + 0.5, by = ty + 0.5, dx = bx - ax, dy = by - ay, L = Math.max(1, Math.abs(dx), Math.abs(dy));
     const seen = world.sight(ex, ey, (x0 + bx) * TILE, (y0 + by) * TILE);
-    // (Its part in the box, up to where it's stopped, and a little into what stopped it.)
-    let t0 = 0, t1 = Math.min(1, seen + 0.6 / L);
+    // (Its part in the box, up to where it's stopped, and a little into what stopped it; and
+    // within reach.)
+    let t0 = 0, t1 = Math.min(1, seen + 0.6 / L, far / Math.max(1e-9, Math.hypot(dx, dy)));
     for (const [p, q] of [[-dx, ax], [dx, w - ax], [-dy, ay], [dy, h - ay]]) {
       if (p === 0) { if (q < 0) return; continue; }
       const r = q / p;
@@ -1759,7 +1761,7 @@ export class WorldView {
    * them) when they change or the view's moved on, the soldiers' glow as they move, and drawn
    * as a soft shadow over everything (dark: how dark it gets, 0 to 1).
    */
-  drawLight(r, game, dark = 0.9, eye = null) {
+  drawLight(r, game, dark = 0.9, eye = null, range = 0) {
     const world = game.world, v = r.view, m = 16;
     const x0 = Math.floor(v.l / TILE) - m, y0 = Math.max(0, Math.floor(v.t / TILE) - m);
     const w = Math.ceil((v.r - v.l) / TILE) + 2 * m, h = Math.min(WORLD_H - y0, Math.ceil((v.b - v.t) / TILE) + 2 * m);
@@ -1791,16 +1793,16 @@ export class WorldView {
     // (Seeing only what can be seen, the world's setting: what's out of sight from the eye, dark.
     // Worked out again as the eye goes from tile to tile, or the blocks change.)
     const etx = eye ? Math.floor(eye.x / TILE) - lit.x0 : 0, ety = eye ? Math.floor(eye.y / TILE) - lit.y0 : 0;
-    const sightKey = eye ? `${etx},${ety}` : '';
+    const sightKey = eye ? `${etx},${ety},${Math.round(range)}` : '';
     let sightAll = false;
     if (sightKey !== lit.sightKey || (eye && all)) {
       lit.sightKey = sightKey;
       if (eye) {
         const vis = lit.vis?.length >= lit.w * lit.h ? lit.vis : (lit.vis = new Uint8Array(lit.w * lit.h));
-        const bx = eye.x / TILE - lit.x0, by = eye.y / TILE - lit.y0;
-        // (The eye out of the box, down a scope far off: its lines through the world on the way.)
-        if (bx >= 0 && by >= 0 && bx < lit.w && by < lit.h) sightBox(lit.solid, lit.w, lit.h, bx, by, vis);
-        else sightFrom(world, lit.x0, lit.y0, lit.w, lit.h, eye.x, eye.y, vis);
+        const bx = eye.x / TILE - lit.x0, by = eye.y / TILE - lit.y0, far = range > 0 ? range / TILE : Infinity;
+        // (The eye out of the box, a sniper's far view: its lines through the world on the way.)
+        if (bx >= 0 && by >= 0 && bx < lit.w && by < lit.h) sightBox(lit.solid, lit.w, lit.h, bx, by, vis, far);
+        else sightFrom(world, lit.x0, lit.y0, lit.w, lit.h, eye.x, eye.y, vis, far);
       } else lit.vis = null;
       sightAll = true;
     }
