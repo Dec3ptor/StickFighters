@@ -61,6 +61,10 @@ import { JournalScreen } from './world/questui.js';
 import { DevPanel } from './world/devpanel.js';
 import { scopeOf } from './world/attachments.js';
 import { newScopeView, scopeWheel, shotEnd, SCOPE_OFF, SCOPE_SNIPER, SCOPE_FAR } from './scope.js';
+// (What a fight tells you: hits landing, where you're hit from, who killed you.)
+import { newFeedback, hearFeedback, watchHealth, seeKills, beatDue, feedbackView } from './feedback.js';
+import { TEAM_PALETTES, setTeamPalette } from './teamcolors.js';
+import { footsteps } from './footsteps.js';
 import { rightHand } from './world/worldplay.js';
 import { devAct } from './world/devtools.js';
 import { questsOf, dropQuest } from './world/quests.js';
@@ -112,7 +116,7 @@ const CLASSES_ON = params.has('classes');
 // (?tiles=on: the canvas keeps the map in tiles, maptiles.js. Off by default: slower with a graphics card.)
 if (['on', 'off'].includes(params.get('tiles'))) Renderer.tiles = params.get('tiles');
 // The Settings screen's choices (saved with the other settings).
-const prefs = { graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', pointer: 'system', fullscreen: false, volume: 60, aimZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS }, camera: { ...CAMERA_DEFAULTS }, keys: {}, skin: 'auto' };
+const prefs = { teamColors: 'standard', graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true, sprint: 'hold', quality: 'auto', pointer: 'system', fullscreen: false, volume: 60, aimZoom: 'slight', crosshair: { ...CROSSHAIR_DEFAULTS }, camera: { ...CAMERA_DEFAULTS }, keys: {}, skin: 'auto' };
 // Locking the mouse to the game (Settings: Mouse pointer, "Locked to the game"): ?lock=on /
 // ?lock=off in the address. (Browsers driven by tests move the mouse oddly while it's locked,
 // so it's off for them unless the address asks.)
@@ -139,6 +143,7 @@ const DEFAULTS = {
   // Settings screen
   // (graphicsPicked: graphics was chosen in Settings, not just the default saved.)
   graphics: 'canvas', graphicsPicked: false, fpsCap: 'auto', showFps: false, showPing: true,
+  teamColors: 'standard', // the two sides' colours: 'standard', or 'strong' (colour-blind friendly): teamcolors.js
   sprint: 'hold', // Shift: 'hold' to sprint, or 'toggle' it on and off
   quality: 'auto', // Remastered's graphics: 'auto', 'high', 'medium' or 'low'
   // The mouse while playing: 'system' (its own pointer is the crosshair: moved by the system, as
@@ -166,6 +171,7 @@ function loadSettings() {
   delete s.fireZoom; // (the zoom while firing, replaced by aiming down the sights)
   if (s.pointer !== 'locked') s.pointer = 'system';
   if (!isSkin(s.skin)) s.skin = 'auto';
+  if (!TEAM_PALETTES[s.teamColors]) s.teamColors = 'standard';
   delete s.lockMouse; // (the old on/off lock, on to start with: the system's pointer is the crosshair now, unless Locked is chosen)
   return s;
 }
@@ -616,6 +622,8 @@ function enterMatch(game, me) {
   state.replayTried = false;
   state.hitStopUntil = 0;
   state.killAt = -1e9;
+  state.feedback = newFeedback();
+  state.deathLook = { x: 0, y: 0 };
   state.acc = 0;
   state.last = null; // (the first frame's time is from before the match was set up: start the clock there)
   input.clear();
@@ -1425,6 +1433,7 @@ function fillSettings() {
   $('fpsCap').value = String(prefs.fpsCap);
   $('showFps').checked = prefs.showFps;
   $('showPing').checked = prefs.showPing;
+  $('teamColors').value = TEAM_PALETTES[prefs.teamColors] ? prefs.teamColors : 'standard';
   $('pointerMode').value = prefs.pointer === 'locked' ? 'locked' : 'system';
   $('fullscreenPref').checked = prefs.fullscreen;
   $('aimZoom').value = AIM_ZOOM[prefs.aimZoom] ? prefs.aimZoom : 'slight';
@@ -1591,6 +1600,7 @@ function setSkin(id) {
 /** Use the saved Settings' choices (at the start, and when pasted into the developer menu). */
 function usePrefs(settings) {
   for (const k in prefs) prefs[k] = settings[k];
+  setTeamPalette(prefs.teamColors);
   setVolume(prefs.volume, false);
   prefs.crosshair = setCrosshair(prefs.crosshair);
   prefs.camera = tidyCamera(prefs.camera);
@@ -1615,7 +1625,7 @@ function saveDevDefaults(d) {
 // How each is picked there, and checked (gamedefaults.js: tidy): those picked from a list in
 // Settings or the game setup, from the same list.
 const SELECTS = {
-  graphics: 'graphics', quality: 'quality', fpsCap: 'fpsCap', sprint: 'sprintMode', aimZoom: 'aimZoom', pointer: 'pointerMode',
+  graphics: 'graphics', quality: 'quality', fpsCap: 'fpsCap', sprint: 'sprintMode', aimZoom: 'aimZoom', pointer: 'pointerMode', teamColors: 'teamColors',
   mode: 'mode', difficulty: 'difficulty', fragLimit: 'fragLimit', side: 'side', lives: 'lives', gunKills: 'gunKills', crates: 'crates',
   destruction: 'destruction', streaks: 'streaks', botVision: 'botVision', fog: 'fog', maxPlayers: 'maxPlayers', visibility: 'visibility',
 };
@@ -2232,6 +2242,16 @@ function frame(now) {
   // game holds still; online, the picture does). (Sounds to another player aren't ours: offline
   // they carry who they're for; online the host only sends us ours.)
   if (g.sounds.some(x => x.name === 'killConfirm' && (x.to == null || x.to === me.id))) confirmKill(now);
+  // What the fight tells you (feedback.js): a hit of yours landing, where you're hit from (both
+  // said as sounds that are yours alone), your health dropping, who killed you (the kill feed),
+  // and a heartbeat while you're nearly dead.
+  const fb = state.feedback ||= newFeedback();
+  hearFeedback(fb, g.sounds, me, now);
+  watchHealth(fb, me, now);
+  seeKills(fb, g, me, now);
+  if (!state.paused && !g.over && beatDue(fb, me, now)) audio.play('heartbeat', 0.55);
+  // (Others running near you: their footsteps: footsteps.js.)
+  if (!state.paused && !g.over) footsteps(g, me, ear.x, ear.y, g.sounds);
   // (A world: bangs scare the birds off: sky.js.)
   if (g.world) skyHears(g, g.sounds);
   audio.playQueue(g.sounds, ear.x, ear.y, me.id, me.team);
@@ -2300,7 +2320,20 @@ function frame(now) {
   // (Flying in dev mode: the camera stays right with you, rather than trailing behind, which at
   // that speed leaves you at the edge of the screen, and drifting on after you stop.)
   // (The far view: zoomed out as the sniper view is, not looking toward the mouse; there quickly.)
-  renderer.updateCamera(g, ax + back.x, ay + back.y, state.menuOpen || watchMode || far ? null : input.mouse, sniping, dt, sights ? aimZoomNow() : 1, devView(me) && view === me ? 0 : far ? FAR_FOLLOW : undefined);
+  // Killed, and waiting to come back: the camera goes over to whoever did it (the recap says who:
+  // feedback.js), and it's back with you as you return. (Not while watching the others: out of
+  // lives, or spectating.)
+  const dl = state.deathLook ||= { x: 0, y: 0 };
+  const killer = !me.alive && !watchMode && view === me && !g.over && fb.recap?.killer?.alive && now - fb.recap.at > 450 ? fb.recap.killer : null;
+  if (killer) {
+    const k = 1 - Math.pow(0.86, dt / (1000 / 60));
+    dl.x += (killer.x - ax - dl.x) * k;
+    dl.y += (killer.y - ay - dl.y) * k;
+  } else if (dl.x || dl.y) {
+    if (me.alive) dl.x = dl.y = 0;
+    else { dl.x *= 0.8; dl.y *= 0.8; if (Math.hypot(dl.x, dl.y) < 2) dl.x = dl.y = 0; }
+  }
+  renderer.updateCamera(g, ax + back.x + dl.x, ay + back.y + dl.y, state.menuOpen || watchMode || far ? null : input.mouse, sniping, dt, sights ? aimZoomNow() : 1, devView(me) && view === me ? 0 : far ? FAR_FOLLOW : undefined);
   const aimed = view === me ? liveAim(me, ax, ay) : null;
   const drawStart = performance.now();
   renderer.fogFrom = view;
@@ -2319,6 +2352,8 @@ function frame(now) {
     // (A moment on the final picture, without the HUD, before the replay of the winning kill.)
     replay: g.over && !!g.finalKill && !state.replayTried,
     killMark: killK >= 0 && killK < 1 && !state.menuOpen && !watchMode ? { x: input.mouse.x, y: input.mouse.y, k: killK } : null,
+    // (What the fight tells you: a hit landing, where you're hit from, the red at the edges, who killed you: feedback.js.)
+    feedback: state.menuOpen ? null : feedbackView(fb, me, now, renderer.w / 2 + (ax - renderer.cam.x) * renderer.scale, renderer.h / 2 + (ay - renderer.cam.y) * renderer.scale, input.mouse.x, input.mouse.y),
     showScores: input.held('scores') && !state.chatOpen, showItems: input.held('showItems') && !state.chatOpen, watching, chat: state.chat,
     // (Down a scope: which view, and in the far one, what the shot aimed now meets: someone (who), something (hit), or
     // nothing; how far out (in blocks, in a world).)
@@ -2740,6 +2775,8 @@ function wire() {
   }
   $('showFps').addEventListener('change', () => { prefs.showFps = $('showFps').checked; perf.on = prefs.showFps || params.has('fps'); savePrefs(); });
   $('showPing').addEventListener('change', () => { prefs.showPing = $('showPing').checked; savePrefs(); });
+  // (The two sides' colours, everywhere they're drawn: teamcolors.js.)
+  $('teamColors').addEventListener('change', () => { prefs.teamColors = setTeamPalette($('teamColors').value); savePrefs(); });
   $('sprintMode').addEventListener('change', () => { prefs.sprint = $('sprintMode').value === 'toggle' ? 'toggle' : 'hold'; savePrefs(); });
   $('pointerMode').addEventListener('change', () => { prefs.pointer = $('pointerMode').value === 'locked' ? 'locked' : 'system'; savePrefs(); if (prefs.pointer !== 'locked') input.unlock(); });
   $('fullscreenPref').addEventListener('change', () => { prefs.fullscreen = $('fullscreenPref').checked; savePrefs(); if (!prefs.fullscreen) leaveFullscreen(true); });

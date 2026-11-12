@@ -28,11 +28,10 @@ export { drawWeapon, drawHealth, drawArmour, drawJetpack, drawSprite, drawCrate 
 const INK = '#111';
 // (The map's colours: maptiles.js.)
 export { HATCH, HATCH_GAP, BUILT, BUILT_LINE, BUILT_ROW };
-const TEAM_COLORS = { 1: '#2f6fdb', 2: '#d33b2f' };
+import { TEAM as TEAM_COLORS, TEAM_HEAD } from './teamcolors.js';
 
 // Colours of soft round things (smoke, fire): fixed, faded with globalAlpha (no new colour string per particle).
 const GLOW_COLORS = { smoke: 'rgb(140,140,140)', fireHot: 'rgb(255,220,90)', fireCool: 'rgb(255,110,30)' };
-const TEAM_HEAD = { 1: '#d9e6ff', 2: '#ffdcd8' };
 // Remastered's soldier (a skin), drawn on the original's paper: black ink.
 const PAPER = { ink: '#1a1a1a', haze: '#8a8a8a', rim: '#ffffff', halo: '#ffffff', haloAlpha: 0 };
 
@@ -711,6 +710,8 @@ export class Renderer {
     ctx.stroke();
     const head = pose.head;
     if (skin === 'classic') {
+      // (A team game: their side's colour on their body too, as a shirt, so the sides are told apart at a glance.)
+      if (game.rules.teams && TEAM_COLORS[s.team]) { drawTunic(ctx, L[0], TEAM_COLORS[s.team], 3.2); ctx.strokeStyle = INK; ctx.lineWidth = 1.5; }
       ctx.fillStyle = game.rules.teams ? TEAM_HEAD[s.team] : '#fff';
       ctx.beginPath();
       ctx.arc(head.x, head.y, head.r, 0, Math.PI * 2);
@@ -725,9 +726,11 @@ export class Renderer {
       }
     } else {
       // A hat or helmet of their own (and, with armour, a vest: no room for the little helmet).
-      if (TUNICS[skin]) drawTunic(ctx, L[0], TUNICS[skin], 3.4);
-      if (s.armour > 0) drawVest(ctx, L[0], '#4a4a4a', 3);
+      // (In a team game their side's colour is their shirt, whatever their own would be.)
       const teams = game.rules.teams;
+      if (teams && TEAM_COLORS[s.team]) drawTunic(ctx, L[0], TEAM_COLORS[s.team], 3.4);
+      else if (TUNICS[skin]) drawTunic(ctx, L[0], TUNICS[skin], 3.4);
+      if (s.armour > 0) drawVest(ctx, L[0], '#4a4a4a', 3);
       drawSkinHead(ctx, head, skin, s.facing, { ink: INK, lw: 1.5, fill: teams ? TEAM_HEAD[s.team] : '#fff', accent: teams ? TEAM_COLORS[s.team] : SKIN_ACCENT[skin], tick: game.tick });
     }
     if (s.body.jetting) {

@@ -348,7 +348,7 @@ export class NetHost {
   sound(name, x, y, to) { this.events.s.push(to == null ? [name, round(x), round(y)] : [name, round(x), round(y), to]); }
   note(text, to) { this.events.n.push([text, to]); }
   shake(x, y, amount) { this.events.sh.push([round(x), round(y), amount]); }
-  feed(e) { this.events.k.push([e.text, e.weapon || null, e.killer?.id ?? null, e.victim?.id ?? null]); }
+  feed(e) { this.events.k.push([e.text, e.weapon || null, e.killer?.id ?? null, e.victim?.id ?? null, e.headshot ? 1 : 0]); }
   // Kill streak callouts ('Double kill'): to one player (a soldier id), or everyone (null).
   callout(c) { if (this.events.c.length < 60) this.events.c.push([c.text, c.sub || '', c.kind || '', c.to, c.about]); }
   // (Each effect with the update it happened in: a batch goes out every few, and players show

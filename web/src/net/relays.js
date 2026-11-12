@@ -14,25 +14,26 @@ export const TAG = {
 };
 
 // Relays for finding games and connecting players (live events). All passed
-// every check in the probe (run on GitHub Actions, October 2026), fastest first.
+// every check in the probe (run on GitHub Actions, November 2026), quickest to connect first.
 export const RELAYS = [
-  'wss://nos.lol',
   'wss://relay.primal.net',
-  'wss://nostr.mom',
   'wss://relay.snort.social',
   'wss://offchain.pub',
-  'wss://nostr-pub.wellorder.net',
+  'wss://relay.damus.io',
   'wss://nostr.oxtr.dev',
+  'wss://cdn.satellite.earth',
+  'wss://nostr.chaima.info',
 ];
 
-// Relays that keep community maps (stored events).
+// Relays that keep community maps (stored events). (nos.lol and nostr.mom hold maps shared
+// before November 2026, when they stopped passing the probe: still read, while they answer.)
 export const COMMUNITY_RELAYS = [
-  'wss://nos.lol',
   'wss://relay.primal.net',
-  'wss://nostr.mom',
   'wss://relay.snort.social',
   'wss://offchain.pub',
-  'wss://nostr-pub.wellorder.net',
+  'wss://relay.damus.io',
+  'wss://nos.lol',
+  'wss://nostr.mom',
 ];
 
 /** Relays to use: `?relay=ws://...` in the page address overrides the list (for local play and tests). */

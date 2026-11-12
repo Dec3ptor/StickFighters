@@ -9,8 +9,7 @@ import { drawSprite } from './sprites.js';
 import { sideOf, moneyOf, useHere, gearOf, canShop, SIDE_NAME, DEFUSE } from './defuse.js';
 import { keyLabel, keyShort, slotAction } from './keys.js';
 
-const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
-const TEAM_NAME = { 1: 'Blue', 2: 'Red' };
+import { TEAM, TEAM_NAME } from './teamcolors.js';
 const NEUTRAL = '#8a8a8a';
 const CONTESTED = '#e8a01c';
 const INK = '#111';
@@ -623,8 +622,55 @@ function edgeMarker(ctx, r, m, W, H, placed) {
 
 // ---- Minimap (big maps) ------------------------------------------------------------------
 
-/** True for maps big enough to need a minimap. */
+/** True for maps big enough to need a minimap whatever the screen. */
 export const bigMap = map => map.bounds.right - map.bounds.left > 2600 || map.bounds.bottom - map.bounds.top > 1700;
+
+/**
+ * Whether the map's shown small at the top right: whenever it doesn't fit on the screen (as wide
+ * or as tall again by a fifth, at the usual zoom), so there's always a way to see where you and
+ * your side are on a map you can't see all of. (r: the renderer, for the screen's size and scale.)
+ */
+export function wantsMinimap(map, r) {
+  if (bigMap(map)) return true;
+  const b = map.bounds, s = (r.scale || 1) / (r.cam?.zoom || 1);
+  if (!(s > 0) || !r.w || !r.h) return false;
+  return b.right - b.left > r.w / s * 1.2 || b.bottom - b.top > r.h / s * 1.2;
+}
+
+/**
+ * Team-mates off the screen: a small point at its edge toward each (the nearest few), in your
+ * side's colour, so you know where your side is without the map. (Team games.)
+ */
+export function drawMateMarkers(r, ctx, game, me, W, H) {
+  if (!game.rules.teams || !me.alive) return;
+  const hw = W / 2 / r.scale, hh = H / 2 / r.scale, cx = r.cam.x, cy = r.cam.y;
+  const off = [];
+  for (const s of game.soldiers) {
+    if (s === me || !s.alive || s.team !== me.team || s.npc) continue;
+    if (Math.abs(s.x - cx) < hw && Math.abs(s.y - 10 - cy) < hh) continue;
+    const d = Math.hypot(s.x - me.x, s.y - me.y);
+    if (d < 2400) off.push([d, s]);
+  }
+  if (!off.length) return;
+  off.sort((a, b) => a[0] - b[0]);
+  const pad = 14, top = 70, bottom = 190, mx = W / 2, my = (top + H - bottom) / 2;
+  ctx.fillStyle = TEAM[me.team] || '#555';
+  for (let i = 0; i < Math.min(4, off.length); i++) {
+    const s = off[i][1];
+    const dx = (s.x - cx) * r.scale, dy = (s.y - 10 - cy) * r.scale + H / 2 - my;
+    const k = Math.min(Math.abs((W / 2 - pad) / (dx || 1e-9)), Math.abs(((H - top - bottom) / 2) / (dy || 1e-9)), 1);
+    const ex = mx + dx * k, ey = my + dy * k, a = Math.atan2(dy, dx), c = Math.cos(a), sn = Math.sin(a);
+    // (Nearer ones stand out more.)
+    ctx.globalAlpha = 0.85 - 0.45 * Math.min(1, off[i][0] / 2400);
+    ctx.beginPath();
+    ctx.moveTo(ex + c * 7, ey + sn * 7);
+    ctx.lineTo(ex - c * 4 - sn * 5.5, ey - sn * 4 + c * 5.5);
+    ctx.lineTo(ex - c * 4 + sn * 5.5, ey - sn * 4 - c * 5.5);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
 
 /**
  * A small picture of the whole map at the top right: platforms, the objectives,
@@ -662,7 +708,8 @@ function drawMiniMapBlocks(r, ctx, map, x0, y0, w, h, k) {
 
 export function drawMinimap(r, ctx, game, me, W) {
   const b = game.map.bounds, mapW = b.right - b.left, mapH = b.bottom - b.top;
-  let w = Math.min(300, W * 0.26), h = w * mapH / mapW;
+  // (Smaller for a small map: it's only there to show where everyone is.)
+  let w = Math.min(300, W * 0.26, Math.max(150, mapW * 0.11)), h = w * mapH / mapW;
   if (h > 150) { h = 150; w = h * mapW / mapH; }
   const x0 = W - 12 - w, y0 = 106, k = w / mapW;
   const X = x => x0 + (x - b.left) * k, Y = y => y0 + (y - b.top) * k;
@@ -706,7 +753,9 @@ export function drawMinimap(r, ctx, game, me, W) {
   const mates = game.soldiers.filter(s => s.alive && s !== me && (!game.rules.teams || s.team === me.team) && game.rules.teams);
   const step = Math.max(1, Math.ceil(mates.length / 300));
   ctx.fillStyle = TEAM[me.team] || '#555';
-  for (let i = 0; i < mates.length; i += step) ctx.fillRect(X(mates[i].x) - 1, Y(mates[i].y - 10) - 1, 2, 2);
+  // (A few of them: bigger dots, easier to find.)
+  const dot = mates.length > 40 ? 2 : 3.4;
+  for (let i = 0; i < mates.length; i += step) ctx.fillRect(X(mates[i].x) - dot / 2, Y(mates[i].y - 10) - dot / 2, dot, dot);
   if (me.alive) {
     ctx.fillStyle = '#111';
     ctx.fillRect(X(me.x) - 2.5, Y(me.y - 10) - 2.5, 5, 5);

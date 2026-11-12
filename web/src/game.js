@@ -732,7 +732,7 @@ export class Game {
       else if (opts.selfDestruct) { this.stats.suicides++; text = `${victim.name} self-destructed`; }
       else { this.stats.suicides++; text = `${victim.name} blew themselves up`; }
     }
-    if (text) this.addFeed({ text, tick: this.tick, killer, victim, weapon: name });
+    if (text) this.addFeed({ text, tick: this.tick, killer, victim, weapon: name, headshot: !!opts.headshot });
     // Kill streaks: the victim's ends, the killer's goes on (callouts, rewards: streaks.js).
     if (!prey) onStreakKill(this, victim, killer, weapon, opts);
     this.rules.onKill(this, victim, killer, weapon, opts);

@@ -22,12 +22,21 @@ const browser = await chromium.launch({
 });
 const errors = [];
 const expect = (ok, what) => { if (!ok) errors.push(what); };
+/** Public relays that couldn't be reached during the run (not failures of the game: reported). */
+const relaysDown = new Set();
 
 async function player(name) {
   const ctx = await browser.newContext({ viewport: { width: 1100, height: 700 } });
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(`${name}: ${e}`));
-  page.on('console', m => { if (m.type() === 'error') errors.push(`${name}: ${m.text()}`); });
+  page.on('console', m => {
+    if (m.type() !== 'error') return;
+    // (Through the public relays, one of them being down for a while isn't the game's failing: the
+    // others carry on, and whether play works is what's checked. Which were down is reported.)
+    const down = publicRelays && /WebSocket connection to '(wss:\/\/[^']+)' failed/.exec(m.text());
+    if (down) { relaysDown.add(down[1]); return; }
+    errors.push(`${name}: ${m.text()}`);
+  });
   page.on('dialog', d => d.accept());
   await page.goto(url);
   await page.waitForFunction(() => window.stickSoldiers);
@@ -232,7 +241,7 @@ await joiner.waitForFunction(name => ![...document.querySelectorAll('.game-row b
 const after = await joiner.$$eval('.game-row b', els => els.map(e => e.textContent));
 expect(!after.includes(GAME), 'closed game is gone from the list');
 
-console.log(JSON.stringify({ listed, feel, joinerRuns, joinerRunsAgain, cq, classes, pings, host: h1.soldiers.length, joinerMe: j1.me, chat: (await S(host)).chat, quick: t1.mode, toast, errors }, null, 2));
+console.log(JSON.stringify({ listed, feel, joinerRuns, joinerRunsAgain, cq, classes, pings, host: h1.soldiers.length, joinerMe: j1.me, chat: (await S(host)).chat, quick: t1.mode, toast, relaysDown: [...relaysDown], errors }, null, 2));
 await browser.close();
 server.close();
 await relay?.close();

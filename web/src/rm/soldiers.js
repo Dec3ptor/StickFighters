@@ -12,7 +12,8 @@ import { css, mix, shade, rgb } from './color.js';
 import { drawSkinHead, drawHeadHalo, drawVest, drawTunic, TUNICS } from '../skins.js';
 import { drawAnimal } from '../world/animalart.js';
 
-export const TEAM_COLORS = { 1: '#3d7ff0', 2: '#e8483a' };
+import { TEAM_BRIGHT as TEAM_COLORS } from '../teamcolors.js';
+export { TEAM_COLORS };
 
 // Free-for-all colours, by soldier id (each worked out once).
 const ownColors = new Map();
@@ -338,8 +339,10 @@ export function drawName(r, game, s, alpha, viewer) {
   ctx.fillStyle = 'rgba(10,14,20,0.55)';
   roundRect(ctx, x - w / 2, y - 37, w, 9, 3);
   ctx.fill();
+  // (A team game: a thicker line of their side's colour under the name, to tell the sides apart at a glance.)
   ctx.fillStyle = col;
-  ctx.fillRect(x - w / 2 + 2, y - 29.6, w - 4, 0.9);
+  if (game.rules.teams) ctx.fillRect(x - w / 2 + 1, y - 29.9, w - 2, 1.9);
+  else ctx.fillRect(x - w / 2 + 2, y - 29.6, w - 4, 0.9);
   ctx.fillStyle = '#ffffff';
   ctx.fillText(s.name, x, y - 32.4);
   // Kill streaks: a flame and the count beside the tag (3 or more in a row), and a Juggernaut's tag over it.

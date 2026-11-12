@@ -620,7 +620,7 @@ export function drawStreakFlame(ctx, x, y, big) {
   ctx.fill();
 }
 
-const SUPPLY_TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
+import { TEAM as SUPPLY_TEAM } from './teamcolors.js';
 const DROP_GOLD = '#f2c230', DROP_RED = '#d8402c';
 
 /**

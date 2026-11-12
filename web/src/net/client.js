@@ -695,7 +695,15 @@ export class NetClient {
     // (Its effects are shown each at its own update: showAt.)
     const sounds = Array.isArray(e.s) ? e.s : NONE;
     for (let i = 0; i < sounds.length; i++) { const s = sounds[i]; g.sounds.push({ name: String(s[0]), x: s[1], y: s[2] }); }
-    for (const [text, weapon] of e.k || []) g.feed.push({ text: String(text), weapon: weapon && String(weapon), tick: g.tick });
+    // (Who killed whom, by their numbers: the kill feed's lines of ours stand out, and being
+    // killed says who by, with what: feedback.js.)
+    for (const [text, weapon, killer, victim, head] of e.k || []) {
+      g.feed.push({
+        text: String(text), weapon: weapon && String(weapon), tick: g.tick, headshot: !!head,
+        killer: killer == null ? null : g.soldiers.find(s => s.id === killer) || null,
+        victim: victim == null ? null : g.soldiers.find(s => s.id === victim) || null,
+      });
+    }
     if (g.feed.length > 6) g.feed.splice(0, g.feed.length - 6);
     for (const text of e.n || []) g.notes.push({ text: String(text), tick: g.tick, to: me?.id });
     // Kill streak callouts: [text, sub, kind, mine (to us: 1; to everyone: 0), about (a soldier id)].

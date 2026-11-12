@@ -32,7 +32,7 @@ export const SAMPLES = {
 const FULL = 0.5;
 
 // Sounds that aren't placed in the world (always full volume, centred).
-const UI_SOUNDS = new Set(['hitmarker', 'gameover', 'click', 'menuMove', 'menuSelect', 'levelUp', 'chat',
+const UI_SOUNDS = new Set(['hitmarker', 'hittick', 'heartbeat', 'gameover', 'click', 'menuMove', 'menuSelect', 'levelUp', 'chat',
   'objGood', 'objBad', 'flagTaken', 'flagReturned', 'captured', 'alarm', 'pointTaken', 'pointLost', 'hillMoved', 'armed', 'disarmed', 'destroyed', 'sector',
   'buy', 'planted', 'defused', 'roundStart', 'roundStartFreeze', 'roundWin', 'roundLose', 'flashRing',
   // Kill streaks, the kill confirm, and the end of the match (yours alone).
@@ -152,7 +152,8 @@ export class SoundSystem {
       seen.add(key);
       const ui = UI_SOUNDS.has(s.name) || s.x == null;
       const d = ui ? 0 : Math.hypot(s.x - lx, s.y - ly);
-      const vol = Math.pow(Math.max(0, 1 - d / 1300), 1.6);
+      // (How far it carries: most things 1300 px; a sound can say nearer, as footsteps do.)
+      const vol = Math.pow(Math.max(0, 1 - d / (s.range || 1300)), 1.6);
       if (vol < 0.03) continue;
       const pan = ui ? 0 : Math.max(-1, Math.min(1, (s.x - lx) / 550));
       this.play(s.name, vol, pan);
@@ -265,6 +266,24 @@ const SOUNDS = {
     a.tone(o, t, { dur: 0.05, from: 2600, to: 2300, type: 'triangle', gain: 0.35, attack: 0.001 });
     a.tone(o, t, { dur: 0.04, from: 3900, to: 3600, gain: 0.2, attack: 0.001 });
     return 0.08;
+  },
+  // A softer, duller tick for a body hit landing (every hit says so: feedback.js): told apart from the headshot's by ear.
+  hittick: (a, o, t) => {
+    a.noiseBurst(o, t, { dur: 0.028, freq: 2600, q: 1.4, gain: 0.5, attack: 0.001 });
+    a.tone(o, t, { dur: 0.035, from: 1500, to: 1250, type: 'triangle', gain: 0.22, attack: 0.001 });
+    return 0.06;
+  },
+  // Someone running near you: a soft, dull footfall, each a little different (footsteps.js).
+  step: (a, o, t) => {
+    a.noiseBurst(o, t, { dur: 0.045, freq: 240 + Math.random() * 120, type: 'lowpass', q: 0.6, gain: 0.5, attack: 0.002 });
+    a.tone(o, t, { dur: 0.05, from: 120 + Math.random() * 30, to: 70, gain: 0.3, attack: 0.002 });
+    return 0.07;
+  },
+  // Nearly dead: a heartbeat, two low thumps.
+  heartbeat: (a, o, t) => {
+    a.tone(o, t, { dur: 0.11, from: 70, to: 46, gain: 0.9, attack: 0.005 });
+    a.tone(o, t + 0.17, { dur: 0.13, from: 62, to: 40, gain: 0.7, attack: 0.005 });
+    return 0.34;
   },
   explosionSmall: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.6, freq: 900, type: 'lowpass', q: 0.3, gain: 1.2, sweepTo: 150 }); return 0.6; },
   gib: (a, o, t) => { a.noiseBurst(o, t, { dur: 0.3, freq: 350, type: 'lowpass', gain: 0.8 }); return 0.3; },

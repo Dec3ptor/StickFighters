@@ -1231,6 +1231,8 @@ function ignite(s, by) {
 }
 
 // Blasts going off right now (one inside another: see explode()).
+/** Updates between the ticks a player hears for their body hits landing (headshots always tick). */
+const HIT_TICK_GAP = 5;
 let blasting = 0;
 /** Updates a cluster's bomblets fly before they go off on touching someone. */
 const CLUSTER_GRACE = 10;
@@ -1330,8 +1332,26 @@ export function damage(game, target, amount, attacker, weapon, opts = {}) {
   } else if (opts.poison && game.tick % 20 === 0) {
     game.sound('cough', target.x, target.y);
   }
-  // The player hears a hitmarker tick when they land a headshot.
-  if (opts.headshot && attacker && attacker !== target && !attacker.isBot) game.sound('hitmarker', attacker.x, attacker.y, attacker.id);
+  // What the two of them are told, theirs alone (feedback.js): the one who hit, a tick and a mark
+  // at the crosshair (a sharper tick for a headshot), for every hit that lands, once an update
+  // (a shotgun's pellets) and a body hit's tick no more than twelve a second (a minigun, a
+  // flamethrower); the one hit, where it came from, once an update. (Not for a burn or poison
+  // doing its work after.)
+  if (attacker && attacker !== target && !opts.burn) {
+    if (!attacker.isBot && (attacker.hitTick !== game.tick || (opts.headshot && !attacker.hitHead))) {
+      const body = !opts.headshot;
+      if (!body || game.tick - (attacker.tickedAt || -99) >= HIT_TICK_GAP) {
+        if (body) attacker.tickedAt = game.tick;
+        game.sound(body ? 'hittick' : 'hitmarker', target.x, target.y, attacker.id);
+      }
+      attacker.hitHead = attacker.hitTick === game.tick ? attacker.hitHead || !body : !body;
+      attacker.hitTick = game.tick;
+    }
+    if (!target.isBot && target.hurtTick !== game.tick) {
+      target.hurtTick = game.tick;
+      game.sound('hurt', attacker.x, attacker.y - 8, target.id);
+    }
+  }
   game.onDamage?.(target, attacker, amount, weapon);
   if (target.health <= 0) game.kill(target, attacker, weapon, opts);
 }

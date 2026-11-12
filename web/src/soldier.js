@@ -80,6 +80,11 @@ export class Soldier {
     // (Who last threw them with a blast, and when: a fall off the map after is theirs, game.js.)
     this.pushedBy = undefined;
     this.pushedTick = undefined;
+    // (What they're told of hits, theirs landing and others' on them: combat.js's damage, feedback.js.)
+    this.hitTick = -1;
+    this.hitHead = false;
+    this.tickedAt = -99;
+    this.hurtTick = -1;
     this.animPrev = undefined;
     // The game (game.js): use key, self-destruct, where they died, spectating, held respawns, the Builder's choice.
     this.using = undefined;

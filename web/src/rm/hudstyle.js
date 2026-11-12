@@ -15,6 +15,8 @@ const SWAP = new Map(Object.entries({
   '#999': '#8f99a6', '#9a9a9a': '#8f99a6', '#aaa': '#7f8995', '#b9b9b9': '#707a86', '#ddd': 'rgba(255,255,255,0.16)',
   '#c22': '#ff5a4a', '#c21b1b': '#ffe1dc', '#e02020': '#ff5a4a',
   '#2f6fdb': '#4a8bff', '#d33b2f': '#ff5a4a',
+  // (The colour-blind friendly sides' colours, teamcolors.js: brighter on the dark glass.)
+  '#0072b2': '#35a6f2', '#d55e00': '#ff7a1a',
   'rgba(30,30,30,0.88)': 'rgba(61,127,240,0.88)',
 }));
 

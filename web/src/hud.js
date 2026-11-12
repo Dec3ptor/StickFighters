@@ -3,7 +3,7 @@
 import { WEAPONS, SLOTS } from './weapons.js';
 import { RULES } from './config.js';
 import { GUN_GAME_LADDER } from './modes.js';
-import { drawObjectiveHud, drawMinimap, bigMap, drawDeploy, drawMoney } from './objdraw.js';
+import { drawObjectiveHud, drawMinimap, wantsMinimap, drawMateMarkers, drawDeploy, drawMoney } from './objdraw.js';
 import { moneyOf } from './defuse.js';
 import { CLASSES, weaponFor } from './classes.js';
 import { GADGETS, rechargeTicks } from './gadgets.js';
@@ -12,8 +12,9 @@ import { keyLabel, keyShort, keyText, slotAction } from './keys.js';
 import { drawWorldHud, heldBar } from './world/worldhud.js';
 import { foodBar } from './world/hunger.js';
 
+import { TEAM } from './teamcolors.js';
+
 const FONT = 'Arial, Helvetica, sans-serif';
-const TEAM = { 1: '#2f6fdb', 2: '#d33b2f' };
 
 // Callouts ('Double kill', 'Rampage'...): the colour of each kind. (First blood's red is
 // '#c22', which Remastered swaps for a brighter red that reads on its dark glass.)
@@ -109,6 +110,9 @@ export function drawHud(r, game, me, opts = {}) {
     ctx.globalAlpha = 1;
   }
 
+  // Hurt: the screen's edges flash red by how much it took, and pulse while nearly dead (feedback.js).
+  if (opts.feedback) drawHurtGlow(ctx, opts.feedback, W, H);
+
   if (me.alive) {
     drawStatus(ctx, game, me, W, H, opts);
     // (A world: the hotbar instead, drawWorldHud.)
@@ -123,9 +127,11 @@ export function drawHud(r, game, me, opts = {}) {
   if (game.world) drawWorldHud(r, ctx, game, me, W, H, opts);
   else if (game.mode === 'defuse' && game.modeState) drawMoney(ctx, game, me, W, H);
   else drawScores(ctx, game, me, H, standings);
-  drawFeed(ctx, game, W, opts.chat);
+  drawFeed(ctx, game, W, opts.chat, me);
   if (!game.world) drawTop(ctx, game, me, W, standings, r, H);
-  if (!game.world && bigMap(game.map) && !game.over) drawMinimap(r, ctx, game, me, W);
+  // (The map, small, whenever it doesn't all fit on the screen; and where your side is, off it.)
+  if (!game.world && !game.over && wantsMinimap(game.map, r)) drawMinimap(r, ctx, game, me, W);
+  if (!game.world && !game.over) drawMateMarkers(r, ctx, game, me, W, H);
   // Fog of war: sounds from out of sight, off screen.
   r.fogNow?.drawEdgeAlerts(ctx, r, W, H);
 
@@ -206,9 +212,123 @@ export function drawHud(r, game, me, opts = {}) {
     ctx.fillText(opts.perf, W - 12, H - (opts.ping != null ? 26 : 12));
   }
 
+  // Killed: who by, with what, and how they were (while waiting to come back).
+  if (opts.feedback?.recap && !game.over && !opts.showScores && !opts.picking) drawRecap(ctx, opts.feedback.recap, game, W, H);
   if (opts.showScores || game.over) drawScoreboard(ctx, game, me, W, H, opts, standings);
+  if (opts.feedback && !game.over) {
+    // Where hits on you came from; a hit of yours landing, at the crosshair.
+    drawHurtArcs(ctx, opts.feedback);
+    if (opts.feedback.hit) drawHitMark(ctx, opts.feedback.hit);
+  }
   // You just got a kill: an X round the crosshair (on top of everything).
   if (opts.killMark) drawKillMark(ctx, opts.killMark, W, H);
+}
+
+// ---- What a fight tells you (feedback.js) -----------------------------------------------------
+
+/** The screen's edges red: a flash by how much a hit took (v.flash, 0-1), a slow pulse while nearly dead (v.low, 0-1). */
+function drawHurtGlow(ctx, v, W, H) {
+  const pulse = v.low > 0 ? (0.16 + 0.2 * v.low) * (0.6 + 0.4 * Math.sin(performance.now() / 150)) : 0;
+  const a = Math.min(0.75, Math.max(v.flash * 0.6, pulse));
+  if (a < 0.01) return;
+  const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.32, W / 2, H / 2, Math.hypot(W, H) / 2);
+  g.addColorStop(0, 'rgba(200,20,10,0)');
+  g.addColorStop(1, `rgba(200,20,10,${a.toFixed(3)})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+
+/** Where hits on you came from: an arc round you (v.at, screen px) toward each (v.hurts: { a, k }), with a point on it, fading. */
+function drawHurtArcs(ctx, v) {
+  if (!v.hurts.length) return;
+  const R = 58, half = 0.36, cx = v.at.x, cy = v.at.y - 8;
+  ctx.lineCap = 'round';
+  for (const h of v.hurts) {
+    const fade = h.k < 0.2 ? 1 : Math.max(0, 1 - (h.k - 0.2) / 0.8), grow = 1 + 0.25 * Math.max(0, 1 - h.k / 0.12);
+    const r = R * grow, c = Math.cos(h.a), sn = Math.sin(h.a);
+    // (A dark edge under it, so it reads on any background.)
+    for (const [w, col, al] of [[8, '#3a0502', 0.55], [5, '#f0281c', 0.95]]) {
+      ctx.globalAlpha = fade * al;
+      ctx.strokeStyle = col;
+      ctx.lineWidth = w;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, h.a - half, h.a + half);
+      ctx.stroke();
+    }
+    // (Its point, outward: that way.)
+    ctx.globalAlpha = fade * 0.95;
+    ctx.fillStyle = '#f0281c';
+    ctx.beginPath();
+    ctx.moveTo(cx + c * (r + 13), cy + sn * (r + 13));
+    ctx.lineTo(cx + c * (r + 2) - sn * 7, cy + sn * (r + 2) + c * 7);
+    ctx.lineTo(cx + c * (r + 2) + sn * 7, cy + sn * (r + 2) - c * 7);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.lineCap = 'butt';
+}
+
+/** A hit of yours landing (m: { x, y, k, head }): four short ticks round the crosshair, white; longer and gold for a headshot. */
+function drawHitMark(ctx, m) {
+  const k = Math.max(0, Math.min(1, m.k || 0));
+  const grow = 1 + 0.4 * Math.max(0, 1 - k / 0.2);
+  const r0 = (m.head ? 6.5 : 6) * grow, r1 = (m.head ? 13.5 : 10.5) * grow;
+  const arms = (a, b) => {
+    ctx.beginPath();
+    for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      ctx.moveTo(m.x + dx * a * Math.SQRT1_2, m.y + dy * a * Math.SQRT1_2);
+      ctx.lineTo(m.x + dx * b * Math.SQRT1_2, m.y + dy * b * Math.SQRT1_2);
+    }
+  };
+  ctx.globalAlpha = k < 0.4 ? 1 : Math.max(0, 1 - (k - 0.4) / 0.6);
+  ctx.lineCap = 'butt';
+  arms(r0 - 1, r1 + 1);
+  // (A dark edge in both games: not one of the HUD's colours Remastered turns light.)
+  ctx.strokeStyle = '#0b0b0b';
+  ctx.lineWidth = m.head ? 4.5 : 3.6;
+  ctx.stroke();
+  arms(r0, r1);
+  ctx.strokeStyle = m.head ? '#ffd23c' : '#fff';
+  ctx.lineWidth = m.head ? 2.4 : 1.8;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+/**
+ * Killed (c: feedback.js's recap): who by, in their side's colour, with what, and how much health
+ * they had left. (A light panel with dark writing, as the HUD's others are: Remastered turns those
+ * into dark glass with light writing, hudstyle.js.)
+ */
+function drawRecap(ctx, c, game, W, H) {
+  const w = 300, h = 88, x = W / 2 - w / 2, y = Math.round(H * 0.6);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = '#999';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.textAlign = 'center';
+  ctx.font = `bold 10px ${FONT}`;
+  ctx.fillStyle = '#888';
+  ctx.fillText('KILLED BY', W / 2, y + 13);
+  ctx.font = `bold 18px ${FONT}`;
+  ctx.fillStyle = game.rules.teams && TEAM[c.team] ? TEAM[c.team] : '#111';
+  ctx.fillText(c.name, W / 2, y + 33);
+  ctx.font = `12px ${FONT}`;
+  ctx.fillStyle = '#444';
+  const how = `${c.weapon ? `with the ${c.weapon}` : ''}${c.headshot ? `${c.weapon ? ' · ' : ''}headshot` : ''}`;
+  if (how) ctx.fillText(how, W / 2, y + 52);
+  // (How they were just then: you nearly had them, or never touched them.)
+  const share = Math.max(0, Math.min(1, c.health / (c.max || 100)));
+  const text = c.health > 0 ? `${c.health} health left${c.armour > 0 ? ` · ${c.armour} armour` : ''}` : 'died too';
+  const bw = 110, tw = ctx.measureText(text).width, bx = Math.round(W / 2 - (bw + 10 + tw) / 2), by = y + 67;
+  ctx.fillStyle = '#ddd';
+  ctx.fillRect(bx, by, bw, 8);
+  ctx.fillStyle = share > 0.5 ? '#3f9d48' : share > 0.25 ? '#d99413' : '#e02020';
+  ctx.fillRect(bx, by, Math.round(bw * share), 8);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#444';
+  ctx.fillText(text, bx + bw + 10, by + 4);
 }
 
 // A message shown to the player: theirs (or everyone's), from the last 150 updates.
@@ -699,13 +819,23 @@ function chatName(ctx, c) {
   return n;
 }
 
-function drawFeed(ctx, game, W, chat = []) {
+function drawFeed(ctx, game, W, chat = [], me = null) {
   const items = newest(game.feed, 5, feedShown, FEED, game.tick);
   ctx.textAlign = 'right';
   ctx.font = FONT_12;
   for (let i = 0; i < items.length; i++) {
-    const f = items[i], age = game.tick - f.tick;
+    const f = items[i], age = game.tick - f.tick, text = lineText(f, feedText);
     ctx.globalAlpha = Math.min(1, (360 - age) / 60);
+    // (A line about you, a kill of yours or your death: on a dark bar, so it's not lost among the others.)
+    if (me && (f.killer === me || f.victim === me)) {
+      const tw = ctx.measureText(text).width;
+      // (Gold behind a kill of yours, red behind your death: tints that read on either game's background.)
+      ctx.fillStyle = f.killer === me && f.victim !== me ? 'rgba(255,205,40,0.6)' : 'rgba(225,45,35,0.3)';
+      ctx.fillRect(W - 18 - tw, 8 + i * 16, tw + 12, 16);
+      ctx.fillStyle = '#111';
+      ctx.fillText(text, W - 12, 16 + i * 16);
+      continue;
+    }
     ctx.fillStyle = '#c21b1b';
     ctx.fillText(lineText(f, feedText), W - 12, 16 + i * 16);
   }
