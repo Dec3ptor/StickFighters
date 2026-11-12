@@ -343,10 +343,13 @@ const DID = {
   conquest: (game, feed) => feed.some(t => / captured [A-Z]/.test(t)),
   rush: (game, feed) => feed.some(t => / armed an M-COM/.test(t)),
   defuse: (game, feed) => feed.some(t => /The bomb has been planted/.test(t)),
+  // (The duel maps: made for a plain fight.)
+  ffa: game => game.stats.kills >= 5,
+  team: game => game.stats.kills >= 5,
 };
 for (const m of MAPS.filter(m => m.size)) {
   test(`bots play ${m.name} in ${m.mode}`, () => {
-    const { game } = botMatch(m.file, { bots: Math.max(6, parseInt(m.players, 10)), mode: m.mode, seed: 11, fragLimit: 0 });
+    const { game } = botMatch(m.file, { bots: Math.max(6, parseInt(m.players, 10)), mode: m.mode, seed: 11, fragLimit: m.mode === 'ffa' || m.mode === 'team' ? 999 : 0 });
     const feed = [];
     const add = game.addFeed.bind(game);
     game.addFeed = e => { feed.push(e.text); add(e); };

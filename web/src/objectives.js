@@ -91,17 +91,33 @@ export function objectivesOf(map, type) {
 }
 
 /**
- * Bomb sites for a map without its own: around the M-COMs Rush's attackers go for
- * first (blue attacks there, as the bomb's carriers do), A and B.
+ * Bomb sites for a map without its own: around two of Rush's M-COMs, A and B. Which two: the
+ * ones about two thirds of the way from the attackers' spawn points (blue's) to the defenders'
+ * (red's), so the defenders are there first and the attackers have ground to cross, however
+ * big the map. (They were the first the attackers come to: on a big map the bomb was down
+ * before a defender had got half way.)
  */
 function defaultSites(map) {
   if (map.madeSites) return map.madeSites;
   const mcoms = objectivesOf(map, 'mcom');
-  const first = mcoms.filter(m => m.sector === mcoms[0]?.sector);
-  const list = (first.length >= 2 ? first : mcoms).slice(0, 2);
+  const base = team => { const l = map.spawns.filter(p => p.team === team && !p.sector), m = l.length ? l : map.spawns.filter(p => p.team === team); return m.length ? avg(m.map(p => p.x)) : null; };
+  const from = base(1), to = base(2);
+  let list = mcoms.slice(0, 2);
+  if (from != null && to != null && Math.abs(to - from) > 1 && mcoms.length > 2) {
+    const along = m => (m.x - from) / (to - from);
+    // (The sector whose M-COMs are nearest that, as a pair; one short, the next nearest joins it.)
+    const sectors = [...new Set(mcoms.map(m => m.sector))];
+    const off = sec => { const l = mcoms.filter(m => m.sector === sec); return Math.abs(avg(l.map(along)) - SITE_ALONG); };
+    const best = sectors.sort((a, b) => off(a) - off(b))[0];
+    list = mcoms.filter(m => m.sector === best).slice(0, 2);
+    if (list.length < 2) list.push(...mcoms.filter(m => !list.includes(m)).sort((a, b) => Math.abs(along(a) - SITE_ALONG) - Math.abs(along(b) - SITE_ALONG)).slice(0, 2 - list.length));
+    list.sort((a, b) => along(a) - along(b));
+  }
   map.madeSites = list.map((m, i) => ({ type: 'site', label: String.fromCharCode(65 + i), left: m.x - SITE_W / 2, top: m.y - SITE_H, right: m.x + SITE_W / 2, bottom: m.y }));
   return map.madeSites;
 }
+/** How far along from the attackers' side to the defenders' made-up bomb sites go (0 to 1). */
+const SITE_ALONG = 0.68;
 
 /** Objectives worked out from a map's layout (remembered with the map). */
 function defaults(map) {

@@ -473,16 +473,17 @@ function mapLabel(m) {
 
 // How well each size of map suits each mode (lower is better): big maps for Rush and Conquest,
 // small ones for the rest. Originals are small arenas made for deathmatch.
+// (Duel maps are for two to four players: listed after the small ones, for the modes they suit.)
 const SIZE_FIT = {
-  ffa: { original: 0, small: 0, medium: 1, large: 3 },
-  gungame: { original: 0, small: 0, medium: 1, large: 3 },
-  oitc: { original: 0, small: 0, medium: 1, large: 3 },
-  team: { original: 0, small: 0, medium: 0.5, large: 2 },
-  koth: { small: 0, medium: 1, original: 1.5, large: 2.5 },
-  ctf: { small: 0, medium: 1, original: 1.5, large: 2.5 },
-  conquest: { large: 0, medium: 1, small: 2.5, original: 3 },
-  rush: { large: 0, medium: 1, small: 2.5, original: 3 },
-  defuse: { medium: 0, small: 0.5, large: 1.5, original: 2.5 },
+  ffa: { duel: 0.5, original: 0, small: 0, medium: 1, large: 3 },
+  gungame: { duel: 0.5, original: 0, small: 0, medium: 1, large: 3 },
+  oitc: { duel: 0.5, original: 0, small: 0, medium: 1, large: 3 },
+  team: { duel: 0.5, original: 0, small: 0, medium: 0.5, large: 2 },
+  koth: { duel: 2, small: 0, medium: 1, original: 1.5, large: 2.5 },
+  ctf: { duel: 3, small: 0, medium: 1, original: 1.5, large: 2.5 },
+  conquest: { duel: 4, large: 0, medium: 1, small: 2.5, original: 3 },
+  rush: { duel: 4, large: 0, medium: 1, small: 2.5, original: 3 },
+  defuse: { duel: 4, medium: 0, small: 0.5, large: 1.5, original: 2.5 },
 };
 
 /** How well a game map suits a mode (lower is better), for ordering the map list. */

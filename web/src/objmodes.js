@@ -290,7 +290,14 @@ export function objectiveModes(base) {
       if (theirs.carrier === s.id) return { zone: at(stand.x, stand.y), hold: true, urgent: true };
       // Our flag is lying around: go and send it home.
       if (!mine.home && mine.carrier < 0 && Math.hypot(mine.x - s.x, mine.y - s.y) < 1600) return { zone: at(mine.x, mine.y), urgent: true, moving: true };
-      const role = hash(s.id, 1);
+      let role = hash(s.id, 1);
+      // (Always one of a side's bots at home, when it has three or more: the first of them. Left
+      // to chance, a side could have nobody guarding its flag.)
+      if (!game.crowded) {
+        let first = null, n = 0;
+        for (const o of game.soldiers) if (o.isBot && !o.npc && o.team === s.team && !o.spectating) { n++; if (!first || o.id < first.id) first = o; }
+        if (n >= 3 && first === s) role = 0.1;
+      }
       // Our flag's been taken: most go after the carrier.
       if (mine.carrier >= 0 && role < 0.7) {
         const c = byId(game, mine.carrier);

@@ -95,10 +95,17 @@ function nodeFor(nav, it) {
 //   turn      fastest its aim turns; fireCone: how close to where it means to aim
 //             before it fires; trigger: chance it fires on an update when it could
 export const DIFFICULTY = {
-  easy: { reaction: 44, delay: 18, extrap: 0.4, flick: 0.14, flickPct: 0.3, settle: 0.05, tremor: 0.16, turn: 0.08, fireCone: 0.26, trigger: 0.6 },
-  normal: { reaction: 30, delay: 13, extrap: 0.6, flick: 0.09, flickPct: 0.22, settle: 0.07, tremor: 0.095, turn: 0.12, fireCone: 0.17, trigger: 0.85 },
-  hard: { reaction: 20, delay: 9, extrap: 0.8, flick: 0.06, flickPct: 0.15, settle: 0.09, tremor: 0.055, turn: 0.17, fireCone: 0.12, trigger: 1 },
+  easy: { reaction: 44, delay: 18, extrap: 0.4, flick: 0.14, flickPct: 0.3, settle: 0.05, tremor: 0.16, turn: 0.08, fireCone: 0.26, trigger: 0.6, hunt: 0.3, cover: 0, crouch: 0, dodge: 0 },
+  normal: { reaction: 30, delay: 13, extrap: 0.6, flick: 0.09, flickPct: 0.22, settle: 0.07, tremor: 0.095, turn: 0.12, fireCone: 0.17, trigger: 0.85, hunt: 0.5, cover: 0.3, crouch: 0.5, dodge: 0.3 },
+  hard: { reaction: 20, delay: 9, extrap: 0.8, flick: 0.06, flickPct: 0.15, settle: 0.09, tremor: 0.055, turn: 0.17, fireCone: 0.12, trigger: 1, hunt: 0.7, cover: 0.45, crouch: 0.9, dodge: 0.7 },
 };
+// (How it fights, besides how it aims. hunt: with nobody about, how often it has a rough idea
+// where someone is, and heads over; otherwise it wanders. cover: hurt below this share of its
+// health in a fight it's losing, it gets out of the enemy's sight for a moment. crouch: how
+// often it crouches to shoot from where it's holding still (steadier, and less to hit). dodge:
+// how often being hit makes it move at once.)
+/** How near to an enemy a bot with a rough idea where they are heads for (px either way). */
+const HUNT_SPREAD = 380;
 // What a bot remembers of its target, for aiming with a delay (updates).
 const SEEN_LEN = 24;
 
@@ -308,6 +315,7 @@ export class BotController {
     this.path = null;
     this.li = 0;
     this.exec = null;
+    this.kneel = undefined; this.kneelUntil = 0; this.dodging = 0; this.coverUntil = 0;
     this.lining = null;        // (the jump or drop it's lining up to start, and for how long: steer)
     this.lineUp = 0;
     this.target = null;
@@ -390,6 +398,8 @@ export class BotController {
       this.threat = attacker;
       this.lastSeen = { x: attacker.body.x, y: attacker.body.y, tick: game.tick };
       if (!this.target) this.thinkIn = Math.min(this.thinkIn, 4);
+      // (Standing there being shot: the better it is, the sooner it moves.)
+      else if (this.goalKind === 'fight' && this.rng() < (this.d.dodge || 0)) { this.dodging = game.tick + 90; this.thinkIn = Math.min(this.thinkIn, 2); }
     }
   }
 
@@ -832,10 +842,21 @@ export class BotController {
       goal = costTo(this.target.x, this.target.y + 4).n;
       kind = 'chase';
     }
+    if (!goal && this.target && this.d.cover > 0 && s.health < s.maxHealth * this.d.cover && this.target.health > s.health && game.tick >= (this.coverUntil || 0)) {
+      // Losing, and badly hurt: somewhere close the enemy can't see, for a moment (then back at it).
+      const t = this.target;
+      let pv = Infinity;
+      for (const n of this.nav.nodesNear(s.x, s.y, 260, 180)) {
+        const c = search.cost[n.id];
+        if (c > 200 || !ok(n) || game.map.clearLine(n.x, n.y - 20, t.body.x, t.body.y - 12)) continue;
+        if (c < pv) { pv = c; goal = n; }
+      }
+      if (goal) { kind = 'cover'; this.coverUntil = game.tick + 360; this.thinkIn = 70; }
+    }
     if (!goal && this.target) {
       // In a fight: hold position (campers) or move around nearby to be harder to hit.
       kind = 'fight';
-      if (this.rng() * 40 < this.profile.camp) goal = start;
+      if (this.rng() * 40 < this.profile.camp && !(this.dodging > game.tick)) goal = start;
       else {
         const near = this.nav.nodesNear(s.x, s.y, 140, 120).filter(n => search.cost[n.id] < 110 && ok(n));
         goal = near.length ? near[Math.floor(this.rng() * near.length)] : start;
@@ -853,9 +874,12 @@ export class BotController {
       const blind = game.options.botVision === 'sight';
       const f = game.crowded && !blind ? this.someEnemy(game, s) : null;
       const foes = blind ? [] : game.crowded ? (f ? [f] : []) : this.enemies(game, s);
-      if (foes.length && this.rng() < 0.75) {
+      // (A rough idea where someone is, the better the bot the more often: somewhere within a
+      // few hundred px of them, not the very spot. Nobody's found by standing still where they
+      // can't be seen any more.)
+      if (foes.length && this.rng() < (this.d.hunt ?? 0.5)) {
         const f = foes[Math.floor(this.rng() * foes.length)];
-        goal = costTo(f.x, f.y + 4).n;
+        goal = costTo(f.x + (this.rng() * 2 - 1) * HUNT_SPREAD, f.y + 4 + (this.rng() * 2 - 1) * HUNT_SPREAD * 0.4).n;
         kind = 'hunt';
       }
       for (let i = 0; i < 8 && (!goal || search.cost[goal.id] === Infinity || !ok(goal)); i++) {
@@ -1322,6 +1346,8 @@ export class BotController {
     }
     this.seen++;
     const d = this.d;
+    // (Down on one knee to shoot, while it stays put: below.)
+    if (this.kneelUntil > game.tick && s.body.onGround && Math.abs(s.body.vx) < 0.4 && !this.exec && this.li >= (this.path?.length || 0)) inp.crouch = true;
     const def = WEAPONS[s.current];
     const b = def.bot || NO_BOT;
     // Where the bot thinks the target is: where it saw them `delay` updates ago, carried on
@@ -1382,6 +1408,10 @@ export class BotController {
       inp.fire = true;
       if (b.mine) this.lastMine = game.tick;
     }
+    // Shooting from where it's holding still, at someone a way off: down on one knee (steadier,
+    // and less of it to hit). Decided once for each enemy it takes on.
+    if (this.seen === Math.ceil(this.reaction) || this.kneel === undefined) this.kneel = this.rng() < (d.crouch || 0);
+    if (this.kneel && dist > 220 && def.kind !== 'melee' && !explosive) this.kneelUntil = game.tick + 40;
   }
 
   /**

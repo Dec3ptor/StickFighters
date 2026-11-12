@@ -40,6 +40,18 @@
     "mode": "team"
   },
   {
+    "file": "backyard.json",
+    "name": "Backyard",
+    "mode": "ffa",
+    "modes": [
+      "ffa",
+      "team",
+      "koth"
+    ],
+    "size": "duel",
+    "players": "2-4"
+  },
+  {
     "file": "crossfire.json",
     "name": "Crossfire",
     "mode": "ctf",
@@ -186,6 +198,18 @@
     ],
     "size": "large",
     "players": "16-64"
+  },
+  {
+    "file": "silo.json",
+    "name": "Silo",
+    "mode": "ffa",
+    "modes": [
+      "ffa",
+      "team",
+      "koth"
+    ],
+    "size": "duel",
+    "players": "2-4"
   },
   {
     "file": "valley.json",

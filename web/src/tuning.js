@@ -109,6 +109,8 @@ const BOT_FIELDS = {
   flickPct: ['…plus this share of how far it turned'], settle: ['Aim settling: share of the way each update'],
   tremor: ['Aim wobble', 'radians'], turn: ['Fastest aim turn', 'radians per update'], fireCone: ['Fires when its aim is this close', 'radians'],
   trigger: ['Chance it fires when it can', '0-1'],
+  hunt: ['How often it knows roughly where someone is', '0-1'], cover: ['Takes cover below this share of health', '0-1'],
+  crouch: ['How often it crouches to shoot', '0-1'], dodge: ['How often being hit makes it move', '0-1'],
   acc: ['Aim error', 'the original game\'s numbers: higher misses more'], camp: ['Camping', 'higher waits about more'], skill: ['Skill', '0-3: leading shots, aiming at heads'],
   hw: ['Half width', 'px'], hh: ['Half height', 'px'],
 };
@@ -131,7 +133,7 @@ const DEG = 180 / Math.PI;
 // Shown in degrees, kept in radians.
 const inDegrees = path => path[0] === 'WEAPONS' && path[path.length - 1] === 'spread';
 const INTS = new Set(['ammo', 'maxAmmo', 'mag', 'pellets', 'count', 'reserve', 'price', 'reward', 'max', 'kills', 'every', 'bombs', 'smashes', 'hp', 'maxHealth', 'maxArmour', 'skill']);
-const MAXES = { maxHealth: 255, maxArmour: 255, mag: 254, ammo: 65534, maxAmmo: 65534, reserve: 65534, armourAbsorb: 1, juggerDamage: 1, trigger: 1 };
+const MAXES = { maxHealth: 255, maxArmour: 255, mag: 254, ammo: 65534, maxAmmo: 65534, reserve: 65534, armourAbsorb: 1, juggerDamage: 1, trigger: 1, hunt: 1, cover: 1, crouch: 1, dodge: 1 };
 
 /** What a number is: { label, help, unit, int, min, max, step, scale } for the menu. */
 function about(path) {

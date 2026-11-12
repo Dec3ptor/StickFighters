@@ -561,7 +561,8 @@ test('a player sees shots leave the gun: their own (drawn ahead of the host\'s c
     assert.ok(l.every(x => x.along > 0 && x.along < 70 && x.side < 12), `${who} shots start at the gun (along/side: ${list(l.filter(x => !(x.along > 0 && x.along < 70 && x.side < 12)))})`);
     const f = flashes[who];
     assert.ok(f.length >= 8, `enough ${who} flashes seen (${f.length})`);
-    assert.ok(f.every(x => x.far < 40 && x.along > 0), `${who} guns flash at the gun (${list(f.filter(x => !(x.far < 40 && x.along > 0)))})`);
+    // (Right at the shoulder, when someone's standing against the shooter: the shot starts short of them.)
+    assert.ok(f.every(x => x.far < 40 && x.along > -1), `${who} guns flash at the gun (${list(f.filter(x => !(x.far < 40 && x.along > -1)))})`);
   }
 });
 

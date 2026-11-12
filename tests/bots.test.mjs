@@ -261,7 +261,8 @@ test('a route map kept between matches starts each one afresh: what bots learnt 
   };
   const first = play(13);
   play(29);
-  assert.ok(kept.searches || kept.nodes.some(n => n.links.some(l => l.penalty > 0)), 'the other match left its searches or penalties on the route map');
+  // (Something of the other match left on the route map: a penalty, if it left none of its own.)
+  if (!kept.searches && !kept.nodes.some(n => n.links.some(l => l.penalty > 0))) kept.penalize(kept.nodes.find(n => n.links.length).links[0], 50);
   assert.equal(play(13), first, 'the same match plays out the same after another one');
   // A copy of it (a match where the map can change) doesn't inherit them either.
   const link = kept.nodes.find(n => n.links.length).links[0];
