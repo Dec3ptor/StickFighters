@@ -9,7 +9,7 @@ import { Game } from '../game.js';
 import { stepBody } from '../physics.js';
 import { flyBody } from '../world/devmode.js';
 import { WEAPONS } from '../weapons.js';
-import { MOTION, TICK_RATE } from '../config.js';
+import { MOTION, TICK_RATE, respawnTicks } from '../config.js';
 import { encodeInputs, decodeSnapshot, messageType, PROTOCOL, SNAPSHOT_EVERY } from './protocol.js';
 import { FX_METHODS } from './host.js';
 import { beaconKey } from '../gadgets.js';
@@ -227,6 +227,8 @@ export class NetClient {
   tick() {
     const g = this.game, me = this.me;
     if (!g || !me || this.ended) return;
+    // (What's been taken from the map, coming back: counted here.)
+    if (this.fixed) for (let i = 0; i < this.fixed.length; i++) { const it = this.fixed[i]; if (!it.active && it.timer > 0) it.timer--; }
     const inp = this.inputEnabled ? this.opts.controller.input(g, me) : { move: 0, aim: me.aim, aimDist: me.aimDist };
     inp.seq = ++this.seq;
     this.pending.push(inp);
@@ -662,7 +664,13 @@ export class NetClient {
     const g = this.game;
     if (!this.fixed) this.fixed = g.pickups.items.filter(it => !it.dropped);
     const fixed = this.fixed, on = b.fixedItems, loose = b.looseItems, items = this.items;
-    for (let i = 0; i < on.length; i++) if (fixed[i]) fixed[i].active = on[i];
+    for (let i = 0; i < on.length; i++) {
+      const it = fixed[i];
+      if (!it) continue;
+      // (Just taken: counted down here, for the ring drawn in its place: the host says only that it's gone.)
+      if (it.active && !on[i]) it.timer = it.total = respawnTicks(it);
+      it.active = on[i];
+    }
     let n = 0;
     for (let i = 0; i < fixed.length; i++) items[n++] = fixed[i];
     for (let i = 0; i < loose.length; i++) {

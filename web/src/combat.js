@@ -254,6 +254,21 @@ function muzzlePoint(game, s, def) {
 // Crouched on the ground, shots spread this much less (a shotgun's pellets less so).
 const CROUCH_SPREAD = 0.5, CROUCH_PELLETS = 0.75;
 
+/**
+ * How far off its aim (radians, either way) a shot of scoped weapon `def` by `s` goes: nothing
+ * looked down the scope with feet on the ground; up to half def.hip from the hip (right click not
+ * held: s.scoped, game.js), less crouched; up to half def.air in the air, scope or no scope.
+ * (Bots are taken to look down it when they stand: their aim wanders by itself, bot.js.)
+ */
+export function scopeSway(game, s, def) {
+  if (!def.hip && !def.air) return 0;
+  const b = s.body;
+  let spread = 0;
+  if (!b.onGround && !b.swimming && !b.rope) spread = def.air || 0;
+  else if (!(s.isBot || s.scoped)) spread = (def.hip || 0) * (b.crouching ? CROUCH_SPREAD : 1);
+  return spread ? (game.rng() - 0.5) * spread : 0;
+}
+
 /** A shot's velocity: aimed, give or take the weapon's spread (`crouched`: the share of it left when crouching). */
 function aimed(game, s, spread, speed, crouched = CROUCH_SPREAD) {
   if (s.body.crouching && s.body.onGround) spread *= crouched;
@@ -281,7 +296,11 @@ const LAUNCH = {
   },
 
   rail(game, s, def, id, m) {
-    railShot(game, s, m.x, m.y, m.dx, m.dy, def, id);
+    // (A scoped rifle fired from the hip or in the air strays: scopeSway. Down its scope, feet on
+    // the ground, it goes just where it's aimed.)
+    const sway = scopeSway(game, s, def);
+    if (sway) { const a = s.aim + sway; railShot(game, s, m.x, m.y, Math.cos(a), Math.sin(a), def, id); }
+    else railShot(game, s, m.x, m.y, m.dx, m.dy, def, id);
     return true;
   },
 

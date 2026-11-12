@@ -100,7 +100,7 @@ const LABELS = {
     droppedWeaponTicks: ['Dropped weapons last', TICKS], burnTicks: ['Burning lasts', TICKS], burnDamage: ['Burning: damage each update'],
     juggerDamage: ['Juggernaut: share of damage taken', '0-1'], headshotMultiplier: ['Headshots: times the damage (bullets)', 'the sniper rifle and longbow have their own'],
   },
-  ITEM_RESPAWN: { weapon: ['Weapons come back after', TICKS], health: ['Health comes back after', TICKS], armour: ['Armour comes back after', TICKS], jetpack: ['Jetpacks come back after', TICKS] },
+  ITEM_RESPAWN: { weapon: ['Weapons come back after', TICKS], power: ['The strongest weapons come back after', TICKS], health: ['Health comes back after', TICKS], armour: ['Armour comes back after', TICKS], jetpack: ['Jetpacks come back after', TICKS] },
   BOT_VIEW: { sight: ['How far bots look for enemies', 'px'] },
 };
 const BOT_FIELDS = {

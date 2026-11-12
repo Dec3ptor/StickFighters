@@ -78,11 +78,17 @@ export const RULES = {
   droppedWeaponTicks: 900,
   burnTicks: 150,
   burnDamage: 0.22,
-  juggerDamage: 0.3,        // a Juggernaut (kill streak reward) takes this share of any damage
+  juggerDamage: 0.45,       // a Juggernaut (kill streak reward) takes this share of any damage (it was 0.3: with 30 seconds of it, one streak decided a match)
   headshotMultiplier: 2,    // headshots with bullets (the sniper rifle and longbow have their own)
 };
 
-export const ITEM_RESPAWN = { weapon: 600, health: 1200, armour: 1500, jetpack: 1800 };
+export const ITEM_RESPAWN = { weapon: 600, power: 1800, health: 1200, armour: 1500, jetpack: 1800 };
+// The weapons worth fighting over: on a map, they're back after ITEM_RESPAWN.power (half a minute)
+// rather than .weapon (ten seconds), so holding the place one comes back to matters; what's been
+// taken shows faintly where it'll be, with a ring filling as it comes (render.js).
+export const POWER_WEAPONS = new Set(['SR', 'Bazooka', 'HomingMissile', 'Mortar', 'Minigun', 'HolyHandGrenade', 'BananaBomb', 'AirStrike', 'NapalmStrike', 'ConcreteDonkey', 'MagicBullet', 'SuperSheep', 'Earthquake']);
+/** How long (updates) a map's item `it` is gone once it's taken. */
+export const respawnTicks = it => (it.type === 'weapon' && POWER_WEAPONS.has(it.weapon) ? ITEM_RESPAWN.power : ITEM_RESPAWN[it.type]) || 600;
 
 // Supply crates drop from the sky every so often (in ticks at full speed), each holding a random weapon.
 export const CRATES = { normal: { every: 1500, max: 3 }, lots: { every: 600, max: 6 } };

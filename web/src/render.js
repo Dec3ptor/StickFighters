@@ -37,6 +37,8 @@ const PAPER = { ink: '#1a1a1a', haze: '#8a8a8a', rim: '#ffffff', halo: '#ffffff'
 
 // Name tags' fonts (made once, not for every name every frame).
 const NAME_FONT = '8px Arial, sans-serif', NAME_FONT_ME = 'bold 8px Arial, sans-serif';
+// (The seconds till something taken from the map is back.)
+const GONE_FONT = 'bold 8px Arial, sans-serif';
 const STREAK_FONT = 'bold 6px Arial, sans-serif', STREAK_FONT_BIG = 'bold 7px Arial, sans-serif';
 
 // Weapons drawn with fills only (no lines, so the line ends set don't matter to them).
@@ -453,11 +455,59 @@ export class Renderer {
     ctx.globalAlpha = 1;
   }
 
+  /**
+   * A map's item that's been taken: faint, where it'll be again, with a ring round it filling as
+   * it comes back; and for the ones worth waiting for (the strongest weapons, armour, a jetpack),
+   * how many seconds are left. (Joined a game with it already gone: just the faint one, till it's back.)
+   */
+  drawGone(ctx, it) {
+    ctx.save();
+    ctx.translate(it.x, it.y);
+    ctx.globalAlpha = 0.28;
+    switch (it.type) {
+      case 'health': drawHealth(ctx); break;
+      case 'armour': drawArmour(ctx); break;
+      case 'jetpack': drawJetpack(ctx); break;
+      case 'weapon': drawWeapon(ctx, WEAPONS[it.weapon], true); break;
+    }
+    const total = it.total || 0, left = it.timer || 0;
+    if (total > 0 && left > 0) {
+      const k = Math.max(0, Math.min(1, 1 - left / total)), r = 11, from = -Math.PI / 2;
+      // (Dark under light: it reads on the original's paper and on Remastered's night alike.)
+      ctx.lineCap = 'butt';
+      for (const [w, col, al] of [[3.4, '#000', 0.42], [1.5, '#fff', 0.9]]) {
+        ctx.globalAlpha = al;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = w;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, from, from + Math.max(0.05, k) * Math.PI * 2);
+        ctx.stroke();
+      }
+      if (total >= 1500) {
+        // (On a little plate: dark on light, whatever's behind.)
+        const text = String(Math.ceil(left / 60)), tw = text.length * 4.6 + 4;
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(-tw / 2, r + 3.5, tw, 9);
+        ctx.globalAlpha = 1;
+        ctx.font = GONE_FONT;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#333';
+        ctx.fillText(text, 0, r + 10.5);
+      }
+    }
+    ctx.restore();
+  }
+
   drawPickups(game) {
     const ctx = this.ctx, t = game.tick, a = this.alpha ?? 1, items = game.pickups.items;
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      if (!it.active) continue;
+      if (!it.active) {
+        // (Taken from its place on the map: shown faintly there, with a ring filling as it comes back.)
+        if (!it.dropped && !(game.crowded && !this.inView(it.x, it.y))) this.drawGone(ctx, it);
+        continue;
+      }
       if (it.dropped && it.life < 120 && Math.floor(it.life / 6) % 2) continue;
       const bob = it.dropped ? 0 : Math.sin((t + a) * 0.06 + it.bob) * 1.5;
       if (it.type === 'crate' && it.landed && it.life < 120 && Math.floor(it.life / 6) % 2) continue;

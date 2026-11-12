@@ -52,8 +52,10 @@ export const WEAPONS = {
   // ---- 1: Pistols ---------------------------------------------------------------
   Platinum: {
     name: 'Platinum', short: 'Pistol', slot: 0, kind: 'bullet',
-    rof: 20, damage: 20, knock: 1.2, spread: deg(3.5), speed: 30, range: 700,
-    mag: 8, reload: 70, infinite: true, sound: 'pistol',
+    // (Seven body shots of twelve to a kill, in 2.7 s: it was eight of eight in 3.15 s, the whole
+    // magazine, so one miss meant reloading in the middle of every fight you spawned into.)
+    rof: 20, damage: 22, knock: 1.2, spread: deg(3.5), speed: 30, range: 700,
+    mag: 12, reload: 70, infinite: true, sound: 'pistol',
     look: { type: 'pistol', length: 10, color: '#666' },
     bot: { near: 0, far: 700, score: 2, value: 0 },
     cs: { price: 200, reward: 300, mag: 12, reserve: 72, reload: 80, dmg: 1.3 },
@@ -61,7 +63,7 @@ export const WEAPONS = {
   // Cut from the original game (an older weapon table has it): a very accurate pistol.
   Beretta: {
     name: 'Beretta', short: 'Beretta', slot: 0, kind: 'bullet',
-    rof: 20, damage: 20, knock: 1.2, spread: deg(0.8), speed: 32, range: 760,
+    rof: 20, damage: 22, knock: 1.2, spread: deg(0.8), speed: 32, range: 760,
     mag: 15, reload: 80, infinite: true, sound: 'pistol',
     look: { type: 'pistol', length: 12, color: '#3c3c3c' },
     bot: { near: 0, far: 720, score: 3, value: 1 },
@@ -143,6 +145,10 @@ export const WEAPONS = {
   SR: {
     name: 'Sniper Rifle', short: 'Sniper', slot: 4, kind: 'rail',
     rof: 60, damage: 50, headMultiplier: 3, knock: 3, spread: 0, range: 2200,
+    // (Its scope is for looking down: fired from the hip, without right click held, the shot
+    // strays by up to hip either way in all; fired in the air, by up to air, scope or no scope.
+    // Looked down the scope with feet on the ground, it goes just where it's aimed, as ever.)
+    hip: deg(3), air: deg(7),
     ammo: 10, maxAmmo: 20, sound: 'sniper', laser: true, zoom: true,
     look: { type: 'sniper', length: 24, color: '#333' },
     bot: { near: 300, far: 2200, score: 9, value: 4 },

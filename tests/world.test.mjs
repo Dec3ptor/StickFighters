@@ -7,6 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../web/src/game.js';
 import { DEFAULT_SPEED } from '../web/src/config.js';
+import { WEAPONS } from '../web/src/weapons.js';
 import { TileWorld, TILE, CHUNK, WORLD_H, chunkKey } from '../web/src/world/tileworld.js';
 import * as K from '../web/src/world/blocks.js';
 import { BLOCKS, SHAPES, BLOCK_BY_KEY } from '../web/src/world/blocks.js';
@@ -345,7 +346,7 @@ test('the inventory: stacks, room, moving, splitting, the hotbar and the bag, so
   // A new character's things: what the starting kit says, guns loaded.
   const kit = Inventory.starting();
   for (const [key, n] of STARTING_KIT) assert.equal(kit.count(key), n, key);
-  assert.equal(kit.slots[slotOfInv(kit, 'Platinum')].mag, 8, 'the pistol loaded');
+  assert.equal(kit.slots[slotOfInv(kit, 'Platinum')].mag, WEAPONS.Platinum.mag, 'the pistol loaded');
   // Every item has a name and a stack size; every weapon's ammo is an item (or itself).
   for (const key of ['Platinum', 'M4', 'Shotgun', 'Bazooka', 'Grenade', 'Flamer', 'Longbow']) {
     const it = itemOf(key);
@@ -365,7 +366,7 @@ test('guns fire from their magazine, reload from the inventory\'s rounds, and sw
   ctl.script = { move: 0, switchTo: `#${pistol}` };
   game.update();
   assert.equal(me.current, 'Platinum');
-  assert.equal(me.weapons.Platinum.mag, 8, 'loaded');
+  assert.equal(me.weapons.Platinum.mag, WEAPONS.Platinum.mag, 'loaded');
   const bullets = me.world.inv.count('bullets');
   // Shoot the magazine empty (aiming up, into the sky).
   for (let i = 0; i < 400 && me.weapons.Platinum.mag > 0; i++) {
@@ -374,19 +375,19 @@ test('guns fire from their magazine, reload from the inventory\'s rounds, and sw
   }
   assert.equal(me.weapons.Platinum.mag, 0, 'emptied');
   assert.equal(me.world.inv.count('bullets'), bullets, 'shots from the magazine don\'t use the inventory\'s rounds');
-  // The reload (started by itself) takes eight rounds from the inventory.
+  // The reload (started by itself) takes a magazine's worth of rounds from the inventory.
   ctl.script = { move: 0 };
   run(game, 200);
-  assert.equal(me.weapons.Platinum.mag, 8, 'reloaded');
-  assert.equal(me.world.inv.count('bullets'), bullets - 8, 'eight rounds from the inventory');
-  assert.equal(me.world.inv.slots[pistol].mag, 8, 'the magazine kept with the gun');
+  assert.equal(me.weapons.Platinum.mag, WEAPONS.Platinum.mag, 'reloaded');
+  assert.equal(me.world.inv.count('bullets'), bullets - WEAPONS.Platinum.mag, 'a magazine\'s worth of rounds from the inventory');
+  assert.equal(me.world.inv.slots[pistol].mag, WEAPONS.Platinum.mag, 'the magazine kept with the gun');
   // Another thing in hand and back: the magazine's as it was.
   ctl.script = { move: 0, switchTo: '#0' };
   game.update();
   assert.equal(me.current, 'Hands');
   ctl.script = { move: 0, switchTo: `#${pistol}` };
   game.update();
-  assert.equal(me.weapons.Platinum.mag, 8);
+  assert.equal(me.weapons.Platinum.mag, WEAPONS.Platinum.mag);
   // Out of rounds: nothing more to reload with.
   me.world.inv.remove('bullets', 999);
   for (let i = 0; i < 400 && me.weapons.Platinum.mag > 0; i++) {

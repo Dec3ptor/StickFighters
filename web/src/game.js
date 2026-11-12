@@ -22,6 +22,9 @@ import { onStreakKill, streakOff, useReward, updateStreaks, matchAwards } from '
 const IDLE = { move: 0 };
 // (The soldiers near a spawn point, for spawnDanger(): one list, filled again each time.)
 const NEAR_SPAWN = [];
+// Spawning: an enemy within this far (px) with a clear line to a spawn point sees it, and a seen
+// point counts as that much nearer the enemy than it is (so any unseen one is taken first).
+const SPAWN_SEEN = 1100, SPAWN_SEEN_COST = 1400;
 // Holding self-destruct this many updates (a second) blows you up: the way out of a pit you can't climb out of.
 export const SELF_DESTRUCT_TICKS = 60;
 // When the map changes (holes, building), the bots' route map is patched this many updates
@@ -464,6 +467,8 @@ export class Game {
 
     // The minigun is heavy: you walk slowly while it's spinning.
     const def = WEAPONS[s.current];
+    // (Looking down a scope: right click held with a scoped rifle. Its shots go true then: combat.js's scopeSway.)
+    s.scoped = !!input.alt && !!def.zoom;
     // (The last of something set off by a second click, a sheep, stays in hand while it's out there,
     // for that click: combat.js's fire. Gone off, or run out its time: on to something else.)
     if (def.remote && !(s.weapons[s.current]?.ammo > 0) && !this.projectiles.some(p => p.owner === s && p.weapon === s.current && p.remote && !p.dead)) s.selectBest();
@@ -496,6 +501,8 @@ export class Game {
     }
 
     if (s.cooldown > 0) s.cooldown--;
+    // (And the waits of the weapons not in hand: soldier.js's select.)
+    for (const id in s.cooldowns) if (--s.cooldowns[id] <= 0) delete s.cooldowns[id];
     // Timers aren't whole numbers at reduced game speed, so count down to <= 0.
     // (Magazines refill to the soldier's size: Extended mag makes them bigger. Guns with
     // spare ammo reload from it; pistols with endless ammo reload in your pocket too.)
@@ -599,7 +606,10 @@ export class Game {
     for (const p of this.projectiles) if (p.onGround && this.rng() < 0.05) { p.onGround = false; p.vy = -2 * MOTION.timeScale; }
   }
 
-  /** Spawn point far from enemies (with some randomness). Modes can choose instead (conquest's points, rush's sectors). */
+  /**
+   * Spawn point far from enemies and out of their sight (with some randomness). Modes can choose
+   * instead (conquest's points, rush's sectors).
+   */
   pickSpawn(s) {
     // Classes on: a spawn beacon the soldier picked ({ x, y, beacon }).
     const beacon = this.classesOn ? beaconSpawn(this, s) : null;
@@ -615,15 +625,20 @@ export class Game {
     const danger = this.crowded ? this.spawnDanger(points, s.team) : null;
     let best = points[0], bestScore = -Infinity;
     for (const [i, p] of points.entries()) {
-      let near = 1000;
+      let near = 1000, seen = 0;
       if (danger) near = danger[i];
       else {
         for (const o of this.soldiers) {
           if (o === s || !o.alive || (this.rules.teams && o.team === s.team)) continue;
-          near = Math.min(near, hypot(o.body.x - p.x, o.body.y - p.y));
+          const d = hypot(o.body.x - p.x, o.body.y - p.y);
+          near = Math.min(near, d);
+          // (An enemy who can see the place, near enough to shoot at it: nowhere to come back to
+          // while there's somewhere out of their sight. Counted once: one's enough.)
+          if (!seen && d < SPAWN_SEEN && this.map.clearLine(o.body.x, o.body.y - 10, p.x, p.y - 10)) seen = 1;
         }
       }
-      const score = near + this.rng() * 300;
+      // Far from enemies, out of their sight (that comes first), and not the same place every time.
+      const score = near - seen * SPAWN_SEEN_COST + this.rng() * 300;
       if (score > bestScore) { bestScore = score; best = p; }
     }
     return best;

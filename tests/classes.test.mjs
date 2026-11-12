@@ -162,19 +162,19 @@ test('upgrades: hollow points hit harder over a shorter range; quick hands fire 
   assert.ok(Math.abs(plain.cooldown - WEAPONS.M4.rof) < 1e-6);
 });
 
-test('upgrades: an extended mag holds 12 pistol rounds and reloads to 12', () => {
-  const game = arena();
+test('upgrades: an extended mag holds half as many pistol rounds again and reloads to as many', () => {
+  const game = arena(), big = Math.round(WEAPONS.Platinum.mag * 1.5);
   const s = put(game, 'A', { loadout: { main: 'M4', ups: { Platinum: 'extmag' } } });
   s.select('Platinum');
-  assert.equal(s.weapons.Platinum.mag, 12);
+  assert.equal(s.weapons.Platinum.mag, big);
   s.aim = -Math.PI / 2;
-  for (let i = 0; i < 12; i++) assert.ok(shoot(game, s), `shot ${i + 1}`);
+  for (let i = 0; i < big; i++) assert.ok(shoot(game, s), `shot ${i + 1}`);
   assert.equal(s.weapons.Platinum.mag, 0);
   assert.ok(s.reloadTimer > 0, 'reloading');
   run(game, Math.ceil(s.reloadTimer) + 2);
-  assert.equal(s.weapons.Platinum.mag, 12);
-  assert.equal(weaponFor(s, 'Platinum').mag, 12);
-  assert.equal(WEAPONS.Platinum.mag, 8, 'the weapon itself still holds 8');
+  assert.equal(s.weapons.Platinum.mag, big);
+  assert.equal(weaponFor(s, 'Platinum').mag, big);
+  assert.equal(WEAPONS.Platinum.mag, 12, 'the weapon itself still holds its own');
 });
 
 test('upgrades: a bigger charge blasts further; an extra round is one more grenade', () => {

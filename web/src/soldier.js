@@ -20,6 +20,9 @@ function startingWeapons() {
 
 export const SHOULDER_Y = -12;
 
+/** Updates before a weapon just taken out can fire (a fifth of a second). */
+export const DRAW_TICKS = 12;
+
 export class Soldier {
   constructor({ id, name, team = 0, isBot = false, profile = null, maxHealth = RULES.maxHealth, skin = 'auto' }) {
     this.id = id;
@@ -47,6 +50,8 @@ export class Soldier {
     this.weapons = startingWeapons();
     this.current = 'Platinum';
     this.cooldown = 0;
+    // (The waits of the weapons not in hand, each its own: { id: updates left }. See select.)
+    this.cooldowns = {};
     this.reloadTimer = 0;
     this.reloadTotal = 0;   // (how long the reload under way takes in all: its animation)
     this.spawnProtect = 0;
@@ -81,6 +86,7 @@ export class Soldier {
     this.pushedBy = undefined;
     this.pushedTick = undefined;
     // (What they're told of hits, theirs landing and others' on them: combat.js's damage, feedback.js.)
+    this.scoped = false; // (looking down a scope: game.js)
     this.hitTick = -1;
     this.hitHead = false;
     this.tickedAt = -99;
@@ -143,6 +149,7 @@ export class Soldier {
     this.weapons = startingWeapons();
     this.current = 'Platinum';
     this.cooldown = 0;
+    this.cooldowns = {};
     this.reloadTimer = 0;
     this.spin = 0;
     this.kamikaze = null;
@@ -170,9 +177,15 @@ export class Soldier {
     if (id === this.current || !this.has(id) || this.kamikaze) return false;
     // (Defuse: switching weapons stops a reload, as in Counter-Strike.)
     if (this.shop && this.reloadTimer > 0) { this.reloadTimer = 0; this.reloading = null; }
+    // (Each weapon has its own wait between shots: what's left of this one's stays with it, and
+    // the one taken out has what's left of its own, or the moment it takes to draw. A rocket and
+    // then the shotgun, so; but not the same slow gun sooner by putting it away and back.)
+    if (this.cooldown > 0) this.cooldowns[this.current] = this.cooldown;
+    const own = this.cooldowns[id] || 0;
+    if (own) delete this.cooldowns[id];
     this.current = id;
     this.lastInSlot[WEAPONS[id].slot] = id;
-    this.cooldown = Math.max(this.cooldown, 12);
+    this.cooldown = Math.max(own, DRAW_TICKS);
     this.spin = 0;
     if (this.body.rope && WEAPONS[id].kind !== 'rope') { this.body.rope = null; this.body.momentum = 45; }
     return true;

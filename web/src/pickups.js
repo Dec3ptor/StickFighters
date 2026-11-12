@@ -3,7 +3,7 @@
 // classes on, the map's weapons aren't there (everyone has a kit), and medkits
 // and ammo boxes dropped with gadgets (gadgets.js) lie around too.
 
-import { BODY, ITEM_RESPAWN, ITEM_SIZE, RULES, MOTION, CRATES } from './config.js';
+import { BODY, ITEM_SIZE, RULES, MOTION, CRATES, respawnTicks } from './config.js';
 import { WEAPONS, CRATE_WEIGHTS } from './weapons.js';
 import { weaponFor } from './classes.js';
 import { takeSupply } from './gadgets.js';
@@ -97,7 +97,8 @@ export class Pickups {
       if (it.y < top - size || it.y > s.body.y + BODY.bottom + size) continue;
       if (!give(game, s, it)) continue;
       if (it.dropped) it.life = 0;
-      else { it.active = false; it.timer = ITEM_RESPAWN[it.type] || 600; }
+      // (Gone for a while: how long, and of how long, for the ring drawn in its place.)
+      else { it.active = false; it.timer = it.total = respawnTicks(it); }
     }
   }
 }

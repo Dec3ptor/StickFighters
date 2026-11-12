@@ -6,7 +6,7 @@
 //   3 in a row  Supply Drop     a crate with a strong weapon parachutes in beside you
 //   5           Sentry Sheep    an armoured sheep with a gun on its back, for 20 seconds
 //   7           Sheep Stampede  a flock of exploding sheep runs at the nearest enemies
-//   10          Juggernaut      30 seconds of armour, a minigun and no knockback
+//   10          Juggernaut      20 seconds of armour, a minigun and no knockback
 //
 // Kills made by the sentry or the stampede count as frags, not toward the next reward.
 
@@ -27,7 +27,7 @@ export const REWARD_WEAPONS = new Set(['SentrySheep', 'Stampede']);
 
 // How long things last, in updates (60 a second, whatever the game speed).
 export const SENTRY_TICKS = 20 * 60;
-export const JUGGER_TICKS = 30 * 60;
+export const JUGGER_TICKS = 20 * 60;
 // Supply drops: only the caller (and their team) can open one for this long; then anyone can.
 export const SUPPLY_LOCK = 10 * 60;
 // Ending a streak this long (or longer) is a shutdown.
@@ -233,7 +233,7 @@ const USE = {
     game.fx?.ring(s.x, s.y - 10, '#ff9a1f');
     game.sound('juggernaut', s.x, s.y);
     game.shake(s.x, s.y, 8);
-    game.callout(s, 'Juggernaut', '30 seconds of armour, a minigun and no knockback', 'jugger');
+    game.callout(s, 'Juggernaut', `${Math.round(JUGGER_TICKS / 60)} seconds of armour, a minigun and no knockback`, 'jugger');
     game.callout(null, `${s.name} is a Juggernaut: run!`, '', 'jugger', s);
     return true;
   },

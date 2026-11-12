@@ -7,6 +7,9 @@ import { hypot } from './map.js';
 // Gliding (worlds' wings): how fast across (of the running speed), in a dive, and how fast down (of the fastest fall).
 const GLIDE_SPEED = 1.8, GLIDE_DIVE = 2.6, GLIDE_FALL = 0.13;
 
+/** Updates a jump press is remembered for (pressed just before landing), and the ground is after it's left (pressed just off an edge). */
+export const JUMP_BUFFER = 5, JUMP_COYOTE = 5;
+
 export function makeBody(x, y) {
   return {
     x, y, vx: 0, vy: 0,
@@ -17,6 +20,8 @@ export function makeBody(x, y) {
     momentum: 0,       // ticks of keeping speed in the air (after a rope swing, a big hit, a sprint-jump off ice)
     // Set during each step, for animation and sound:
     jetting: false, bounced: false, jumped: false, landed: 0,
+    // (A jump pressed a moment early or late still counts: stepBody.)
+    jumpBuf: 0, coyote: 0,
     // Worlds: standing on a one-way platform; dropping through one (updates left); on a ladder;
     // in water (its middle), and with the head under it.
     onPlatform: false, dropping: 0, climbing: false, swimming: false, under: false, leaping: false,
@@ -41,6 +46,12 @@ export function supportUnder(body, map) {
  */
 export function stepBody(body, input, map) {
   const wasGround = body.onGround;
+  // A jump pressed a moment early (just before landing) or late (just after running off an edge)
+  // still counts: the press is remembered for JUMP_BUFFER updates, and the ground for JUMP_COYOTE
+  // after it's left without jumping. (Pressed on the very update of landing or not at all, it used
+  // to be: easy to miss at 60 a second.)
+  if (input.jumpPressed) body.jumpBuf = JUMP_BUFFER; else if (body.jumpBuf > 0) body.jumpBuf--;
+  if (wasGround) body.coyote = JUMP_COYOTE; else if (body.coyote > 0) body.coyote--;
   body.jetting = false;
   body.bounced = false;
   body.jumped = false;
@@ -119,14 +130,21 @@ export function stepBody(body, input, map) {
     body.onPlatform = false;
     body.crouching = false;
     body.y += 1;
+    // (That press was to drop, not to jump: it isn't remembered for a jump off the air under the platform.)
+    body.jumpBuf = 0;
+    body.coyote = 0;
   }
   // Jumping (and out of the water from its top, the head out: onto the bank. Held, swimming up,
   // it leaps out as soon as the head's out).
-  else if (!body.crouching && !body.climbing && ((input.jumpPressed && wasGround) || (wet && !body.under && !wasGround && (input.jumpPressed || (input.jump && body.vy < 0))))) {
-    body.vy = -PHYS.jumpSpeed * (wasGround ? 1 : SWIM_LEAP);
+  else if (!body.crouching && !body.climbing && ((body.jumpBuf > 0 && (wasGround || (body.coyote > 0 && !wet && body.vy >= 0))) || (wet && !body.under && !wasGround && (input.jumpPressed || (input.jump && body.vy < 0))))) {
+    // (From the ground, or just off its edge: a full jump. Out of the water: a leap.)
+    const ground = wasGround || (body.coyote > 0 && !wet);
+    body.vy = -PHYS.jumpSpeed * (ground ? 1 : SWIM_LEAP);
     body.onGround = false;
     body.jumped = true;
-    body.leaping = wet && !wasGround;
+    body.jumpBuf = 0;
+    body.coyote = 0;
+    body.leaping = wet && !ground;
     // (A sprint-jump off ice keeps its speed through the air.)
     if (ice && body.sprinting) body.momentum = Math.max(body.momentum, ICE_AIR);
   }

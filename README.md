@@ -220,7 +220,7 @@ Kills in a row, without dying, earn rewards. They're banked (dying doesn't lose 
 | 3 | **Supply Drop** | A crate parachutes in beside you with a strong weapon (a minigun, bazooka, homing missile, Holy Hand Grenade, air strike...) and plenty of ammo. For 10 seconds only you (and your team) can open it; then anyone can. |
 | 5 | **Sentry Sheep** | An armoured sheep with a gun on its back. It shoots enemies who come near it (in sight, within about 470 px) for 20 seconds: good for holding a hill, a flag or a capture point. It can be wrecked: bullets, melee and above all explosions. |
 | 7 | **Sheep Stampede** | A flock of eight sheep pours out toward the nearest enemies, a few after each, and they blow up on whoever they run into. |
-| 10 | **Juggernaut** | 30 seconds of armour (you take 30% of any damage), a minigun that never runs out and can't be put away, and no knockback, with a glowing outline so everyone knows to run. |
+| 10 | **Juggernaut** | 20 seconds of armour (you take 45% of any damage: it was 30 seconds at 30%, enough for one streak to decide a match), a minigun that never runs out and can't be put away, and no knockback, with a glowing outline so everyone knows to run. |
 
 Rewards are on in free-for-all, team deathmatch and the objective modes (king of the hill, capture the flag, Conquest and Rush), and off in gun game, one in the chamber and Defuse, where they'd break the mode; the setup's **Kill streaks** option turns them off anywhere. Kills made by the sentry and the stampede count as frags but not toward the next reward (nor does a grenade landing after you died). **Bots use them too**: the Juggernaut and supply drops straight away, the sentry in a fight or by an objective, the stampede with enemies not far off along the ground.
 
@@ -236,7 +236,7 @@ Number keys pick a slot; press the same key again to cycle through what you own 
 
 | Key | Weapons |
 |---|---|
-| `1` Pistols | Platinum (infinite, reloads), Beretta (infinite, a bigger magazine), Magnum |
+| `1` Pistols | Platinum (infinite, reloads: what you start with), Beretta (infinite, a bigger magazine, far more accurate), Magnum |
 | `2` Automatics | Uzi, MP5K, Minigun (spins up first, slows you down while firing) |
 | `3` Rifles | M4 Carbine, AK-47 (harder hitting, less accurate), Longbow (arrows drop with distance and stick in walls) |
 | `4` Shotguns | Shotgun |
@@ -254,6 +254,12 @@ A few things that make fights fair:
 - **Spawn protection is whole.** For the moment after you spawn nothing hurts you, and a blast doesn't throw you either (so you can't be shoved off the map before you can move). It ends when you fire.
 - **Who threw whom.** A blast that throws a team-mate off the map is the thrower's to answer for: they lose the frag, not the one who fell, and the kill feed says who did it. (Thrown off by an enemy, it's their frag, as ever.)
 - **The last sheep** stays in your hand till it's gone off, so the second click still sets it off; then you switch to something else.
+- **You come back out of sight.** A spawn point an enemy can see (within shooting distance, with a clear line to it) isn't used while there's one they can't; among those, the further from them the better, with some chance in it. (It used to go by distance alone: on the small maps about half of all respawns were in plain view of someone.)
+- **The starting pistol** does 22 a shot from a 12-round magazine: seven body shots to a kill in 2.7 seconds, with rounds to spare for a miss (it was all eight of its eight, in 3.15 seconds). It's still the slowest way to kill: every gun you pick up is quicker.
+- **The sniper rifle's scope is for looking down.** Right click held and feet on the ground, the shot goes exactly where it's aimed, as ever, one shot to the head. Fired from the hip it strays a little (up to 1.5° either way, half that crouched), and fired in the air a lot more (3.5°), scope or no scope: no more perfect shots mid-jump.
+- **The strongest weapons take longer to come back**: the Sniper Rifle, Bazooka, Minigun, Mortar, Holy Hand Grenade and Air Strike (and the other heavy ones, wherever a map has them) half a minute after they're taken, rather than ten seconds like other guns. Anything taken from the map shows faintly where it'll be again, with a ring that fills as it comes back, and for the ones worth waiting for (those weapons, armour, a jetpack) the seconds left.
+- **Each weapon has its own wait between shots.** Putting one away keeps what's left of its wait with it, and the one you take out is ready after the moment it takes to draw (a fifth of a second), so a rocket can be followed by the shotgun. The same slow gun isn't ready any sooner for having been put away and taken out again. (It used to be one wait for everything: after a rocket, nothing fired for over three seconds.)
+- **Jumps forgive a little.** A jump pressed up to five updates (a twelfth of a second) before you land happens as you land, and one pressed that soon after running off an edge still jumps. Never twice.
 - **Cluster bomblets scatter first.** A Mortar shell's or Cluster Bomb's bomblets fly a moment before they'll go off on someone, rather than all bursting at once on whoever the shell hit: a direct Mortar hit does about 137 (it was 230 to 290, more than a Bazooka rocket at twice the rate of fire).
 
 Air strikes, napalm, the donkey and teleports go where your mouse is. Weapons are defined as data in [`web/src/weapons.js`](web/src/weapons.js), with their behaviour in [`web/src/combat.js`](web/src/combat.js).
