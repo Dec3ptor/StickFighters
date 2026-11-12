@@ -48,6 +48,9 @@ export class RemoteController {
 
 const round = v => (typeof v === 'number' ? Math.round(v * 10) / 10 : Array.isArray(v) ? v.map(round) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round(x)])) : v);
 
+/** Updates of nothing at all from a player (no key, no mouse) before they're sat out: a minute. */
+export const IDLE_TICKS = 60 * 60;
+
 export class NetHost {
   /**
    * opts: {
@@ -60,6 +63,8 @@ export class NetHost {
   constructor(opts) {
     this.opts = opts;
     this.players = new Set();
+    // (Those sent away by the host, by who they are to the game servers: not let back in.)
+    this.sentAway = new Set();
     this.game = null;
     this.chatLog = [];
     this.matchNo = 0; // (each match is numbered, in its welcome and snapshots: see setGame)
@@ -69,6 +74,12 @@ export class NetHost {
   resetEvents() { this.events = { s: [], fx: [], ft: [], k: [], n: [], sh: [], c: [] }; }
 
   get humans() { return 1 + this.players.size; }
+
+  /** How many players are playing now (not sitting out). */
+  get playing() {
+    const g = this.game;
+    return g ? g.soldiers.filter(s => !s.isBot && !s.npc && !s.spectating).length : this.humans;
+  }
 
   /** Host this match. Players already connected get a soldier in it. */
   setGame(game) {
@@ -92,8 +103,9 @@ export class NetHost {
   }
 
   /** A player has connected: give them a soldier and everything they need to join. */
-  addPlayer(link, name) {
-    const p = { link, name: cleanName(name), ctl: new RemoteController(), ready: false, joined: Date.now() };
+  addPlayer(link, name, key = null) {
+    // (key: who they are to the game servers, the same each time they join: for sending someone away for good.)
+    const p = { link, name: cleanName(name), key, ctl: new RemoteController(), ready: false, joined: Date.now() };
     this.players.add(p);
     link.onmessage = (data, reliable) => this.receive(p, data, reliable);
     link.onclose = () => this.removePlayer(p, 'left');
@@ -113,11 +125,13 @@ export class NetHost {
     let team = 0;
     if (g.rules.teams) {
       // (The side with fewer players; the same, the one with fewer in all. The side they chose
-      // last match, if they changed: carried on, while it doesn't put two more on it than the other.)
+      // last match, if they changed: carried on, while it doesn't put two more on it than the other.
+      // Or the side this match gives them: shuffled, or Rush's sides swapped: planSides.)
       const n = t => g.soldiers.filter(s => s.team === t && !s.isBot && !s.spectating).length;
       const all = t => g.soldiers.filter(s => s.team === t && !s.spectating).length;
       team = n(1) !== n(2) ? (n(1) < n(2) ? 1 : 2) : all(1) <= all(2) ? 1 : 2;
       if (p.team && n(p.team) - n(3 - p.team) < 1) team = p.team;
+      if (p.nextTeam) { team = p.team = p.nextTeam; p.nextTeam = 0; }
     }
     let name = p.name, k = 2;
     while (g.soldiers.some(s => s.name.toLowerCase() === name.toLowerCase())) name = `${p.name.slice(0, 12)}${k++}`;
@@ -135,8 +149,10 @@ export class NetHost {
       const others = g.soldiers.filter(o => o !== s && o.lives > 0).map(o => o.lives);
       if (others.length) s.lives = Math.max(1, Math.min(s.lives, ...others));
     }
-    // Spectating carries on into the next match.
-    if (p.spectating) g.spectate(s, true, { quiet: true });
+    // Spectating carries on into the next match (and so does being away: sat out till they're back).
+    if (p.spectating || p.afk) g.spectate(s, true, { quiet: true });
+    // (Still away: nothing from them yet, as far as this match knows.)
+    if (p.afk && !p.spectating) { s.afk = true; s.activeTick = -1e9; }
     return s;
   }
 
@@ -158,7 +174,8 @@ export class NetHost {
   balanceBots() {
     const g = this.game;
     if (!g) return;
-    const want = Math.max(0, Math.min(this.opts.botCount, this.opts.maxPlayers - this.humans));
+    // (Room for the players playing: someone sitting out, by choice or for being away, leaves theirs to a bot.)
+    const want = Math.max(0, Math.min(this.opts.botCount, this.opts.maxPlayers - this.playing));
     // (Bots only: not a world's monsters or mercenaries.)
     let bots = g.soldiers.filter(s => s.isBot && !s.npc);
     while (bots.length > want) {
@@ -212,10 +229,62 @@ export class NetHost {
   kick(id) {
     const p = [...this.players].find(q => q.soldier?.id === id);
     if (!p) return false;
+    // (And not let back in, while this game's hosted.)
+    if (p.key) this.sentAway.add(p.key);
     p.link.send({ t: 'chat', system: true, text: 'The host sent you away' }, true);
     this.removePlayer(p, 'was sent away by the host');
     try { p.link.close?.(); } catch { /* already gone */ }
     return true;
+  }
+
+  /**
+   * The sides for the next match (called before it's made): 'shuffle', everyone on a side at
+   * random, as even as can be; 'swap', everyone on the other side from now (Rush: attackers and
+   * defenders change over). `hostTeam`: the host's side now. Returns the host's side for it.
+   */
+  planSides(how, hostTeam, rng = Math.random) {
+    const ps = [...this.players];
+    if (how === 'swap') {
+      for (const p of ps) p.nextTeam = 3 - (p.soldier?.team || p.team || 1);
+      return 3 - (hostTeam === 2 ? 2 : 1);
+    }
+    if (how !== 'shuffle') return hostTeam;
+    // (Everyone, the host among them, in a new order; then turn about, from a side at random.)
+    const all = [null, ...ps];
+    for (let i = all.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; }
+    const first = rng() < 0.5 ? 1 : 2;
+    let mine = hostTeam;
+    all.forEach((p, i) => { const t = i % 2 ? 3 - first : first; if (p) p.nextTeam = t; else mine = t; });
+    return mine;
+  }
+
+  /**
+   * Players who've done nothing at all for a long while (no key, no mouse) are sat out, so their
+   * side isn't a soldier short: a bot takes their place while there's room, and the sides are
+   * evened up. The moment they do anything, they're back in. (Called every half second.)
+   */
+  benchIdle() {
+    const g = this.game, limit = this.opts.idleTicks ?? IDLE_TICKS;
+    if (!g || g.over || g.world || !(limit > 0)) return;
+    let changed = false;
+    for (const s of g.soldiers) {
+      if (s.isBot || s.npc) continue;
+      const idle = g.tick - s.activeTick, p = [...this.players].find(q => q.soldier === s);
+      if (!s.spectating && !s.afk && idle > limit) {
+        s.afk = true;
+        if (p) p.afk = true;
+        g.spectate(s, true, { quiet: true });
+        this.system(`${s.name} is away, and sits out till they're back`);
+        changed = true;
+      } else if (s.afk && (idle < 90 || !s.spectating)) {
+        // (Back: anything at all from them. Or they've joined again themselves.)
+        s.afk = false;
+        if (p) p.afk = false;
+        if (s.spectating && !(p && p.spectating)) { g.spectate(s, false, { quiet: true }); this.system(`${s.name} is back`); }
+        changed = true;
+      }
+    }
+    if (changed) this.balanceBots();
   }
 
   /** Someone started or stopped spectating (called by the game): everyone's list of players changes. */
@@ -365,6 +434,7 @@ export class NetHost {
     if (!g) return;
     this.opts.world?.tick();
     this.sharePings();
+    if (g.tick % 30 === 11) this.benchIdle();
     // (Soldiers come and go besides players: a world's monsters, mercenaries and townsfolk.
     // Everyone's told. An id can be given to someone new: their name and look count too.)
     if (g.tick % 15 === 0 && this.players.size) {

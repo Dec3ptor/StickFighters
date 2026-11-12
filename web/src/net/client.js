@@ -173,7 +173,7 @@ export class NetClient {
     // and aiming zoom, for everyone here.
     useHostTuning(m.tuning || null);
     this.opts.onFeel?.(m.feel || null);
-    const game = new Game({ mapData, world, mode: m.mode, fragLimit: m.fragLimit, options: m.options, speed: m.speed, effects: true, seed: 1 });
+    const game = new Game({ mapData, world, mode: m.mode, fragLimit: m.fragLimit, timeLimit: m.timeLimit || 0, options: m.options, speed: m.speed, effects: true, seed: 1 });
     game.online = true;
     if (world) game.mirror = true;
     this.game = game;
@@ -229,7 +229,8 @@ export class NetClient {
     if (!g || !me || this.ended) return;
     // (What's been taken from the map, coming back: counted here.)
     if (this.fixed) for (let i = 0; i < this.fixed.length; i++) { const it = this.fixed[i]; if (!it.active && it.timer > 0) it.timer--; }
-    const inp = this.inputEnabled ? this.opts.controller.input(g, me) : { move: 0, aim: me.aim, aimDist: me.aimDist };
+    // (A menu open, or typing: nothing held, but still there if they're doing anything.)
+    const inp = this.inputEnabled ? this.opts.controller.input(g, me) : { move: 0, aim: me.aim, aimDist: me.aimDist, act: !!this.opts.controller.active?.() };
     inp.seq = ++this.seq;
     this.pending.push(inp);
     if (this.pending.length > 180) this.pending.shift();

@@ -123,8 +123,8 @@
             </label>
             <p id="modeBlurb" class="muted-note"></p>
             <div class="field-pair">
-              <label class="field" id="fragField">Frag limit
-                <select id="fragLimit"><option>10</option><option selected>20</option><option>30</option><option>50</option></select>
+              <label class="field" id="fragField" title="Auto: 20 in a free-for-all; in a team game 10 for each player on a side (at least 20), so a bigger game isn't over in a minute.">Frag limit
+                <select id="fragLimit"><option value="0" selected>Auto</option><option>10</option><option>20</option><option>30</option><option>50</option><option>100</option></select>
               </label>
               <label class="field hidden" id="goalField"><span id="goalLabel">Points to win</span>
                 <select id="goal"></select>
@@ -190,8 +190,19 @@
                 <option value="1">100% (full speed)</option>
               </select>
             </label>
+            <label class="field" id="timeField" title="When the time's up, whoever's ahead wins. If it's level, the match goes on until someone scores (sudden death).">Time limit
+              <select id="timeLimit"><option value="0">None</option><option value="5">5 minutes</option><option value="10" selected>10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option><option value="30">30 minutes</option></select>
+            </label>
             <div id="hostFields" class="hidden">
               <label class="field">Game name <input id="gameName" maxlength="40" autocomplete="off" spellcheck="false"></label>
+              <div class="field-pair">
+                <label class="field" title="What the next match is played on: the same map again, or the next of the maps that suit the mode. You can also choose the next map and mode yourself on the results screen, without ending the game.">After each match
+                  <select id="rotate"><option value="same" selected>Same map</option><option value="rotate">Next map</option></select>
+                </label>
+                <label class="field" title="In team games. (Rush always swaps attackers and defenders unless teams are shuffled.)">Teams each match
+                  <select id="shuffle"><option value="keep" selected>Stay the same</option><option value="shuffle">Shuffled</option></select>
+                </label>
+              </div>
               <div class="field-pair">
                 <label class="field">Max players
                   <select id="maxPlayers"><option>2</option><option>4</option><option>6</option><option selected>8</option><option>10</option><option>12</option><option>16</option><option>24</option><option>32</option></select>
@@ -257,6 +268,7 @@
       <button id="changeClass" class="hidden">Change class</button>
       <button id="spectate">Spectate</button>
       <button id="switchTeam" class="hidden">Change sides</button>
+      <div id="kickList" class="kick-list hidden"></div>
       <button id="restart">Restart match</button>
       <button id="toEditor" class="hidden">Back to map maker</button>
       <button id="quit">Quit to menu</button>
@@ -521,6 +533,7 @@
     <div class="buttons">
       <span id="overNote" class="over-note hidden"></span>
       <button id="again" class="primary">Play again</button>
+      <button id="chooseNext" class="hidden">Change map or mode</button>
       <button id="toMenu">Menu</button>
     </div>
   </section>

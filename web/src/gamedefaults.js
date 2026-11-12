@@ -18,15 +18,16 @@ export const DEFAULT_GROUPS = [
       ['volume', 'Volume', 'Audio'], ['muted', 'Sound muted', 'Audio'],
       ['sprint', 'Sprint', 'Controls'], ['aimZoom', 'Aiming down the sights', 'Controls'], ['keys', 'Keys', 'Controls'],
       ['pointer', 'Mouse pointer', 'Mouse & crosshair'], ['crosshair', 'Crosshair', 'Mouse & crosshair'],
-      ['camera', 'Camera', 'Camera'], ['skin', 'Skin', 'Character'], ['showPing', 'Ping shown', 'Gameplay'],
+      ['camera', 'Camera', 'Camera'], ['skin', 'Skin', 'Character'], ['showPing', 'Ping shown', 'Gameplay'], ['teamColors', 'Team colours', 'Gameplay'],
     ],
   },
   {
     id: 'setup', name: 'Game setup', fields: [
-      ['mode', 'Mode'], ['map', 'Map'], ['bots', 'Bots'], ['difficulty', 'Bot difficulty'], ['fragLimit', 'Frag limit'],
+      ['mode', 'Mode'], ['map', 'Map'], ['bots', 'Bots'], ['difficulty', 'Bot difficulty'], ['fragLimit', 'Frag limit'], ['timeLimit', 'Time limit (minutes)'],
       ['goals', 'Objective modes\' goals'], ['side', 'Your team'], ['lives', 'Lives (one in the chamber)'], ['gunKills', 'Kills per gun (gun game)'],
       ['crates', 'Supply crates'], ['destruction', 'Destruction'], ['streaks', 'Kill streaks'],
       ['botVision', 'Bot vision'], ['fog', 'Fog of war'], ['maxPlayers', 'Most players (hosting)'], ['visibility', 'Who can join (hosting)'],
+      ['rotate', 'After each match (hosting)'], ['shuffle', 'Teams each match (hosting)'],
     ],
   },
 ];

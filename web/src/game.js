@@ -54,7 +54,7 @@ export class Game {
    *   fireDelay: the time between shots, times this (every weapon),
    *   streaks: false turns kill streak rewards off (where the mode has them: streaks.js) }
    */
-  constructor({ mapData, world = null, mode = 'ffa', fragLimit = 20, seed = 1, effects = true, speed = 1, options = {} }) {
+  constructor({ mapData, world = null, mode = 'ffa', fragLimit = 20, timeLimit = 0, seed = 1, effects = true, speed = 1, options = {} }) {
     // Speed rescales shared constants, so set it before anything reads them.
     setGameSpeed(speed);
     // A world (world mode: world/tileworld.js) is the map, made of blocks, as big as anyone goes.
@@ -70,6 +70,12 @@ export class Game {
     // Noises bots can hear (with bot vision 'sight'): { x, y, r (how far it carries), by, tick }.
     this.noises = [];
     this.fragLimit = fragLimit;
+    // The match's time limit, in updates (0: none; a world has none; nor a mode with rounds of its
+    // own: Defuse). When it's up the one ahead wins; level, it's sudden death: clock().
+    this.timeLimit = world || this.rules.noClock ? 0 : Math.max(0, Math.round((+timeLimit || 0) * TICK_RATE));
+    this.suddenDeath = false;
+    // (Who's been told they're a score from winning: nearWin.)
+    this.matchPoints = new Set();
     this.tickRate = TICK_RATE;
     this.speed = speed;
     this.rng = makeRng(seed);
@@ -182,6 +188,7 @@ export class Game {
     if (this.classesOn) setupClass(this, s);
     this.soldiers.push(s);
     this.ids?.add(s.id);
+    s.activeTick = this.tick;
     this.controllers.set(s, controller);
     return s;
   }
@@ -422,8 +429,16 @@ export class Game {
     if (this.over) { this.fx?.update(this.map, MOTION.timeScale); return; }
     this.tick++;
     for (const s of this.soldiers) {
-      const ctl = this.controllers.get(s);
-      this.updateSoldier(s, ctl ? ctl.input(this, s) : IDLE);
+      const ctl = this.controllers.get(s), input = ctl ? ctl.input(this, s) : IDLE;
+      // (A player doing anything at all: their own machine says so, input.act, a key or the mouse
+      // just now; or what they hold changes. Not where they aim: that moves with the camera when
+      // they're shot. Someone who isn't, for a long while, is sat out when the game's hosted: net/host.js.)
+      if (!s.isBot) {
+        const sig = (input.move || 0) * 3 + (input.jump ? 7 : 0) + (input.fire ? 11 : 0) + (input.crouch ? 13 : 0) + (input.alt ? 17 : 0) + (input.sprint ? 23 : 0);
+        if (input.act || (s.inputSig !== null && sig !== s.inputSig)) s.activeTick = this.tick;
+        s.inputSig = sig;
+      }
+      this.updateSoldier(s, input);
     }
     updateProjectiles(this);
     if (this.navDirty && this.tick >= this.navPatchAt) this.patchNav();
@@ -432,6 +447,7 @@ export class Game {
     if (this.classesOn) updateGadgets(this);
     if (this.streaksOn) updateStreaks(this);
     if (!this.over) this.rules.tick?.(this);
+    if (!this.over && this.timeLimit) this.clock();
     if (this.quake) this.updateQuake();
     this.fx?.update(this.map, MOTION.timeScale);
     if (this.feed.length > 6) this.feed.splice(0, this.feed.length - 6);
@@ -864,15 +880,87 @@ export class Game {
   checkWin() {
     if (this.over) return;
     const w = this.rules.winner(this);
-    if (w) {
-      this.over = true;
-      this.winner = w;
-      this.sound('gameover', null, null);
-      // The kill that won it, if one did (the mode can say: Defuse's last round was won a few
-      // seconds before the match ends), for its replay; and the awards.
-      const k = this.lastKill;
-      this.finalKill = this.rules.finalKill ? this.rules.finalKill(this) : k && k.tick === this.tick ? { ...k } : null;
-      this.awards = matchAwards(this);
+    if (w) this.endMatch(w);
+    else this.nearWin();
+  }
+
+  /** The match is over: `w` ({ team } or { soldier }) has won it. */
+  endMatch(w) {
+    if (this.over) return;
+    this.over = true;
+    this.winner = w;
+    this.sound('gameover', null, null);
+    // The kill that won it, if one did (the mode can say: Defuse's last round was won a few
+    // seconds before the match ends), for its replay; and the awards.
+    const k = this.lastKill;
+    this.finalKill = this.rules.finalKill ? this.rules.finalKill(this) : k && k.tick === this.tick ? { ...k } : null;
+    this.awards = matchAwards(this);
+  }
+
+  /** Updates left of the match's time limit (0 when it's up; null with no limit). */
+  timeLeft() {
+    return this.timeLimit ? Math.max(0, this.timeLimit - this.tick) : null;
+  }
+
+  /**
+   * Who's ahead right now ({ team } or { soldier }), or null if it's level: who wins when the
+   * time's up. (The mode can say its own way: Rush's defenders win by holding out.)
+   */
+  leader() {
+    if (this.rules.timeUp) return this.rules.timeUp(this);
+    if (this.rules.teams) {
+      const a = this.teamScore[1], b = this.teamScore[2];
+      return a === b ? null : { team: a > b ? 1 : 2 };
+    }
+    const list = this.standings().filter(s => !s.spectating && !s.npc);
+    if (!list.length) return null;
+    if (list.length === 1) return { soldier: list[0] };
+    return this.rules.compare(list[0], list[1]) === 0 || this.rules.score(list[0]) === this.rules.score(list[1]) ? null : { soldier: list[0] };
+  }
+
+  /**
+   * The time limit, each update: a word as it runs out (a minute left, ten seconds); when it's up,
+   * whoever's ahead wins; level, the match goes on till someone is (sudden death: the next score
+   * wins).
+   */
+  clock() {
+    const left = this.timeLimit - this.tick;
+    if (left === 60 * TICK_RATE && this.timeLimit > 90 * TICK_RATE) this.callout(null, 'One minute left', '', 'use');
+    else if (left === 10 * TICK_RATE) { this.callout(null, 'Ten seconds left', '', 'use'); this.sound('alarm', null, null); }
+    if (left > 0) return;
+    const w = this.leader();
+    if (w) { this.endMatch(w); return; }
+    if (!this.suddenDeath) {
+      this.suddenDeath = true;
+      this.callout(null, 'Sudden death', 'Time\'s up and it\'s level: the next score wins', 'first');
+      this.sound('alarm', null, null);
+    }
+  }
+
+  /**
+   * Someone a score from winning (a frag, a capture: modes that count up by ones): everyone's
+   * told, once for each who gets there.
+   */
+  nearWin() {
+    const step = this.rules.winStep ?? (this.rules.limit === 'frags' ? 1 : 0);
+    // (What wins it: the frag limit, or the mode's goal as set, or its usual.)
+    const limit = this.fragLimit > 0 ? this.fragLimit : this.rules.goal?.value || 0;
+    if (!step || limit < (this.rules.winStep ? 2 : 5)) return;
+    const at = limit - step;
+    if (this.rules.teams) {
+      for (const t of [1, 2]) {
+        if (this.teamScore[t] < at || this.matchPoints.has(`t${t}`)) continue;
+        this.matchPoints.add(`t${t}`);
+        this.callout(null, 'Match point', `${t === 1 ? 'Blue' : 'Red'} needs one more to win`, 'first');
+        this.sound('alarm', null, null);
+      }
+    } else {
+      for (const s of this.soldiers) {
+        if (s.frags < at || s.npc || this.matchPoints.has(`s${s.id}`)) continue;
+        this.matchPoints.add(`s${s.id}`);
+        this.callout(null, 'Match point', `${s.name} needs one more to win`, 'first');
+        this.sound('alarm', null, null);
+      }
     }
   }
 

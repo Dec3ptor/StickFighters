@@ -14,7 +14,7 @@ import { ITEMS } from '../world/items.js';
 import { RARITIES } from '../world/gear.js';
 import { ACTS, ACT_ID } from '../useanim.js';
 
-export const PROTOCOL = 29;           // bump when the messages change; older versions can't join
+export const PROTOCOL = 30;           // bump when the messages change; older versions can't join
 export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -126,7 +126,8 @@ export const messageType = data => (data instanceof Uint8Array ? data : new Uint
 
 /**
  * A player's inputs: the newest last. Each is { seq, move, jump, jumpPressed, crouch, jet, fire, firePressed, alt,
- * selfDestruct, sprint, gadget, plank, use, drop, reload, aim, aimDist, switchTo, cycle, streak (a kill streak reward to use) }.
+ * selfDestruct, sprint, gadget, plank, use, drop, reload, act (the player did something just now: a key, the mouse),
+ * aim, aimDist, switchTo, cycle, streak (a kill streak reward to use) }.
  */
 export function encodeInputs(inputs) {
   const w = new Writer(16 + inputs.length * 14);
@@ -136,7 +137,7 @@ export function encodeInputs(inputs) {
   for (const i of inputs) {
     w.i8(Math.round((i.move || 0) * 100));
     w.u8((i.jump ? 1 : 0) | (i.jumpPressed ? 2 : 0) | (i.crouch ? 4 : 0) | (i.jet ? 8 : 0) | (i.fire ? 16 : 0) | (i.firePressed ? 32 : 0) | (i.alt ? 64 : 0) | (i.selfDestruct ? 128 : 0));
-    w.u8((i.sprint ? 1 : 0) | (i.gadget ? 2 : 0) | (i.plank ? 4 : 0) | (i.use ? 8 : 0) | (i.drop ? 16 : 0) | (i.reload ? 32 : 0));
+    w.u8((i.sprint ? 1 : 0) | (i.gadget ? 2 : 0) | (i.plank ? 4 : 0) | (i.use ? 8 : 0) | (i.drop ? 16 : 0) | (i.reload ? 32 : 0) | (i.act ? 64 : 0));
     w.u16(angleToU16(i.aim ?? 0));
     w.u16(clampU16(i.aimDist ?? 200));
     w.u8(switchCode(i.switchTo));
@@ -163,7 +164,7 @@ export function decodeInputs(data) {
     out.push({
       seq: last - (n - 1 - k), move, jump: !!(f & 1), jumpPressed: !!(f & 2), crouch: !!(f & 4), jet: !!(f & 8),
       fire: !!(f & 16), firePressed: !!(f & 32), alt: !!(f & 64), selfDestruct: !!(f & 128), sprint: !!(f2 & 1), gadget: !!(f2 & 2), plank: !!(f2 & 4),
-      use: !!(f2 & 8), drop: !!(f2 & 16), reload: !!(f2 & 32), aim, aimDist,
+      use: !!(f2 & 8), drop: !!(f2 & 16), reload: !!(f2 & 32), act: !!(f2 & 64), aim, aimDist,
       switchTo: switchFrom(sw), cycle: cycle || 0, streak,
     });
   }

@@ -87,6 +87,11 @@ export class Soldier {
     this.pushedTick = undefined;
     // (What they're told of hits, theirs landing and others' on them: combat.js's damage, feedback.js.)
     this.scoped = false; // (looking down a scope: game.js)
+    // (A player's last sign of life: what their input was, and when it last changed; and sat out
+    // for having given none: game.js's update, net/host.js.)
+    this.inputSig = null;
+    this.activeTick = 0;
+    this.afk = false;
     this.hitTick = -1;
     this.hitHead = false;
     this.tickedAt = -99;

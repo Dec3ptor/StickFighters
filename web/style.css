@@ -917,3 +917,11 @@ html[data-game="remastered"] .dev-row { border-bottom-color: rgba(255, 255, 255,
 html[data-game="remastered"] .dev-row.changed b, html[data-game="remastered"] .dev-sub.changed > span { color: #ffb648; }
 html[data-game="remastered"] .dev-row input[type="number"], html[data-game="remastered"] .dev-io textarea, html[data-game="remastered"] input.dev-find { border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.06); color: var(--ink); }
 @media (max-width: 760px) { html[data-game="remastered"] .set-tabs { border-right: none; border-bottom: 1px solid var(--line); } }
+
+/* Hosting, choosing the next match from the results screen: only the setup, no tabs to wander off to. */
+body.choosing-next .tabs { display: none; }
+/* The menu's list of players in your game, each with a button to send them away. */
+.kick-list { margin: 6px 0; text-align: left; }
+.kick-list .muted-note { margin: 2px 0 4px; }
+.kick-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 0; }
+.kick-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

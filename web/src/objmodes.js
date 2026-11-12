@@ -182,6 +182,7 @@ export function objectiveModes(base) {
     name: 'Capture the flag',
     blurb: "Take the other team's flag from their base and bring it to yours. You can only score while your own flag is at home. Kill a carrier to make them drop it; touch your dropped flag to send it home.",
     goal: { label: 'Captures to win', options: [1, 3, 5, 10], value: 3 },
+    winStep: 1,   // (captures count up by ones: a side one from winning is called, game.js's nearWin)
 
     begin(game) {
       game.modeState = { flags: objectivesOf(game.map, 'flag').map(f => ({ team: f.team, x: f.x, y: f.y, home: true, carrier: -1, timer: 0, vy: 0 })) };
@@ -457,6 +458,8 @@ export function objectiveModes(base) {
     classesDefault: true,
     blurb: 'Blue attacks, red defends. Blue arms the M-COM stations by standing at them; red disarms them the same way. Destroy every M-COM in a sector to push on to the next. Blue loses a ticket for every death and gets more with each sector taken.',
     goal: { label: 'Attacker tickets', options: [0, 50, 75, 100, 150, 250], value: 0, auto: [60, 14] },
+    // (The time limit up: the defenders have held out.)
+    timeUp() { return { team: 2 }; },
 
     begin(game) {
       const mcoms = objectivesOf(game.map, 'mcom');

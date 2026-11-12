@@ -48,6 +48,10 @@ export class Input {
     this.scoping = false; // (down a world's scope: main.js says so, and the wheel zooms it instead)
     this.scopeZoom = 0;   // (the wheel's notches down a scope: in, -, or out, +; main.js takes them)
     this.enabled = false;
+    // (When the player last did anything at all: a key, a button, the wheel, the mouse moved. A
+    // menu open or not. Someone who hasn't for a long while is sat out of a hosted game: net/host.js.)
+    this.activeAt = performance.now();
+    this.lastX = this.lastY = null;
     // The mouse locked to the game (the browser's pointer lock): its cursor is hidden and
     // only the game gets the mouse, which moves the crosshair by how far the mouse moves.
     this.locked = false;
@@ -59,6 +63,7 @@ export class Input {
     this.onFirefoxMenu = null;    // main.js: Firefox opened its own menu on Shift + right click (FIREFOX)
 
     window.addEventListener('keydown', e => {
+      this.activeAt = performance.now();
       if (!this.enabled) return;
       const key = keyOf(e.code);
       if (GAME_KEYS.has(e.code) || MODIFIERS.has(e.code) || /^Digit\d$/.test(e.code) || boundKeys().has(key)) e.preventDefault();
@@ -74,6 +79,9 @@ export class Input {
     window.addEventListener('blur', () => this.letGo());
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.letGo(); });
     window.addEventListener('mousemove', e => {
+      // (Really moved: browsers also say so when the page changes under a still mouse.)
+      if (this.locked ? e.movementX || e.movementY : e.screenX !== this.lastX || e.screenY !== this.lastY) this.activeAt = performance.now();
+      this.lastX = e.screenX; this.lastY = e.screenY;
       if (this.locked) {
         // (Just after locking, browsers can report the cursor being moved into the middle.)
         if (performance.now() - this.lockedAt < 100) return;
@@ -114,6 +122,7 @@ export class Input {
       mousedown: e => {
         // (No text selection, Shift + click included, and no middle-click scrolling.)
         e.preventDefault();
+        this.activeAt = performance.now();
         this.onPress?.();
         if (e.button === 0) this.mouse.left = this.mouse.clicked = true;
         if (e.button === 2) this.mouse.right = this.mouse.rightClicked = true;
@@ -133,6 +142,7 @@ export class Input {
       contextmenu: e => e.preventDefault(),
       wheel: e => {
         e.preventDefault();
+        this.activeAt = performance.now();
         this.wheel += Math.sign(e.deltaY);
         if (this.enabled && e.deltaY) this.pressed(e.deltaY > 0 ? 'WheelDown' : 'WheelUp');
       },
@@ -255,6 +265,11 @@ export class PlayerController {
     this.rewardPick = null; // the banked kill streak reward the streak key uses (the pick key picks another)
   }
 
+  /** Whether the player's done anything at all in the last second (a key, a button, the mouse moved). */
+  active() {
+    return performance.now() - this.in.activeAt < 1000;
+  }
+
   /** The banked reward the streak key would use now: the one picked, or the newest. */
   pickedReward(s) {
     const bank = s.bank || [];
@@ -275,6 +290,8 @@ export class PlayerController {
       fire: firing || k.tappedAction('fire'),
       firePressed: (firing && !this.prevFire) || k.tappedAction('fire'),
       alt: aiming || k.tappedAction('aim'),
+      // (They're there: anything at all from them just now.)
+      act: this.active(),
     };
     this.prevJump = jump;
     this.prevFire = firing;

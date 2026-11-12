@@ -130,7 +130,10 @@ let profile = null;
 // ---- Settings (remembered between visits) ------------------------------------
 
 const DEFAULTS = {
-  name: 'Player', map: 'ssdm1.json', mode: 'ffa', bots: 5, difficulty: 'normal', fragLimit: 20, speed: DEFAULT_SPEED, muted: false,
+  name: 'Player', map: 'ssdm1.json', mode: 'ffa', bots: 5, difficulty: 'normal', fragLimit: 0, speed: DEFAULT_SPEED, muted: false,
+  // (fragLimit 0: Auto, by how many are playing. timeLimit: minutes, 0 for none. Hosting: what the next
+  // match is played on ('same' or 'rotate'), and whether the sides are shuffled each match ('keep' or 'shuffle').)
+  timeLimit: 10, rotate: 'same', shuffle: 'keep',
   lives: 3, gunKills: 1, crates: 'normal', destruction: 'on', maxPlayers: 8, visibility: 'public', gameName: '', tab: 'online', mapSource: 'originals',
   // Objective modes: the goal chosen for each (points, captures, tickets), and which team you're on.
   goals: {}, side: 1,
@@ -215,6 +218,11 @@ function fillSetup(settings) {
   showBots();
   $('difficulty').value = settings.difficulty;
   $('fragLimit').value = String(settings.fragLimit);
+  if ($('fragLimit').selectedIndex < 0) $('fragLimit').value = '0';
+  $('timeLimit').value = String(settings.timeLimit ?? 10);
+  if ($('timeLimit').selectedIndex < 0) $('timeLimit').value = '10';
+  $('rotate').value = settings.rotate === 'rotate' ? 'rotate' : 'same';
+  $('shuffle').value = settings.shuffle === 'shuffle' ? 'shuffle' : 'keep';
   $('lives').value = String(settings.lives);
   $('gunKills').value = String(settings.gunKills);
   $('crates').value = settings.crates;
@@ -252,7 +260,7 @@ function buildMenu(settings) {
     r.checked = r.value === settings.mapSource;
     r.addEventListener('change', () => { buildMapCards(selectedMap()); rememberMenu(); });
   }
-  for (const id of ['difficulty', 'fragLimit', 'goal', 'side', 'botVision', 'fog', 'lives', 'gunKills', 'crates', 'destruction', 'streaks', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
+  for (const id of ['difficulty', 'fragLimit', 'timeLimit', 'rotate', 'shuffle', 'goal', 'side', 'botVision', 'fog', 'lives', 'gunKills', 'crates', 'destruction', 'streaks', 'maxPlayers', 'visibility', 'name', 'gameName']) $(id).addEventListener('change', rememberMenu);
   $('bots').addEventListener('change', rememberMenu);
   modeFields();
   buildMapCards(settings.map, { follow: true });
@@ -265,6 +273,8 @@ function modeFields() {
   $('modeBlurb').textContent = keyText(m.blurb);
   show('fragField', m.limit === 'frags');
   show('goalField', m.limit === 'goal');
+  // (No time limit where the mode has rounds with clocks of their own: Defuse.)
+  show('timeField', !m.noClock);
   if (m.goal) {
     // Points to win, captures or tickets: the choice last made for this mode.
     const saved = loadSettings().goals?.[mode];
@@ -483,8 +493,16 @@ function mapFit(m, mode) {
   return fit;
 }
 
-/** The match limit for the chosen mode: frags, or the objective modes' goal (0 = the mode's own). */
-const limitOf = s => (MODES[s.mode]?.limit === 'goal' ? (s.goal ?? 0) : s.fragLimit);
+/**
+ * What wins a match with settings s: the mode's goal as set (0: its own Auto), or the frag limit.
+ * A frag limit of 0 is Auto, by how many are playing (`players`, bots and all): 20 in a
+ * free-for-all; in a team game 10 for each on a side, at least 20, so a big game isn't over in a minute.
+ */
+function limitOf(s, players = 0) {
+  if (MODES[s.mode]?.limit === 'goal') return s.goal ?? 0;
+  if (s.fragLimit > 0) return s.fragLimit;
+  return MODES[s.mode]?.teams ? Math.max(20, 10 * Math.ceil(Math.max(2, players) / 2)) : 20;
+}
 
 function readMenu() {
   const mode = $('mode').value;
@@ -499,7 +517,10 @@ function readMenu() {
     mode,
     bots: botsChosen(),
     difficulty: $('difficulty').value,
-    fragLimit: +$('fragLimit').value,
+    fragLimit: +$('fragLimit').value || 0,
+    timeLimit: +$('timeLimit').value || 0,
+    rotate: $('rotate').value === 'rotate' ? 'rotate' : 'same',
+    shuffle: $('shuffle').value === 'shuffle' ? 'shuffle' : 'keep',
     goal: MODES[mode]?.goal ? +$('goal').value : 0,
     goals,
     side: +$('side').value === 2 ? 2 : 1,
@@ -577,7 +598,9 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
     streaks: settings.streaks !== 'off',
     classes: CLASSES_ON && settings.classes === 'on' && MODES[settings.mode]?.classes !== false,
   };
-  const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
+  // (How many will be playing, for an Auto frag limit: us, those already in the game we're hosting, and the bots.)
+  const playing = Math.min(online ? settings.maxPlayers : Infinity, (online ? state.net?.host?.humans || 1 : 1) + (settings.bots || 0));
+  const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: limitOf(settings, playing), timeLimit: (settings.timeLimit || 0) * 60, speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
   state.step = 1000 / game.tickRate;
   // The last few seconds are kept, for the replay of the winning kill (replay.js).
   game.tape = new Tape();
@@ -624,6 +647,8 @@ function enterMatch(game, me) {
   state.killAt = -1e9;
   state.feedback = newFeedback();
   state.deathLook = { x: 0, y: 0 };
+  state.choosingNext = false;
+  document.body.classList.remove('choosing-next');
   state.acc = 0;
   state.last = null; // (the first frame's time is from before the match was set up: start the clock there)
   input.clear();
@@ -637,6 +662,9 @@ function enterMatch(game, me) {
   // Spectating carries on into the next match (online, the host remembers it for us).
   state.spec = { id: null, free: false, x: 0, y: 0 };
   if (state.spectating && state.mode !== 'client') game.spectate(me, true, { quiet: true });
+  // (Hosting, and away when the last match ended: still sat out, till we do something.)
+  else if (state.away && state.mode === 'host') { game.spectate(me, true, { quiet: true }); me.afk = true; me.activeTick = -1e9; }
+  state.away = false;
   canvas.focus?.();
   grabControls();
 }
@@ -711,6 +739,7 @@ function setPaused(p) {
   const sides = !!state.game?.rules.teams && !state.world && !!state.me && !state.me.spectating && !state.game.over;
   show('switchTeam', sides);
   if (sides) $('switchTeam').textContent = `Change sides (to ${state.me.team === 1 ? 'Red' : 'Blue'})`;
+  showKickList();
   $('quit').textContent = state.mode === 'host' ? 'End game for everyone' : state.mode === 'client' ? 'Leave game' : state.world ? 'Save and quit' : 'Quit to menu';
   // (A world: no restarting it, and no sitting out to watch. Pausing keeps it as it is.)
   if (state.world) { show('restart', false); show('spectate', false); if (p) saveWorldNow(); }
@@ -734,6 +763,15 @@ function setSpectating(on) {
   else g.spectate(me, on);
   state.spec = { id: null, free: false, x: renderer.cam.x, y: renderer.cam.y };
   setPaused(false);
+}
+
+/** Hosting: the players in the game, each with a button to send them away (in the menu). */
+function showKickList() {
+  const host = state.mode === 'host' ? state.net?.host : null, box = $('kickList');
+  const list = host ? [...host.players].filter(p => p.soldier) : [];
+  show('kickList', list.length > 0);
+  box.innerHTML = list.length ? `<p class="muted-note">Players in your game</p>${list.map(p =>
+    `<div class="kick-row"><span>${esc(p.soldier.name)}${p.soldier.afk ? ' (away)' : ''}</span><button type="button" class="small" data-kick="${p.soldier.id}">Send away</button></div>`).join('')}` : '';
 }
 
 /**
@@ -1065,8 +1103,8 @@ function hostWorld(game, rec) {
       name: settings.gameName, hostName: settings.name, mapName: rec.name, mode: 'world',
       players: net.host.humans, max: settings.maxPlayers, bots: 0, private: settings.visibility === 'private',
     }),
-    accept: () => (net.host.humans >= net.host.opts.maxPlayers ? 'That world is full' : null),
-    onPlayer: (link, name) => net.host.addPlayer(link, name),
+    accept: (name, from) => (net.host.sentAway.has(from) ? 'The host sent you away from that world' : net.host.humans >= net.host.opts.maxPlayers ? 'That world is full' : null),
+    onPlayer: (link, name, from) => net.host.addPlayer(link, name, from),
   });
   addChat({ system: true, text: `Your world is online${settings.visibility === 'private' ? ' (invite only)' : ''}, PvP ${game.world.pvp ? 'on' : 'off'}: press Esc to copy an invite link.` });
 }
@@ -1626,7 +1664,7 @@ function saveDevDefaults(d) {
 // Settings or the game setup, from the same list.
 const SELECTS = {
   graphics: 'graphics', quality: 'quality', fpsCap: 'fpsCap', sprint: 'sprintMode', aimZoom: 'aimZoom', pointer: 'pointerMode', teamColors: 'teamColors',
-  mode: 'mode', difficulty: 'difficulty', fragLimit: 'fragLimit', side: 'side', lives: 'lives', gunKills: 'gunKills', crates: 'crates',
+  mode: 'mode', difficulty: 'difficulty', fragLimit: 'fragLimit', timeLimit: 'timeLimit', rotate: 'rotate', shuffle: 'shuffle', side: 'side', lives: 'lives', gunKills: 'gunKills', crates: 'crates',
   destruction: 'destruction', streaks: 'streaks', botVision: 'botVision', fog: 'fog', maxPlayers: 'maxPlayers', visibility: 'visibility',
 };
 function choiceSpecs() {
@@ -1979,7 +2017,7 @@ async function hostMatch(game, settings, map, nav, rng) {
   const net = state.net?.role === 'host' ? state.net : (state.net = { role: 'host' });
   net.settings = settings;
   net.matchInfo = {
-    mode: settings.mode, fragLimit: limitOf(settings), speed: settings.speed, mapName: map.name,
+    mode: settings.mode, fragLimit: game.fragLimit, timeLimit: game.timeLimit / game.tickRate, speed: settings.speed, mapName: map.name,
     options: game.options,
     map: map.builtin ? { builtin: map.builtin } : { code: await encodeShare(map.data) },
   };
@@ -2007,14 +2045,15 @@ async function hostMatch(game, settings, map, nav, rng) {
         private: net.settings.visibility === 'private',
       }),
       // (Those let in but still connecting count too, for a while: several asking at once don't all get the last place.)
-      accept: () => {
+      accept: (name, from) => {
         const t = Date.now();
         net.coming = (net.coming || []).filter(at => t - at < 16000);
+        if (net.host.sentAway.has(from)) return 'The host sent you away from that game';
         if (net.host.humans + net.coming.length >= net.host.opts.maxPlayers) return 'That game is full';
         net.coming.push(t);
         return null;
       },
-      onPlayer: (link, name) => { net.coming?.shift(); return net.host.addPlayer(link, name); },
+      onPlayer: (link, name, from) => { net.coming?.shift(); return net.host.addPlayer(link, name, from); },
     });
     l.pool.ready(1, 6000).then(ok => { if (!ok && state.net === net) toast("Couldn't reach the game servers yet, so nobody can find your game. Still trying…"); });
     addChat({ system: true, text: settings.visibility === 'private' ? 'Your game is invite-only: press Esc to copy the invite link.' : 'Your game is listed. Press Esc to copy an invite link.' });
@@ -2500,10 +2539,14 @@ function matchOver(g) {
     show('pause', false);
     state.menuOpen = false;
     show('again', state.mode !== 'client');
+    // (Hosting: the next map or mode can be chosen without ending the game.)
+    show('chooseNext', state.mode === 'host');
     closePicker();
     $('again').textContent = state.mode === 'host' ? 'Next match now' : 'Play again';
     $('toMenu').textContent = state.mode === 'host' ? 'End game' : state.mode === 'client' ? 'Leave' : state.returnTo === 'editor' ? 'Back to map maker' : 'Menu';
   }
+  // (The host's choosing the next match: the setup's up, not the results.)
+  if (state.choosingNext) return;
   // The replay of the winning kill (if a kill won it), after a moment on the final picture;
   // the results (the scores and awards on the canvas, and the buttons) after that.
   if (!state.replayTried && now - state.overAt > REPLAY_DELAY) startReplay(g, now);
@@ -2676,7 +2719,69 @@ function nextMatch() {
   const s = state.settings;
   // (Once for each match that's over: autoNextMatch.)
   state.nextFor = state.game;
+  state.away = state.mode === 'host' && !!state.me?.afk;
+  if (state.mode === 'host') planNext(s);
+  state.choosingNext = false;
   startMatch(s, { returnTo: state.returnTo, online: state.mode === 'host' });
+}
+
+/**
+ * The game's own maps that suit `mode` best (as the setup's list has them, best first), for going
+ * through one after another: those as good a fit as the best, or nearly.
+ */
+function mapsFor(mode) {
+  const ranked = maps.index.map((m, i) => ({ m, i, fit: mapFit(m, mode) })).sort((a, b) => a.fit - b.fit || a.i - b.i);
+  const best = ranked[0]?.fit ?? 0;
+  return ranked.filter(r => r.fit <= best + 0.5).map(r => r.m.file);
+}
+
+/**
+ * Hosting, the next match: what it's played on (the setup's "After each match": the next map that
+ * suits the mode, unless the host just chose one), and the sides (its "Teams each match": shuffled;
+ * and Rush's attackers and defenders change over, unless they're shuffled).
+ */
+function planNext(s) {
+  if (s.rotate === 'rotate' && !state.choseNext) {
+    const list = mapsFor(s.mode), at = list.indexOf(s.map);
+    // (A map of your own, or the community's, stays: there's no list of those to go through.)
+    if (list.length > 1 && (at >= 0 || sourceOf(s.map) === 'originals')) s.map = list[(at + 1) % list.length];
+  }
+  state.choseNext = false;
+  const host = state.net?.host;
+  if (host && MODES[s.mode]?.teams) {
+    const how = s.shuffle === 'shuffle' ? 'shuffle' : s.mode === 'rush' ? 'swap' : null;
+    if (how) s.side = host.planSides(how, state.me?.team || s.side);
+  }
+}
+
+/**
+ * Hosting, on the results screen: choose the next match yourself (map, mode, anything in the
+ * setup) without ending the game: everyone stays, and waits while you choose.
+ */
+function chooseNext() {
+  if (state.mode !== 'host' || !state.game?.over) return;
+  state.choosingNext = true;
+  state.nextMatchAt = 0;
+  state.replay?.finish();
+  show('over', false);
+  fillSetup(state.settings);
+  modeFields();
+  buildMapCards(state.settings.map, { follow: true });
+  setupFor('host');
+  $('play').textContent = 'Start the next match';
+  $('setupBack').innerHTML = '&larr; Back to the results';
+  document.body.classList.add('choosing-next');
+  show('menu', true);
+  state.net?.host?.system('The host is choosing the next match…');
+}
+
+/** Back from choosing to the results (nothing changed): the next match counts down again. */
+function stopChoosing() {
+  state.choosingNext = false;
+  document.body.classList.remove('choosing-next');
+  $('setupBack').innerHTML = '&larr; Back to games';
+  show('menu', false);
+  if (state.game?.over && state.mode === 'host') { state.nextMatchAt = performance.now() + 12000; show('over', true); }
 }
 
 /**
@@ -2685,7 +2790,8 @@ function nextMatch() {
  * the game's kept going: either way everyone gets their next match.
  */
 function autoNextMatch(g, now) {
-  if (state.mode !== 'host' || !g?.over || state.nextFor === g) return;
+  // (Not while the host's choosing the next one themselves: chooseNext.)
+  if (state.mode !== 'host' || !g?.over || state.nextFor === g || state.choosingNext) return;
   if (!state.nextMatchAt) state.nextMatchAt = now + (g.finalKill ? 18000 : 12000);
   else if (now >= state.nextMatchAt) { state.nextMatchAt = 0; nextMatch(); }
 }
@@ -2727,10 +2833,22 @@ function wire() {
   $('openEditor').addEventListener('click', () => openEditor(listMaps()[0] || null));
   $('quickMatch').addEventListener('click', quickMatch);
   $('hostGame').addEventListener('click', () => { stopWatching(); setupFor('host'); });
-  $('setupBack').addEventListener('click', () => showTab('online'));
+  $('setupBack').addEventListener('click', () => { if (state.choosingNext) stopChoosing(); else showTab('online'); });
+  $('chooseNext').addEventListener('click', chooseNext);
   $('refreshGames').addEventListener('click', () => { watcher?.refresh(); renderGameList(null); setTimeout(() => watcher && renderGameList([...watcher.games.values()]), 2500); });
   $('play').addEventListener('click', () => {
     audio.unlock(); audio.play('menuSelect');
+    // (Hosting, the next match chosen on the results screen: everyone's still here, and plays it.)
+    if (state.choosingNext) {
+      const next = readMenu();
+      document.body.classList.remove('choosing-next');
+      $('setupBack').innerHTML = '&larr; Back to games';
+      state.settings = next;
+      state.choseNext = true;
+      state.nextMatchAt = 0;
+      nextMatch();
+      return;
+    }
     startMatch(readMenu(), { online: state.setupFor === 'host' });
   });
   $('connCancel').addEventListener('click', () => {
@@ -2756,6 +2874,12 @@ function wire() {
   $('changeClass').addEventListener('click', openPicker);
   $('spectate').addEventListener('click', () => setSpectating(!state.me?.spectating));
   $('switchTeam').addEventListener('click', changeSides);
+  $('kickList').addEventListener('click', e => {
+    const id = e.target?.dataset?.kick;
+    if (id == null || state.mode !== 'host') return;
+    state.net?.host?.kick(+id);
+    showKickList();
+  });
   $('pickerClose').addEventListener('click', closePicker);
   $('pickerLoadout').addEventListener('click', openLoadout);
   $('pickerCards').addEventListener('click', e => { const card = e.target.closest('[data-cls]'); if (card) pickClass(card.dataset.cls); });

@@ -129,6 +129,7 @@ export function drawHud(r, game, me, opts = {}) {
   else drawScores(ctx, game, me, H, standings);
   drawFeed(ctx, game, W, opts.chat, me);
   if (!game.world) drawTop(ctx, game, me, W, standings, r, H);
+  if (!game.world && !game.over && game.timeLimit) drawClock(ctx, game);
   // (The map, small, whenever it doesn't all fit on the screen; and where your side is, off it.)
   if (!game.world && !game.over && wantsMinimap(game.map, r)) drawMinimap(r, ctx, game, me, W);
   if (!game.world && !game.over) drawMateMarkers(r, ctx, game, me, W, H);
@@ -859,6 +860,34 @@ function drawFeed(ctx, game, W, chat = [], me = null) {
     ctx.fillText(lineText(c, chatText), 180, 20 + i * 16);
   }
   ctx.globalAlpha = 1;
+}
+
+// The match clock's words as last made ("7:42"), and how wide they are: made again each second.
+const CLOCK = { secs: -1, text: '', w: 0 };
+
+/**
+ * The match's clock (a time limit set: game.timeLimit), top left: how long is left, red in its
+ * last half minute; "Sudden death" once it's up with the scores level (the next score wins).
+ */
+function drawClock(ctx, game) {
+  const secs = Math.max(0, Math.ceil((game.timeLimit - game.tick) / 60));
+  ctx.font = `bold 14px ${FONT}`;
+  ctx.textAlign = 'left';
+  if (CLOCK.secs !== secs) {
+    CLOCK.secs = secs;
+    CLOCK.text = secs > 0 ? `Time  ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` : 'Sudden death';
+    CLOCK.w = Math.ceil(ctx.measureText(CLOCK.text).width);
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.fillRect(10, 6, CLOCK.w + 16, 22);
+  // (The last half minute, and sudden death: red, and the last ten seconds blinking.)
+  const late = secs <= 30;
+  if (late) {
+    ctx.fillStyle = '#c22';
+    ctx.fillRect(10, 6, 3, 22);
+  }
+  ctx.fillStyle = late && !(secs > 0 && secs <= 10 && game.tick % 60 >= 45) ? '#c22' : late ? '#999' : '#333';
+  ctx.fillText(CLOCK.text, 18, 18);
 }
 
 function drawTop(ctx, game, me, W, standings, r, H) {

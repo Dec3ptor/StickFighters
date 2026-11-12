@@ -326,6 +326,7 @@ export function defuseMode(base) {
     streaks: false,      // (rounds and money instead: no kill streak rewards)
     mapLoadout: false,
     limit: 'goal',
+    noClock: true,        // (rounds with their own clocks: no time limit on the match)
     helmets: true,        // armour covers the head only with a helmet
     armourAbsorb: 0.35,   // and soaks up less than elsewhere (as kevlar does)
     maxHealth: 100,       // (less than elsewhere: the weapons and money are made for it)

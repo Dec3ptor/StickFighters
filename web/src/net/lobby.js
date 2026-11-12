@@ -142,8 +142,9 @@ export class Lobby {
   /**
    * List a game and accept players.
    * opts: { info(): { name, hostName, mapName, mode, players, max, bots, private },
-   *         accept(name): null to let them in, or a reason to turn them away,
-   *         onPlayer(link, name) }
+   *         accept(name, key): null to let them in, or a reason to turn them away (key: who's
+   *           asking, the same each time they do),
+   *         onPlayer(link, name, key) }
    */
   host(opts) {
     const id = randomId(6);
@@ -178,13 +179,13 @@ export class Lobby {
       seen.add(msg.nonce);
       const reply = extra => this.signal(from, { ...extra, game: id, nonce: msg.nonce });
       if (msg.v !== PROTOCOL) { reply({ type: 'reject', reason: 'That game is running a different version. Refresh the page and try again.' }); return; }
-      const reason = opts.accept(str(msg.name, 14));
+      const reason = opts.accept(str(msg.name, 14), from);
       if (reason) { reply({ type: 'reject', reason }); return; }
       try {
         const link = this.makeLink();
         const sdp = await link.answer(msg.sdp);
         await reply({ type: 'answer', sdp });
-        link.ready.then(() => { if (!closed) opts.onPlayer(link, str(msg.name, 14)); else link.close(); }).catch(e => this.log(`player didn't connect: ${e.message}`));
+        link.ready.then(() => { if (!closed) opts.onPlayer(link, str(msg.name, 14), from); else link.close(); }).catch(e => this.log(`player didn't connect: ${e.message}`));
       } catch (e) {
         this.log(`couldn't answer: ${e.message}`);
       }
