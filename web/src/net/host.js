@@ -112,8 +112,12 @@ export class NetHost {
     const g = this.game;
     let team = 0;
     if (g.rules.teams) {
-      const n = t => g.soldiers.filter(s => s.team === t && !s.isBot).length;
-      team = n(1) <= n(2) ? 1 : 2;
+      // (The side with fewer players; the same, the one with fewer in all. The side they chose
+      // last match, if they changed: carried on, while it doesn't put two more on it than the other.)
+      const n = t => g.soldiers.filter(s => s.team === t && !s.isBot && !s.spectating).length;
+      const all = t => g.soldiers.filter(s => s.team === t && !s.spectating).length;
+      team = n(1) !== n(2) ? (n(1) < n(2) ? 1 : 2) : all(1) <= all(2) ? 1 : 2;
+      if (p.team && n(p.team) - n(3 - p.team) < 1) team = p.team;
     }
     let name = p.name, k = 2;
     while (g.soldiers.some(s => s.name.toLowerCase() === name.toLowerCase())) name = `${p.name.slice(0, 12)}${k++}`;
@@ -146,7 +150,11 @@ export class NetHost {
     this.opts.onChange?.();
   }
 
-  /** Bots fill the game up to the bot count, and make room when players join. */
+  /**
+   * Bots fill the game up to the bot count, and make room when players join: the one that goes is
+   * from the side with more on it (the one of its bots with the fewest frags), and the sides are
+   * evened up with bots after (game.js's evenTeams), so a player joining doesn't leave them lopsided.
+   */
   balanceBots() {
     const g = this.game;
     if (!g) return;
@@ -154,11 +162,46 @@ export class NetHost {
     // (Bots only: not a world's monsters or mercenaries.)
     let bots = g.soldiers.filter(s => s.isBot && !s.npc);
     while (bots.length > want) {
-      const worst = [...bots].sort((a, b) => a.frags - b.frags)[0];
+      let from = bots;
+      if (g.rules.teams) {
+        const big = g.teamSize(1) === g.teamSize(2) ? 0 : g.teamSize(1) > g.teamSize(2) ? 1 : 2;
+        const theirs = bots.filter(b => b.team === big);
+        if (theirs.length) from = theirs;
+      }
+      const worst = [...from].sort((a, b) => a.frags - b.frags)[0];
       g.removeSoldier(worst);
       bots = bots.filter(b => b !== worst);
     }
     while (bots.length < want) { this.opts.addBot(g); bots = g.soldiers.filter(s => s.isBot && !s.npc); }
+    g.evenTeams?.();
+  }
+
+  /**
+   * Whether the player whose soldier is `s` may go over to the other side now: in a team game,
+   * while it wouldn't leave that side with two more players than theirs (bots even the rest up).
+   * The host may always (it's their game: playing alongside a friend against bots, say).
+   * Returns why not, or null.
+   */
+  cantSwitch(s, isHost = false) {
+    const g = this.game;
+    if (!g?.rules.teams || g.over) return "There are no sides to change in this game";
+    if (!s || s.spectating) return "You're watching: join the game first";
+    if (isHost) return null;
+    const n = t => g.soldiers.filter(o => o.team === t && !o.isBot && !o.spectating).length;
+    const to = 3 - s.team;
+    return n(to) + 1 - (n(s.team) - 1) > 1 ? 'That side has enough players already' : null;
+  }
+
+  /** The player whose soldier is `s` over to the other side (if they may), the bots evened up after. Returns why not, or null. */
+  switchTeam(s, isHost = false) {
+    const why = this.cantSwitch(s, isHost);
+    if (why) return why;
+    const g = this.game;
+    if (!g.switchTeam(s, 3 - s.team)) return 'Not now';
+    for (const p of this.players) if (p.soldier === s) p.team = s.team;
+    if (isHost) this.hostTeam = s.team;
+    g.evenTeams();
+    return null;
   }
 
   roster() {
@@ -239,8 +282,16 @@ export class NetHost {
       case 'spectate':
         // They want to sit out and watch (or join again).
         p.spectating = !!data.on;
-        if (p.soldier) this.game?.spectate(p.soldier, p.spectating);
+        if (p.soldier) { this.game?.spectate(p.soldier, p.spectating); this.game?.evenTeams?.(); }
         break;
+      case 'team': {
+        // They want to change sides (at most once every couple of seconds).
+        if (!p.soldier || !this.game || Date.now() - (p.teamAt || 0) < 2000) break;
+        p.teamAt = Date.now();
+        const why = this.switchTeam(p.soldier);
+        if (why) this.game.notify(p.soldier, why);
+        break;
+      }
       case 'roster?':
         // The player saw a soldier it doesn't know: send the list again (at most once a second).
         if (Date.now() - (p.rosterAt || 0) > 1000) { p.rosterAt = Date.now(); p.link.send({ t: 'roster', roster: this.roster() }, true); }

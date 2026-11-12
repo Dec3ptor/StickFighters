@@ -425,6 +425,11 @@ export function defuseMode(base) {
       if (b && b.s === 'carried' && b.by === s.id) dropBomb(game, s);
     },
 
+    // (Gone for good: their money with them, so whoever's next given their number starts as anyone does.)
+    onGone(game, s) {
+      if (game.modeState?.money) delete game.modeState.money[s.id];
+    },
+
     tick(game) {
       const st = game.modeState;
       if (!st || st.winner) return;

@@ -77,6 +77,9 @@ export class Soldier {
     this.lastHurtBy = undefined;
     this.lastHurtWeapon = undefined;
     this.lastHurtTick = undefined;
+    // (Who last threw them with a blast, and when: a fall off the map after is theirs, game.js.)
+    this.pushedBy = undefined;
+    this.pushedTick = undefined;
     this.animPrev = undefined;
     // The game (game.js): use key, self-destruct, where they died, spectating, held respawns, the Builder's choice.
     this.using = undefined;
@@ -146,6 +149,8 @@ export class Soldier {
     this.lastHurtBy = null;
     this.lastHurtWeapon = null;
     this.lastHurtTick = -9999;
+    this.pushedBy = null;
+    this.pushedTick = -9999;
     this.anim = { run: 0, idle: 0, land: 0, flip: 0, recoil: 0, act: '', use: 0, rate: 0 };
     this.animPrev = null;
     this.jugger = 0; // (a new life isn't a Juggernaut: Defuse puts round survivors back with this too)

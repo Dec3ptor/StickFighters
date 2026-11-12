@@ -699,6 +699,10 @@ function setPaused(p) {
   show('restart', state.mode !== 'client');
   show('changeClass', !!state.game?.classesOn);
   $('spectate').textContent = state.me?.spectating ? 'Join game' : 'Spectate';
+  // (A team game: over to the other side, while that's fair. Bots even the sides up after.)
+  const sides = !!state.game?.rules.teams && !state.world && !!state.me && !state.me.spectating && !state.game.over;
+  show('switchTeam', sides);
+  if (sides) $('switchTeam').textContent = `Change sides (to ${state.me.team === 1 ? 'Red' : 'Blue'})`;
   $('quit').textContent = state.mode === 'host' ? 'End game for everyone' : state.mode === 'client' ? 'Leave game' : state.world ? 'Save and quit' : 'Quit to menu';
   // (A world: no restarting it, and no sitting out to watch. Pausing keeps it as it is.)
   if (state.world) { show('restart', false); show('spectate', false); if (p) saveWorldNow(); }
@@ -721,6 +725,23 @@ function setSpectating(on) {
   if (state.mode === 'client') state.net?.client?.sendSpectate(on);
   else g.spectate(me, on);
   state.spec = { id: null, free: false, x: renderer.cam.x, y: renderer.cam.y };
+  setPaused(false);
+}
+
+/**
+ * Over to the other side (from the menu, in a team game). Online, the host decides (it's fair
+ * while it doesn't leave that side with two more players than the other); the host, or anyone
+ * playing bots, just goes. Bots even the sides up after, and it's kept for the next match.
+ */
+function changeSides() {
+  const g = state.game, me = state.me;
+  if (!g || !me || g.over || !g.rules.teams) return;
+  if (state.mode === 'client') state.net?.client?.sendTeam();
+  else {
+    const why = state.mode === 'host' ? state.net?.host?.switchTeam(me, true) : (g.switchTeam(me, 3 - me.team) ? (g.evenTeams(), null) : 'Not now');
+    if (why) toast(why);
+    else if (state.settings) state.settings.side = me.team;
+  }
   setPaused(false);
 }
 
@@ -1970,12 +1991,20 @@ async function hostMatch(game, settings, map, nav, rng) {
     const l = getLobby();
     net.handle = l.host({
       info: () => ({
-        name: settings.gameName || `${settings.name}'s game`, hostName: settings.name, mapName: net.matchInfo.mapName,
-        mode: settings.mode, players: net.host.humans, max: settings.maxPlayers, bots: game.soldiers.filter(s => s.isBot).length,
-        private: settings.visibility === 'private',
+        name: net.settings.gameName || `${net.settings.name}'s game`, hostName: net.settings.name, mapName: net.matchInfo.mapName,
+        // (As it is now: the map and mode can change between matches.)
+        mode: net.settings.mode, players: net.host.humans, max: net.settings.maxPlayers, bots: (net.host.game || game).soldiers.filter(s => s.isBot).length,
+        private: net.settings.visibility === 'private',
       }),
-      accept: () => (net.host.humans >= net.host.opts.maxPlayers ? 'That game is full' : null),
-      onPlayer: (link, name) => net.host.addPlayer(link, name),
+      // (Those let in but still connecting count too, for a while: several asking at once don't all get the last place.)
+      accept: () => {
+        const t = Date.now();
+        net.coming = (net.coming || []).filter(at => t - at < 16000);
+        if (net.host.humans + net.coming.length >= net.host.opts.maxPlayers) return 'That game is full';
+        net.coming.push(t);
+        return null;
+      },
+      onPlayer: (link, name) => { net.coming?.shift(); return net.host.addPlayer(link, name); },
     });
     l.pool.ready(1, 6000).then(ok => { if (!ok && state.net === net) toast("Couldn't reach the game servers yet, so nobody can find your game. Still trying…"); });
     addChat({ system: true, text: settings.visibility === 'private' ? 'Your game is invite-only: press Esc to copy the invite link.' : 'Your game is listed. Press Esc to copy an invite link.' });
@@ -2432,7 +2461,7 @@ function matchOver(g) {
     state.overAt = now;
     state.resultsAt = now + RESULTS_DELAY;
     // (Hosting: the next match in 12 seconds; more when there's a replay to watch first.)
-    if (state.mode === 'host') state.nextMatchAt = now + (g.finalKill ? 18000 : 12000);
+    autoNextMatch(g, now);
     show('pause', false);
     state.menuOpen = false;
     show('again', state.mode !== 'client');
@@ -2449,7 +2478,7 @@ function matchOver(g) {
     const left = Math.max(0, Math.ceil((state.nextMatchAt - now) / 1000));
     noteEl.textContent = `Next match in ${left}…`;
     show('overNote', true);
-    if (now >= state.nextMatchAt && state.nextMatchAt) { state.nextMatchAt = 0; nextMatch(); }
+    autoNextMatch(g, now);
   } else if (state.mode === 'client') {
     noteEl.textContent = 'The next match starts soon…';
     show('overNote', true);
@@ -2610,7 +2639,20 @@ function skipReplay() { state.replay?.finish(); }
 
 function nextMatch() {
   const s = state.settings;
+  // (Once for each match that's over: autoNextMatch.)
+  state.nextFor = state.game;
   startMatch(s, { returnTo: state.returnTo, online: state.mode === 'host' });
+}
+
+/**
+ * Hosting, match g over: the next one, 12 seconds on (18 with a replay to watch first). Called
+ * from the results screen as it's drawn, and, with the tab hidden and nothing drawn, from where
+ * the game's kept going: either way everyone gets their next match.
+ */
+function autoNextMatch(g, now) {
+  if (state.mode !== 'host' || !g?.over || state.nextFor === g) return;
+  if (!state.nextMatchAt) state.nextMatchAt = now + (g.finalKill ? 18000 : 12000);
+  else if (now >= state.nextMatchAt) { state.nextMatchAt = 0; nextMatch(); }
 }
 
 // Keep online games running in a background tab (browsers pause animation frames there).
@@ -2619,7 +2661,14 @@ function startBackgroundTicker() {
     // The worker only ticks while the tab is hidden.
     const src = 'let t = null; onmessage = e => { clearInterval(t); t = e.data ? setInterval(() => postMessage(0), 16) : null; };';
     const worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
-    worker.onmessage = () => { if (document.hidden && state.game && state.mode !== 'offline') simulate(performance.now()); };
+    worker.onmessage = () => {
+      if (!document.hidden || !state.game || state.mode === 'offline') return;
+      const now = performance.now();
+      simulate(now);
+      // (Hosting, the match over with the tab hidden: nothing's drawn, so the results screen's
+      // countdown never runs. The next match starts from here instead, or everyone waits for good.)
+      if (state.game?.over) autoNextMatch(state.game, now);
+    };
     document.addEventListener('visibilitychange', () => worker.postMessage(document.hidden));
     worker.postMessage(document.hidden);
   } catch { /* no workers: online games pause in background tabs */ }
@@ -2671,6 +2720,7 @@ function wire() {
   $('loadoutDone').addEventListener('click', closeLoadout);
   $('changeClass').addEventListener('click', openPicker);
   $('spectate').addEventListener('click', () => setSpectating(!state.me?.spectating));
+  $('switchTeam').addEventListener('click', changeSides);
   $('pickerClose').addEventListener('click', closePicker);
   $('pickerLoadout').addEventListener('click', openLoadout);
   $('pickerCards').addEventListener('click', e => { const card = e.target.closest('[data-cls]'); if (card) pickClass(card.dataset.cls); });
@@ -2818,7 +2868,9 @@ function wire() {
   });
   // Offline games pause when you switch away; online ones can't.
   window.addEventListener('blur', () => { if (state.game && !state.game.over && state.mode === 'offline') setPaused(true); });
-  window.addEventListener('beforeunload', () => leaveOnline());
+  // (When the page really goes: not on the browser's "leave this page?" question, which can be
+  // answered "stay", and the game with everyone in it should then still be there.)
+  window.addEventListener('pagehide', e => { if (!e.persisted) leaveOnline(); });
   // Another tab changed the class or loadouts: take them here too.
   window.addEventListener('storage', e => { if (e.key === KIT_KEY) Object.assign(profile, loadKit()); });
 }

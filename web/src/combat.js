@@ -195,7 +195,8 @@ export function fire(game, s, input = {}) {
   // (A suppressor, a world's attachment: heard from a quarter as far.)
   game.noise(s.x, s.y, (def.kind === 'melee' ? 150 : def.kind === 'arrow' ? 260 : def.kind === 'thrown' || def.kind === 'placed' || def.kind === 'build' ? 320 : def.kind === 'flame' ? 450 : def.kind === 'rail' ? 1200 : 950) * (def.quiet ? 0.25 : 1), s);
   if (GUN_KINDS.has(def.kind)) game.fx?.muzzle(muzzle.x, muzzle.y, s.aim, (def.pellets || 0) > 1 || def.kind === 'rocket', s.id);
-  if (!def.mag && inv.ammo <= 0 && !s.body.rope) s.selectBest();
+  // (The last of something set off by a second click, a sheep, stays in hand till it's gone off: game.js.)
+  if (!def.mag && inv.ammo <= 0 && !s.body.rope && !def.remote) s.selectBest();
   return true;
 }
 
@@ -238,6 +239,15 @@ function muzzlePoint(game, s, def) {
   // Don't let the muzzle poke through a wall.
   const block = game.map.raycast(s.shoulderX, s.shoulderY, x, y);
   if (block) { x = block.x - dx * 1.5; y = block.y - dy * 1.5; }
+  // Nor out the far side of someone standing right against the shooter (soldiers don't block each
+  // other, so they can be nearer than the gun is long): the shot starts just short of them, and
+  // hits them, rather than starting beyond them and missing. (Only those the shot would hit.)
+  const hx = x - s.shoulderX, hy = y - s.shoulderY;
+  const near = hx || hy ? hitSoldier(game, s.shoulderX, s.shoulderY, hx, hy, s, s) : null;
+  if (near && !(near.soldier.spawnProtect > 0)) {
+    x = s.shoulderX + hx * near.t - dx * 0.5;
+    y = s.shoulderY + hy * near.t - dy * 0.5;
+  }
   return { x, y, dx, dy };
 }
 
@@ -604,7 +614,9 @@ function detonate(game, p, direct = null) {
     for (let i = 0; i < k.count; i++) {
       const a = -Math.PI / 2 + (i - (k.count - 1) / 2) * 0.32 + (game.rng() - 0.5) * 0.2;
       const sp = k.speed * (0.7 + game.rng() * 0.5);
-      spawn(game, { kind: 'thrown', sprite: k.sprite, cfg: k, x: p.x, y: p.y - 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, owner: p.owner, weapon: p.weapon, life: k.fuse || 999, angle: 0 });
+      // (grace: updates before they go off on touching someone: they scatter first, rather than
+      // all going off at once on whoever the shell hit, each as a direct hit.)
+      spawn(game, { kind: 'thrown', sprite: k.sprite, cfg: k, x: p.x, y: p.y - 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, owner: p.owner, weapon: p.weapon, life: k.fuse || 999, angle: 0, grace: CLUSTER_GRACE });
     }
   }
   if (c.fire) {
@@ -778,7 +790,7 @@ const STEP = {
     const c = p.cfg;
     p.vy += c.gravity ?? MOTION.grenadeGravity;
     const wall = game.map.raycast(p.x, p.y, p.x + p.vx, p.y + p.vy);
-    const hit = sweepHit(game, p, wall);
+    const hit = p.age < (p.grace || 0) ? null : sweepHit(game, p, wall);
     if (hit && hit.soldier !== p.owner) {
       if (c.contact || c.impact) {
         p.x += p.vx * hit.t; p.y += p.vy * hit.t;
@@ -1220,6 +1232,8 @@ function ignite(s, by) {
 
 // Blasts going off right now (one inside another: see explode()).
 let blasting = 0;
+/** Updates a cluster's bomblets fly before they go off on touching someone. */
+const CLUSTER_GRACE = 10;
 
 /** Blast damage with falloff, blocked by walls; also throws soldiers around and sets off nearby mines. */
 export function explode(game, x, y, blast, owner, weapon, direct = null) {
@@ -1248,11 +1262,14 @@ export function explode(game, x, y, blast, owner, weapon, direct = null) {
     dirX /= dl; dirY /= dl;
     // Knockback applies even to teammates and yourself (rocket jumps!), not to a Juggernaut.
     const k = blast.knock * f * (self ? 0.85 : 1);
-    if (!(s.jugger > 0)) {
+    // (Nor to someone who's just spawned: nothing touches them yet, a shove off the map included.)
+    if (!(s.jugger > 0) && !(s.spawnProtect > 0)) {
       s.body.vx += dirX * k;
       s.body.vy += dirY * k;
       if (s.body.vy < -1) s.body.onGround = false;
       if (k > 8) s.body.momentum = 20;
+      // (Who threw them, team-mates too: a fall off the map soon after is theirs to answer for, game.js.)
+      if (owner && !self) { s.pushedBy = owner; s.pushedTick = game.tick; }
     }
     if (canHurt(game, owner, s)) {
       // (Blasts were made for 100 health: they take the same share of the mode's.)

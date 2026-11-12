@@ -198,12 +198,14 @@ export class Game {
 
   removeSoldier(s) {
     this.rules.onRemove?.(this, s);
+    // (Gone for good, not just sitting out: what the mode kept for them goes too. Defuse's money.)
+    this.rules.onGone?.(this, s);
     if (this.classesOn) removeGadgets(this, s);
     this.soldiers = this.soldiers.filter(o => o !== s);
     if (this.ids) { this.ids.delete(s.id); this.freeId = Math.min(this.freeId, s.id); }
     this.controllers.delete(s);
     for (const p of this.projectiles) { if (p.owner === s) p.owner = null; if (p.target === s) p.target = null; }
-    for (const o of this.soldiers) { if (o.lastHurtBy === s) o.lastHurtBy = null; if (o.burnBy === s) o.burnBy = null; }
+    for (const o of this.soldiers) { if (o.lastHurtBy === s) o.lastHurtBy = null; if (o.burnBy === s) o.burnBy = null; if (o.pushedBy === s) o.pushedBy = null; }
     if (this.quake?.owner === s) this.quake.owner = null;
   }
 
@@ -462,6 +464,9 @@ export class Game {
 
     // The minigun is heavy: you walk slowly while it's spinning.
     const def = WEAPONS[s.current];
+    // (The last of something set off by a second click, a sheep, stays in hand while it's out there,
+    // for that click: combat.js's fire. Gone off, or run out its time: on to something else.)
+    if (def.remote && !(s.weapons[s.current]?.ammo > 0) && !this.projectiles.some(p => p.owner === s && p.weapon === s.current && p.remote && !p.dead)) s.selectBest();
     if (!input.fire || !def.spinup) s.spin = Math.max(0, s.spin - 1);
     const move = def.heavy && s.spin > 0 ? { ...input, move: (input.move || 0) * def.heavy } : input;
 
@@ -674,6 +679,11 @@ export class Game {
       killer = victim.lastHurtBy;
       weapon = weapon || victim.lastHurtWeapon;
     }
+    // (Thrown off the map by a team-mate's blast, combat.js's explode: the one who threw them
+    // answers for it, not the one who fell.)
+    const pusher = (!killer || killer === victim) && opts.fall && victim.pushedBy && victim.pushedBy !== victim &&
+      this.tick - victim.pushedTick < RULES.creditFallTicks && this.soldiers.includes(victim.pushedBy) ? victim.pushedBy : null;
+    victim.pushedBy = null;
     victim.alive = false;
     victim.deaths++;
     // Where they died (conquest respawns them at the nearest place they can).
@@ -706,10 +716,17 @@ export class Game {
     } else {
       // Kamikaze is meant to kill you, so it doesn't cost a frag (nor does being caught by Defuse's bomb).
       if (weapon !== 'Kamikaze' && !opts.world) {
-        victim.frags--;
+        (pusher || victim).frags--;
         if (teamFrags) this.teamScore[victim.team]--;
       }
-      if (opts.fall) { this.stats.falls++; text = `${victim.name} fell off the map`; }
+      if (opts.fall) {
+        this.stats.falls++;
+        text = pusher ? `${pusher.name} knocked team-mate ${victim.name} off the map` : `${victim.name} fell off the map`;
+        if (pusher) {
+          if (!victim.isBot) this.notify(victim, `${pusher.name} knocked you off the map`);
+          if (!pusher.isBot) this.notify(pusher, `You knocked ${victim.name}, on your own side, off the map`);
+        }
+      }
       else if (weapon === 'Kamikaze') text = `${victim.name} went out with a bang`;
       else if (opts.world) text = `${victim.name} was caught in the blast`;
       else if (opts.selfDestruct) { this.stats.suicides++; text = `${victim.name} self-destructed`; }
@@ -776,6 +793,57 @@ export class Game {
     this.recorder?.rosterChanged?.();
     this.checkWin();
     return true;
+  }
+
+  /**
+   * Soldier s over to the other side (their own choice, or to even the sides up): out where they
+   * stand, and back at their new side's spawn. Returns whether they changed.
+   */
+  switchTeam(s, team, { quiet = false } = {}) {
+    if (!this.rules.teams || (team !== 1 && team !== 2) || s.team === team || this.over) return false;
+    if (s.alive) {
+      // (Out of a fight that way: whoever was hurting them has the frag.)
+      if (s.lastHurtBy && s.lastHurtBy !== s && this.tick - s.lastHurtTick < RULES.creditFallTicks) this.kill(s, null, null);
+      else {
+        this.rules.onRemove?.(this, s);
+        streakOff(this, s);
+        s.alive = false;
+        s.kamikaze = null;
+        s.burnTicks = 0;
+        s.body.rope = null;
+        this.fx?.ring(s.x, s.y - 6, '#999');
+      }
+    }
+    s.team = team;
+    s.deployAt = null;
+    s.respawnTimer = RULES.respawnTicks;
+    if (!quiet) this.addFeed({ text: `${s.name} went over to the ${team === 1 ? 'Blue' : 'Red'} team`, tick: this.tick });
+    this.recorder?.rosterChanged?.();
+    this.checkWin();
+    return true;
+  }
+
+  /** How many are playing on side `team` (not those sitting out). */
+  teamSize(team) {
+    let n = 0;
+    for (const s of this.soldiers) if (s.team === team && !s.spectating && !s.npc) n++;
+    return n;
+  }
+
+  /**
+   * The sides evened up with bots (after someone's joined, left or changed sides): while one has
+   * two more than the other, a bot of its goes over (the one with the fewest frags).
+   */
+  evenTeams() {
+    if (!this.rules.teams || this.over) return;
+    for (let i = 0; i < 64; i++) {
+      const a = this.teamSize(1), b = this.teamSize(2);
+      if (Math.abs(a - b) < 2) return;
+      const from = a > b ? 1 : 2;
+      const bot = this.soldiers.filter(s => s.isBot && !s.npc && s.team === from && !s.spectating).sort((x, y) => x.frags - y.frags || y.id - x.id)[0];
+      if (!bot) return;
+      this.switchTeam(bot, 3 - from, { quiet: true });
+    }
   }
 
   checkWin() {

@@ -11,6 +11,9 @@ import { RELAYS, KIND, TAG, relaysFor } from './relays.js';
 import { PeerLink } from './peer.js';
 import { PROTOCOL } from './protocol.js';
 
+/** The modes a listed game can say it is (the game's modes, modes.js: every one of them, the objective ones too). */
+export const GAME_MODES = ['ffa', 'team', 'gungame', 'oitc', 'koth', 'ctf', 'conquest', 'rush', 'defuse', 'world'];
+
 const LISTING_EVERY = 20000;  // ms between listing refreshes
 const STALE_AFTER = 75;       // seconds without a refresh before a game drops off the list
 const KEY_STORE = 'stick-soldiers-key';
@@ -39,7 +42,7 @@ export function parseListing(ev, data) {
     name: str(data.name, 40) || 'Online game',
     hostName: str(data.hostName, 14) || 'Someone',
     mapName: str(data.mapName, 40) || 'Unknown map',
-    mode: ['ffa', 'team', 'gungame', 'oitc', 'world'].includes(data.mode) ? data.mode : 'ffa',
+    mode: GAME_MODES.includes(data.mode) ? data.mode : 'ffa',
     players: int(data.players, 0, 64),
     max: int(data.max, 1, 64),
     bots: int(data.bots, 0, 64),

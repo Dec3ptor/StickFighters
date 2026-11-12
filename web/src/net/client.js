@@ -753,6 +753,11 @@ export class NetClient {
     this.link.send({ t: 'spectate', on: !!on }, true);
   }
 
+  /** Ask the host to put us on the other side (a team game; the host says why not, if not). */
+  sendTeam() {
+    this.link.send({ t: 'team' }, true);
+  }
+
   sendChat(text) { this.link.send({ t: 'chat', text: String(text).slice(0, 140) }, true); }
 
   /** Defuse: buy something (the host checks we can, and takes the money). */
