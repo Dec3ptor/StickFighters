@@ -17,6 +17,49 @@ export const GAME_MODES = ['ffa', 'team', 'gungame', 'oitc', 'koth', 'ctf', 'con
 const LISTING_EVERY = 20000;  // ms between listing refreshes
 const STALE_AFTER = 75;       // seconds without a refresh before a game drops off the list
 const KEY_STORE = 'stick-soldiers-key';
+const GAME_ID_STORE = 'stick-soldiers-game-id';
+const GAME_ID = /^[0-9a-f]{4,32}$/;
+
+/**
+ * This browser's own game id, kept: with its key (below), an invite link to a game hosted from
+ * here is the same every time, so friends can keep it.
+ */
+export function loadGameId() {
+  try {
+    const saved = localStorage.getItem(GAME_ID_STORE);
+    if (GAME_ID.test(saved || '')) return saved;
+    const id = randomId(6);
+    localStorage.setItem(GAME_ID_STORE, id);
+    return id;
+  } catch { return randomId(6); }
+}
+
+/**
+ * A game's id once its host has gone and another player's taken it over: everyone left works
+ * it out the same from the old one, so they find the new host without being told.
+ */
+export const nextGameId = id => `${id.slice(0, -1)}${((parseInt(id.slice(-1), 16) + 1) % 16).toString(16)}`;
+
+/** This browser's time zone, in whole hours from UTC: a rough idea of where a player is, for finding games nearby. */
+export function myZone() {
+  try { return Math.round(-new Date().getTimezoneOffset() / 60); } catch { return null; }
+}
+
+/** Hours between two time zones, the short way round the world. */
+const zoneGap = (a, b) => { const d = Math.abs(a - b) % 24; return Math.min(d, 24 - d); };
+
+/**
+ * The games a quick match tries, best first: open ones with room (matches, not worlds); the
+ * nearest first, as well as can be told (hosts say their time zone: within 3 hours, within 7, or
+ * further); then the fullest, one of the mode asked for (if one is) ahead of another about as full.
+ */
+export function rankGames(list, { mode = null, zone = myZone() } = {}) {
+  const far = g => (zone == null || g.zone == null ? 1 : zoneGap(zone, g.zone) <= 3 ? 0 : zoneGap(zone, g.zone) <= 7 ? 1 : 2);
+  // (The fullest; the mode asked for counts as a player and a half more.)
+  const want = g => g.players + (mode && g.mode === mode ? 1.5 : 0);
+  return list.filter(g => g.version === PROTOCOL && !g.closed && g.players < g.max && g.mode !== 'world')
+    .sort((a, b) => far(a) - far(b) || want(b) - want(a) || b.seen - a.seen);
+}
 
 /** This browser's key (kept, so a host keeps the same identity between visits). */
 export function loadKeys() {
@@ -34,7 +77,7 @@ const int = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(Number(v) || 0))
 
 /** Check a game listing from the relays (anyone can post anything there). */
 export function parseListing(ev, data) {
-  if (!data || typeof data !== 'object' || typeof data.id !== 'string' || !/^[0-9a-f]{4,32}$/.test(data.id)) return null;
+  if (!data || typeof data !== 'object' || typeof data.id !== 'string' || !GAME_ID.test(data.id)) return null;
   return {
     key: `${ev.pubkey}:${data.id}`,
     id: data.id,
@@ -47,6 +90,8 @@ export function parseListing(ev, data) {
     max: int(data.max, 1, 64),
     bots: int(data.bots, 0, 64),
     version: int(data.v, 0, 1e6),
+    // (The host's time zone, hours from UTC, if it says: roughly how far away it is.)
+    zone: Number.isFinite(data.tz) ? int(data.tz, -12, 14) : null,
     closed: !!data.closed,
     seen: ev.created_at,
   };
@@ -78,8 +123,8 @@ export class Lobby {
     return this.pool.publish(ev);
   }
 
-  async announce(msg) {
-    const ev = await signEvent({ kind: KIND.lobby, tags: [['x', TAG.lobby]], content: JSON.stringify(msg) }, this.keys);
+  async announce(msg, at = undefined) {
+    const ev = await signEvent({ kind: KIND.lobby, tags: [['x', TAG.lobby]], content: JSON.stringify(msg), created_at: at }, this.keys);
     return this.pool.publish(ev);
   }
 
@@ -141,26 +186,36 @@ export class Lobby {
 
   /**
    * List a game and accept players.
-   * opts: { info(): { name, hostName, mapName, mode, players, max, bots, private },
+   * opts: { id (the game's id: this browser's own, loadGameId, unless one's given),
+   *         info(): { name, hostName, mapName, mode, players, max, bots, private },
    *         accept(name, key): null to let them in, or a reason to turn them away (key: who's
    *           asking, the same each time they do),
-   *         onPlayer(link, name, key) }
+   *         onPlayer(link, name, key),
+   *         onJoinFailed(name, why): someone was let in but couldn't connect }
    */
   host(opts) {
-    const id = randomId(6);
+    const id = GAME_ID.test(opts.id || '') ? opts.id : randomId(6);
     let closed = false, lastAnswer = 0;
-    const listing = () => ({ ...opts.info(), id, v: PROTOCOL });
+    const listing = () => ({ ...opts.info(), id, v: PROTOCOL, tz: myZone() });
+    // (A game's id is the same each time it's hosted from here, and a listing counts only if
+    // it's newer than the last word that the game closed: so what this one says is always dated
+    // after the last one's closing, even hosted again in the same second; and its own closing
+    // after everything it said.)
+    this.closedAt ||= new Map();
+    let said = 0;
+    const stamp = () => (said = Math.max(now(), (this.closedAt.get(id) || 0) + 1, said));
 
     const publish = async () => {
       if (closed) return;
       const info = listing();
       if (info.private) return;
+      const at = stamp();
       const stored = await signEvent({
-        kind: KIND.app, content: JSON.stringify(info),
+        kind: KIND.app, content: JSON.stringify(info), created_at: at,
         tags: [['d', `stick-soldiers/game/${id}`], ['t', TAG.game], ['expiration', String(now() + 150)]],
       }, this.keys);
       this.pool.publish(stored);
-      this.announce({ type: 'game', game: info });
+      this.announce({ type: 'game', game: info }, at);
     };
     const timer = setInterval(publish, LISTING_EVERY);
     this.pool.ready(1, 5000).then(publish);
@@ -169,7 +224,7 @@ export class Lobby {
       try {
         if (JSON.parse(ev.content).type !== 'who' || Date.now() - lastAnswer < 2500) return;
         lastAnswer = Date.now();
-        if (!listing().private) this.announce({ type: 'game', game: listing() });
+        if (!listing().private) this.announce({ type: 'game', game: listing() }, stamp());
       } catch { /* not ours */ }
     });
 
@@ -185,7 +240,8 @@ export class Lobby {
         const link = this.makeLink();
         const sdp = await link.answer(msg.sdp);
         await reply({ type: 'answer', sdp });
-        link.ready.then(() => { if (!closed) opts.onPlayer(link, str(msg.name, 14), from); else link.close(); }).catch(e => this.log(`player didn't connect: ${e.message}`));
+        link.ready.then(() => { if (!closed) opts.onPlayer(link, str(msg.name, 14), from); else link.close(); })
+          .catch(e => { this.log(`player didn't connect: ${e.message}`); if (!closed) opts.onJoinFailed?.(str(msg.name, 14), e.message); });
       } catch (e) {
         this.log(`couldn't answer: ${e.message}`);
       }
@@ -205,12 +261,14 @@ export class Lobby {
         clearTimeout(soon);
         who.close();
         this.signalHandlers.delete(onOffer);
+        const at = Math.max(now(), said);
+        this.closedAt.set(id, at);
         const gone = await signEvent({
-          kind: KIND.app, content: JSON.stringify({ id, closed: true, v: PROTOCOL }),
+          kind: KIND.app, content: JSON.stringify({ id, closed: true, v: PROTOCOL }), created_at: at,
           tags: [['d', `stick-soldiers/game/${id}`], ['t', TAG.game], ['expiration', String(now() + 60)]],
         }, this.keys);
         this.pool.publish(gone);
-        this.announce({ type: 'closed', id });
+        this.announce({ type: 'closed', id }, at);
       },
     };
   }
@@ -249,14 +307,15 @@ export class Lobby {
   }
 
   /**
-   * Quick match: join the fullest open game that has room (trying a few), or
-   * resolve null if there isn't one. onStatus(text) reports progress.
+   * Quick match: join the best open game that has room (rankGames: the nearest, of the mode
+   * asked for if one is, the fullest; trying a few), or resolve null if there isn't one.
+   * onStatus(text) reports progress. prefs: { mode }.
    */
-  async quickMatch(name, onStatus = () => {}) {
+  async quickMatch(name, onStatus = () => {}, prefs = {}) {
     onStatus('Looking for games…');
     await this.pool.ready(1, 6000);
     if (!this.pool.connected) throw new Error("Couldn't reach the game servers (check your internet connection)");
-    const list = (await this.listGames(3000)).filter(g => g.version === PROTOCOL && !g.closed && g.players < g.max);
+    const list = rankGames(await this.listGames(3000), prefs);
     for (const g of list.slice(0, 4)) {
       onStatus(`Joining ${g.name}…`);
       try { return { link: await this.join(g, name), game: g }; }

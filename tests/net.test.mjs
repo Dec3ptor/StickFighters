@@ -178,7 +178,8 @@ test('sprinting online: my screen predicts the speed and stamina the host has', 
   const mine = game.soldiers.find(s => s.remote);
   for (let i = 0; i < 600 && !(mine.alive && c.me.alive); i++) await step(1);
   let sprinted = false;
-  for (let i = 0; i < 200; i++) {
+  // (Long enough to take in a spell of sprinting whenever it starts: on, 300 updates of every 400.)
+  for (let i = 0; i < 500; i++) {
     await step(1);
     if (!mine.alive || !c.me.alive) continue;
     sprinted ||= mine.body.sprinting;
@@ -705,40 +706,77 @@ test('destructible maps online: a hole doesn\'t change the projectiles shown (ke
   assert.deepEqual(list.map(p => ({ ...p })), copies, 'what was shown is unchanged');
 });
 
-test('how far behind others are shown follows late snapshots, within 5 to 10 ticks: up at once, down a tick at a time', () => {
-  // The client's clock alone, fed snapshots 20 a second (3 ticks apart) that take 30 ms plus up to `jitter` more.
-  const c = Object.create(NetClient.prototype);
-  c.step = 1000 / 60;
-  c.resetClock();
-  const rng = makeRng(4);
-  let sent = 0, tick = 0, last = -1;
-  const run = (seconds, jitter) => {
-    const out = [];
-    for (let i = 0; i < seconds * 20; i++) { sent += 50; tick += 3; out.push({ tick, at: sent + 30 + rng() * jitter }); }
-    const delays = [];
-    // (In the order they arrive; late ones that come after a newer one are left out, as onSnapshot does.)
-    for (const s of out.sort((a, b) => a.at - b.at)) {
-      if (s.tick <= last) continue;
-      last = s.tick;
-      c.timeSnapshot(s.tick, s.at);
-      delays.push(c.delay);
+test('how far behind others are shown follows late snapshots, within 3 to 10 ticks: up at once, down a tick at a time', () => {
+  // The client's clock alone, fed snapshots `gap` ticks apart (20, 30 or 60 a second) that take 30 ms plus up to `jitter` more.
+  for (const [gap, steadyAt] of [[3, 5], [2, 4], [1, 3]]) {
+    const c = Object.create(NetClient.prototype);
+    c.step = 1000 / 60;
+    c.resetClock();
+    const rng = makeRng(4);
+    const each = 60 / gap;   // (snapshots a second)
+    let sent = 0, tick = 0, last = -1;
+    const run = (seconds, jitter) => {
+      const out = [];
+      for (let i = 0; i < seconds * each; i++) { sent += 1000 / each; tick += gap; out.push({ tick, at: sent + 30 + rng() * jitter }); }
+      const delays = [];
+      // (In the order they arrive; late ones that come after a newer one are left out, as onSnapshot does.)
+      for (const s of out.sort((a, b) => a.at - b.at)) {
+        if (s.tick <= last) continue;
+        last = s.tick;
+        c.timeSnapshot(s.tick, s.at);
+        delays.push(c.delay);
+      }
+      return delays;
+    };
+    const steady = run(10, 2), jittery = run(10, 100), calm = run(40, 2);
+    const all = [...steady, ...jittery, ...calm];
+    assert.ok(all.every(d => d >= 3 && d <= 10), `${each} a second: within 3 to 10 ticks`);
+    assert.equal(c.gap, gap, `${each} a second: how far apart they come, seen`);
+    assert.equal(steady.at(-1), steadyAt, `${each} a second, a steady link: down to ${steadyAt} (a snapshot apart, and a tick or two to spare)`);
+    assert.equal(steady[2 * each], steadyAt, `${each} a second: there within 2 seconds of the match starting`);
+    // (Snapshots up to 100 ms late, 6 ticks: that, the gap between them and some to spare, or the most there
+    // is. Every update, most late ones are overtaken by the next and never count: less is needed.)
+    const up = Math.max(...jittery.slice(0, 2 * each));
+    assert.ok(gap === 1 ? up >= steadyAt + 3 : up >= Math.min(10, gap + 7), `${each} a second, late snapshots: up within 2 seconds (${up})`);
+    // Back on a steady link: down a tick at a time, at most one every 5 seconds.
+    let at = -5 * each;
+    for (let i = 1; i < calm.length; i++) {
+      if (calm[i] === calm[i - 1]) continue;
+      assert.equal(calm[i], calm[i - 1] - 1, 'a tick at a time');
+      assert.ok(i - at >= 5 * each, `${each} a second: not sooner than 5 seconds apart`);
+      at = i;
     }
-    return delays;
-  };
-  const steady = run(10, 2), jittery = run(10, 100), calm = run(30, 2);
-  const all = [...steady, ...jittery, ...calm];
-  assert.ok(all.every(d => d >= 5 && d <= 10), 'within 5 to 10 ticks');
-  assert.equal(steady.at(-1), 6, 'a steady link: down to 6 (a snapshot apart, and 2 to spare)');
-  assert.equal(Math.max(...jittery.slice(0, 40)), 10, 'late snapshots: up (to the most) within 2 seconds');
-  // Back on a steady link: down a tick at a time, at most one every 5 seconds (100 snapshots).
-  let at = -100;
-  for (let i = 1; i < calm.length; i++) {
-    if (calm[i] === calm[i - 1]) continue;
-    assert.equal(calm[i], calm[i - 1] - 1, 'a tick at a time');
-    assert.ok(i - at >= 100, 'not sooner than 5 seconds apart');
-    at = i;
+    assert.equal(calm.at(-1), steadyAt, `${each} a second: and back to ${steadyAt}`);
   }
-  assert.equal(calm.at(-1), 6, 'and back to 6');
+});
+
+test('the host sends snapshots as often as its upload can take: a duel 60 a second, a full server 20', () => {
+  const ready = n => new Set(Array.from({ length: n }, () => ({ ready: true })));
+  const host = new NetHost({ maxPlayers: 16, botCount: 0, matchInfo: () => ({}) });
+  host.snapBytes = 700;
+  host.players = ready(1);
+  assert.equal(host.pace(), 1, 'one player: every update');
+  host.players = ready(3);
+  assert.equal(host.pace(), 1, 'three: still every update');
+  host.players = ready(5);
+  assert.equal(host.pace(), 2, 'five: every other');
+  host.players = ready(15);
+  assert.equal(host.pace(), 3, 'fifteen: every third, as it always was');
+  // (Big snapshots, a big battle: slower for the same players.)
+  host.players = ready(3);
+  host.snapBytes = 1200;
+  assert.equal(host.pace(), 2);
+  // (Going faster again waits for room to spare: just under the most isn't enough.)
+  host.snapBytes = 150000 / 60 / 3 * 0.95;
+  assert.equal(host.pace(), 2, 'not back up while it only just fits');
+  host.snapBytes = 150000 / 60 / 3 * 0.7;
+  assert.equal(host.pace(), 1, 'up when there\'s room to spare');
+  // (Nobody there, or a world: the usual.)
+  host.players = ready(0);
+  assert.equal(host.pace(), SNAPSHOT_EVERY);
+  const world = new NetHost({ maxPlayers: 8, botCount: 0, matchInfo: () => ({}), world: {} });
+  world.players = ready(1);
+  assert.equal(world.pace(), SNAPSHOT_EVERY);
 });
 
 // A real (WebRTC) link with a stand-in for the browser's connection: only its giving up is tested.

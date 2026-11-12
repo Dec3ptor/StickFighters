@@ -20,7 +20,8 @@ import { decodeShare, encodeShare, normalizeMap } from './custommaps.js';
 import { MODES, MODE_IDS } from './modes.js';
 import { WEAPONS } from './weapons.js';
 import { GameMap, seamsOf, fillSeams } from './map.js';
-import { Lobby, inviteCode, parseInvite } from './net/lobby.js';
+import { Lobby, inviteCode, parseInvite, loadGameId, nextGameId } from './net/lobby.js';
+import { loadIceServers } from './net/relays.js';
 import { NetHost } from './net/host.js';
 import { NetClient } from './net/client.js';
 import { Community } from './net/community.js';
@@ -448,6 +449,8 @@ async function communityAction(entry) {
 
 /** The map data for a menu key: { data, navKey, name, ref } where ref tells online players how to get it. */
 async function mapDataFor(key) {
+  // (A map carried on from a game whose host left: takeOver.)
+  if (key === 'carried:' && state.carriedMap) return { data: state.carriedMap.data, navKey: `carried@${state.carriedMap.at}`, name: state.carriedMap.name, custom: true };
   if (key?.startsWith('custom:')) {
     const rec = getMap(key.slice(7));
     if (rec) return { data: rec.data, navKey: `${key}@${rec.updated}`, name: rec.name, custom: true };
@@ -578,10 +581,11 @@ function addBot(game, nav, settings, rng) {
 }
 
 /** Start a match. online: host it (other players can join). */
-async function startMatch(settings, { returnTo = 'menu', online = false } = {}) {
+async function startMatch(settings, { returnTo = 'menu', online = false, save = true } = {}) {
   state.settings = settings;
   state.returnTo = returnTo;
-  if (returnTo === 'menu') saveSettings({ ...loadSettings(), ...settings, tab: state.tab, mapSource: mapSource() });
+  // (save: false for a game taken over from a host who left: it's set up their way, not ours.)
+  if (returnTo === 'menu' && save) saveSettings({ ...loadSettings(), ...settings, tab: state.tab, mapSource: mapSource() });
   show('menu', false); show('pause', false); show('over', false); show('connecting', false);
   $('toEditor').classList.toggle('hidden', returnTo !== 'editor');
   $('toMenu').textContent = returnTo === 'editor' ? 'Back to map maker' : 'Menu';
@@ -600,7 +604,13 @@ async function startMatch(settings, { returnTo = 'menu', online = false } = {}) 
   };
   // (How many will be playing, for an Auto frag limit: us, those already in the game we're hosting, and the bots.)
   const playing = Math.min(online ? settings.maxPlayers : Infinity, (online ? state.net?.host?.humans || 1 : 1) + (settings.bots || 0));
-  const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: limitOf(settings, playing), timeLimit: (settings.timeLimit || 0) * 60, speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
+  // (Carrying on a game whose host left, takeOver: its limit as it was, and its scores and clock where they'd got to.)
+  const carry = online ? state.takeover : null;
+  const game = new Game({ mapData: map.data, mode: settings.mode, fragLimit: carry ? carry.fragLimit : limitOf(settings, playing), timeLimit: (settings.timeLimit || 0) * 60, speed: settings.speed, options, seed: (Math.random() * 2 ** 31) | 0 });
+  if (carry?.scores) {
+    if (['team', 'koth', 'ctf'].includes(settings.mode)) { game.teamScore[1] = carry.standing.teamScore[1] | 0; game.teamScore[2] = carry.standing.teamScore[2] | 0; }
+    if (game.timeLimit) game.timeLimit = Math.max(30 * game.tickRate, game.timeLimit - Math.max(0, carry.standing.tick | 0));
+  }
   state.step = 1000 / game.tickRate;
   // The last few seconds are kept, for the replay of the winning kill (replay.js).
   game.tape = new Tape();
@@ -740,6 +750,8 @@ function setPaused(p) {
   show('switchTeam', sides);
   if (sides) $('switchTeam').textContent = `Change sides (to ${state.me.team === 1 ? 'Red' : 'Blue'})`;
   showKickList();
+  // (Hosting, with others in the game: leave, and it carries on under one of them.)
+  show('leaveGame', state.mode === 'host' && !state.world && (state.net?.host?.players.size || 0) > 0);
   $('quit').textContent = state.mode === 'host' ? 'End game for everyone' : state.mode === 'client' ? 'Leave game' : state.world ? 'Save and quit' : 'Quit to menu';
   // (A world: no restarting it, and no sitting out to watch. Pausing keeps it as it is.)
   if (state.world) { show('restart', false); show('spectate', false); if (p) saveWorldNow(); }
@@ -1099,6 +1111,7 @@ function hostWorld(game, rec) {
   net.host.setGame(game);
   state.mode = 'host';
   net.handle = getLobby().host({
+    id: loadGameId(),
     info: () => ({
       name: settings.gameName, hostName: settings.name, mapName: rec.name, mode: 'world',
       players: net.host.humans, max: settings.maxPlayers, bots: 0, private: settings.visibility === 'private',
@@ -2009,8 +2022,36 @@ function renderGameList(list) {
 function connecting(title, text = '', onCancel = null) {
   $('connTitle').textContent = title;
   $('connText').textContent = text;
+  $('connCancel').textContent = 'Cancel';
   state.cancelConnect = onCancel;
   show('connecting', true);
+}
+
+/** Couldn't join a game: why, and what to try, kept up till it's been read (not a message that's gone in a moment). */
+function connectFailed(text, title = "Couldn't join") {
+  $('connTitle').textContent = title;
+  $('connText').textContent = text;
+  $('connCancel').textContent = 'OK';
+  state.cancelConnect = null;
+  show('menu', true);
+  show('connecting', true);
+}
+
+/** The game as it's set up, for whoever takes it over if we go (not who we are, or which of our own maps it's on). */
+const SETUP_KEYS = ['bots', 'difficulty', 'fragLimit', 'timeLimit', 'rotate', 'shuffle', 'goal', 'botVision', 'fog', 'lives', 'gunKills', 'crates', 'destruction', 'streaks', 'maxPlayers', 'visibility', 'gameName'];
+const sharedSetup = s => Object.fromEntries(SETUP_KEYS.filter(k => s[k] !== undefined).map(k => [k, s[k]]));
+
+/** A setup another host sent, checked: only what a setup has, each of the kind ours is, within reason. */
+function cleanSetup(o, base) {
+  const out = {};
+  for (const k of SETUP_KEYS) {
+    const v = o?.[k];
+    if (typeof v !== typeof base[k]) continue;
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = Math.max(0, Math.min(k === 'bots' ? 200 : 100000, v));
+    else if (typeof v === 'string' && v.length <= 40) out[k] = v;
+  }
+  if (out.maxPlayers != null) out.maxPlayers = Math.max(2, Math.min(64, Math.round(out.maxPlayers)));
+  return out;
 }
 
 async function hostMatch(game, settings, map, nav, rng) {
@@ -2027,6 +2068,8 @@ async function hostMatch(game, settings, map, nav, rng) {
       maxPlayers: settings.maxPlayers, botCount: settings.bots,
       // (With our numbers, camera and aiming zoom as they are when each player joins.)
       matchInfo: () => ({ ...net.matchInfo, ...rulesToShare() }),
+      // (The game as it's set up, for whoever takes it over if we go.)
+      setup: () => sharedSetup(net.settings),
       addBot: g => net.addBot(g),
       onChange: () => net.handle?.update(),
       onChat: m => addChat(m),
@@ -2034,10 +2077,16 @@ async function hostMatch(game, settings, map, nav, rng) {
   }
   net.host.opts.maxPlayers = settings.maxPlayers;
   net.host.opts.botCount = settings.bots;
+  // (Carrying on a game whose host left: everyone has what they had there, as they arrive.)
+  if (state.takeover) net.host.carryOver(state.takeover.standing.soldiers, { scores: state.takeover.scores });
   net.host.setGame(game);
   if (!net.handle) {
     const l = getLobby();
     net.handle = l.host({
+      // (This browser's own game id, so its invite link is the same every time. A game taken
+      // over: the id everyone left works out from the old one.)
+      id: state.takeover?.id || loadGameId(),
+      onJoinFailed: name => addChat({ system: true, text: `${name} tried to join but couldn't connect: their network or yours is blocking direct connections.` }),
       info: () => ({
         name: net.settings.gameName || `${net.settings.name}'s game`, hostName: net.settings.name, mapName: net.matchInfo.mapName,
         // (As it is now: the map and mode can change between matches.)
@@ -2075,12 +2124,10 @@ async function joinGame(target) {
   try {
     const link = await getLobby().join(target, playerName());
     if (cancelled) { link.close('cancelled'); return; }
-    startClient(link);
+    startClient(link, target);
   } catch (e) {
     if (cancelled) return;
-    show('connecting', false);
-    showMenu();
-    toast(e.message);
+    connectFailed(e.message);
   }
 }
 
@@ -2090,23 +2137,29 @@ async function quickMatch() {
   let cancelled = false;
   connecting('Quick match', 'Looking for games…', () => { cancelled = true; });
   try {
-    const res = await getLobby().quickMatch(playerName(), text => { $('connText').textContent = text; });
+    // (The nearest open games first, then the fullest: one of the mode last set up ahead of another about as full.)
+    const res = await getLobby().quickMatch(playerName(), text => { $('connText').textContent = text; }, { mode: $('mode').value });
     if (cancelled) { res?.link.close('cancelled'); return; }
-    if (res) { startClient(res.link); return; }
-    $('connText').textContent = 'No open games, so starting one for others to join…';
+    if (res) { startClient(res.link, res.game); return; }
+    $('connText').textContent = 'No open games right now, so starting one for others to join…';
     const s = { ...readMenu(), visibility: 'public', gameName: '' };
     if (sourceOf(s.map) !== 'originals') s.map = maps.index[Math.floor(Math.random() * maps.index.length)].file;
     await startMatch(s, { online: true });
+    // (Said where it stays read: they asked to join a game, and are hosting one.)
+    addChat({ system: true, text: 'No open games right now, so you\'re hosting this one: others can join it from the list. Bots play until they do.' });
   } catch (e) {
     if (cancelled) return;
-    show('connecting', false);
-    showMenu();
-    toast(e.message);
+    connectFailed(e.message, "Couldn't find a game");
   }
 }
 
-function startClient(link) {
-  const net = state.net = { role: 'client' };
+function startClient(link, target = null) {
+  // (target: the game joined ({ host, id }), for getting back into it, or following it to a new host.)
+  const net = state.net = { role: 'client', target };
+  // (Joined through a relay server, the two networks not allowing a direct connection: say so, once it's known.)
+  setTimeout(() => link.route?.().then(r => {
+    if (r === 'relay' && state.net === net) addChat({ system: true, text: 'Connected through a relay server (your networks don\'t allow a direct connection): expect a little more delay.' });
+  }), 2500);
   const world = new WorldClient({
     onInv: () => invScreen?.refresh(true),
     onChest: chest => {
@@ -2137,28 +2190,121 @@ function startClient(link) {
       enterMatch(game, me);
     },
     onFeel: f => useHostFeel(f),
-    onEnd: reason => {
+    onEnd: (reason, how) => {
       if (state.net !== net) return;
+      // (The connection's gone, or the host has: the game may carry on. Not when the host ended
+      // it for everyone, or we left it ourselves.)
+      const info = how && !how.over ? carryInfo(net) : null;
       state.net = null;
       useOwnRules();
       show('connecting', false);
       endMatch('menu');
-      if (reason) toast(reason);
+      if (info) carryOn(info, how, reason);
+      else if (reason) toast(reason);
     },
     onChat: m => addChat(m),
   });
   $('connText').textContent = 'Connected. Loading the match…';
 }
 
-/** Leave whatever online game we're in. */
-function leaveOnline() {
+/**
+ * Leave whatever online game we're in. Hosting: `over` ends it for everyone; otherwise it
+ * carries on without us (whoever's next in line hosts it, and the rest follow them there).
+ */
+function leaveOnline({ over = false } = {}) {
   const net = state.net;
   state.net = null;
   // (Someone else's game had its own numbers, camera and aiming zoom: ours again.)
   useOwnRules();
   if (!net) return;
-  if (net.role === 'host') { net.handle?.close(); net.host?.close(); }
+  if (net.role === 'host') { net.handle?.close(); net.host?.close(over ? 'The host ended the game' : 'The host left the game', { over }); }
   if (net.role === 'client') net.client?.leave();
+}
+
+// ---- Carrying on when the connection drops, or the host goes -------------------------------------
+
+/** What it takes to carry a game on, taken from it as we lose it (null: nothing to carry on). */
+function carryInfo(net) {
+  const c = net.client;
+  if (!c?.game || !c.me || !net.target) return null;
+  const me = { name: c.me.name, team: c.me.team };
+  // (A world: back into it if its host is still there; nobody else can host it.)
+  if (c.game.world) return { target: net.target, me, world: true };
+  return { target: net.target, me, heir: c.heir, setup: c.setup, match: c.matchInfo, mapData: c.mapData, standing: c.standing(), over: !!c.game.over };
+}
+
+/**
+ * The game we were in has gone from under us. The connection dropped, with no word from the
+ * host: try getting back in (it may only be ours that went; the host gives us back what we had).
+ * The host's gone: whoever it named to take over hosts the game again as it was, with the scores
+ * where they'd got to, and everyone else joins them there. If that's us: takeOver.
+ */
+async function carryOn(info, how, reason) {
+  let cancelled = false;
+  // (Cancelled; or into another game meanwhile.)
+  const stop = () => cancelled || !!state.game || !!state.net;
+  connecting(how.lost ? 'Connection lost' : 'The host left', how.lost ? 'Getting back in…' : 'Carrying the game on…', () => { cancelled = true; });
+  const lobby = getLobby(), name = info.me.name;
+  if (how.lost) {
+    try {
+      const link = await lobby.join(info.target, name, { timeout: 7000 });
+      if (stop()) { link.close('cancelled'); return; }
+      startClient(link, info.target);
+      addChat({ system: true, text: 'Back in: the connection dropped for a moment.' });
+      return;
+    } catch { /* the host's gone, then: on to whoever takes over */ }
+    if (stop()) return;
+  }
+  const heir = info.heir;
+  if (heir && info.match && !info.world) {
+    const next = { host: heir.key, id: nextGameId(info.target.id), name: `${heir.name}'s game` };
+    if (heir.key === lobby.keys.pubkey) { await takeOver(info, next, stop); return; }
+    $('connTitle').textContent = 'The host left';
+    $('connText').textContent = `${heir.name} is taking over as host…`;
+    for (let i = 0; i < 7; i++) {
+      await new Promise(r => setTimeout(r, i ? 2500 : 3000));
+      if (stop()) return;
+      try {
+        const link = await lobby.join(next, name, { timeout: 6000 });
+        if (stop()) { link.close('cancelled'); return; }
+        startClient(link, next);
+        addChat({ system: true, text: `The host left: ${heir.name} is hosting now, and the game carries on.` });
+        return;
+      } catch (e) {
+        if (/sent you away|is full|different version/i.test(e.message)) break;
+      }
+      if (stop()) return;
+    }
+  }
+  if (stop()) return;
+  connectFailed(how.lost ? "Lost the connection to the host, and couldn't get back in." : `${reason || 'The host left the game'}, and it couldn't carry on without them.`, how.lost ? 'Connection lost' : 'The host left');
+}
+
+/** Modes whose scores a new host can pick up from where they were (the others have more to them than scores, and start again). */
+const CARRY_SCORES = new Set(['ffa', 'team', 'gungame', 'oitc', 'koth', 'ctf']);
+
+/**
+ * The host's gone and we're next in line: host the game ourselves, as it was set up, on the same
+ * map, with everyone's scores where they'd got to (startMatch, hostMatch), under the id the
+ * others work out for themselves. They join as they find it.
+ */
+async function takeOver(info, next, stop = () => false) {
+  const m = info.match;
+  $('connTitle').textContent = 'The host left';
+  $('connText').textContent = "You're the host now. Starting the game again for everyone…";
+  let map = m.map?.builtin && maps.data.has(m.map.builtin) ? m.map.builtin : null;
+  if (!map && info.mapData) { state.carriedMap = { data: info.mapData, name: String(m.mapName || info.mapData.name || 'Map').slice(0, 40), at: Date.now() }; map = 'carried:'; }
+  if (!map || !MODES[m.mode] || m.mode === 'world') { connectFailed(`The host left the game, and it couldn't carry on without them.`, 'The host left'); return; }
+  const base = readMenu();
+  const s = { ...base, ...cleanSetup(info.setup, base), name: info.me.name, map, mode: m.mode, side: info.me.team === 2 ? 2 : 1 };
+  state.takeover = { id: next.id, standing: info.standing, scores: CARRY_SCORES.has(m.mode) && !info.over, fragLimit: Math.max(0, m.fragLimit | 0) };
+  try {
+    if (stop()) return;
+    await startMatch(s, { online: true, save: false });
+    addChat({ system: true, text: `The host left, so you're hosting now: everyone else is joining you${state.takeover.scores ? ', and the scores carry on' : ''}.` });
+  } finally {
+    state.takeover = null;
+  }
 }
 
 // ---- Chat ----------------------------------------------------------------------------
@@ -2859,7 +3005,9 @@ function wire() {
   });
   $('resume').addEventListener('click', () => setPaused(false));
   $('restart').addEventListener('click', () => nextMatch());
-  $('quit').addEventListener('click', () => { leaveOnline(); endMatch('menu'); });
+  // (Hosting: "End game for everyone" ends it; "Leave" hands it on to another player.)
+  $('quit').addEventListener('click', () => { leaveOnline({ over: true }); endMatch('menu'); });
+  $('leaveGame').addEventListener('click', () => { leaveOnline(); endMatch('menu'); });
   $('invite').addEventListener('click', async () => {
     const link = inviteLink();
     try { await navigator.clipboard.writeText(link); toast('Invite link copied: send it to a friend'); }
@@ -2867,7 +3015,7 @@ function wire() {
   });
   $('toEditor').addEventListener('click', () => endMatch('editor'));
   $('again').addEventListener('click', () => { state.nextMatchAt = 0; nextMatch(); });
-  $('toMenu').addEventListener('click', () => { if (state.mode !== 'offline') { leaveOnline(); endMatch('menu'); } else endMatch(); });
+  $('toMenu').addEventListener('click', () => { if (state.mode !== 'offline') { leaveOnline({ over: true }); endMatch('menu'); } else endMatch(); });
   $('openSettings').addEventListener('click', openSettings);
   $('openLoadout').addEventListener('click', openLoadout);
   $('loadoutDone').addEventListener('click', closeLoadout);
@@ -3082,6 +3230,8 @@ async function boot() {
   usePrefs(settings);
   // The developer menu's numbers, as changed in this browser.
   loadTuning();
+  // (A relay server for players whose networks block direct connections, if one's set up: turn.json.)
+  loadIceServers().catch(() => {});
   // (Keyboards other than QWERTY: name keys as they're printed, where the browser can say.)
   navigator.keyboard?.getLayoutMap?.().then(m => { useLayout(m); keybinds.render(); showKeys(); }).catch(() => {});
   const [index, legs, r] = await Promise.all([

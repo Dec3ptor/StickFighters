@@ -14,8 +14,12 @@ import { ITEMS } from '../world/items.js';
 import { RARITIES } from '../world/gear.js';
 import { ACTS, ACT_ID } from '../useanim.js';
 
-export const PROTOCOL = 30;           // bump when the messages change; older versions can't join
-export const SNAPSHOT_EVERY = 3;      // ticks between snapshots (20 a second)
+export const PROTOCOL = 31;           // bump when the messages change; older versions can't join
+export const SNAPSHOT_EVERY = 3;      // ticks between snapshots at the slowest (20 a second): a big game
+// The host sends them as often as its upload can take: every update (60 a second) to a few players,
+// every other (30) to more, while what goes out stays under this many bytes a second (host.js's pace).
+export const SNAPSHOT_BUDGET = 150000;
+export const SNAPSHOT_FAST_PLAYERS = 3; // every update only to this many players or fewer
 
 const WEAPON_IDS = Object.keys(WEAPONS);
 const WEAPON_INDEX = new Map(WEAPON_IDS.map((id, i) => [id, i]));

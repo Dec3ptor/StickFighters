@@ -241,7 +241,80 @@ await joiner.waitForFunction(name => ![...document.querySelectorAll('.game-row b
 const after = await joiner.$$eval('.game-row b', els => els.map(e => e.textContent));
 expect(!after.includes(GAME), 'closed game is gone from the list');
 
-console.log(JSON.stringify({ listed, feel, joinerRuns, joinerRunsAgain, cq, classes, pings, host: h1.soldiers.length, joinerMe: j1.me, chat: (await S(host)).chat, quick: t1.mode, toast, relaysDown: [...relaysDown], errors }, null, 2));
+// 8. A game carries on without its host. Hosted again (a free-for-all: its scores can be picked
+// up by another host), the joiner back in it, and, on the local relay, the quick-match player too.
+const GAME2 = `${GAME} again`;
+// (Back from the last game, the host's menu is where they set it up: to the list of games first.)
+await host.evaluate(() => window.stickSoldiers.showTab('online'));
+await page_click(host, '#hostGame');
+await host.fill('#gameName', GAME2);
+await host.selectOption('#mode', 'ffa');
+await host.fill('#bots', '2');
+await host.click('#play');
+await host.waitForFunction(() => window.stickSoldiers.state.mode === 'host' && window.stickSoldiers.state.me?.alive, null, { timeout: 20000 });
+const joinAgain = async page => {
+  const r = page.locator('.game-row', { hasText: GAME2 });
+  await r.waitFor({ timeout: publicRelays ? 40000 : 15000 });
+  await r.locator('button').click();
+  await page.waitForFunction(() => window.stickSoldiers.state.mode === 'client' && window.stickSoldiers.state.game, null, { timeout: 30000 });
+};
+await joinAgain(joiner);
+if (!publicRelays) await joinAgain(third);
+const C = page => page.evaluate(() => {
+  const { state } = window.stickSoldiers, g = state.game;
+  return { mode: state.mode, gameMode: g?.mode, id: state.net?.handle?.invite?.id, heir: state.net?.host?.heir?.name ?? state.net?.client?.heir?.name ?? null,
+    every: state.net?.host?.every, delay: state.net?.client?.delay, frags: g ? Object.fromEntries(g.soldiers.map(s => [s.name, s.frags])) : null, chat: state.chat.map(c => c.text) };
+});
+await host.waitForFunction(() => window.stickSoldiers.state.net.host.heir, null, { timeout: 10000 }).catch(() => {});
+// (A small game: everyone's shown many times a second, a short way behind.)
+await joiner.waitForTimeout(2500);
+const pace = { host: (await C(host)).every, joiner: (await C(joiner)).delay };
+expect(pace.host <= 2 && pace.joiner <= 5, `a small game is sent often, and shown a short way behind (${JSON.stringify(pace)})`);
+// 8a. The joiner's connection drops: they're back in by themselves, with the score they had.
+await host.evaluate(() => { for (const s of window.stickSoldiers.state.game.soldiers) { if (s.name === 'Joiner') s.frags = 4; if (s.name === 'Quicky') s.frags = 2; } });
+await joiner.waitForTimeout(600);
+await joiner.evaluate(() => window.stickSoldiers.state.net.client.link.close('lost connection'));
+await joiner.waitForFunction(() => window.stickSoldiers.state.mode === 'client' && window.stickSoldiers.state.game && window.stickSoldiers.state.chat.some(c => /Back in/.test(c.text)), null, { timeout: publicRelays ? 60000 : 30000 }).catch(() => {});
+await joiner.waitForTimeout(1500);
+const back = { host: await C(host), joiner: await C(joiner) };
+expect(back.joiner.mode === 'client' && back.joiner.chat.some(t => /Back in/.test(t)), `a dropped connection gets back in (${back.joiner.mode}; ${back.joiner.chat.slice(-3)})`);
+expect(back.host.frags?.Joiner === 4 && back.joiner.frags?.Joiner === 4, `with the score they had (${JSON.stringify(back.host.frags)}; ${JSON.stringify(back.joiner.frags)})`);
+// 8b. The host leaves: whoever it named takes the game over, with the scores as they were, and the rest follow.
+await host.waitForFunction(() => window.stickSoldiers.state.net.host.heir, null, { timeout: 10000 }).catch(() => {});
+const before = await C(host);
+expect(!!before.heir, `the host has named who'd take over (${before.heir})`);
+const heirPage = before.heir === 'Quicky' ? third : joiner, follower = publicRelays ? null : before.heir === 'Quicky' ? joiner : third;
+await host.keyboard.press('Escape');
+await host.click('#leaveGame');
+await heirPage.waitForFunction(() => window.stickSoldiers.state.mode === 'host' && window.stickSoldiers.state.game && window.stickSoldiers.state.me, null, { timeout: publicRelays ? 60000 : 30000 }).catch(() => {});
+const took = await C(heirPage);
+expect(took.mode === 'host' && took.gameMode === 'ffa', `${before.heir} hosts the game now (${took.mode}, ${took.gameMode})`);
+// (Their own, as they start it again; everyone else's as they arrive: below.)
+expect(took.frags?.[before.heir] === (before.heir === 'Quicky' ? 2 : 4), `the scores carried over (${JSON.stringify(took.frags)})`);
+expect(took.id && took.id !== before.id && took.id.slice(0, -1) === before.id.slice(0, -1), `under the id everyone works out (${before.id} -> ${took.id})`);
+expect((await S(host)).mode === 'offline', 'and the old host is out');
+let followed = null;
+if (follower) {
+  await follower.waitForFunction(() => window.stickSoldiers.state.mode === 'client' && window.stickSoldiers.state.game && window.stickSoldiers.state.chat.some(c => /hosting now/.test(c.text)), null, { timeout: 45000 }).catch(() => {});
+  await follower.waitForTimeout(1500);
+  followed = await C(follower);
+  expect(followed.mode === 'client' && followed.frags?.Joiner === 4 && followed.frags?.Quicky === 2, `the other player followed them there, with what they had (${followed.mode}; ${JSON.stringify(followed.frags)})`);
+  const there = await C(heirPage);
+  expect(Object.keys(there.frags).includes('Joiner') && Object.keys(there.frags).includes('Quicky'), `both in the game again (${Object.keys(there.frags)})`);
+  await follower.screenshot({ path: `${outDir}/online-new-host.png` });
+  // 8c. The new host ends it: this time it's over.
+  await heirPage.keyboard.press('Escape');
+  await heirPage.click('#quit');
+  await follower.waitForSelector('#menu:not(.hidden)', { timeout: 10000 }).catch(() => {});
+  await follower.waitForTimeout(3500);
+  const ended = await S(follower);
+  expect(ended.mode === 'offline' && !ended.playing, `the game ended by its new host is over for everyone (${ended.mode})`);
+} else {
+  await heirPage.keyboard.press('Escape');
+  await heirPage.click('#quit');
+}
+
+console.log(JSON.stringify({ listed, feel, joinerRuns, joinerRunsAgain, cq, classes, pings, pace, heir: before.heir, took: { id: took.id, frags: took.frags }, followed: followed?.mode, host: h1.soldiers.length, joinerMe: j1.me, chat: (await S(host)).chat, quick: t1.mode, toast, relaysDown: [...relaysDown], errors }, null, 2));
 await browser.close();
 server.close();
 await relay?.close();

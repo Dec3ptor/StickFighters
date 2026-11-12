@@ -6,7 +6,7 @@
 // the browser has found its addresses, then send the whole description through
 // the relays. That's one message each way.
 
-import { ICE_SERVERS } from './relays.js';
+import { iceServers, whyNoConnection } from './relays.js';
 
 const GATHER_MS = 2500;   // how long to wait for network addresses
 const CONNECT_MS = 15000; // give up on a connection after this long
@@ -20,13 +20,15 @@ export class PeerLink {
     this.onmessage = () => {};
     this.onclose = () => {};
     this.closed = false;
+    // (What this side found of its own network, once it's looked: { host, srflx, relay } addresses.)
+    this.kinds = null;
     for (const ch of [this.reliable, this.fast]) {
       ch.binaryType = 'arraybuffer';
       ch.onmessage = e => { if (!this.closed) this.onmessage(typeof e.data === 'string' ? JSON.parse(e.data) : e.data, ch === this.reliable); };
       ch.onclose = () => this.close('channel closed');
     }
     this.ready = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { reject(new Error("Couldn't connect (a firewall may be blocking direct connections)")); this.close('timeout'); }, CONNECT_MS);
+      const timer = setTimeout(() => { reject(new Error(whyNoConnection(this.kinds))); this.close('timeout'); }, CONNECT_MS);
       // Closed before connecting (e.g. the game never answered): give up now, not at the timeout.
       this.stopConnecting = () => { clearTimeout(timer); reject(new Error("Couldn't connect (the connection was closed)")); };
       const check = () => {
@@ -35,7 +37,7 @@ export class PeerLink {
       this.reliable.onopen = check;
       this.fast.onopen = check;
       pc.addEventListener('connectionstatechange', () => {
-        if (pc.connectionState === 'failed') { clearTimeout(timer); reject(new Error("Couldn't connect (the network blocked a direct connection)")); this.close('failed'); }
+        if (pc.connectionState === 'failed') { clearTimeout(timer); reject(new Error(whyNoConnection(this.kinds))); this.close('failed'); }
         if (pc.connectionState === 'disconnected') {
           clearTimeout(this.dropTimer);
           this.dropTimer = setTimeout(() => { if (pc.connectionState !== 'connected') this.close('lost connection'); }, 6000);
@@ -48,13 +50,14 @@ export class PeerLink {
   }
 
   static make() {
-    return new PeerLink(new RTCPeerConnection({ iceServers: ICE_SERVERS }));
+    return new PeerLink(new RTCPeerConnection({ iceServers: iceServers() }));
   }
 
   /** Joining player: make an offer. Returns the description to send to the host. */
   async createOffer() {
     await this.pc.setLocalDescription(await this.pc.createOffer());
     await gathered(this.pc);
+    this.kinds = addressKinds(this.pc.localDescription.sdp);
     return this.pc.localDescription.sdp;
   }
 
@@ -63,6 +66,7 @@ export class PeerLink {
     await this.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
     await this.pc.setLocalDescription(await this.pc.createAnswer());
     await gathered(this.pc);
+    this.kinds = addressKinds(this.pc.localDescription.sdp);
     return this.pc.localDescription.sdp;
   }
 
@@ -84,6 +88,22 @@ export class PeerLink {
   /** How much is waiting to go out on the fast channel. */
   get backlog() { return this.fast.bufferedAmount; }
 
+  /**
+   * How the two ends are joined, once they are: 'direct', or 'relay' (through a relay server:
+   * a little slower). Null if it can't be told.
+   */
+  async route() {
+    try {
+      const stats = await this.pc.getStats();
+      let pair = null;
+      stats.forEach(r => { if (r.type === 'transport' && r.selectedCandidatePairId) pair = stats.get(r.selectedCandidatePairId) || pair; });
+      if (!pair) stats.forEach(r => { if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') pair = pair || r; });
+      const local = pair && stats.get(pair.localCandidateId), remote = pair && stats.get(pair.remoteCandidateId);
+      if (!local || !remote) return null;
+      return local.candidateType === 'relay' || remote.candidateType === 'relay' ? 'relay' : 'direct';
+    } catch { return null; }
+  }
+
   close(reason = 'closed') {
     if (this.closed) return;
     this.closed = true;
@@ -92,6 +112,12 @@ export class PeerLink {
     try { this.reliable.close(); this.fast.close(); this.pc.close(); } catch { /* already gone */ }
     this.onclose(reason);
   }
+}
+
+/** The kinds of address a connection description offers: { host (on the local network), srflx (as the internet sees us), relay }. */
+export function addressKinds(sdp) {
+  const n = kind => (String(sdp || '').match(new RegExp(`\\styp ${kind}\\b`, 'g')) || []).length;
+  return { host: n('host'), srflx: n('srflx') + n('prflx'), relay: n('relay') };
 }
 
 function gathered(pc) {

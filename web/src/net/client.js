@@ -28,10 +28,14 @@ function showHands(s, sb) {
 
 const NONE = [];
 const INPUT_REPEAT = 4;     // each input packet carries the last few inputs, in case some are lost
-const VIEW_DELAY = 7;       // ticks behind the host's clock that others are shown at first (room for late snapshots)...
-const MIN_DELAY = 5, MAX_DELAY = 10; // ...then as many as late snapshots need, within these
+const VIEW_DELAY = 6;       // ticks behind the host's clock that others are shown at first (room for late snapshots)...
+const MIN_DELAY = 3, MAX_DELAY = 10; // ...then as many as late snapshots need, within these
+const SPARE = 1.5;          // ...with this many to spare
+// (These two are for snapshots 20 a second, 3 updates apart: the host sends them more often in a
+// small game, and there are then as many more of each: the same length of time. timeSnapshot.)
 const CLOCK_SNAPS = 48;     // snapshots the host's clock is worked out from (about 2.4 seconds of them)
 const LATEST_SNAPS = 6;     // ...and where it's up to now, from the quickest of the last few
+const MOST_SNAPS = CLOCK_SNAPS * SNAPSHOT_EVERY; // (as many as there are in that time at 60 a second)
 const FAR_BEHIND = 12;      // ticks later than it should be past which the view jumps on rather than catch up (after a gap in snapshots)
 // Our own shots: we're drawn ahead of everyone else (straight away, as we play), and the host's
 // copy of a shot left from where it had us then, a moment behind us. Those that fly come from
@@ -78,7 +82,14 @@ export class NetClient {
     this.opts = opts;
     this.link = opts.link;
     this.link.onmessage = (data, reliable) => this.receive(data, reliable);
-    this.link.onclose = () => this.end('Lost the connection to the host');
+    // (The connection gone without a word from the host: it may only be ours that dropped.)
+    this.link.onclose = () => this.end('Lost the connection to the host', { lost: true });
+    // (For carrying on if the host goes: who takes over, the game as it's set up, and the match
+    // and its map as the host gave them: main.js's carryOn.)
+    this.heir = null;
+    this.setup = null;
+    this.matchInfo = null;
+    this.mapData = null;
     this.game = null;
     this.me = null;
     this.matchNo = -1; // (the host's number for the match being played: snapshots from another are ignored)
@@ -150,7 +161,10 @@ export class NetClient {
       // The host changed its numbers, camera or aiming zoom mid-match: everyone here goes by them now.
       case 'rules': useHostTuning(data.tuning || null); this.opts.onFeel?.(data.feel || null); break;
       case 'pong': { const rtt = this.clock() - data.at; this.ping = this.ping == null ? rtt : this.ping * 0.7 + rtt * 0.3; break; }
-      case 'end': this.end(data.reason || 'The game ended'); break;
+      // Who'd take the game over if the host went ({ key, name }, or nobody).
+      case 'heir': this.heir = data.heir && typeof data.heir.key === 'string' ? { key: data.heir.key, name: String(data.heir.name || '').slice(0, 14) } : null; break;
+      // The host's going: for good (over: the game's ended for everyone), or the game carries on without them.
+      case 'end': this.end(data.reason || 'The game ended', { over: !!data.over, left: true }); break;
     }
   }
 
@@ -173,6 +187,10 @@ export class NetClient {
     // and aiming zoom, for everyone here.
     useHostTuning(m.tuning || null);
     this.opts.onFeel?.(m.feel || null);
+    this.matchInfo = m;
+    this.mapData = world ? null : mapData;
+    this.setup = w.setup && typeof w.setup === 'object' ? w.setup : null;
+    this.heir = w.heir && typeof w.heir.key === 'string' ? { key: w.heir.key, name: String(w.heir.name || '').slice(0, 14) } : null;
     const game = new Game({ mapData, world, mode: m.mode, fragLimit: m.fragLimit, timeLimit: m.timeLimit || 0, options: m.options, speed: m.speed, effects: true, seed: 1 });
     game.online = true;
     if (world) game.mirror = true;
@@ -291,10 +309,12 @@ export class NetClient {
     // (From another match: the last one's, overtaken on the way by the welcome to this one.)
     if (snap.match !== this.matchNo) return;
     const last = this.snaps[this.snaps.length - 1];
-    if (last && snap.tick <= last.tick) return; // late or repeated
+    // Late or repeated. (But not the word that the match is over: it can end after that update's
+    // snapshot has gone, and the clock stops there.)
+    if (last && (snap.tick < last.tick || (snap.tick === last.tick && !(snap.over && !last.over)))) return;
     snap.arrival = this.clock();
     this.snaps.push(snap);
-    if (this.snaps.length > 40) this.snaps.shift();
+    if (this.snaps.length > 64) this.snaps.shift();
     this.tape?.addSnapshot(snap);
     // Destructible maps: missing holes the host has blown? (They usually arrive just
     // after this; ask only if they still haven't half a second later.)
@@ -415,14 +435,16 @@ export class NetClient {
 
   /** The host's clock, worked out from when snapshots arrive (timeSnapshot), and the tick shown (viewTime). */
   resetClock() {
-    this.arrivals = new Float64Array(CLOCK_SNAPS);     // when each of the last snapshots arrived,
-    this.arrivalTicks = new Float64Array(CLOCK_SNAPS); // its tick,
-    this.lateness = new Float64Array(CLOCK_SNAPS);     // and how many ticks later than the quickest it was
+    this.arrivals = new Float64Array(MOST_SNAPS);     // when each of the last snapshots arrived,
+    this.arrivalTicks = new Float64Array(MOST_SNAPS); // its tick,
+    this.lateness = new Float64Array(MOST_SNAPS);     // and how many ticks later than the quickest it was
     this.clockHead = 0; this.clockCount = 0; this.lateCount = 0;
+    // (How many updates apart the host's sending them: the closest two of the last few were.)
+    this.gap = SNAPSHOT_EVERY; this.gaps = new Uint8Array(16); this.gapHead = 0; this.lastSnapTick = null;
     this.hostRate = 1;   // host ticks per tick of ours (a slow host drops some)
     this.hostTick = 0;   // where the host was up to at hostAt
     this.hostAt = 0;
-    this.delay = VIEW_DELAY; this.shrink = 0;
+    this.delay = VIEW_DELAY; this.shrink = 0; this.settled = false;
     this.viewTick = null; this.viewAt = 0;
   }
 
@@ -433,7 +455,20 @@ export class NetClient {
    * the latest snapshots.
    */
   timeSnapshot(tick, at) {
-    const N = CLOCK_SNAPS, times = this.arrivals, ticks = this.arrivalTicks, step = this.step;
+    // How often the host's sending them (more often in a small game: host.js's pace): as far apart
+    // as the closest two of the last few. Everything below counted in snapshots is so much time's
+    // worth of them; when that changes, the clock starts again.
+    const d = this.lastSnapTick == null ? 0 : tick - this.lastSnapTick;
+    this.lastSnapTick = tick;
+    if (d > 0 && d < 60) {
+      this.gaps[this.gapHead] = d;
+      this.gapHead = (this.gapHead + 1) % this.gaps.length;
+      let gap = SNAPSHOT_EVERY;
+      for (let i = 0; i < this.gaps.length; i++) { const v = this.gaps[i]; if (v && v < gap) gap = v; }
+      if (gap !== this.gap) { this.gap = gap; this.clockHead = 0; this.clockCount = 0; this.lateCount = 0; this.shrink = 0; }
+    }
+    const per = SNAPSHOT_EVERY / this.gap;
+    const N = Math.round(CLOCK_SNAPS * per), times = this.arrivals, ticks = this.arrivalTicks, step = this.step;
     // After a long gap (the host stalled, or the connection did), start again.
     if (this.clockCount && at - times[(this.clockHead + N - 1) % N] > 250) this.clockCount = 0;
     const head = this.clockHead;
@@ -442,37 +477,39 @@ export class NetClient {
     const n = this.clockCount = Math.min(this.clockCount + 1, N), first = this.clockHead + N - n;
     // Its pace: the quickest snapshot early in the window against the quickest late in it. (Far
     // from 60 a second is a stall or a jump in the window, not a pace: left out.)
-    if (n >= 18) {
+    if (n >= 18 * per) {
       const third = Math.floor(n / 3), i = this.quickest(first, third), j = this.quickest(first + n - third, third);
       const span = times[j] - times[i], rate = (ticks[j] - ticks[i]) * step / span;
       if (span > 400 && rate >= 0.5 && rate <= 1.1) this.hostRate += (rate - this.hostRate) * 0.1;
     }
     // Where it's up to: the furthest on of the last few, carried forward to now at that pace.
     let host = -Infinity;
-    for (let k = Math.max(0, n - LATEST_SNAPS); k < n; k++) {
+    for (let k = Math.max(0, n - Math.round(LATEST_SNAPS * per)); k < n; k++) {
       const i = (first + k) % N;
       host = Math.max(host, ticks[i] + (at - times[i]) * this.hostRate / step);
     }
     this.hostTick = host; this.hostAt = at;
     // How far behind to show others: the gap between snapshots, the second latest of the last
-    // few seconds, and 2 ticks to spare. Up at once; down a tick at a time, after 5 seconds.
+    // few seconds, and a tick or two to spare. Up at once; down a tick at a time, after 5 seconds.
     this.lateness[head] = host - tick;
     this.lateCount = Math.min(this.lateCount + 1, N);
-    if (this.lateCount < 20) return;
+    if (this.lateCount < 20 * per) return;
     let late = 0, latest = 0;
     for (let k = 0; k < this.lateCount; k++) {
       const v = this.lateness[k];
       if (v > latest) { late = latest; latest = v; } else if (v > late) late = v;
     }
-    const want = Math.max(MIN_DELAY, Math.min(MAX_DELAY, Math.ceil(SNAPSHOT_EVERY + late + 2)));
-    if (want > this.delay) { this.delay = want; this.shrink = 0; }
+    const want = Math.max(MIN_DELAY, Math.min(MAX_DELAY, Math.ceil(this.gap + late + SPARE)));
+    // (The first time it's known, a second into the match: straight there.)
+    if (!this.settled) { this.settled = true; this.delay = want; this.shrink = 0; }
+    else if (want > this.delay) { this.delay = want; this.shrink = 0; }
     else if (want === this.delay) this.shrink = 0;
-    else if (++this.shrink >= 100) { this.delay--; this.shrink = 0; }
+    else if (++this.shrink >= 100 * per) { this.delay--; this.shrink = 0; }
   }
 
   /** Of `count` snapshots in the window from `from` on, the one that arrived soonest for its tick. */
   quickest(from, count) {
-    const N = CLOCK_SNAPS, pace = this.hostRate / this.step;
+    const N = Math.round(CLOCK_SNAPS * SNAPSHOT_EVERY / this.gap), pace = this.hostRate / this.step;
     let best = from % N, most = -Infinity;
     for (let k = 0; k < count; k++) {
       const i = (from + k) % N, v = this.arrivalTicks[i] - this.arrivals[i] * pace;
@@ -793,11 +830,29 @@ export class NetClient {
     this.end(null);
   }
 
-  end(reason) {
+  /**
+   * What everyone in the match has to their name right now ([{ name, team, frags, deaths, points,
+   * level, lives, isBot }]), the sides' scores and how far the match has got: for carrying it on
+   * under another host.
+   */
+  standing() {
+    const g = this.game;
+    if (!g) return null;
+    return {
+      tick: g.tick, teamScore: [0, g.teamScore[1] | 0, g.teamScore[2] | 0],
+      soldiers: g.soldiers.filter(s => !s.npc).map(s => ({ name: s.name, team: s.team, frags: s.frags | 0, deaths: s.deaths | 0, points: s.points | 0, level: s.level, lives: s.lives, isBot: !!s.isBot })),
+    };
+  }
+
+  /**
+   * The game's over for us. how: { over (the host ended it for everyone), left (the host said
+   * it's going), lost (the connection went, with no word) }; nothing when we left ourselves.
+   */
+  end(reason, how = null) {
     if (this.ended) return;
     this.ended = true;
     clearInterval(this.pingTimer);
     try { this.link.close('ended'); } catch { /* already closed */ }
-    this.opts.onEnd?.(reason);
+    this.opts.onEnd?.(reason, how);
   }
 }

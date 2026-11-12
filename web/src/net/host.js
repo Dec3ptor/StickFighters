@@ -2,7 +2,7 @@
 // send their inputs here; the host sends back snapshots (20 a second) and the
 // events of the match (sounds, effects, the kill feed, messages).
 
-import { encodeWorld, encodeSnapshot, decodeInputs, messageType, PROTOCOL, SNAPSHOT_EVERY } from './protocol.js';
+import { encodeWorld, encodeSnapshot, decodeInputs, messageType, PROTOCOL, SNAPSHOT_EVERY, SNAPSHOT_BUDGET, SNAPSHOT_FAST_PLAYERS } from './protocol.js';
 import { cleanClass, cleanLoadouts } from '../classes.js';
 import { holdSpawn } from '../gadgets.js';
 import { isSkin } from '../skins.js';
@@ -57,6 +57,8 @@ export class NetHost {
    *   maxPlayers, botCount,
    *   matchInfo(): what players need to set up the match (mode, map, ...),
    *   addBot(game): adds one bot to the game,
+   *   setup(): the game as it's set up (bots, limits, who can join...), for whoever takes it
+   *     over if the host goes (takeOver, main.js),
    *   onChange(): the player list changed,  onChat(message)
    * }
    */
@@ -68,7 +70,31 @@ export class NetHost {
     this.game = null;
     this.chatLog = [];
     this.matchNo = 0; // (each match is numbered, in its welcome and snapshots: see setGame)
+    // (Updates between snapshots, 1 to 3, and how big they've been of late: pace.)
+    this.every = SNAPSHOT_EVERY;
+    this.snapBytes = 0;
+    // (Who'd take the game over if the host went: pickHeir. And what those who've gone had to
+    // their names, to give back if they come back: by who they are, this match; or by name, in a
+    // game carried on from a host who left: keep, recall.)
+    this.heir = null;
+    this.kept = new Map();
+    this.carried = null;
     this.resetEvents();
+  }
+
+  /**
+   * How often snapshots go out: every update (60 a second), every other (30) or every third (20).
+   * As often as the host's upload can take, by how many players there are and how big the
+   * snapshots have been: a duel is shown 60 times a second, a full server 20. (Going faster
+   * waits till there's room to spare, so it doesn't flip back and forth.) A world: 20.
+   */
+  pace() {
+    const n = [...this.players].filter(p => p.ready).length;
+    if (!n || this.opts.world) { this.every = SNAPSHOT_EVERY; return this.every; }
+    const each = n * (this.snapBytes || 700);   // (bytes a second for each snapshot a second)
+    const fits = every => each * (60 / every) <= SNAPSHOT_BUDGET * (every < this.every ? 0.8 : 1);
+    this.every = n <= SNAPSHOT_FAST_PLAYERS && fits(1) ? 1 : fits(2) ? 2 : SNAPSHOT_EVERY;
+    return this.every;
   }
 
   resetEvents() { this.events = { s: [], fx: [], ft: [], k: [], n: [], sh: [], c: [] }; }
@@ -91,7 +117,14 @@ export class NetHost {
     if (game.fx && !game.fx.recording) game.fx = recordFx(game.fx, this);
     this.resetEvents();
     this.idle = 0;
+    this.sentTick = -1;
+    this.sentOver = false;
     this.carvesSent = 0; // (destructible maps: holes sent to everyone so far)
+    // (A new match: what anyone had in the last is done with. What's carried on from another
+    // host is for the first match here only.)
+    this.kept.clear();
+    if (this.carried && this.carried.match == null) this.carried.match = this.matchNo;
+    else this.carried = null;
     for (const p of this.players) {
       p.soldier = this.soldierFor(p);
       p.ctl.queue.length = 0;
@@ -99,6 +132,16 @@ export class NetHost {
     }
     // Bots first, so the welcome's roster includes them.
     this.balanceBots();
+    // (Carried on from a host who left: the host's own soldier and the bots have what theirs
+    // had, the bots on the sides theirs were on; they're evened up as the players arrive.)
+    if (this.carried) {
+      for (const s of game.soldiers) {
+        if (s.remote) continue;
+        const rec = this.carriedFor(s.name);
+        if (rec && s.isBot && game.rules.teams && (rec.team === 1 || rec.team === 2) && !s.alive) s.team = rec.team;
+        this.giveBack(s, rec);
+      }
+    }
     for (const p of this.players) this.welcome(p, { fresh: false });
   }
 
@@ -133,11 +176,16 @@ export class NetHost {
       if (p.team && n(p.team) - n(3 - p.team) < 1) team = p.team;
       if (p.nextTeam) { team = p.team = p.nextTeam; p.nextTeam = 0; }
     }
+    // (Back after dropping out of this match, or here from a game whose host left: the side
+    // they were on, and what they had to their name: recall.)
+    const back = this.recall(p);
+    if (back && g.rules.teams && (back.team === 1 || back.team === 2)) team = p.team = back.team;
     let name = p.name, k = 2;
     while (g.soldiers.some(s => s.name.toLowerCase() === name.toLowerCase())) name = `${p.name.slice(0, 12)}${k++}`;
     const s = g.addSoldier({ name, isBot: false, team, skin: p.skin || 'auto' }, p.ctl);
     s.remote = true;
     s.respawnTimer = 20;
+    this.giveBack(s, back);
     // Classes on: their class and loadouts (sent by their browser). Until those arrive,
     // a new player waits to spawn (for at most a few seconds).
     if (g.classesOn) {
@@ -159,11 +207,81 @@ export class NetHost {
   removePlayer(p, why = 'left') {
     if (!this.players.delete(p)) return;
     this.opts.world?.leave(p);
+    // (What they had, kept a while: a dropped connection that comes back carries on where it was.)
+    if (this.game && p.soldier && p.key && !this.game.world && !this.sentAway.has(p.key)) this.kept.set(p.key, { ...NetHost.record(p.soldier), match: this.matchNo, at: Date.now() });
     if (this.game && p.soldier) this.game.removeSoldier(p.soldier);
     this.balanceBots();
     this.broadcast({ t: 'roster', roster: this.roster() });
     this.system(`${p.soldier?.name || p.name} ${why}`);
+    this.pickHeir();
     this.opts.onChange?.();
+  }
+
+  /** What a soldier has to their name in a match: their side and their scores. */
+  static record(s) {
+    return { name: s.name, team: s.team, frags: s.frags | 0, deaths: s.deaths | 0, points: s.points | 0, level: s.level, lives: s.lives };
+  }
+
+  /**
+   * The game's carried on from a host who left (takeOver, main.js): what everyone had there, by
+   * name ([{ name, team, frags, deaths, points, level, lives }]), is given to whoever turns up
+   * here under that name in the first match, while it's fresh. scores: false for a mode that
+   * starts again (only the sides are kept).
+   */
+  carryOver(list, { scores = true, now = Date.now() } = {}) {
+    const by = new Map();
+    for (const r of list || []) if (r && typeof r.name === 'string') by.set(r.name.toLowerCase(), scores ? r : { name: r.name, team: r.team });
+    this.carried = { by, match: null, until: now + 180000 };
+  }
+
+  /** What's carried on for the soldier named `name`, if anything is (once: it's theirs now). */
+  carriedFor(name, now = Date.now()) {
+    const c = this.carried;
+    if (!c || now > c.until) return null;
+    const key = String(name || '').toLowerCase(), rec = c.by.get(key);
+    if (rec) c.by.delete(key);
+    return rec || null;
+  }
+
+  /** What player p had before, if they're back: in this match (by who they are), or in the game this one carries on (by name). */
+  recall(p, now = Date.now()) {
+    const k = p.key && this.kept.get(p.key);
+    if (k) {
+      this.kept.delete(p.key);
+      if (k.match === this.matchNo && now - k.at < 300000) return k;
+    }
+    return this.carried && this.carried.match === this.matchNo ? this.carriedFor(p.name, now) : null;
+  }
+
+  /** Soldier s has what `rec` says they had (their scores; their side's chosen before they're made). */
+  giveBack(s, rec) {
+    if (!rec || rec.frags == null) return;
+    const n = (v, hi) => Math.max(0, Math.min(hi, v | 0));
+    s.frags = Math.max(-999, Math.min(9999, rec.frags | 0));
+    s.deaths = n(rec.deaths, 9999);
+    s.points = n(rec.points, 99999);
+    if (s.level !== undefined && rec.level != null) s.level = n(rec.level, 99);
+    if (s.lives !== undefined && rec.lives != null) s.lives = n(rec.lives, 9);
+  }
+
+  /**
+   * Who'd take the game over if the host went: of the players connected (and not away), the one
+   * with a good connection who's been here longest. Everyone's told who, whenever it changes
+   * (and in their welcome), so they all know where to go.
+   */
+  pickHeir() {
+    let best = null;
+    for (const p of this.players) {
+      if (!p.ready || !p.key || p.afk || !p.soldier) continue;
+      const slow = p.ping > 250 ? 1 : 0;
+      if (!best || slow < best.slow || (slow === best.slow && p.joined < best.p.joined)) best = { p, slow };
+    }
+    const heir = best && !this.game?.world ? { key: best.p.key, name: best.p.soldier.name } : null;
+    if (heir?.key !== this.heir?.key || heir?.name !== this.heir?.name) {
+      this.heir = heir;
+      this.broadcast({ t: 'heir', heir });
+    }
+    return heir;
   }
 
   /**
@@ -300,6 +418,8 @@ export class NetHost {
       t: 'welcome', v: PROTOCOL, n: this.matchNo, you: p.soldier.id, tick: this.game.tick,
       match: this.opts.matchInfo(), roster: this.roster(), chat: fresh ? this.chatLog.slice(-8) : [],
       carves: this.game.carves,
+      // (Who takes over if the host goes, and the game as it's set up, for them to carry on with.)
+      heir: this.heir, setup: this.opts.setup?.() || null,
     });
   }
 
@@ -312,7 +432,7 @@ export class NetHost {
     }
     if (!data || typeof data !== 'object') return;
     switch (data.t) {
-      case 'ready': p.ready = true; break;
+      case 'ready': p.ready = true; this.pickHeir(); break;
       case 'deploy': if (p.soldier) p.soldier.deployAt = data.at == null ? null : String(data.at).slice(0, 8); break;
       case 'carves?': {
         // The player is missing some of the holes blown in the map: send them (at most once a second).
@@ -446,11 +566,16 @@ export class NetHost {
         if (!first) this.broadcast({ t: 'roster', roster: this.roster() });
       }
     }
-    if (g.tick === this.sentTick) {
+    if (g.tick === this.sentTick && (!g.over || this.sentOver)) {
       // The match is over and the clock has stopped: just refresh now and then.
       if (++this.idle % 30) return;
-    } else if (g.tick % SNAPSHOT_EVERY !== 0 && !g.over) return; // (the moment it ends goes out at once)
+    } else {
+      if (g.tick % 60 === 7) this.pace();
+      if (g.tick - this.sentTick < this.every && !g.over) return; // (the moment it ends goes out at once)
+    }
     this.sentTick = g.tick;
+    // (Its ending said: it can end after this update's snapshot has gone, with them going every update.)
+    this.sentOver = !!g.over;
     const ready = [...this.players].filter(p => p.ready);
     if (ready.length) {
       const world = encodeWorld(g);
@@ -461,7 +586,10 @@ export class NetHost {
       const any = e.s.length || e.fx.length || e.k.length || e.n.length || e.sh.length || e.c.length || cv;
       const ft = e.ft.map(t => g.tick - t); // (how many updates before this one each effect was)
       for (const p of ready) {
-        p.link.send(encodeSnapshot(g, p.soldier, p.ctl.ackSeq, world), false);
+        const snap = encodeSnapshot(g, p.soldier, p.ctl.ackSeq, world);
+        this.snapBytes += (snap.length - this.snapBytes) * (this.snapBytes ? 0.05 : 1);
+        // (Not onto a pile of them still waiting to go: a newer one follows.)
+        if (!(p.link.backlog > 24000)) p.link.send(snap, false);
         // (A world: their things and their chest when they change, and the blocks changed.)
         this.opts.world?.sync(p);
         const wx = this.opts.world?.events(p);
@@ -492,12 +620,16 @@ export class NetHost {
       if (p.soldier && p.ping != null) { p.soldier.ping = p.ping; list.push([p.soldier.id, p.ping]); }
     }
     if (list.length) this.broadcast({ t: 'pings', list });
+    this.pickHeir();
   }
 
-  /** End the game for everyone. */
-  close(reason = 'The host left the game') {
+  /**
+   * The host's going. over: the game ends for everyone (the host chose to end it); otherwise
+   * it carries on without them: whoever's next in line hosts it (pickHeir), and the rest follow.
+   */
+  close(reason = 'The host left the game', { over = false } = {}) {
     for (const p of [...this.players]) {
-      p.link.send({ t: 'end', reason }, true);
+      p.link.send({ t: 'end', reason, over: !!over }, true);
       setTimeout(() => p.link.close('host closed'), 300);
     }
     this.players.clear();
