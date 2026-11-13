@@ -925,3 +925,18 @@ body.choosing-next .tabs { display: none; }
 .kick-list .muted-note { margin: 2px 0 4px; }
 .kick-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 0; }
 .kick-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Touch controls (touch.js): two halves for the thumbs, buttons down the right edge. */
+.touch { position: fixed; inset: 0; z-index: 30; pointer-events: none; user-select: none; -webkit-user-select: none; touch-action: none; }
+.touch.hidden { display: none; }
+.touch-half { position: absolute; top: 18%; bottom: 0; width: 50%; pointer-events: auto; touch-action: none; }
+.touch-move { left: 0; }
+.touch-aim { right: 0; }
+.touch-ring, .touch-knob { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); display: none; pointer-events: none; }
+.touch-half.on .touch-ring, .touch-half.on .touch-knob { display: block; }
+.touch-ring { width: 124px; height: 124px; border: 2px solid rgba(120, 120, 120, 0.55); background: rgba(255, 255, 255, 0.12); }
+.touch-knob { width: 52px; height: 52px; background: rgba(90, 90, 90, 0.55); }
+.touch-btns { position: absolute; right: 10px; top: 20%; display: flex; flex-direction: column; gap: 10px; pointer-events: auto; }
+.touch-btn { pointer-events: auto; min-width: 74px; padding: 14px 8px; font: bold 13px Arial, sans-serif; color: #222; background: rgba(255, 255, 255, 0.7); border: 2px solid rgba(60, 60, 60, 0.6); border-radius: 10px; touch-action: none; }
+.touch-btn.on { background: rgba(60, 60, 60, 0.75); color: #fff; }
+.touch-menu { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); min-width: 48px; padding: 8px 10px; font-size: 18px; }

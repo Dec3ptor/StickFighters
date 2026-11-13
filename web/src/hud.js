@@ -146,7 +146,7 @@ export function drawHud(r, game, me, opts = {}) {
   ctx.textAlign = 'center';
   for (let i = 0; i < notes.length; i++) {
     const n = notes[i], age = game.tick - n.tick;
-    ctx.globalAlpha = Math.min(1, (150 - age) / 30);
+    ctx.globalAlpha = Math.min(1, ((n.life || 150) - age) / 30);
     ctx.font = FONT_14;
     ctx.fillStyle = '#222';
     ctx.fillText(keyText(n.text), W / 2, notesY + i * 20);
@@ -334,7 +334,7 @@ function drawRecap(ctx, c, game, W, H) {
 
 // A message shown to the player: theirs (or everyone's), from the last 150 updates.
 const NOTE_FOR = { me: null, tick: 0 };
-const noteShown = (n, f) => (n.to == null || n.to === f.me.id) && f.tick - n.tick < 150;
+const noteShown = (n, f) => (n.to == null || n.to === f.me.id) && f.tick - n.tick < (n.life || 150); // (life: a hint stays up longer)
 // Fonts used every frame (made once).
 const FONT_14 = `14px ${FONT}`, FONT_12 = `12px ${FONT}`, FONT_BOLD_12 = `bold 12px ${FONT}`, FONT_11 = `11px ${FONT}`;
 const FONT_BOLD_10 = `bold 10px ${FONT}`, FONT_10 = `10px ${FONT}`, FONT_9 = `9px ${FONT}`, FONT_8 = `8px ${FONT}`;

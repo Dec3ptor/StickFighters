@@ -52,6 +52,11 @@ export class Input {
     // menu open or not. Someone who hasn't for a long while is sat out of a hosted game: net/host.js.)
     this.activeAt = performance.now();
     this.lastX = this.lastY = null;
+    // Actions held or pressed by something other than the keyboard and mouse: a gamepad
+    // (gamepad.js) or the touch controls (touch.js). By action (keys.js), not by key.
+    this.otherHeld = new Set();
+    this.otherTapped = new Set();
+    this.otherQueue = [];
     // The mouse locked to the game (the browser's pointer lock): its cursor is hidden and
     // only the game gets the mouse, which moves the crosshair by how far the mouse moves.
     this.locked = false;
@@ -211,6 +216,7 @@ export class Input {
   /** Nothing held any more (the page lost the keyboard and mouse for a while). */
   letGo() {
     this.keys.clear();
+    this.otherHeld.clear();
     this.mouse.left = this.mouse.right = false;
   }
 
@@ -224,13 +230,38 @@ export class Input {
   down(...codes) { return codes.some(c => this.keys.has(keyOf(c))); }
 
   /** Whether an action's key (Settings: Controls) is held. */
-  held(id) { return keysFor(id).some(k => this.keys.has(k)); }
+  held(id) { return !!this.otherHeld?.has(id) || keysFor(id).some(k => this.keys.has(k)); }
 
   /** Whether an action's key was pressed since the game last looked (see tapped). */
-  tappedAction(id) { return keysFor(id).some(k => this.tapped.has(k)); }
+  tappedAction(id) { return !!this.otherTapped?.has(id) || keysFor(id).some(k => this.tapped.has(k)); }
+
+  /** A gamepad or the touch controls holding an action, or letting it go. */
+  hold(id, on = true) {
+    if (!this.enabled) on = false;
+    if (on && !this.otherHeld.has(id)) { this.otherTapped.add(id); this.activeAt = performance.now(); }
+    if (on) this.otherHeld.add(id); else this.otherHeld.delete(id);
+  }
+
+  /** A gamepad or the touch controls pressing an action once. */
+  press(id) {
+    if (!this.enabled) return;
+    this.activeAt = performance.now();
+    this.otherTapped.add(id);
+    if (this.otherQueue.length < 8) this.otherQueue.push(id);
+  }
+
+  /** A gamepad or the touch controls aiming: the crosshair at (x, y) on the game's picture. */
+  aimAt(x, y) {
+    this.mouse.x = Math.max(0, Math.min(this.canvas?.clientWidth ?? x, x));
+    this.mouse.y = Math.max(0, Math.min(this.canvas?.clientHeight ?? y, y));
+    this.mouse.moved = true;
+    this.activeAt = performance.now();
+  }
 
   /** Take (and forget) a queued press of one of an action's keys: the key, or null if none. */
   took(id) {
+    const o = this.otherQueue ? this.otherQueue.indexOf(id) : -1;
+    if (o >= 0) { this.otherQueue.splice(o, 1); return 'Other'; }
     const keys = keysFor(id);
     const i = this.queue.findIndex(c => keys.includes(c));
     if (i < 0) return null;
@@ -241,6 +272,7 @@ export class Input {
     this.keys.clear();
     this.tapped.clear();
     this.queue.length = 0;
+    this.otherHeld.clear(); this.otherTapped.clear(); this.otherQueue.length = 0;
     this.mouse.left = this.mouse.right = this.mouse.clicked = this.mouse.rightClicked = false;
     this.wheel = 0;
   }
@@ -299,6 +331,7 @@ export class PlayerController {
     if (((aiming && !this.prevAlt) || k.tappedAction('aim')) && WEAPONS[s.current]?.kind === 'build' && s.alive) this.plank = !this.plank;
     this.prevAlt = aiming;
     k.tapped.clear();
+    k.otherTapped?.clear();
     k.mouse.clicked = k.mouse.rightClicked = false;
     inp.plank = !!this.plank;
 

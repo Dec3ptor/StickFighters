@@ -22,6 +22,9 @@ import { WEAPONS } from './weapons.js';
 import { GameMap, seamsOf, fillSeams } from './map.js';
 import { Lobby, inviteCode, parseInvite, loadGameId, nextGameId } from './net/lobby.js';
 import { loadIceServers } from './net/relays.js';
+import { PadDriver } from './gamepad.js';
+import { TouchControls } from './touch.js';
+import { newHints, nextHint } from './hints.js';
 import { NetHost } from './net/host.js';
 import { NetClient } from './net/client.js';
 import { Community } from './net/community.js';
@@ -84,6 +87,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 let canvas = $('game');
 let renderer = null;
 let input = null;
+let pads = null, touch = null; // (a gamepad, and a touch screen's controls: gamepad.js, touch.js)
 const audio = new SoundSystem();
 
 const maps = { index: [], data: new Map(), nav: new Map(), community: new Map() };
@@ -2349,8 +2353,33 @@ function sendChat(text) {
 // ---- Loop ------------------------------------------------------------------------------
 
 /** Run the game forward to `now` in fixed steps (60 a second). */
+/** Where our soldier is on the screen (the middle of it, with none): a gamepad's or a thumb's crosshair goes out from there. */
+function meOnScreen() {
+  const me = state.me, r = renderer;
+  if (!r) return null;
+  if (!me?.alive || !state.game) return { x: r.w / 2, y: r.h / 2 };
+  return { x: r.w / 2 + (me.x - r.cam.x) * r.scale, y: r.h / 2 + (me.y - 10 - r.cam.y) * r.scale };
+}
+
+/** A new player's hints, one at a time as they come up (hints.js): once a second, in a match. Those shown are kept. */
+function showHints(now) {
+  const g = state.game, me = state.me;
+  // (They name keys: not for someone on a gamepad or a touch screen, whose controls are on show.)
+  if (!g || g.over || g.world || !me || state.returnTo === 'editor' || pads?.used || touch?.used || now - (state.hintAt ?? 0) < 1000) return;
+  state.hintAt = now;
+  state.hints ||= newHints(loadSettings().hints || []);
+  const text = nextHint(state.hints, me, { move: Math.abs(me.body.vx) > 0.5, fire: input.held('fire'), alt: input.held('aim') }, now / 1000);
+  if (!text) return;
+  g.notes.push({ text, tick: g.tick, to: me.id, life: 420 });
+  saveSettings({ ...loadSettings(), hints: [...state.hints.seen] });
+}
+
 function simulate(now) {
   const g = state.game;
+  pads?.poll(g ? meOnScreen() : null);
+  touch?.show();
+  touch?.point();
+  showHints(now);
   if (!g) { state.last = now; return; }
   let dt = state.last == null ? 0 : now - state.last;
   state.last = now;
@@ -3243,6 +3272,10 @@ async function boot() {
   renderer = r;
   canvas = renderer.canvas;
   input = new Input(canvas);
+  // A gamepad, and (on a touch screen) thumbs: they hold and press the same actions the keys do.
+  const openMenu = () => { if (state.game && !state.game.over && !state.chatOpen) setPaused(!state.menuOpen); };
+  pads = new PadDriver(input, { onMenu: openMenu });
+  touch = new TouchControls(input, { root: document.body, from: meOnScreen, onMenu: openMenu, playing: playingNow });
   // A click on the game locks the mouse to it while playing; Esc frees it (and opens the menu).
   input.wantsLock = () => lockAllowed() && playingNow();
   input.onPress = () => grabControls();

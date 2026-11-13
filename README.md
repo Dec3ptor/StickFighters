@@ -89,6 +89,12 @@ What Remastered changes is the picture:
 
 Remastered asks more of the computer than the original, mostly of the graphics card. Everything in it is drawn in code when a map starts: nothing extra is downloaded.
 
+## New players, gamepads and touch screens
+
+- **Hints as you go.** In your first matches the game tells you a key the first time it would help: moving and firing as you start, sprinting once you've run a while, reloading when the magazine's low, changing weapon once you have a second one, crouching to steady a shot, the jetpack when you pick one up. Each is shown once, ever, with the keys as you have them set.
+- **Gamepad.** Plug in an Xbox or PlayStation pad (or one like them) and play: left stick moves (down to crouch), right stick aims, right trigger fires, left trigger aims down the sights, A jumps, B crouches, X reloads, Y uses, the bumpers change weapon, a click of the left stick sprints, Start opens the menu.
+- **Touch screens.** On a phone or tablet, touch the screen and the controls appear: the left half is a stick that moves you (up to jump, down to crouch), the right half aims where you drag and fires while you hold it past half way, with Jump, Weapon, Reload and Sprint buttons on the right and the menu at the top. It's playable rather than polished: the game's made for a keyboard and mouse.
+
 ## Game modes
 
 | Mode | How it works |
